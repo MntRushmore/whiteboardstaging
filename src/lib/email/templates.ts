@@ -14,7 +14,10 @@
  * email, and a name like "Claim your prize at evil.example" would then arrive in a stranger's inbox
  * from our domain. Everything interpolated is still HTML-escaped, and every link must be an
  * absolute http(s) URL (`emailHref`), so a bad env value can break an email loudly but never
- * inject markup or a `javascript:` link.
+ * inject markup or a `javascript:` link. One narrow exception (2026-10-09): the free trial's emails
+ * to the grown-up name the student ("Maya's first practice is ready"), but only as a FIRST NAME
+ * reduced by `safeFirstName` (src/lib/email/activity.ts) to a single word of letters, which cannot
+ * carry a link or a sentence; anything else is no name, and the email reads without one.
  *
  * How the HTML is built (what email clients actually render): a table layout (Outlook ignores
  * flex/grid and most `max-width` on divs), every style inline (Gmail drops most <style> blocks),
@@ -31,12 +34,12 @@ export type RenderedEmail = { subject: string; html: string; text: string };
 /** The app's blue: the Help me button and every primary button (Tailwind blue-600). */
 export const BRAND_BLUE = "#2563eb";
 
-const FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
-const INK = "#111827"; // body text (gray-900)
-const MUTED = "#4b5563"; // secondary text (gray-600)
-const FAINT = "#6b7280"; // footer (gray-500)
+export const FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+export const INK = "#111827"; // body text (gray-900)
+export const MUTED = "#4b5563"; // secondary text (gray-600)
+export const FAINT = "#6b7280"; // footer (gray-500)
 const PAGE_BG = "#f3f4f6"; // gray-100
-const CARD_BORDER = "#e5e7eb"; // gray-200
+export const CARD_BORDER = "#e5e7eb"; // gray-200
 
 /* ------------------------------------------------------------------------- */
 /* Escaping and links                                                         */
@@ -102,13 +105,13 @@ export function formatEmailDate(date: Date, timeZone: string = EMAIL_TIME_ZONE):
 /* ------------------------------------------------------------------------- */
 
 /** A paragraph of body text. `html` is trusted markup built here, never user input. */
-function paragraph(html: string, opts: { muted?: boolean; size?: number; margin?: string } = {}): string {
+export function paragraph(html: string, opts: { muted?: boolean; size?: number; margin?: string } = {}): string {
   const size = opts.size ?? 16;
   return `<p style="margin:${opts.margin ?? "0 0 16px"};font-family:${FONT_STACK};font-size:${size}px;line-height:${Math.round(size * 1.55)}px;color:${opts.muted ? MUTED : INK};">${html}</p>`;
 }
 
 /** The main heading inside the card. */
-function heading(text: string): string {
+export function heading(text: string): string {
   return `<h1 style="margin:0 0 16px;font-family:${FONT_STACK};font-size:24px;line-height:32px;font-weight:700;color:${INK};">${escapeHtml(text)}</h1>`;
 }
 
@@ -141,7 +144,7 @@ ${paragraph(bodyHtml, { margin: "0" })}
 }
 
 /** The bulletproof primary button. */
-function button(label: string, href: string): string {
+export function button(label: string, href: string): string {
   const url = escapeHtml(emailHref(href));
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 8px;">
 <tr><td align="center" bgcolor="${BRAND_BLUE}" style="border-radius:8px;background-color:${BRAND_BLUE};">
@@ -151,7 +154,7 @@ function button(label: string, href: string): string {
 }
 
 /** A plain inline link in body text. */
-function link(label: string, href: string): string {
+export function link(label: string, href: string): string {
   return `<a href="${escapeHtml(emailHref(href))}" target="_blank" style="color:${BRAND_BLUE};text-decoration:underline;">${escapeHtml(label)}</a>`;
 }
 
@@ -159,7 +162,7 @@ function link(label: string, href: string): string {
  * The page around a card: wordmark, white card, footer. `preheader` is the inbox preview line;
  * the zero-width filler after it stops clients from pulling body text into the preview.
  */
-function layout({ title, preheader, card, footer }: { title: string; preheader: string; card: string; footer: string }): string {
+export function layout({ title, preheader, card, footer }: { title: string; preheader: string; card: string; footer: string }): string {
   const filler = "&#847;&zwnj;&nbsp;".repeat(40);
   return `<!doctype html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
@@ -197,7 +200,7 @@ ${footer}
 }
 
 /** Plain-text paragraphs, wrapped by the reader's client. */
-function textBody(parts: string[]): string {
+export function textBody(parts: string[]): string {
   return `${parts.map((p) => p.trim()).join("\n\n")}\n`;
 }
 
@@ -271,6 +274,8 @@ export type TrialReminderInput = {
   /** The plan as sold (UNLIMITED_PLAN in src/lib/billing/unlimited.ts). */
   planName: string;
   monthlyUsd: number;
+  /** what the family did during the trial (src/lib/email/activity.ts, familyProgress); shown when not empty */
+  progress?: readonly LearnerProgress[];
   timeZone?: string;
 };
 
@@ -301,12 +306,15 @@ export function trialReminderEmail(input: TrialReminderInput): RenderedEmail {
   const cancelLead = "To cancel, use";
   const cancelTail = "Cancel before the free trial ends and you won't be charged.";
   const footer = `You're getting this email because ${plan} was started with a free trial on your Agathon account.`;
+  const progress = (input.progress ?? []).filter((p) => progressLines(p).length > 0);
+  const soFar = progress.length ? soFarLead(progress) : null;
 
   const card = [
     heading("Your free trial is almost over"),
     paragraph(escapeHtml(ends)),
     paragraph(escapeHtml(charge)),
     paragraph(escapeHtml(keep)),
+    ...(soFar ? [paragraph(escapeHtml(soFar)), progressBlocks(progress)] : []),
     paragraph(`${escapeHtml(cancelLead)} ${link("Manage or cancel", manage)}. ${escapeHtml(cancelTail)}`),
     button("Manage or cancel", manage),
   ].join("\n");
@@ -322,6 +330,7 @@ export function trialReminderEmail(input: TrialReminderInput): RenderedEmail {
     ends,
     charge,
     keep,
+    ...(soFar ? [soFar, progressText(progress)] : []),
     `To cancel, use Manage or cancel: ${manage}`,
     cancelTail,
     "--",
@@ -408,5 +417,192 @@ export function unlimitedStartedEmail(input: UnlimitedStartedInput): RenderedEma
     footer,
     `Agathon: ${site}`,
   ]);
+  return { subject, html, text };
+}
+
+/* ------------------------------------------------------------------------- */
+/* What the family did (the free trial's emails)                              */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * One learner's trial so far, as the emails say it (built by src/lib/email/activity.ts). `name` is
+ * already a safe first name (`safeFirstName`) or null; everything else is a count or a skill name
+ * from the app's own list.
+ */
+export type LearnerProgress = {
+  name: string | null;
+  /** problems started in the period */
+  tried: number;
+  solved: number;
+  alone: number;
+  /** skill names, most practiced first */
+  skills: readonly string[];
+  /** days of Today's practice completed in a row */
+  streak: number;
+  /** days Today's practice was completed in the period */
+  practiceDays: number;
+};
+
+/** "A", "A and B", "A, B and C", "A, B, C and 2 more". */
+export function listOf(items: readonly string[], max = 3): string {
+  if (items.length === 0) return "";
+  if (items.length === 1) return items[0];
+  const shown = items.slice(0, max);
+  const rest = items.length - shown.length;
+  if (rest > 0) return `${shown.join(", ")} and ${rest} more`;
+  return `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+}
+
+/** "Maya's", "Maya and Leo's"; null for no name or three and more (the email then reads without names). */
+export function whose(names: readonly string[]): string | null {
+  if (names.length === 1) return `${names[0]}'s`;
+  if (names.length === 2) return `${names[0]} and ${names[1]}'s`;
+  return null;
+}
+
+/** A learner's trial in short lines: problems, skills, Today's practice. Empty when there is nothing to say. */
+export function progressLines(p: LearnerProgress): string[] {
+  const lines: string[] = [];
+  if (p.solved > 0) {
+    const alone = p.alone <= 0 ? "" : p.alone >= p.solved ? (p.solved === 1 ? ", without help" : ", all without help") : `, ${p.alone} without help`;
+    lines.push(`${p.solved} ${p.solved === 1 ? "problem" : "problems"} solved${alone}`);
+  }
+  else if (p.tried > 0) lines.push(`${p.tried} ${p.tried === 1 ? "problem" : "problems"} started`);
+  if (p.skills.length > 0) lines.push(`Practiced: ${listOf(p.skills)}`);
+  if (p.streak >= 2) lines.push(`Today's practice: ${p.streak} days in a row`);
+  else if (p.practiceDays > 0) lines.push(`Today's practice: done on ${p.practiceDays} ${p.practiceDays === 1 ? "day" : "days"}`);
+  return lines;
+}
+
+/** The sentence before the blocks: "Here's what Maya has done so far:" (or without a name). */
+function soFarLead(progress: readonly LearnerProgress[]): string {
+  const names = progress.map((p) => p.name).filter((n): n is string => n !== null);
+  if (progress.length === 1 && names.length === 1) return `Here's what ${names[0]} has done so far:`;
+  if (progress.length === 2 && names.length === 2) return `Here's what ${names[0]} and ${names[1]} have done so far:`;
+  return "Here's what's been done so far:";
+}
+
+/** One grey box per learner: the name (when there is one), then the lines. */
+function progressBlocks(progress: readonly LearnerProgress[]): string {
+  const rows = progress.map((p) => {
+    const lines = progressLines(p);
+    const title = p.name ? paragraph(`<strong>${escapeHtml(p.name)}</strong>`, { margin: "0 0 6px" }) : "";
+    const body = lines.map((line, i) => paragraph(escapeHtml(line), { margin: i === lines.length - 1 ? "0" : "0 0 4px", size: 15 })).join("\n");
+    return `<tr><td style="padding:0 0 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f9fafb;border:1px solid ${CARD_BORDER};border-radius:10px;">
+<tr><td style="padding:16px;">
+${title}
+${body}
+</td></tr>
+</table>
+</td></tr>`;
+  });
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 4px;">
+${rows.join("\n")}
+</table>`;
+}
+
+/** The blocks as plain text: "Maya: 12 problems solved, 9 without help. Practiced: Times tables." */
+function progressText(progress: readonly LearnerProgress[]): string {
+  return progress
+    .map((p) => {
+      const lines = progressLines(p).join(". ");
+      return p.name ? `- ${p.name}: ${lines}.` : `- ${lines}.`;
+    })
+    .join("\n");
+}
+
+/* ------------------------------------------------------------------------- */
+/* Free trial nudge: the first practice                                       */
+/* ------------------------------------------------------------------------- */
+
+export type FirstPracticeInput = {
+  /** the students' safe first names (activity.ts, learnerNames); none or several read without them */
+  names: readonly string[];
+  /** problems in a day's set (DAILY_GOAL) and about how long it takes */
+  problems: number;
+  minutes: number;
+  /** the home, where Today's practice is */
+  siteUrl: string;
+  /** "Manage or cancel" in the footer */
+  manageUrl: string;
+  planName: string;
+};
+
+/**
+ * Sent once per trial, about a day after it started, when nobody in the family has practiced since
+ * the welcome (src/lib/email/nudges.ts). The plan is paid for by a grown-up who may never have seen
+ * the app: what is waiting, how long it takes, and the one tap that starts it.
+ */
+export function firstPracticeEmail(input: FirstPracticeInput): RenderedEmail {
+  const home = siteLink(input.siteUrl, "/");
+  const manage = emailHref(input.manageUrl);
+  const who = whose(input.names);
+  const size = `${input.problems} problems, about ${input.minutes} minutes`;
+
+  const title = who ? `${who} first practice is ready` : "Today's practice is ready";
+  const subject = `${title}: ${size}`;
+  const preheader = `${size}. Tap Today's practice on the Agathon home screen.`;
+  const waiting = `A short set is waiting on Agathon: ${size}.`;
+  const how =
+    input.names.length === 1
+      ? `Open Agathon and tap Today's practice on the home screen. ${input.names[0]} writes each step by hand, and the tutor checks it along the way.`
+      : input.names.length > 1
+        ? "Open Agathon and tap Today's practice on the home screen. Each child has a set of their own, and the tutor checks each step along the way."
+        : "Open Agathon and tap Today's practice on the home screen. Each step is written by hand, and the tutor checks it along the way.";
+  const habit = "A few minutes on most days is what makes it stick.";
+  const footer = `You're getting this email because ${input.planName}'s free trial was started on your Agathon account.`;
+
+  const card = [heading(title), paragraph(escapeHtml(waiting)), paragraph(escapeHtml(how)), paragraph(escapeHtml(habit)), button("Open Today's practice", home)].join("\n");
+  const html = layout({ title: subject, preheader, card, footer: `${escapeHtml(footer)} ${link("Manage or cancel", manage)}` });
+  const text = textBody([title, waiting, how, habit, `Open Today's practice: ${home}`, "--", footer, `Manage or cancel: ${manage}`]);
+  return { subject, html, text };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Free trial nudge: how it's going                                           */
+/* ------------------------------------------------------------------------- */
+
+export type TrialProgressInput = {
+  /** who did what (only learners with something to say); the email is not sent without any */
+  progress: readonly LearnerProgress[];
+  /** when the free trial ends and the first charge is made */
+  trialEnd: Date;
+  siteUrl: string;
+  manageUrl: string;
+  planName: string;
+  timeZone?: string;
+};
+
+/**
+ * Sent once per trial, around its fourth day, when the family has done something
+ * (src/lib/email/nudges.ts): what each child did, so the grown-up sees what they are paying for
+ * before the card is charged, and when the trial ends.
+ */
+export function trialProgressEmail(input: TrialProgressInput): RenderedEmail {
+  const progress = input.progress.filter((p) => progressLines(p).length > 0);
+  if (progress.length === 0) throw new Error("trial progress email without any progress");
+  const { day } = formatEmailDate(input.trialEnd, input.timeZone);
+  const home = siteLink(input.siteUrl, "/");
+  const manage = emailHref(input.manageUrl);
+  const names = progress.map((p) => p.name).filter((n): n is string => n !== null);
+  const who = names.length === progress.length ? whose(names) : null;
+
+  const subject = who ? `${who} first days on Agathon` : "Your first days on Agathon";
+  const title = "Here's how it's going";
+  const preheader = `${progressLines(progress[0])[0]}. The free trial runs until ${day}.`;
+  const lead = soFarLead(progress);
+  const trial = `The free trial runs until ${day}. Nothing to do if you'd like to keep going.`;
+  const footer = `You're getting this email because ${input.planName}'s free trial was started on your Agathon account.`;
+
+  const card = [
+    heading(title),
+    paragraph(escapeHtml(lead)),
+    progressBlocks(progress),
+    paragraph(`${escapeHtml(trial)} ${escapeHtml("To stop, use")} ${link("Manage or cancel", manage)}.`),
+    button("Open Agathon", home),
+  ].join("\n");
+  const html = layout({ title: subject, preheader, card, footer: escapeHtml(footer) });
+  const text = textBody([title, lead, progressText(progress), trial, `To stop, use Manage or cancel: ${manage}`, `Open Agathon: ${home}`, "--", footer]);
   return { subject, html, text };
 }

@@ -18,6 +18,7 @@ import { TRIAL_REMINDER_WINDOW } from "@/lib/email/trialReminders";
 import { isPlaceholder, LEGAL, TERMS_VERSION } from "@/lib/legal";
 import { LIVE_MODELS } from "@/lib/live/contracts";
 import { buildStrokesBody } from "@/lib/server/mathpix";
+import { SPEAK_MAX_CHARS } from "@/lib/speech/contracts";
 import { PROVIDER_PRIVACY, TEXT_MODELS } from "@/lib/server/openrouter";
 
 const PAGES = {
@@ -160,6 +161,14 @@ describe("privacy: who gets what", () => {
     for (const name of ["Supabase", "Vercel", "OpenRouter", "Mathpix", "Stripe", "Resend", "ElevenLabs", "tldraw", "unpkg"]) {
       expect(privacy, name).toContain(name);
     }
+  });
+
+  it("says read aloud sends the tutor's words (never the handwriting) to ElevenLabs, and the browser's voice speaks otherwise", () => {
+    expect(privacy).toContain("Reads the tutor’s hints and questions aloud");
+    expect(privacy).toContain(`at most ${SPEAK_MAX_CHARS} characters`);
+    expect(privacy).toContain("never your handwriting");
+    expect(privacy).toContain("Your handwriting is never sent to ElevenLabs.");
+    expect(privacy).toContain("Read aloud’s voice when ElevenLabs is not available");
   });
 
   it("names the maker of every AI model the code can call", () => {

@@ -38,6 +38,10 @@ export const PUBLIC_ROUTES = Object.freeze([
   "src/app/api/health/route.ts",
   // Trial-reminder cron: no user JWT exists; the shared CRON_SECRET bearer token is the auth.
   "src/app/api/cron/trial-reminders/route.ts",
+  // The weekly report email's unsubscribe: opened from a mail app, signed out; the link's HMAC
+  // (under REPORT_LINK_SECRET, else CRON_SECRET) is the auth. GET only asks; POST (the page's
+  // button, or RFC 8058 one-click) turns that account's email off, and that is all it can do.
+  "src/app/api/report/unsubscribe/route.ts",
 ]);
 
 /** Why each public route may skip requireUser (enforced by routeProtection.test.ts). */
@@ -49,6 +53,7 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/client-errors/route.ts": "browser error reports, sent signed out too; per-IP limit, 16 KB body cap, zod; logs only",
   "src/app/api/health/route.ts": "uptime monitor probe; answers { ok, db, release } only",
   "src/app/api/cron/trial-reminders/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
+  "src/app/api/report/unsubscribe/route.ts": "email unsubscribe link; requires an HMAC of the user id under REPORT_LINK_SECRET (else CRON_SECRET); GET only asks, POST only turns the weekly email off",
 });
 
 /** Routes whose handlers legitimately have no zod body schema. */
@@ -61,6 +66,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/health/route.ts", // GET only
   "src/app/api/cron/trial-reminders/route.ts", // GET only (Vercel cron); ?dryRun=1 is a query param
   "src/app/api/email/welcome/route.ts", // POST with an empty body: the server decides who and whether
+  "src/app/api/family/route.ts", // GET (?tz= is a query param) and DELETE (every kid of the caller's family), no body
   "src/app/api/admin/overview/route.ts", // GET only
   // The admin console's reads (GET only; ids in the path, filters in the query string, zod-checked).
   "src/app/api/admin/users/route.ts",
@@ -69,6 +75,13 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/admin/boards/[id]/route.ts",
   "src/app/api/admin/bugs/route.ts",
   "src/app/api/admin/bugs/[id]/screenshot/route.ts",
+  "src/app/api/admin/funnel/route.ts",
+  // The weekly report (GET only; the week and zone, and the board id, are in the URL, zod-checked).
+  "src/app/api/report/route.ts",
+  "src/app/api/report/boards/[id]/route.ts",
+  // GET, and POST whose body (RFC 8058's `List-Unsubscribe=One-Click`, or the page's empty form) is never read
+  "src/app/api/report/unsubscribe/route.ts",
+  "src/app/api/admin/referrals/route.ts",
 ]);
 
 export const API_ROUTES = Object.freeze([
@@ -172,6 +185,36 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
+    path: "/api/admin/funnel",
+    file: "src/app/api/admin/funnel/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "none",
+    purpose: "Admin console: the growth funnel (?tz=): sign-ups by week and by source, each stage to paying, MRR; counts only",
+    status: "active",
+  },
+  {
+    path: "/api/admin/referrals",
+    file: "src/app/api/admin/referrals/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "none",
+    purpose: "Admin console: every referral (give a month, get a month), both accounts' emails, the referrer's Stripe customer, status and dates",
+    status: "active",
+  },
+  {
+    path: "/api/admin/referrals/[id]",
+    file: "src/app/api/admin/referrals/[id]/route.ts",
+    methods: ["PATCH"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "zod",
+    purpose: "Admin console: mark a referral rewarded (after the Stripe credit) or void; logged as referral.reward / referral.void",
+    status: "active",
+  },
+  {
     path: "/api/admin/users",
     file: "src/app/api/admin/users/route.ts",
     methods: ["GET"],
@@ -257,6 +300,92 @@ export const API_ROUTES = Object.freeze([
     limit: "emailWelcome",
     body: "none",
     purpose: "The caller's welcome email, once per account, after onboarding (address from the verified account, never the client)",
+    status: "active",
+  },
+  // Families (src/lib/family): a grown-up's kid profiles. Service role behind requireUser; every id
+  // is checked against the caller's own family (src/lib/family/members.ts).
+  {
+    path: "/api/family",
+    file: "src/app/api/family/route.ts",
+    methods: ["DELETE", "GET"],
+    auth: "user",
+    limit: "family",
+    body: "none",
+    purpose: "The caller's family (members, the grown-up's view of each kid's numbers); DELETE removes the kids' saved images before the grown-up's account (and the kids' with it) is deleted",
+    status: "active",
+  },
+  {
+    path: "/api/family/kids",
+    file: "src/app/api/family/kids/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "family",
+    body: "zod",
+    purpose: "A grown-up with Agathon Unlimited adds a kid profile (a server-made account with no email, password or ink of its own; 6 adds a day per family)",
+    status: "active",
+  },
+  {
+    path: "/api/family/kids/[id]",
+    file: "src/app/api/family/kids/[id]/route.ts",
+    methods: ["DELETE", "PATCH"],
+    auth: "user",
+    limit: "family",
+    body: "zod",
+    purpose: "A grown-up edits (PATCH) or removes (DELETE: the account and its data) one of their own kids",
+    status: "active",
+  },
+  {
+    path: "/api/family/pin",
+    file: "src/app/api/family/pin/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "family",
+    body: "zod",
+    purpose: "The grown-up sets or changes their 4-digit PIN (stored as a scrypt hash)",
+    status: "active",
+  },
+  {
+    path: "/api/family/switch",
+    file: "src/app/api/family/switch/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "familySwitch",
+    body: "zod",
+    purpose: "Switch to another profile of the caller's family: a server-minted session; to the grown-up only with their PIN (5 tries per 15 min, and 10 wrong a day per family, then locked until the grown-up signs in)",
+    status: "active",
+  },
+  // The weekly parent report (src/lib/report). Service role behind requireUser; every id is checked
+  // against the caller's own family (src/lib/report/access.ts).
+  {
+    path: "/api/report",
+    file: "src/app/api/report/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "report",
+    body: "none",
+    purpose: "The caller's weekly report (?week=, ?tz=): each of a grown-up's kids' weeks, or a kid's or solo student's own, and the email setting",
+    status: "active",
+  },
+  {
+    path: "/api/report/boards/[id]",
+    file: "src/app/api/report/boards/[id]/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "report",
+    body: "none",
+    purpose: "One board to replay from the weekly report: the caller's own, or one of their own kids' (404 for any other)",
+    status: "active",
+  },
+  {
+    path: "/api/report/unsubscribe",
+    file: "src/app/api/report/unsubscribe/route.ts",
+    methods: ["GET", "POST"],
+    auth: "public",
+    limit: "ip:reportUnsubscribe",
+    body: "none",
+    // 400 without a signed link; 503 when REPORT_LINK_SECRET and CRON_SECRET / the service role key are unset.
+    withoutTokenStatus: [400, 503],
+    purpose: "The weekly report email's unsubscribe (signed link): GET answers a confirm page, POST (its button, or RFC 8058 one-click) turns that account's email off; small HTML pages",
     status: "active",
   },
   {
@@ -349,6 +478,16 @@ export const API_ROUTES = Object.freeze([
     limit: "liveTitle",
     body: "zod",
     purpose: "Live Math: a board's smart name from the maths on it (uncharged)",
+    status: "active",
+  },
+  {
+    path: "/api/live/speak",
+    file: "src/app/api/live/speak/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveSpeak",
+    body: "zod",
+    purpose: "Read aloud: the tutor's words -> ElevenLabs speech (audio/mpeg, streamed; uncharged, a day's cap too); 503 feature_unavailable without ELEVENLABS_API_KEY",
     status: "active",
   },
   {

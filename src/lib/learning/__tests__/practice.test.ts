@@ -17,9 +17,10 @@ import { planHandwriting } from "@/lib/live/handwriting";
 import { normalizeStep } from "@/lib/live/liveLoop";
 import { analyzeColumn, localSolve } from "@/lib/live/localSolve";
 import { badgeFor } from "@/lib/live/policy";
-import { SKILLS, type SkillId } from "../contracts";
+import { FINER_SKILLS, isCoarseSkillId, SKILLS, type SkillId } from "../contracts";
 import { MAX_PRACTICE } from "../generators";
 import { looseSkeleton, skeletonOf } from "../generators/shape";
+import { gradeOfSkill, K8_SKILL_IDS, type K8SkillId } from "../grades";
 import { hasPractice, practiceProblems } from "../practice";
 import { classifyProblem } from "../skills";
 
@@ -42,6 +43,21 @@ const canDraw = (lines: readonly string[]) => planHandwriting(lines, { size: PRO
 function marked(p: readonly string[]): boolean {
   return p.length === 1 && !/\\frac\{d\}\{dx\}|\\int(?!_)/.test(p[0]);
 }
+
+/** What each skill's answers look like (the engine's last line), where a skill has one shape of answer. */
+const WHOLE: ReadonlySet<SkillId> = new Set<SkillId>([
+  "add_subtract",
+  "multiply_divide",
+  "order_of_operations",
+  "powers_roots",
+  ...FINER_SKILLS.add_subtract,
+  ...FINER_SKILLS.multiply_divide,
+]);
+const FRACTION: ReadonlySet<SkillId> = new Set<SkillId>(["fractions", ...FINER_SKILLS.fractions]);
+const DECIMAL: ReadonlySet<SkillId> = new Set<SkillId>(["decimals_add_subtract", "decimals_multiply"]);
+
+/** Skills whose problems all have one shape (`a ÷ b`, `a × b`, `a/b`): their forms differ in their numbers only. */
+const ONE_SHAPE: ReadonlySet<SkillId> = new Set<SkillId>(["division_facts", "multiply_by_tens", "multiply_multi_digit", "long_division", "equivalent_fractions"]);
 
 describe("which skills have practice", () => {
   it("every skill but word problems, proofs and chemistry (words or a reaction on the board) and other", () => {
@@ -81,9 +97,14 @@ describe("a batch of practice problems", () => {
   });
 
   it("varies in form: consecutive problems come from different forms", () => {
-    for (const skill of PRACTISED) {
+    for (const skill of PRACTISED.filter((s) => !ONE_SHAPE.has(s))) {
       const shapes = new Set(practiceProblems(skill, 6, 7).map((p) => looseSkeleton(skeletonOf(p))));
       expect(shapes.size, skill).toBeGreaterThanOrEqual(2);
+    }
+    // one shape, but a range of sizes: a fact, then bigger numbers
+    for (const skill of ONE_SHAPE) {
+      const sizes = new Set(practiceProblems(skill, 6, 7).map((p) => (p[0].match(/\d/g) ?? []).length));
+      expect(sizes.size, skill).toBeGreaterThanOrEqual(2);
     }
     // the example of the brief: ax + b = c, x/a − b = c and b − ax = c all come up
     const two = practiceProblems("two_step_equations", 12, 1).map((p) => p[0]);
@@ -120,6 +141,58 @@ describe("a batch of practice problems", () => {
   });
 });
 
+describe("the K–8 path's problems: numbers right for the grade", () => {
+  const batch = (skill: K8SkillId) => [1, 2, 3, 4].flatMap((seed) => practiceProblems(skill, 24, seed)).map((p) => p.join(" "));
+  const numbers = (text: string) => (text.match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
+  /** `a ÷ b` as its two numbers */
+  const quotient = (text: string) => /^(\d+) \\div (\d+)$/.exec(text)!.slice(1).map(Number);
+
+  it("never a negative number, and no unknown before 6th grade", () => {
+    for (const skill of K8_SKILL_IDS) {
+      for (const text of batch(skill)) {
+        expect(text, `${skill}: ${text}`).not.toMatch(/(^|[(=]\s*|[+\-×÷]\s+|\\(?:times|div) )-\d/);
+        if ((gradeOfSkill(skill) ?? 9) <= 5) expect(text.replace(/\\[a-z]+/g, ""), `${skill}: ${text}`).not.toMatch(/[a-z]/i);
+      }
+    }
+  });
+
+  it("Kindergarten: everything up to 10; 1st grade: facts to 20", () => {
+    for (const text of [...batch("add_within_10"), ...batch("subtract_within_10")]) {
+      for (const n of numbers(text)) expect(n, text).toBeLessThanOrEqual(10);
+      expect(classifyProblem([text]), text).toMatch(/_within_10$/);
+    }
+    for (const text of [...batch("add_within_20"), ...batch("subtract_within_20")]) for (const n of numbers(text)) expect(n, text).toBeLessThanOrEqual(20);
+    for (const text of batch("add_tens")) expect(numbers(text).filter((n) => n % 10 !== 0).length, text).toBeLessThanOrEqual(1);
+  });
+
+  it("times tables 2–12; division facts and long division come out whole", () => {
+    for (const text of batch("times_tables")) for (const n of numbers(text)) expect(n >= 2 && n <= 12, text).toBe(true);
+    for (const text of batch("division_facts")) {
+      const [a, b] = quotient(text);
+      expect(a % b === 0 && b >= 2 && b <= 12 && a / b >= 2 && a / b <= 12, text).toBe(true);
+    }
+    for (const text of batch("long_division")) {
+      const [a, b] = quotient(text);
+      // a 2- or 3-digit number over a 1-digit one, no remainder, more than a fact
+      expect(a >= 10 && a <= 999 && b >= 2 && b <= 9 && a % b === 0 && a / b > 12, text).toBe(true);
+    }
+  });
+
+  it("fractions over small denominators; decimals with 1–2 places; percents of friendly numbers", () => {
+    for (const skill of FINER_SKILLS.fractions) {
+      for (const text of batch(skill as K8SkillId)) for (const m of text.matchAll(/\\frac\{\d+\}\{(\d+)\}/g)) expect(Number(m[1]), text).toBeLessThanOrEqual(skill === "equivalent_fractions" ? 60 : 12);
+    }
+    for (const skill of ["decimals_add_subtract", "decimals_multiply"] as const) for (const text of batch(skill)) expect(text, text).not.toMatch(/\.\d{3}/);
+    for (const text of batch("percents")) {
+      // the percent is a friendly one, or the unknown (`x\%`)
+      const p = /(\d+)\\%/.exec(text)?.[1];
+      if (p !== undefined) expect([5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 80], text).toContain(Number(p));
+      else expect(text, text).toMatch(/^x\\%/);
+      for (const n of numbers(text)) expect(n, text).toBeLessThanOrEqual(400);
+    }
+  });
+});
+
 describe.each(PRACTISED)("practice: %s", (skill) => {
   const problems = SEEDS.flatMap((seed) => practiceProblems(skill, COUNT, seed));
 
@@ -137,8 +210,11 @@ describe.each(PRACTISED)("practice: %s", (skill) => {
       const answer = answerOf(solved.steps);
       expect(isCleanAnswer(answer), `${label} → ${answer}`).toBe(true);
       expect(answer, `${label} → ${answer}`).not.toMatch(/\\ln|\\log|\\approx|\\varnothing|\\emptyset/);
-      if (skill !== "fractions" && skill !== "decimals_percents" && /^(add|multiply|order|powers)/.test(skill)) expect(answer, label).toMatch(/^= \d+$/);
-      if (skill === "fractions") expect(answer, label).toMatch(/^= (\d+|\\frac\{\d+\}\{\d+\})$/);
+      if (WHOLE.has(skill)) expect(answer, label).toMatch(/^= \d+$/);
+      if (FRACTION.has(skill)) expect(answer, label).toMatch(/^= (\d+|\\frac\{\d+\}\{\d+\}|\d+\\frac\{\d+\}\{\d+\})$/);
+      if (DECIMAL.has(skill)) expect(answer, label).toMatch(/^= \d+(\.\d{1,2})?$/);
+      if (skill === "percents") expect(answer, label).toMatch(/^(= |x = )\d+$/);
+      if (skill === "proportions") expect(answer, label).toMatch(/^x = \d+$/);
       // a negative number in it, or one for an answer
       if (skill === "negative_numbers") expect(/(^|[(]|[+-] )-\d/.test(label) || /^= -\d/.test(answer), `${label} → ${answer}`).toBe(true);
     }
@@ -162,10 +238,19 @@ describe.each(PRACTISED)("practice: %s", (skill) => {
 describe("the classifier files practice under its skill", () => {
   // switches on by itself when the real classifier (agent "brain") replaces the stub
   const stub = classifyProblem(["2x + 3 = 11"]) === "other";
-  it.skipIf(stub)("classifyProblem(practiceProblems(skill, …)[i]) is skill", () => {
+  it.skipIf(stub)("classifyProblem(practiceProblems(skill, …)[i]) is skill (a coarse skill's: it, or one of its finer skills)", () => {
     const wrong: string[] = [];
+    const files = (skill: SkillId, got: SkillId) => got === skill || (isCoarseSkillId(skill) && FINER_SKILLS[skill].includes(got));
     for (const skill of PRACTISED) {
-      for (const seed of [1, 2]) for (const p of practiceProblems(skill, 8, seed)) if (classifyProblem(p) !== skill) wrong.push(`${skill}: ${p.join("; ")} → ${classifyProblem(p)}`);
+      for (const seed of [1, 2]) for (const p of practiceProblems(skill, 8, seed)) if (!files(skill, classifyProblem(p))) wrong.push(`${skill}: ${p.join("; ")} → ${classifyProblem(p)}`);
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it("every K–8 skill's problems file under exactly that skill, over many seeds", () => {
+    const wrong: string[] = [];
+    for (const skill of K8_SKILL_IDS) {
+      for (const seed of [1, 2, 3, 4, 5, 6]) for (const p of practiceProblems(skill, 24, seed)) if (classifyProblem(p) !== skill) wrong.push(`${skill}: ${p.join("; ")} → ${classifyProblem(p)}`);
     }
     expect(wrong).toEqual([]);
   });

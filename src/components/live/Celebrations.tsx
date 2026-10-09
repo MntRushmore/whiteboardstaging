@@ -5,14 +5,16 @@ import { createPortal } from "react-dom";
 import type { Editor, TLRecord, TLShapeId } from "tldraw";
 import { Flame } from "lucide-react";
 import { markKindOf } from "@/lib/onboarding/marks";
-import { celebrate, INITIAL_CELEBRATE, MarkSettler, STREAK_FROM, streakText, type Cheer } from "@/lib/live/celebrate";
+import { celebrate, cheerWords, INITIAL_CELEBRATE, MarkSettler, STREAK_FROM, streakText, type Cheer } from "@/lib/live/celebrate";
+import { say } from "@/lib/speech/say";
 import { confettiPieces as confetti, type ConfettiPiece } from "@/lib/confetti";
 import { cn } from "@/lib/utils";
 
 /**
  * Cheers on the board: when the tutor ticks a student's line, a word of praise pops up beside
  * the tick with a burst of confetti (a bigger one on a 5, 10… streak), and from three in a row it
- * counts the streak. A ring gets a kind word instead. What to say is `celebrate`'s call; this
+ * counts the streak. A ring gets a kind word instead. Either is also said aloud when read aloud is
+ * on (`say`), for a child who cannot read the bubble yet. What to say is `celebrate`'s call; this
  * layer only watches the tutor's marks land and draws the result. Motion honours
  * prefers-reduced-motion (globals.css): the words still show, the confetti does not.
  */
@@ -88,7 +90,11 @@ export function Celebrations({ editor }: { editor: Editor }) {
       const id = ++seq.current;
       const pieces = cheer.tone === "win" ? (cheer.burst === "big" ? confetti(36, 110) : confetti(16, 64)) : [];
       setPops((all) => [...all.slice(-2), { id, cheer, ...at, pieces }]);
-      setSaid(cheer.tone === "win" && cheer.streak >= STREAK_FROM ? `${cheer.text} ${streakText(cheer.streak)}` : cheer.text);
+      const words = cheerWords(cheer);
+      setSaid(words);
+      // read aloud (when on): the bubble is the tutor talking, to a child who cannot read it yet;
+      // never over the tutor's own note about the line
+      say(words, { polite: true });
       const done = setTimeout(() => {
         clearing.delete(done);
         setPops((all) => all.filter((p) => p.id !== id));

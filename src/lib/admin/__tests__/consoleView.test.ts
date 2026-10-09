@@ -40,17 +40,19 @@ const at = (ms: number) => new Date(NOW + ms).toISOString();
 const ID = "4f9c2a10-3b7d-4c55-9e21-8a6b0f1d2e33";
 
 describe("the nav", () => {
-  it("lists the five sections in order, the current one marked", () => {
+  it("lists the seven sections in order, the current one marked", () => {
     const nav = consoleNav("bugs", { newBugs: 3, openIssues: 7 });
     expect(nav.map((i) => [i.label, i.href])).toEqual([
       ["Overview", "/admin"],
       ["Users", "/admin/users"],
+      ["Funnel", "/admin/funnel"],
+      ["Referrals", "/admin/referrals"],
       ["Boards", "/admin/boards"],
       ["Bugs", "/admin/bugs"],
       ["Issues", "/admin/issues"],
     ]);
     expect(nav.filter((i) => i.current).map((i) => i.page)).toEqual(["bugs"]);
-    expect(CONSOLE_PAGES).toHaveLength(5);
+    expect(CONSOLE_PAGES).toHaveLength(7);
   });
 
   it("counts new bugs and open issues, in words for a screen reader; none shown at zero or unknown", () => {

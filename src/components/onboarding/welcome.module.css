@@ -5,7 +5,8 @@
   width: 100%;
   max-width: 64rem;
   margin-inline: auto;
-  overflow: hidden;
+  /* clip, not hidden: hidden makes this a scroll box, and the phone's sticky Start bar would stick to nothing */
+  overflow: clip;
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
   background: var(--surface);
@@ -18,19 +19,20 @@
 }
 
 .main {
+  --welcome-pad: var(--space-6);
   display: flex;
   min-width: 0;
   flex-direction: column;
-  padding: var(--space-6);
+  padding: var(--welcome-pad);
 }
 @media (min-width: 640px) {
   .main {
-    padding: var(--space-8);
+    --welcome-pad: var(--space-8);
   }
 }
 @media (min-width: 1024px) {
   .main {
-    padding: var(--space-10);
+    --welcome-pad: var(--space-10);
   }
 }
 
@@ -39,6 +41,8 @@
   flex: 1;
   flex-direction: column;
   margin-top: var(--space-8);
+  /* the course cards' columns follow this column's width, not the window's */
+  container: welcome-step / inline-size;
 }
 
 .kicker {
@@ -56,7 +60,7 @@
   line-height: var(--leading-display);
   text-wrap: balance;
 }
-.courseTitle {
+.gradeTitle {
   margin: 0;
   font-family: var(--font-display);
   font-size: var(--text-2xl);
@@ -66,7 +70,7 @@
   text-wrap: balance;
 }
 .title:focus,
-.courseTitle:focus {
+.gradeTitle:focus {
   outline: none;
 }
 .lede {
@@ -76,15 +80,77 @@
   font-size: var(--text-base);
   line-height: 1.6;
 }
-.courseLede {
+.gradeLede {
   margin: var(--space-2) 0 0;
   color: var(--text-secondary);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   line-height: var(--leading-body);
 }
 
-.courses {
+/* ---- the grades: nine big cards, three by three, sized for a small finger */
+
+.welcome .grades[data-layout] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: var(--space-5);
+}
+.welcome .grades > [data-card][role="radio"] {
+  min-height: 4.75rem;
+  grid-template-areas: "body";
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  justify-items: center;
+  padding: var(--space-3) var(--space-2);
+  text-align: center;
+}
+/* the selection ring and a stronger tint say which one is picked; the small radio dot is not needed */
+.welcome .grades > [data-card][role="radio"] > :first-child {
+  display: none;
+}
+.welcome .grades > [data-card][data-checked] {
+  background: color-mix(in oklch, var(--control-on) 10%, var(--surface));
+}
+.gradeTile {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  white-space: normal;
+}
+.gradeBig {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  line-height: 1.1;
+}
+.gradeSmall {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+/* ---- the high-school courses and "Something else" */
+
+.groupLabel {
+  margin: var(--space-6) 0 0;
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.groupHint {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.courses {
+  margin-top: var(--space-3);
+}
+/* two by two, or the four in a row when the column is wide (a portrait iPad) */
+.welcome .courses[data-layout] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container welcome-step (min-width: 36rem) {
+  .welcome .courses[data-layout] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 .courseLabel {
   white-space: normal;
@@ -93,6 +159,28 @@
 .courses > [data-card]:last-child {
   grid-column: 1 / -1;
 }
+
+/* ---- how they heard of us: optional chips for the grown-up */
+
+.heard {
+  margin-top: var(--space-2);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.welcome .chip {
+  border-radius: 999px;
+}
+/* Touch: a 44 px tap target for each chip; a mouse keeps the small pills. */
+@media (pointer: coarse) {
+  .welcome .chip {
+    min-height: 44px;
+  }
+}
+
 .error {
   margin-top: var(--space-4);
 }
@@ -123,6 +211,35 @@
     margin-left: 0;
   }
 }
+/*
+ * The grade step is taller than a phone, an iPad or a laptop screen: its buttons ride along at the
+ * bottom of the screen, so Start is in reach the moment a grade is picked.
+ */
+.gradeActions {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  margin-inline: calc(-1 * var(--welcome-pad));
+  margin-bottom: calc(-1 * var(--welcome-pad));
+  padding: var(--space-3) var(--welcome-pad) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+@media (min-width: 768px) {
+  .gradeActions {
+    margin-top: auto;
+    padding-top: var(--space-3);
+  }
+}
+/* A portrait iPad gives the grade step the whole width: the pictures beside it squeezed the cards. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .welcome[data-step="2"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .welcome[data-step="2"] .aside {
+    display: none;
+  }
+}
 
 /* The pictures sit beside the words from 768 px; on a phone, between the words and the buttons. */
 .aside {
@@ -149,6 +266,10 @@
 /* Leaves room for the small card's overhang (ProductPictures). */
 .asidePictures {
   width: calc(100% - var(--space-6));
+}
+/* the grade step is tall: its pictures sit at the top, beside the question, not mid-column */
+.welcome[data-step="2"] .aside {
+  align-items: flex-start;
 }
 .phonePictures {
   margin-top: var(--space-8);

@@ -62,16 +62,27 @@ function fakeClient(replies: { select?: Reply | Error; rpc?: Reply | Error; inse
 }
 
 describe("reading the profile", () => {
-  it("reads course and onboarded_at of the student's own row", async () => {
-    const { client, calls } = fakeClient({ select: { data: { course: "geometry", onboarded_at: null }, error: null } });
-    expect(await fetchOnboardingProfile(client, "u1")).toEqual({ ok: true, value: { course: "geometry", onboarded_at: null } });
-    expect(calls).toEqual([{ op: "select", args: ["profiles", "course, onboarded_at", "user_id", "u1"] }]);
+  it("reads course, grade and onboarded_at of the student's own row", async () => {
+    const { client, calls } = fakeClient({ select: { data: { course: "geometry", grade: null, onboarded_at: null }, error: null } });
+    expect(await fetchOnboardingProfile(client, "u1")).toEqual({ ok: true, value: { course: "geometry", grade: null, onboarded_at: null } });
+    expect(calls).toEqual([{ op: "select", args: ["profiles", "course, grade, onboarded_at", "user_id", "u1"] }]);
   });
 
-  it("no row is null; an unknown course reads as none", async () => {
+  it("reads a grade, Kindergarten (0) included", async () => {
+    const third = fakeClient({ select: { data: { course: "other", grade: 3, onboarded_at: null }, error: null } });
+    expect(await fetchOnboardingProfile(third.client, "u1")).toEqual({ ok: true, value: { course: "other", grade: 3, onboarded_at: null } });
+    const k = fakeClient({ select: { data: { course: "other", grade: 0, onboarded_at: null }, error: null } });
+    expect(await fetchOnboardingProfile(k.client, "u1")).toEqual({ ok: true, value: { course: "other", grade: 0, onboarded_at: null } });
+  });
+
+  it("no row is null; an unknown course or grade reads as none", async () => {
     expect(await fetchOnboardingProfile(fakeClient({ select: { data: null, error: null } }).client, "u1")).toEqual({ ok: true, value: null });
-    const odd = fakeClient({ select: { data: { course: "astrology", onboarded_at: "2026-09-28T00:00:00Z" }, error: null } });
-    expect(await fetchOnboardingProfile(odd.client, "u1")).toEqual({ ok: true, value: { course: null, onboarded_at: "2026-09-28T00:00:00Z" } });
+    const odd = fakeClient({ select: { data: { course: "astrology", grade: 12, onboarded_at: "2026-09-28T00:00:00Z" }, error: null } });
+    expect(await fetchOnboardingProfile(odd.client, "u1")).toEqual({ ok: true, value: { course: null, grade: null, onboarded_at: "2026-09-28T00:00:00Z" } });
+    for (const grade of [-1, 2.5, "3", 9]) {
+      const bad = fakeClient({ select: { data: { course: "other", grade, onboarded_at: null }, error: null } });
+      expect(await fetchOnboardingProfile(bad.client, "u1")).toEqual({ ok: true, value: { course: "other", grade: null, onboarded_at: null } });
+    }
   });
 
   it("a database without the migration (42703) or a network failure is an error, never a throw", async () => {
@@ -84,15 +95,34 @@ describe("reading the profile", () => {
 
 describe("writing the profile (save_onboarding only)", () => {
   it("stores the course", async () => {
-    const { client, calls } = fakeClient({ rpc: { data: { course: "algebra2", onboarded_at: null }, error: null } });
-    expect(await saveOnboarding(client, { course: "algebra2" })).toEqual({ ok: true, value: { course: "algebra2", onboarded_at: null } });
+    const { client, calls } = fakeClient({ rpc: { data: { course: "algebra2", grade: null, heard_from: null, onboarded_at: null }, error: null } });
+    expect(await saveOnboarding(client, { course: "algebra2" })).toEqual({ ok: true, value: { course: "algebra2", grade: null, onboarded_at: null } });
     expect(calls).toEqual([{ op: "rpc", args: ["save_onboarding", { p_course: "algebra2", p_complete: false }] }]);
+  });
+
+  it("stores a grade with the course 'other', and where they heard of us", async () => {
+    const { client, calls } = fakeClient({ rpc: { data: { course: "other", grade: 0, heard_from: "tiktok", onboarded_at: null }, error: null } });
+    expect(await saveOnboarding(client, { course: "other", grade: 0, heardFrom: "tiktok" })).toEqual({
+      ok: true,
+      value: { course: "other", grade: 0, onboarded_at: null },
+    });
+    expect(calls).toEqual([{ op: "rpc", args: ["save_onboarding", { p_course: "other", p_complete: false, p_grade: 0, p_heard_from: "tiktok" }] }]);
+  });
+
+  it("sends a grade or a source only with a value: without them it is v1's call (a database before the migration still saves)", async () => {
+    const { client, calls } = fakeClient({ rpc: { data: { course: "geometry", onboarded_at: null }, error: null } });
+    await saveOnboarding(client, { course: "geometry", grade: null, heardFrom: null });
+    await saveOnboarding(client, { complete: true, heardFrom: "friend" });
+    expect(calls.map((c) => c.args[1])).toEqual([
+      { p_course: "geometry", p_complete: false },
+      { p_course: null, p_complete: true, p_heard_from: "friend" },
+    ]);
   });
 
   it("marks onboarding done, with or without a course", async () => {
     const at = "2026-09-28T12:00:00Z";
-    const { client, calls } = fakeClient({ rpc: { data: { course: null, onboarded_at: at }, error: null } });
-    expect(await saveOnboarding(client, { complete: true })).toEqual({ ok: true, value: { course: null, onboarded_at: at } });
+    const { client, calls } = fakeClient({ rpc: { data: { course: null, grade: null, onboarded_at: at }, error: null } });
+    expect(await saveOnboarding(client, { complete: true })).toEqual({ ok: true, value: { course: null, grade: null, onboarded_at: at } });
     await saveOnboarding(client, { course: null, complete: true });
     expect(calls.map((c) => c.args[1])).toEqual([
       { p_course: null, p_complete: true },
@@ -100,10 +130,16 @@ describe("writing the profile (save_onboarding only)", () => {
     ]);
   });
 
-  it("never sends a course the database would refuse", async () => {
+  it("never sends a course, grade or source the database would refuse", async () => {
     const { client, calls } = fakeClient({ rpc: { data: { course: null, onboarded_at: null }, error: null } });
-    await saveOnboarding(client, { course: "calculus" as never });
-    expect(calls[0].args[1]).toEqual({ p_course: null, p_complete: false });
+    await saveOnboarding(client, { course: "calculus" as never, grade: 9 as never, heardFrom: "radio" as never });
+    await saveOnboarding(client, { grade: -1 as never });
+    await saveOnboarding(client, { grade: 1.5 as never });
+    expect(calls.map((c) => c.args[1])).toEqual([
+      { p_course: null, p_complete: false },
+      { p_course: null, p_complete: false },
+      { p_course: null, p_complete: false },
+    ]);
   });
 
   it("reports a refused or failed call instead of throwing", async () => {
@@ -192,6 +228,28 @@ describe("the guided-board marker", () => {
     expect(readTourMarker(s, "u1")).toEqual({ ...MARKER, autoBefore: false });
     const odd = memoryStorage({ [tourKey("u1")]: JSON.stringify({ ...MARKER, autoBefore: "no" }) });
     expect(readTourMarker(odd, "u1")).toEqual(MARKER);
+  });
+
+  it("keeps coach mark 1's tick, for coach mark 2 after a reload — only a real one", () => {
+    const s = memoryStorage();
+    writeTourMarker(s, "u1", { ...MARKER, step: "help", ticked: true });
+    expect(readTourMarker(s, "u1")).toEqual({ ...MARKER, step: "help", ticked: true });
+    for (const ticked of [false, "yes", 1, null]) {
+      const odd = memoryStorage({ [tourKey("u1")]: JSON.stringify({ ...MARKER, ticked }) });
+      expect(readTourMarker(odd, "u1"), String(ticked)).toEqual(MARKER);
+    }
+  });
+
+  it("keeps the grade the welcome chose (Kindergarten included), and drops one that is not a grade", () => {
+    const s = memoryStorage();
+    writeTourMarker(s, "u1", { ...MARKER, course: "other", grade: 0 });
+    expect(readTourMarker(s, "u1")).toEqual({ ...MARKER, course: "other", grade: 0 });
+    writeTourMarker(s, "u1", { ...MARKER, course: "other", grade: 8 });
+    expect(readTourMarker(s, "u1")?.grade).toBe(8);
+    for (const grade of [9, -1, 2.5, "3", null]) {
+      const odd = memoryStorage({ [tourKey("u1")]: JSON.stringify({ ...MARKER, grade }) });
+      expect(readTourMarker(odd, "u1"), String(grade)).toEqual(MARKER);
+    }
   });
 
   it("survives garbage: bad JSON, a missing board, an unknown step", () => {

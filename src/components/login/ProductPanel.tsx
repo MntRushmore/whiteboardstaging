@@ -1,23 +1,28 @@
-import { ChartSpline, ListChecks, PenLine } from "lucide-react";
+import { CircleCheck, GraduationCap, Users } from "lucide-react";
 import { BetaBadge } from "@/components/app/BetaBadge";
-import { ProductPictures } from "@/components/app/ProductPictures";
+import { MAX_KIDS } from "@/lib/family/contracts";
+import { MiniBoard } from "./MiniBoard";
 import styles from "./auth.module.css";
 
 /**
- * What the product is, beside the sign-in form. Static and server-rendered: the full panel (with
- * real board screenshots) from 1024 px up, and ProductLine, a two-line version, above the form on
- * phones and on /reset-password.
+ * What the product is, beside the sign-in form, in the landing page's words (/parents,
+ * src/components/landing/copy.ts): math practice for kindergarten to 8th grade, checked line by line
+ * as the kid writes, one plan for the family. Static and server-rendered: the full panel (with a
+ * still board of the landing page's ink) from 1024 px up, and ProductLine, a two-line version,
+ * above the form on phones and on /reset-password.
  */
 
 export const PRODUCT_NAME = "Agathon";
-export const PRODUCT_LINE = "The whiteboard that writes back.";
+/** The landing page's headline, in the two lines the panel sets it in. */
+const HEADLINE_LINES = ["Math practice", "kids actually do."] as const;
+export const PRODUCT_LINE = HEADLINE_LINES.join(" ");
 export const PRODUCT_DESCRIPTION =
-  "Students write maths by hand. The tutor reads it, checks each step, and answers in its own handwriting.";
+  "Kids work problems by hand on a whiteboard. A tutor checks every line as they write, and when they slip, it gives a hint instead of the answer.";
 
-const POINTS = [
-  { icon: ListChecks, text: "Checks every step" },
-  { icon: PenLine, text: "Solves step by step, in its own hand" },
-  { icon: ChartSpline, text: "Graphs, geometry and proofs" },
+export const PRODUCT_POINTS = [
+  { icon: GraduationCap, text: "Kindergarten to 8th grade, or a high school course" },
+  { icon: CircleCheck, text: "A tutor that checks every line" },
+  { icon: Users, text: `One plan for up to ${MAX_KIDS} kids, each with their own profile` },
 ] as const;
 
 export function ProductPanel() {
@@ -29,25 +34,24 @@ export function ProductPanel() {
           <BetaBadge />
         </p>
         <div className={styles.panelBody}>
-          <h2 className={styles.headline}>{PRODUCT_LINE}</h2>
+          <h2 className={styles.headline}>
+            {HEADLINE_LINES.map((line, i) => (
+              <span key={line} className={styles.headlineLine}>
+                {i > 0 && " "}
+                {line}
+              </span>
+            ))}
+          </h2>
           <p className={styles.description}>{PRODUCT_DESCRIPTION}</p>
           <ul className={styles.points}>
-            {POINTS.map(({ icon: Icon, text }) => (
+            {PRODUCT_POINTS.map(({ icon: Icon, text }) => (
               <li key={text}>
                 <Icon size={18} strokeWidth={1.75} aria-hidden />
                 {text}
               </li>
             ))}
           </ul>
-          <ProductPictures
-            className={styles.panelPictures}
-            preload
-            // Hidden below 1024 px: the 1px slot makes phones fetch the smallest variant, not this one.
-            sizes={{
-              solved: "(min-width: 1536px) 44rem, (min-width: 1280px) 40rem, (min-width: 1024px) 36rem, 1px",
-              checked: "(min-width: 1536px) 20rem, (min-width: 1280px) 18rem, (min-width: 1024px) 16rem, 1px",
-            }}
-          />
+          <MiniBoard className={styles.panelBoard} />
         </div>
       </div>
     </aside>

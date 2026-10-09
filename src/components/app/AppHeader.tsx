@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChartColumn, CreditCard, FlaskConical, InfinityIcon, ShieldCheck, UserRound } from "lucide-react";
+import { ArrowLeftRight, CalendarCheck, ChartColumn, CreditCard, FlaskConical, InfinityIcon, ShieldCheck, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { reportUserError } from "@/lib/reportAppError";
@@ -19,9 +19,21 @@ import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { ACCOUNT_PATH, BILLING_PATH, INK_COPY, bottleFill, formatInk, inkTone, type InkTone } from "@/lib/billing/inkSummary";
 import { UNLIMITED_METER_COPY, hasPlan, isUnlimited } from "@/lib/billing/unlimited";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
+// Families: a kid profile's menu (Progress, Switch profile); tiny, pure modules.
+import { isKidEmail } from "@/lib/family/contracts";
+import { FAMILY_MENU } from "@/lib/family/menu";
+import { openProfilePicker } from "@/lib/family/picker";
+// The menu's name and picture: the profile's own (one small read of `profiles`, kept for the tab).
+import { avatarImage, headerName } from "@/lib/profile/displayName";
+import { useOwnProfile } from "@/lib/profile/useOwnProfile";
+// The weekly report's menu entry (grown-ups and solo students): a label and a path, nothing more.
+import { REPORT_MENU } from "@/lib/report/menu";
 import { Badge, type BadgeTone } from "@/registry/components/badge/badge";
 import { UserMenu } from "@/registry/components/user-menu/user-menu";
 import styles from "./appShell.module.css";
+
+// Who's practising (the family's profiles): after the page, and nothing for an account with no kids.
+const ProfileSwitcher = lazy(() => import("@/components/family/ProfileSwitcher"));
 
 /** Content width shared by the header and the pages under it (a CSS module class). */
 export const APP_CONTENT_CLASS = styles.content;
@@ -68,8 +80,9 @@ function UnlimitedLink() {
 
 /**
  * The app bar for signed-in pages: product name and the beta badge on the left; Report a bug,
- * the plan's meter and the account menu (Progress, Account, Billing, Feature Labs, Admin for admins,
- * Sign out) on the right. Self-contained
+ * the plan's meter and the account menu (Progress, Account, Billing, Family, Weekly report, Feature Labs, Admin for
+ * admins, Sign out) on the right; a kid profile's menu is Progress and Switch profile, with no meter
+ * (kids never see billing). Self-contained
  * (reads the session and the ink summary itself), so any page can drop it in above an
  * `APP_CONTENT_CLASS` container.
  * The menu is Arc's UserMenu: a panel on desktop, a bottom sheet below 640 px.
@@ -85,8 +98,14 @@ export function AppHeader({ className }: { className?: string }) {
   // Asked once the page is idle and remembered for the tab session: a student's header never waits on it.
   const isAdmin = useIsAdmin(user?.id);
   const email = user?.email ?? "";
-  // No display name in the session; the address before the @ stands in (initial on the avatar).
-  const name = email.split("@")[0] || "Account";
+  // A kid profile (src/lib/family): no billing, no meter, and a menu of Progress and Switch profile.
+  const kid = isKidEmail(email);
+  // The profile's display name and picture (what the family switcher and /account show), for a solo
+  // student, a grown-up and a kid alike; the session's name until it is read, and the address
+  // before the @ only when there is no name at all. ProfileCard's save updates it at once.
+  const profile = useOwnProfile(user?.id);
+  const name = headerName({ profile, user, email, kid });
+  const avatarSrc = avatarImage(profile?.avatar);
 
   // The menu shows "Signing out" until this settles, then closes.
   async function signOut() {
@@ -113,12 +132,18 @@ export function AppHeader({ className }: { className?: string }) {
         {user && (
           <div className={styles.end}>
             <BugReportButton variant="header" />
-            {/* no meter without a plan: the paywall says what there is to say (usePlanGate) */}
-            {summary && (unlimited ? <UnlimitedLink /> : hasPlan(plan) ? <InkLink balance={summary.balance} /> : null)}
+            <Suspense fallback={null}>
+              <ProfileSwitcher />
+            </Suspense>
+            {/* no meter without a plan: the paywall says what there is to say (usePlanGate); and none
+                for a kid, since the meter links to Billing */}
+            {summary && !kid && (unlimited ? <UnlimitedLink /> : hasPlan(plan) ? <InkLink balance={summary.balance} /> : null)}
             <UserMenu
-              user={{ name, email }}
+              // the open menu keeps the address under the name: which account a grown-up is in
+              user={{ name, email: kid ? FAMILY_MENU.kidSubtitle : email, ...(avatarSrc ? { avatarSrc } : {}) }}
               showName
               showTheme={false}
+              className={styles.account}
               items={[
                 {
                   // the path only: importing the Progress page's modules here would load them on every page
@@ -126,30 +151,51 @@ export function AppHeader({ className }: { className?: string }) {
                   icon: <ChartColumn size={16} strokeWidth={1.75} />,
                   onSelect: () => router.push("/progress"),
                 },
-                {
-                  label: "Account",
-                  icon: <UserRound size={16} strokeWidth={1.75} />,
-                  onSelect: () => router.push(ACCOUNT_PATH),
-                },
-                {
-                  label: "Billing",
-                  icon: <CreditCard size={16} strokeWidth={1.75} />,
-                  onSelect: () => router.push(BILLING_PATH),
-                },
-                {
-                  label: "Feature Labs",
-                  icon: <FlaskConical size={16} strokeWidth={1.75} />,
-                  onSelect: () => setLabsOpen(true),
-                },
-                ...(isAdmin
+                ...(kid
                   ? [
                       {
-                        label: "Admin",
-                        icon: <ShieldCheck size={16} strokeWidth={1.75} />,
-                        onSelect: () => router.push("/admin"),
+                        // opens the lazily loaded switcher's picker (src/lib/family/picker.ts)
+                        label: FAMILY_MENU.switchProfile,
+                        icon: <ArrowLeftRight size={16} strokeWidth={1.75} />,
+                        onSelect: openProfilePicker,
                       },
                     ]
-                  : []),
+                  : [
+                      {
+                        label: "Account",
+                        icon: <UserRound size={16} strokeWidth={1.75} />,
+                        onSelect: () => router.push(ACCOUNT_PATH),
+                      },
+                      {
+                        label: "Billing",
+                        icon: <CreditCard size={16} strokeWidth={1.75} />,
+                        onSelect: () => router.push(BILLING_PATH),
+                      },
+                      {
+                        label: FAMILY_MENU.family,
+                        icon: <Users size={16} strokeWidth={1.75} />,
+                        onSelect: () => router.push("/family"),
+                      },
+                      {
+                        label: REPORT_MENU.label,
+                        icon: <CalendarCheck size={16} strokeWidth={1.75} />,
+                        onSelect: () => router.push(REPORT_MENU.path),
+                      },
+                      {
+                        label: "Feature Labs",
+                        icon: <FlaskConical size={16} strokeWidth={1.75} />,
+                        onSelect: () => setLabsOpen(true),
+                      },
+                      ...(isAdmin
+                        ? [
+                            {
+                              label: "Admin",
+                              icon: <ShieldCheck size={16} strokeWidth={1.75} />,
+                              onSelect: () => router.push("/admin"),
+                            },
+                          ]
+                        : []),
+                    ]),
               ]}
               onSignOut={signOut}
             />

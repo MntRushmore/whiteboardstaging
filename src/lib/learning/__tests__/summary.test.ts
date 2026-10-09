@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { SKILLS, type AttemptRecord, type MasteryLevel, type Outcome, type SkillId } from "../contracts";
+import { gradePath } from "../grades";
 import { LearnerHintSchema } from "../hint";
-import { learnerHint, masteryOf, summarize } from "../summary";
+import { learnerHint, masteryOf, refiled, summarize } from "../summary";
 
 const DAY = 86_400_000;
 /** 2026-10-04 15:00 UTC: 10:00 in Chicago (offset 300), 20:30 in India (offset -330). */
@@ -197,6 +198,83 @@ describe("summarize: skills", () => {
     expect(s.weakSkills).toEqual(["factoring", "fractions", "radicals", "two_step_equations", "inequalities"]);
     expect(s.strongSkills).toEqual(["circles", "angles"]);
     expect(s.weakSkills).not.toContain("other");
+  });
+});
+
+describe("summarize: the grade's path", () => {
+  it("the grade's skills are listed as new before they are practised, with the course's, in SKILLS order", () => {
+    const s = summarize([], NOW, { grade: 3 });
+    expect(s.skills.map((k) => k.skill)).toEqual(SKILLS.map((d) => d.id).filter((id) => gradePath(3).includes(id)));
+    expect(s.skills.map((k) => k.name)).toContain("Times tables");
+    expect(s.skills.every((k) => k.level === "new" && k.attempts === 0 && k.lastAt === null)).toBe(true);
+    // a grade and a course: both lists
+    const both = summarize([], NOW, { grade: 0, course: "algebra1" }).skills.map((k) => k.skill);
+    expect(both).toContain("add_within_10");
+    expect(both).toContain("two_step_equations");
+    // no grade, or not a grade: nothing listed up front
+    expect(summarize([], NOW, { grade: null }).skills).toEqual([]);
+    expect(summarize([], NOW, { grade: 12 as never }).skills).toEqual([]);
+  });
+
+  it("a practised path skill has its counts; one outside the path is listed too", () => {
+    const attempts = [...run(["first_try", "first_try"], { skill: "times_tables", problemLatex: "6 \\times 7" }), att({ skill: "angles", at: NOW - 5 * 3_600_000 })];
+    const s = summarize(attempts, NOW, { grade: 3 });
+    expect(s.skills.find((k) => k.skill === "times_tables")).toMatchObject({ level: "almost", attempts: 2, independent: 2 });
+    expect(s.skills.find((k) => k.skill === "division_facts")).toMatchObject({ level: "new", attempts: 0 });
+    expect(s.skills.some((k) => k.skill === "angles")).toBe(true);
+  });
+});
+
+describe("summarize: old rows under a coarse skill are read under their K–8 skill", () => {
+  const old = (skill: SkillId, problemLatex: string, outcome: Outcome, hoursAgo: number) => att({ skill, problemLatex, outcome, course: "other", at: NOW - hoursAgo * 3_600_000 });
+
+  it("a coarse row moves to the skill its problem shows, and counts there with the new rows", () => {
+    const attempts = [
+      old("add_subtract", "7 + 5", "first_try", 1),
+      old("add_subtract", "8 + 6", "first_try", 2),
+      att({ skill: "add_within_20", problemLatex: "9 + 4", outcome: "first_try", at: NOW - 3 * 3_600_000 }),
+      old("multiply_divide", "6 \\times 7", "with_help", 4),
+      old("fractions", "\\frac{3}{4} + \\frac{1}{6}", "first_try", 5),
+      old("decimals_percents", "15\\% \\cdot 80", "first_try", 6),
+    ];
+    const s = summarize(attempts, NOW, { grade: 1 });
+    const by = (id: string) => s.skills.find((k) => k.skill === id);
+    expect(by("add_within_20")).toMatchObject({ attempts: 3, independent: 3, level: "mastered" });
+    expect(by("times_tables")).toMatchObject({ attempts: 1, independent: 0 });
+    expect(by("add_fractions_unlike")?.attempts).toBe(1);
+    expect(by("percents")?.attempts).toBe(1);
+    for (const coarse of ["add_subtract", "multiply_divide", "fractions", "decimals_percents"]) expect(by(coarse), coarse).toBeUndefined();
+    // the recent list shows them under their new skill too; the rows passed in are untouched
+    expect(s.recent.map((a) => a.skill).slice(0, 2)).toEqual(["add_within_20", "add_within_20"]);
+    expect(attempts[0].skill).toBe("add_subtract");
+    expect(s.strongSkills).toEqual(["add_within_20"]);
+    expect(s.weakSkills).toEqual(["times_tables", "add_fractions_unlike", "percents"]);
+  });
+
+  it("a row whose problem fits no finer skill stays where it was; other skills are never re-filed", () => {
+    const attempts = [
+      old("multiply_divide", "9 \\times 4 \\div 6", "first_try", 1),
+      old("fractions", "x^{2} + 1", "first_try", 2),
+      // a row under a K–8 or algebra skill is as stored, whatever its problem shows today
+      att({ skill: "two_step_equations", problemLatex: "7 + 5", at: NOW - 3 * 3_600_000 }),
+      att({ skill: "times_tables", problemLatex: "2x + 3 = 11", at: NOW - 4 * 3_600_000 }),
+    ];
+    const ids = summarize(attempts, NOW).skills.map((k) => k.skill);
+    expect(ids).toEqual(["times_tables", "multiply_divide", "fractions", "two_step_equations"]);
+  });
+
+  it("refiled: one row at a time, the same problem read once", () => {
+    const seen = new Map<string, SkillId>();
+    const a = old("add_subtract", "348 + 276 - 129", "first_try", 1);
+    expect(refiled(a, seen).skill).toBe("add_subtract_within_1000");
+    expect(seen.size).toBe(1);
+    expect(refiled({ ...a, id: "other" }, seen).skill).toBe("add_subtract_within_1000");
+    expect(seen.size).toBe(1);
+    // not a coarse skill, or no problem to read: the very same row
+    const angles = { ...a, skill: "angles" as const };
+    expect(refiled(angles)).toBe(angles);
+    const blank = { ...a, problemLatex: undefined as unknown as string };
+    expect(refiled(blank)).toBe(blank);
   });
 });
 

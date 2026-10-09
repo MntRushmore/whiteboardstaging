@@ -10,6 +10,7 @@ import type { Form, FormTable } from "./form";
 import { FUNCTIONS } from "./functions";
 import { GEOMETRY } from "./geometry";
 import { drawLadderFrom, type Ladder } from "./ladder";
+import { PRIMARY } from "./primary";
 import { makeRng, seedFrom } from "./rng";
 import { SCIENCE } from "./science";
 import { TRIG } from "./trig";
@@ -17,7 +18,8 @@ import { TRIG } from "./trig";
 export type { Form, FormTable } from "./form";
 export { difficultyOf, type Ladder } from "./ladder";
 
-export const GENERATORS: FormTable = { ...ARITHMETIC, ...ALGEBRA, ...FUNCTIONS, ...GEOMETRY, ...TRIG, ...CALCULUS, ...SCIENCE };
+/** Every skill's forms: the K–8 path's (`primary.ts`), then the original skills'. */
+export const GENERATORS: FormTable = { ...PRIMARY, ...ARITHMETIC, ...ALGEBRA, ...FUNCTIONS, ...GEOMETRY, ...TRIG, ...CALCULUS, ...SCIENCE };
 
 /** The most problems one call makes (a practice board holds 12; `write_problems` takes 12). */
 export const MAX_PRACTICE = 24;

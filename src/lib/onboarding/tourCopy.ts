@@ -45,32 +45,58 @@ export const TOUR_COPY = {
   },
 } as const;
 
-/** Coach mark 1: write the next step (`write`), then what the tutor's mark means (`result`). */
-export function writeCopy(state: Pick<TourState, "step" | "outcome" | "unread" | "unjudged">, hint: string | null): CoachCopy {
+/**
+ * How the starter on the board is worked (`StarterProblem.oneStep`): `answer` when its first step
+ * is the answer (`3 + 4`: a young student writes `7`, and "the next step" means nothing to them),
+ * so the coach marks ask for and talk about the answer instead of a step.
+ */
+export interface StarterWords {
+  answer?: boolean;
+}
+
+/** Coach mark 1: write the next step or the answer (`write`), then what the tutor's mark means (`result`). */
+export function writeCopy(state: Pick<TourState, "step" | "outcome" | "unread" | "unjudged">, hint: string | null, { answer = false }: StarterWords = {}): CoachCopy {
   if (state.step === "result") {
-    return state.outcome === "tick"
-      ? { title: "Nice! That tick means your step is right.", body: "Your tutor checks every line you write.", button: TOUR_COPY.next, waiting: false }
-      : { title: "That ring means something's off.", body: "No worries, that's how you learn! Rub it out and try again, or tap Next.", button: TOUR_COPY.next, waiting: false };
+    if (state.outcome === "tick") {
+      return {
+        title: answer ? "Yes! That tick means you got it right." : "Nice! That tick means your step is right.",
+        body: "Your tutor checks every line you write.",
+        button: TOUR_COPY.next,
+        waiting: false,
+      };
+    }
+    return {
+      title: answer ? "That ring means not yet." : "That ring means something's off.",
+      body: "No worries, that's how you learn! Rub it out and try again, or tap Next.",
+      button: TOUR_COPY.next,
+      waiting: false,
+    };
   }
   const body = state.unjudged
-    ? `That ? means your tutor needs a whole line to check.${hint ? ` ${hint}` : " Write the whole next step."}`
+    ? answer
+      ? `That ? means your tutor can't check that yet.${hint ? ` ${hint}` : " Write the whole answer."}`
+      : `That ? means your tutor needs a whole line to check.${hint ? ` ${hint}` : " Write the whole next step."}`
     : state.unread
       ? "Your tutor couldn't read that line. Try writing it a little bigger."
       : hint
         ? `${hint} Your tutor checks it.`
         : "Your tutor checks every line you write.";
-  return { title: hint ? "Grab the pen. Write the next step under the problem." : "Grab the pen. Write a line of maths.", body, button: TOUR_COPY.next, waiting: true };
+  const title = !hint ? "Grab the pen. Write a line of maths." : answer ? "Grab the pen. Write the answer under the problem." : "Grab the pen. Write the next step under the problem.";
+  return { title, body, button: TOUR_COPY.next, waiting: true };
 }
 
 /**
  * Coach mark 2: tap Help me (`help`), then the step the tutor wrote (`helped`). `solve`: the dial
- * is on Solve, where the same button says Solve it and writes every step.
+ * is on Solve, where the same button says Solve it and writes every step. `answer`: the problem is
+ * one whose next step is its answer; `fresh`: the tour has just written it, because the student
+ * already answered the first (`helpProblemFor`).
  */
-export function helpCopy(step: "help" | "helped", help: TourHelp, solve = false): CoachCopy {
+export function helpCopy(step: "help" | "helped", help: TourHelp, solve = false, { answer = false, fresh = false }: StarterWords & { fresh?: boolean } = {}): CoachCopy {
   const button = solve ? "Solve it" : "Help me";
   if (step === "helped") {
-    return solve
-      ? { title: "Your tutor wrote the steps for you!", body: "Read them one line at a time. Tap Next when you're ready.", button: TOUR_COPY.next, waiting: false }
+    if (solve) return { title: "Your tutor wrote the steps for you!", body: "Read them one line at a time. Tap Next when you're ready.", button: TOUR_COPY.next, waiting: false };
+    return answer
+      ? { title: "Your tutor wrote the answer for you!", body: "Read it, then try the next one. Tap Help me any time you're stuck.", button: TOUR_COPY.next, waiting: false }
       : { title: "Your tutor wrote the next step for you!", body: "Read it, then keep going. Tap Help me any time you're stuck.", button: TOUR_COPY.next, waiting: false };
   }
   const body =
@@ -84,8 +110,12 @@ export function helpCopy(step: "help" | "helped", help: TourHelp, solve = false)
             ? "Your tutor is writing it now. Watch the board!"
             : solve
               ? "Your tutor writes the rest of the steps for you."
-              : "Your tutor writes the next step for you.";
-  return { title: `Stuck? Tap ${button}.`, body, button: TOUR_COPY.next, waiting: true };
+              : answer
+                ? "Your tutor writes the answer for you."
+                : "Your tutor writes the next step for you.";
+  // the new problem on the board is the one this coach mark is about
+  const title = fresh && help === "waiting" ? `Here's a new one. Stuck? Tap ${button}.` : `Stuck? Tap ${button}.`;
+  return { title, body, button: TOUR_COPY.next, waiting: true };
 }
 
 /**

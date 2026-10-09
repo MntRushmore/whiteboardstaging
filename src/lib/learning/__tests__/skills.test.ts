@@ -63,12 +63,12 @@ const SPEC: Case[] = [
 
 /** Arithmetic for young students. */
 const ARITHMETIC: Case[] = [
-  ["36 + 2 =", "add_subtract"],
-  ["100 - 37", "add_subtract"],
-  ["7 \\times 8", "multiply_divide"],
-  ["144 \\div 12 =", "multiply_divide"],
-  ["7 x 8", "multiply_divide"],
-  ["12 \\cdot 4", "multiply_divide"],
+  ["36 + 2 =", "add_within_100"],
+  ["100 - 37", "subtract_within_100"],
+  ["7 \\times 8", "times_tables"],
+  ["144 \\div 12 =", "division_facts"],
+  ["7 x 8", "times_tables"],
+  ["12 \\cdot 4", "times_tables"],
   ["-4 + 7", "negative_numbers"],
   ["3 - 8 =", "negative_numbers"],
   ["2 - (-3)", "negative_numbers"],
@@ -76,29 +76,204 @@ const ARITHMETIC: Case[] = [
   ["3 + 4 \\times 2 - 6 \\div 3 =", "order_of_operations"],
   ["(5 + 3) \\times 2", "order_of_operations"],
   ["2 + 3 \\cdot 4 - 1", "order_of_operations"],
-  ["\\frac{3}{4} + \\frac{1}{6}", "fractions"],
-  ["\\frac{1}{2} \\times 8", "fractions"],
-  ["2 \\frac{1}{2} + 1 \\frac{3}{4} =", "fractions"],
-  ["0.5 + 0.25", "decimals_percents"],
-  ["4.2 \\times 3", "decimals_percents"],
-  ["20\\% \\text{ of } 150", "decimals_percents"],
+  ["\\frac{3}{4} + \\frac{1}{6}", "add_fractions_unlike"],
+  ["\\frac{1}{2} \\times 8", "multiply_fractions"],
+  ["2 \\frac{1}{2} + 1 \\frac{3}{4} =", "add_fractions_unlike"],
+  ["0.5 + 0.25", "decimals_add_subtract"],
+  ["4.2 \\times 3", "decimals_multiply"],
+  ["20\\% \\text{ of } 150", "percents"],
   ["2^{5} - 3^{2} =", "powers_roots"],
   ["\\sqrt{144} =", "powers_roots"],
   ["\\sqrt{81} + 2", "powers_roots"],
-  evalCase("ar-05", "fractions"),
-  evalCase("ar-06", "fractions"),
-  evalCase("ar-07", "fractions"),
-  evalCase("ar-13", "fractions"),
-  evalCase("g2-38", "fractions"),
-  evalCase("g2-39", "fractions"),
+  evalCase("ar-05", "multiply_fractions"),
+  evalCase("ar-06", "add_fractions_unlike"),
+  evalCase("ar-07", "divide_fractions"),
+  evalCase("ar-13", "add_fractions_unlike"),
+  evalCase("g2-38", "add_fractions_like"),
+  evalCase("g2-39", "multiply_fractions"),
+  // a fraction and a decimal, a fraction over a negative: no one finer skill, the coarse one
   evalCase("g2-40", "fractions"),
   evalCase("g2-41", "negative_numbers"),
   evalCase("g2-42", "fractions"),
   evalCase("g2-43", "negative_numbers"),
-  evalCase("d3-03", "decimals_percents"),
-  evalCase("up-01", "decimals_percents"),
-  evalCase("up-07", "decimals_percents"),
-  evalCase("g2-35", "decimals_percents"),
+  evalCase("d3-03", "decimals_add_subtract"),
+  evalCase("up-01", "percents"),
+  evalCase("up-07", "decimals_multiply"),
+  evalCase("g2-35", "percents"),
+];
+
+/**
+ * The K–8 path's skills, by their numbers (2026-10-09). The first block is real problems from prod,
+ * word for word; then each skill's edges (10 is within 10, 11 is not; 12 × 12 is a fact, 13 × 2 is
+ * not) and the coarse skills a mix keeps.
+ */
+const K8: Case[] = [
+  // prod, as students wrote them
+  ["6 + 9", "add_within_20"],
+  ["18 - 9", "subtract_within_20"],
+  ["479 + 36", "add_subtract_within_1000"],
+  ["348 + 276 - 129", "add_subtract_within_1000"],
+  ["4+3", "add_within_10"],
+  ["27 \\times 9", "multiply_multi_digit"],
+  ["213 \\times 32", "multiply_multi_digit"],
+  ["243 \\div 9", "long_division"],
+  ["144 \\div 9", "long_division"],
+  ["\\frac{2}{3} + \\frac{1}{4}", "add_fractions_unlike"],
+  ["15\\% \\cdot 80", "percents"],
+  ["5.4 \\times 0.1", "decimals_multiply"],
+  // a fraction written with a slash files as the same fraction written with a bar
+  ["68 / 1000", "equivalent_fractions"],
+  ["\\frac{68}{1000}", "equivalent_fractions"],
+  // adding and taking away, by the biggest number in the working
+  ["3 + 4", "add_within_10"],
+  ["5 + 5", "add_within_10"],
+  ["2 + 3 + 4", "add_within_10"],
+  ["0 + 6", "add_within_10"],
+  ["7 - 2", "subtract_within_10"],
+  ["10 - 4 =", "subtract_within_10"],
+  ["6 + 3 - 2", "subtract_within_10"],
+  ["7 + 5", "add_within_20"],
+  ["8 + 7 = 15", "add_within_20"],
+  ["10 + 10", "add_within_20"],
+  ["9 + 2 + 4", "add_within_20"],
+  ["15 - 8", "subtract_within_20"],
+  ["20 - 13", "subtract_within_20"],
+  ["8 + 6 - 5", "subtract_within_20"],
+  ["40 + 30", "add_tens"],
+  ["50 + 50", "add_tens"],
+  ["34 + 20", "add_tens"],
+  ["20 + 34", "add_tens"],
+  ["90 - 40", "add_tens"],
+  ["56 - 30", "add_tens"],
+  ["20 + 30 + 40", "add_tens"],
+  ["47 + 38", "add_within_100"],
+  ["23 + 14 + 31", "add_within_100"],
+  ["58 + 6 =", "add_within_100"],
+  ["72 - 35", "subtract_within_100"],
+  ["70 - 35", "subtract_within_100"],
+  ["43 - 7", "subtract_within_100"],
+  ["386 + 247", "add_subtract_within_1000"],
+  ["634 - 278", "add_subtract_within_1000"],
+  ["76 + 58", "add_subtract_within_1000"],
+  ["700 - 268", "add_subtract_within_1000"],
+  ["600 + 400", "add_subtract_within_1000"],
+  ["4386 + 2947", "multi_digit_add_subtract"],
+  ["7032 - 2847", "multi_digit_add_subtract"],
+  ["999 + 2", "multi_digit_add_subtract"],
+  ["34386 + 28947", "multi_digit_add_subtract"],
+  // thousands written with separators, as Mathpix reads them (`5,032`, `4{,}386`, a thin space): one number
+  ["5,032 - 687", "multi_digit_add_subtract"],
+  ["5,032 - 687 = 4,345", "multi_digit_add_subtract"],
+  ["8,000 - 3,500", "multi_digit_add_subtract"],
+  ["1,200 - 300 = 900", "multi_digit_add_subtract"],
+  ["1,000 - 250", "add_subtract_within_1000"],
+  ["4,386 + 2,947", "multi_digit_add_subtract"],
+  ["4{,}386 + 2{,}947", "multi_digit_add_subtract"],
+  ["5{,}032 - 687", "multi_digit_add_subtract"],
+  ["5\\,032 - 687", "multi_digit_add_subtract"],
+  ["1,250,000 + 750,000", "multi_digit_add_subtract"],
+  ["6,000 \\div 3", "long_division"],
+  ["12,345 \\times 6", "multiply_multi_digit"],
+  // column (stacked) sums, as Mathpix reads a 2nd–4th grader's (`parseStacked`): the sum they are,
+  // not three lines — a `-17` row is no negative number — and a wrong or missing answer changes nothing
+  ["\\begin{array}{c}\n52 \\\\\n-17 \\\\\n\\hline 35\n\\end{array}", "subtract_within_100"],
+  ["\\begin{array}{c}\n52 \\\\\n-17 \\\\\n\\hline\n\\end{array}", "subtract_within_100"],
+  ["\\begin{array}{c} 53 \\\\ -17 \\\\ \\hline 44 \\end{array}", "subtract_within_100"],
+  ["\\begin{array}{r} 503 \\\\ -178 \\\\ \\hline 325 \\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{r}\n286 \\\\\n+680 \\\\\n\\hline 966\n\\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{rr} & 286 \\\\ + & 680 \\\\ \\hline & 966 \\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{r} 286 \\\\ \\underline{+680} \\\\ 966 \\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{r} { }^{1} 286 \\\\ +680 \\\\ \\hline 966 \\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{r}\n125 \\\\\n48 \\\\\n+302 \\\\\n\\hline 475\n\\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{r} 4386 \\\\ +2947 \\\\ \\hline 7333 \\end{array}", "multi_digit_add_subtract"],
+  ["\\begin{array}{r} 1{,}250 \\\\ +750 \\\\ \\hline 2{,}000 \\end{array}", "multi_digit_add_subtract"],
+  ["\\begin{array}{r} 7 \\\\ +5 \\\\ \\hline 12 \\end{array}", "add_within_20"],
+  ["\\begin{array}{r}\n23 \\\\\n\\times 4 \\\\\n\\hline 92\n\\end{array}", "multiply_multi_digit"],
+  ["\\begin{array}{r} 23 \\\\ x 4 \\\\ \\hline 92 \\end{array}", "multiply_multi_digit"],
+  ["\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 138 \\\\ 920 \\\\ \\hline 1058 \\end{array}", "multiply_multi_digit"],
+  ["\\begin{array}{r}\n3.50 \\\\\n+12.25 \\\\\n\\hline 15.75\n\\end{array}", "decimals_add_subtract"],
+  // two equations added under a rule (elimination) are not a column sum
+  ["\\begin{array}{r} x+y=10 \\\\ x-y=2 \\\\ \\hline 2x=12 \\end{array}", "systems"],
+  // times and sharing
+  ["6 \\times 7", "times_tables"],
+  ["12 \\times 12", "times_tables"],
+  ["3 \\times 4 \\times 2", "times_tables"],
+  ["0 \\times 9", "times_tables"],
+  ["6 * 7", "times_tables"],
+  ["4 \\times 60", "multiply_by_tens"],
+  ["30 \\times 50", "multiply_by_tens"],
+  ["6 \\times 400", "multiply_by_tens"],
+  ["120 \\times 3", "multiply_by_tens"],
+  ["13 \\times 2", "multiply_multi_digit"],
+  ["46 \\times 7", "multiply_multi_digit"],
+  ["46 \\times 23", "multiply_multi_digit"],
+  ["13 \\times 10", "multiply_multi_digit"],
+  ["42 \\div 6", "division_facts"],
+  ["144 \\div 12", "division_facts"],
+  ["84 / 7", "division_facts"],
+  ["0 \\div 5", "division_facts"],
+  ["864 \\div 4", "long_division"],
+  ["84 \\div 6", "long_division"],
+  ["47 \\div 5", "long_division"],
+  ["864 \\div 24", "long_division"],
+  ["68 \\div 1000", "decimals_multiply"],
+  ["9 \\times 4 \\div 6", "multiply_divide"],
+  // fractions
+  ["\\frac{6}{8}", "equivalent_fractions"],
+  ["\\frac{12}{18} =", "equivalent_fractions"],
+  ["2 \\frac{1}{3}", "equivalent_fractions"],
+  ["\\frac{3}{4} = \\frac{6}{8}", "equivalent_fractions"],
+  ["7 / 3", "equivalent_fractions"],
+  ["\\frac{2}{7} + \\frac{3}{7}", "add_fractions_like"],
+  ["\\frac{5}{8} - \\frac{3}{8}", "add_fractions_like"],
+  ["\\frac{1}{8} + \\frac{3}{8} + \\frac{2}{8}", "add_fractions_like"],
+  ["2 \\frac{1}{5} + 1 \\frac{3}{5}", "add_fractions_like"],
+  ["3/7 + 2/7", "add_fractions_like"],
+  ["\\frac{3}{4} + \\frac{1}{6}", "add_fractions_unlike"],
+  ["\\frac{1}{2} + \\frac{1}{4}", "add_fractions_unlike"],
+  ["\\frac{3}{4} - \\frac{1}{6}", "add_fractions_unlike"],
+  ["1 \\frac{1}{2} + 2 \\frac{1}{3}", "add_fractions_unlike"],
+  ["2 + \\frac{1}{3}", "add_fractions_unlike"],
+  ["3/4 + 1/6", "add_fractions_unlike"],
+  ["\\frac{2}{3} \\times \\frac{3}{5}", "multiply_fractions"],
+  ["3 \\times \\frac{2}{5}", "multiply_fractions"],
+  ["2 \\frac{1}{2} \\times 3", "multiply_fractions"],
+  ["\\frac{2}{3} \\cdot \\frac{9}{4}", "multiply_fractions"],
+  ["\\frac{3}{4} \\div \\frac{1}{2}", "divide_fractions"],
+  ["6 \\div \\frac{1}{3}", "divide_fractions"],
+  ["\\frac{4}{5} \\div 2", "divide_fractions"],
+  ["\\frac{1}{2} + \\frac{1}{3} \\times 6", "fractions"],
+  // the same written with slashes: a product or a quotient of fractions too, not only a sum
+  ["3/4 \\times 8", "multiply_fractions"],
+  ["2/3 \\times 3/5", "multiply_fractions"],
+  ["2/3 \\times 3/5 = 6/15", "multiply_fractions"],
+  ["1/2 \\cdot 1/3", "multiply_fractions"],
+  ["3/4 * 8", "multiply_fractions"],
+  ["3/4 \\div 1/2", "divide_fractions"],
+  ["6 \\div 1/3", "divide_fractions"],
+  ["1/2 + 1/3 \\times 6", "fractions"],
+  // decimals, percents and ratios
+  ["3.45 + 2.8", "decimals_add_subtract"],
+  ["5 - 2.3", "decimals_add_subtract"],
+  ["1.2 \\times 3", "decimals_multiply"],
+  ["0.6 \\times 0.4", "decimals_multiply"],
+  ["3.6 \\div 10", "decimals_multiply"],
+  ["2.4 \\div 0.6", "decimals_multiply"],
+  ["1.5 + 2 \\times 3", "decimals_percents"],
+  ["25\\% \\times 80", "percents"],
+  ["25\\% \\text{ of } 80", "percents"],
+  ["25\\% \\times x = 20", "percents"],
+  ["x\\% \\times 80 = 20", "percents"],
+  ["\\frac{x}{4} = \\frac{9}{12}", "proportions"],
+  ["\\frac{3}{5} = \\frac{x}{20}", "proportions"],
+  ["\\frac{6}{x} = \\frac{9}{12}", "proportions"],
+  ["x : 4 = 9 : 12", "proportions"],
+  ["x/4 = 9/12", "proportions"],
+  // not a proportion: the unknown twice, or a side that is not a ratio
+  ["\\frac{x}{4} = 3", "one_step_equations"],
+  ["\\frac{x}{4} = \\frac{x + 3}{6}", "multi_step_equations"],
+  // a running total below zero: no one K–8 skill, the coarse one
+  ["3 - 5 + 4", "add_subtract"],
 ];
 
 /** Algebra 1 and 2, from the eval scoreboard and written here. */
@@ -383,7 +558,7 @@ const STARTER_SKILLS: Record<string, SkillId> = {
   "3^{x - 1} = 27": "exponential_equations",
   "2\\sin x = 1": "trig_equations",
   "4x - 7 = 13": "two_step_equations",
-  "\\frac{3}{4} + \\frac{1}{6}": "fractions",
+  "\\frac{3}{4} + \\frac{1}{6}": "add_fractions_unlike",
   "2(x - 1) = 10": "multi_step_equations",
 };
 const STARTERS: Case[] = Object.entries(STARTER_PROBLEMS).flatMap(([course, list]) => list.map((s): Case => [s.lines, STARTER_SKILLS[s.lines.join("; ")], course]));
@@ -409,7 +584,7 @@ const CHAT: Case[] = [
   [["x + y = 3", "x - y = 1"], "systems"],
 ];
 
-const ALL: Case[] = [...SPEC, ...ARITHMETIC, ...ALGEBRA, ...FUNCTIONS, ...PRECALC, ...GEOMETRY, ...OTHER, ...STARTERS, ...CHAT];
+const ALL: Case[] = [...SPEC, ...ARITHMETIC, ...K8, ...ALGEBRA, ...FUNCTIONS, ...PRECALC, ...GEOMETRY, ...OTHER, ...STARTERS, ...CHAT];
 
 describe("classifyProblem: the labelled corpus", () => {
   it("has at least 150 cases and every label is a skill", () => {
@@ -438,6 +613,33 @@ describe("classifyProblem: behaviour", () => {
     expect(classifyProblem(["\\sin 45^{\\circ} = \\frac{x}{10}"], null)).toBe("trig_values");
     expect(classifyProblem(["x + 125 = 180"], "geometry")).toBe("angles");
     expect(classifyProblem(["x + 125 = 180"], "other")).toBe("one_step_equations");
+  });
+
+  it("a comma that is not a thousands separator stays: points and lists", () => {
+    // a point alone in brackets, with or without a space
+    expect(classifyProblem(["(1,250)"])).toBe(classifyProblem(["(1, 250)"]));
+    expect(classifyProblem(["(1,234), (5,678)"])).toBe("linear_functions");
+    expect(classifyProblem(["(-2,345)"])).toBe("linear_functions");
+    // lists whose items are not all groups of three
+    expect(classifyProblem(["2, 4, 6, 8"])).toBe("other");
+    expect(classifyProblem(["10,200,30"])).toBe("other");
+    expect(classifyProblem(["x + y = 5, x - y = 1"])).toBe("systems");
+  });
+
+  it("a fraction written with a slash files as the same fraction with a bar, in a product or a quotient too", () => {
+    for (const [slash, bar] of [
+      ["3/4 \\times 8", "\\frac{3}{4} \\times 8"],
+      ["2/3 \\times 3/5", "\\frac{2}{3} \\times \\frac{3}{5}"],
+      ["3/4 \\div 1/2", "\\frac{3}{4} \\div \\frac{1}{2}"],
+      ["6 \\div 1/3", "6 \\div \\frac{1}{3}"],
+      ["3/4 \\times 0.5", "\\frac{3}{4} \\times 0.5"],
+      ["3/4 + 1/6", "\\frac{3}{4} + \\frac{1}{6}"],
+    ]) {
+      expect(classifyProblem([slash]), slash).toBe(classifyProblem([bar]));
+    }
+    // a slash alone is still a division or a fraction to simplify
+    expect(classifyProblem(["84 / 7"])).toBe("division_facts");
+    expect(classifyProblem(["68 / 1000"])).toBe("equivalent_fractions");
   });
 
   it("a system's lines joined with \"; \" (as the record stores it) file the same", () => {

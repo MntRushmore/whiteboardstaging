@@ -1,6 +1,6 @@
 "use client";
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, ChartColumn, Plus, RefreshCw, Search } from 'lucide-react';
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import {
   type BoardSort,
 } from '@/app/dashboardState';
 import { describeError } from '@/lib/errorMessage';
+import { SIGNED_OUT_GATE_SCRIPT, signedOutDestination } from '@/lib/landing/links';
 import { reportUserError } from '@/lib/reportAppError';
 import { AppHeader, APP_CONTENT_CLASS } from '@/components/app/AppHeader';
 import { ButtonLink } from '@/components/app/ButtonLink';
@@ -29,6 +30,8 @@ import { asDeleteBoardClient, deleteBoardWithAssets } from '@/lib/assets/deleteB
 import { DEFAULT_BOARD_TITLE, isDefaultBoardTitle } from '@/lib/boards/boardTitle';
 import { settleExitWrites } from '@/lib/boards/exitWrites';
 import { EmptyBoards } from '@/components/boards/EmptyBoards';
+import { TodaySkeleton } from '@/components/daily/TodaySkeleton';
+import { PathSkeleton } from '@/components/path/PathSkeleton';
 import { useWelcome } from '@/components/onboarding/useWelcome';
 import { useHomeArrival } from '@/components/onboarding/useHomeArrival';
 import { usePlanGate } from '@/components/billing/usePlanGate';
@@ -53,6 +56,10 @@ const ConfettiBurst = lazy(() => import('@/components/onboarding/ConfettiBurst')
 // Up next, "What do you want to work on?" and Pick a topic: loaded after the page (it reads the
 // learning record anyway), so the home's first load carries none of it.
 const TopicStart = lazy(() => import('@/components/topics/TopicStart'));
+// Today's practice (the big button, the streak) and the skill path: also after the page, in that
+// order above the topics (docs/KIDS-COME-BACK.md).
+const TodayCard = lazy(() => import('@/components/daily/TodayCard'));
+const SkillPathCard = lazy(() => import('@/components/path/SkillPathCard'));
 
 const SORT_OPTIONS = BOARD_SORTS.map((s) => ({ value: s.value, label: s.label }));
 const VIEW_OPTIONS = [
@@ -116,6 +123,8 @@ async function readBoards(): Promise<BoardListItem[]> {
 }
 
 /** Re-renders every `ms` so "Edited 2 min ago" keeps up while the page is open. */
+const subscribeNever = () => () => {};
+
 function useNow(ms: number): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -156,14 +165,30 @@ export default function Dashboard() {
   const renameInputRef = useRef<HTMLInputElement>(null);
   const deleteCancelRef = useRef<HTMLButtonElement>(null);
 
-  // Auth gate: redirect to login if not authenticated. When the sign-in
+  // Auth gate: a signed-out visitor goes to the parent landing page, keeping the query (?ref=,
+  // utm_*), or to /login when an email link brought them (signedOutDestination). When the sign-in
   // service could not be reached we show a banner with Retry instead, so a
   // flaky connection does not bounce a signed-in student to /login.
   useEffect(() => {
     if (!authLoading && !user && !authError) {
-      router.replace('/login');
+      router.replace(signedOutDestination(window.location.search, window.location.hash));
     }
   }, [user, authLoading, authError, router]);
+  // Before all that, the server HTML's gate (SIGNED_OUT_GATE_SCRIPT) sends a device with no stored
+  // session on before the first paint, with the page hidden. Rendered only into that HTML (and kept
+  // through hydration so it matches), never by a client render, where a script would not run.
+  const serverHtml = useSyncExternalStore(subscribeNever, () => false, () => true);
+  // If the gate hid the page and its own navigation never happened, the page must not stay blank:
+  // shown again once someone is signed in, and on the way out (the redirect above).
+  useEffect(() => {
+    if (user || authError) document.documentElement.style.removeProperty('visibility');
+  }, [user, authError]);
+  useEffect(
+    () => () => {
+      document.documentElement.style.removeProperty('visibility');
+    },
+    [],
+  );
 
   // A toast still on screen when the dashboard opens belongs to the page before it (the
   // sign-in page's "Signed in"): it would only sit over the cards. Toasts raised here stay.
@@ -375,6 +400,7 @@ export default function Dashboard() {
 
   return (
     <div className={styles.page}>
+      {serverHtml && <script dangerouslySetInnerHTML={{ __html: SIGNED_OUT_GATE_SCRIPT }} />}
       <AppHeader />
       {cheer && (
         <Suspense fallback={null}>
@@ -386,12 +412,26 @@ export default function Dashboard() {
           <AuthErrorBanner />
         </div>
 
+        {/* Today's practice, then the skill path: first, whatever the boards list is doing. Their
+            fallbacks are the cards' own skeletons, as tall as the loaded cards, shown from the first
+            paint (while sign-in is still being read too): nothing below jumps when they arrive. */}
+        {user ? (
+          <Suspense fallback={<TodaySkeleton />}>
+            <TodayCard userId={user.id} />
+          </Suspense>
+        ) : authLoading && <TodaySkeleton />}
+        {user ? (
+          <Suspense fallback={<PathSkeleton place="home" />}>
+            <SkillPathCard userId={user.id} />
+          </Suspense>
+        ) : authLoading && <PathSkeleton place="home" />}
+
         {/* Pick a topic: at the top, whatever the boards list is doing (its own loading and errors) */}
-        {user && (
+        {user ? (
           <Suspense fallback={<div aria-hidden className={`${styles.topicFallback} ${styles.pulse}`} />}>
             <TopicStart userId={user.id} />
           </Suspense>
-        )}
+        ) : authLoading && <div aria-hidden className={`${styles.topicFallback} ${styles.pulse}`} />}
 
         <div className={styles.pageHeader}>
           <div>

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { CHAT_PROBLEM_META } from "@/lib/live/chat/cells";
+import { GRADE_STARTERS, startersFor } from "../courses";
 import { isTutorWork, markKindOf, questionWhyOf } from "../marks";
-import { askProgress, COACH_COUNT, coachNumber, initialTour, markerStepOf, tourAutoAtEnd, tourAutoBefore, tourReducer, type TourEvent, type TourState, type TourStep } from "../tour";
+import { askProgress, COACH_COUNT, coachNumber, helpProblemFor, helpWordsFor, initialTour, markerStepOf, resumeTour, tourAutoAtEnd, tourAutoBefore, tourReducer, type TourEvent, type TourState, type TourStep } from "../tour";
+import { helpCopy } from "../tourCopy";
 
 function run(events: TourEvent[], from: TourState = initialTour()): TourState {
   return events.reduce(tourReducer, from);
@@ -128,6 +130,42 @@ describe("coach mark 2: Help me", () => {
       expect(tourReducer(s, { type: "helpAsked", ok: true })).toBe(s);
       if (step !== "result") expect(tourReducer(s, { type: "tutorWrote" })).toBe(s);
     }
+  });
+});
+
+describe("coach mark 2's next problem, after a ticked answer", () => {
+  const [k1, k2] = GRADE_STARTERS[0];
+
+  it("survives a reload: the marker keeps the tick, so the next problem still goes on the board", () => {
+    // ticked on coach mark 1, reloaded on its result (the marker says "help") or on coach mark 2
+    expect(markerStepOf("result")).toBe("help");
+    const resumed = resumeTour({ step: "help", ticked: true });
+    expect(resumed).toEqual({ ...initialTour("help"), outcome: "tick" });
+    expect(helpProblemFor(resumed, k1, [k1, k2])).toBe(k2);
+    // no tick remembered (a ring, or Next past an empty board): the first problem is still Help me's
+    expect(resumeTour({ step: "help" })).toEqual(initialTour("help"));
+    expect(helpProblemFor(resumeTour({ step: "help" }), k1, [k1, k2])).toBeNull();
+    expect(resumeTour(null)).toEqual(initialTour());
+    expect(resumeTour({ step: "write" })).toEqual(initialTour("write"));
+  });
+
+  it("coach mark 2's words are about the problem written for it: a step when it takes more than one", () => {
+    // a Geometry student with no grade: the angle on a line is answered in one step, the next starter is not
+    const starters = startersFor("geometry", 2);
+    const [starter] = starters;
+    expect(starter.oneStep).toBe(true);
+    const extra = helpProblemFor({ step: "help", outcome: "tick" }, starter, starters);
+    expect(extra?.lines).toEqual(["3^{2} + 4^{2} = c^{2}"]);
+    expect(extra?.oneStep).toBeUndefined();
+    const words = helpWordsFor(starter, extra);
+    expect(words).toEqual({ answer: false, fresh: true });
+    expect(helpCopy("help", "waiting", false, words).body).toBe("Your tutor writes the next step for you.");
+    expect(helpCopy("helped", "asked", false, words).title).toBe("Your tutor wrote the next step for you!");
+    // until it is on the board (or when it could not be written), the starter on the board decides
+    expect(helpWordsFor(starter, null)).toEqual({ answer: true, fresh: false });
+    expect(helpCopy("helped", "asked", false, helpWordsFor(starter, null)).title).toBe("Your tutor wrote the answer for you!");
+    // a one-step problem after a one-step starter (Kindergarten): the answer
+    expect(helpWordsFor(k1, k2)).toEqual({ answer: true, fresh: true });
   });
 });
 

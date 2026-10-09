@@ -1,18 +1,26 @@
 /**
  * The words of the welcome and of the empty boards home, in one place so the two say the same
- * thing: what the product does, in two lines, and one next step.
+ * thing: what the product does, in two lines, and one next step. The second step asks for the
+ * grade first, in words a six-year-old can read (a grown-up often sets it up beside them), and
+ * then, for the grown-up, where they heard of us.
  */
 export const WELCOME_COPY = {
   kicker: "Welcome to Agathon",
   title: "The whiteboard that writes back.",
   /** what it does, in two lines */
-  lines: ["Write your maths by hand, one step on each line.", "Your tutor checks every step and cheers you on."],
+  lines: ["Write your math by hand, one step on each line.", "Your tutor checks every step and cheers you on."],
   /** under the buttons: we are in beta, and where to tell us about a bug */
   beta: "Agathon is brand new and still in beta. If something looks wrong, tap Report a bug at the top. We read every report.",
   getStarted: "Let's go",
   skip: "Skip for now",
-  courseTitle: "Which course are you taking?",
-  courseLede: "The tutor will write your first problem from it.",
+  gradeStep: "Your grade",
+  gradeTitle: "What grade are you in?",
+  gradeLede: "Your tutor picks problems just right for you.",
+  gradesLabel: "Grades",
+  highSchool: "In high school?",
+  /** optional, for the grown-up: never blocks Start */
+  heardTitle: "How did you hear about Agathon?",
+  heardHint: "Optional, for grown-ups.",
   back: "Back",
   start: "Start",
   starting: "Opening your board…",

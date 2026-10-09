@@ -15,6 +15,10 @@
  * Who it goes to: the person who pays, at the email Stripe has for the checkout (`payer_email` on
  * the row, 20261003040000_go_live_gaps.sql), else the account's address (src/lib/email/payer.ts).
  *
+ * What the family did (2026-10-09): when the account or its kids practiced during the trial, the
+ * reminder also says what (problems solved, skills, Today's practice; `reminderProgress`), so the
+ * grown-up sees what the charge is for. A failed read of it never holds the reminder up.
+ *
  * Who is NOT reminded, because no charge is coming or nobody can be told:
  *  - a subscription set to cancel at the end of the trial (`cancel_at_period_end`), or with a
  *    `cancel_at` at or before the trial end: it will not charge;
@@ -28,13 +32,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type pino from "pino";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
+import { familyProgress } from "@/lib/email/activity";
 import { sendOnce, type EmailLogKey } from "@/lib/email/log";
 import { billingRecipient } from "@/lib/email/payer";
 import type { SendEmailInput, SendEmailResult } from "@/lib/email/resend";
 import type { EmailDeps, EmailEnv } from "@/lib/email/server";
-import { trialReminderEmail } from "@/lib/email/templates";
+import { trialReminderEmail, type LearnerProgress } from "@/lib/email/templates";
 
 const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 /** Trials ending in [now + fromMs, now + toMs) are reminded. */
 export const TRIAL_REMINDER_WINDOW = { fromMs: 24 * HOUR_MS, toMs: 72 * HOUR_MS } as const;
@@ -259,6 +265,7 @@ export async function runTrialReminders(deps: EmailDeps, env: EmailEnv, opts: Tr
       siteUrl: env.siteUrl,
       planName: UNLIMITED_PLAN.name,
       monthlyUsd: UNLIMITED_PLAN.monthlyUsd,
+      progress: await reminderProgress(deps, row, log),
     });
     const outcome = await sendOnce({
       store,
@@ -281,8 +288,29 @@ export async function runTrialReminders(deps: EmailDeps, env: EmailEnv, opts: Tr
   return summary;
 }
 
-/** A 429 waits out Resend's Retry-After (when short) and tries once more; anything else is final. */
-async function sendWithOneRetry(deps: EmailDeps, env: EmailEnv, message: SendEmailInput): Promise<SendEmailResult> {
+/**
+ * What the family did during the trial, for the reminder (src/lib/email/activity.ts): since the
+ * trial started (its end less the plan's trial length). It can only add to the email: when it
+ * cannot be read the reminder goes without it, because the reminder itself must not be held up.
+ */
+export async function reminderProgress(deps: EmailDeps, row: TrialRow & { userId: string }, log: pino.Logger): Promise<LearnerProgress[]> {
+  try {
+    const since = new Date(Date.parse(row.trialEnd ?? "") - UNLIMITED_PLAN.trialDays * DAY_MS);
+    if (Number.isNaN(since.getTime())) return [];
+    const activity = await deps.readFamilyActivity(row.userId, since);
+    if ("error" in activity) {
+      log.warn({ subscription: row.subscriptionId, error: activity.error }, "trial reminder: the family's activity could not be read; sent without it");
+      return [];
+    }
+    return familyProgress(activity, since, deps.now());
+  } catch (err) {
+    log.warn({ subscription: row.subscriptionId, error: err instanceof Error ? err.message : String(err) }, "trial reminder: the family's activity could not be read; sent without it");
+    return [];
+  }
+}
+
+/** A 429 waits out Resend's Retry-After (when short) and tries once more; anything else is final. Shared with the nudges. */
+export async function sendWithOneRetry(deps: EmailDeps, env: EmailEnv, message: SendEmailInput): Promise<SendEmailResult> {
   const first = await deps.send(message, env.resend);
   if (first.ok || first.status !== 429) return first;
   const wait = first.retryAfterMs ?? 1_000;

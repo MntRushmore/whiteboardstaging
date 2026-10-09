@@ -124,6 +124,12 @@ function inColumn(r: Rect, c: ProblemCell): boolean {
  */
 export function splitAcrossProblems<S extends { bounds: Rect }>(group: S[], cells: readonly ProblemCell[]): S[][] {
   if (cells.length < 2 || group.length < 2) return [group];
+  const beside = splitBesideProblem(group, cells);
+  return beside.length > 1 ? beside : splitAtCells(group, cells);
+}
+
+/** `splitAcrossProblems`' first case: ink beside one problem, and ink under another. */
+function splitBesideProblem<S extends { bounds: Rect }>(group: S[], cells: readonly ProblemCell[]): S[][] {
   const besideOf = (s: S) => cells.find((c) => inColumn(s.bounds, c) && besideProblem(s.bounds, c.head))?.key;
   const underOf = (s: S) =>
     cells.find((c) => inColumn(s.bounds, c) && s.bounds.y >= c.head.y + c.head.h && s.bounds.y + s.bounds.h / 2 <= c.cell.y + c.cell.h)?.key;
@@ -138,6 +144,62 @@ export function splitAcrossProblems<S extends { bounds: Rect }>(group: S[], cell
     else rest.push(s);
   }
   return others.size === 0 || rest.length === 0 ? [group] : [rest, ...others.values()];
+}
+
+/**
+ * A gap in a line at least this many of its glyphs wide is a cut between two problems' cells
+ * (`splitAtCells`): the clusterer's own reach between neighbouring glyphs (`CLUSTER_RULES.gapFactor`),
+ * so ink closer than that is one written run. Kept here so the pages that read problem cells
+ * (`lib/daily`, the tour) do not load the clusterer.
+ */
+const CELL_CUT_GAP_FACTOR = 1.2;
+
+function boxOf(rects: readonly Rect[]): Rect {
+  const x0 = Math.min(...rects.map((r) => r.x));
+  const y0 = Math.min(...rects.map((r) => r.y));
+  return { x: x0, y: y0, w: Math.max(...rects.map((r) => r.x + r.w)) - x0, h: Math.max(...rects.map((r) => r.y + r.h)) - y0 };
+}
+
+/**
+ * `splitAcrossProblems`' second case: answers written across a row of the chat's problems, one
+ * under each. Today's practice writes a young class's sums side by side (`1. 9 + 3   2. 4 + 9`), and
+ * a child writes `12` under the first and `13` under the second: on a phone or an iPad the two are
+ * less than `sameRowMaxGapFactor` of her big digits apart, so the clusterer made them ONE line, read
+ * `12 13`, ringed as one, the first answer's tick taken away. The group is cut where its ink moves
+ * from one problem's cell to the next: at a gap in it at least `gapFactor` of its glyphs wide (no
+ * stroke crosses it), the ink on each side of the gap in a different cell (`cellOf`: under the
+ * problem, or beside it on its row). Ink in no cell goes with the ink before it. A line written
+ * under one problem that runs on under the next with no such gap (its next glyph a glyph's space
+ * on) has no cut, and stays one line.
+ */
+function splitAtCells<S extends { bounds: Rect }>(group: S[], cells: readonly ProblemCell[]): S[][] {
+  // the hand's size: its glyphs' median height, level bars left out (`medianStrokeHeight`)
+  const tall = group.map((s) => s.bounds).filter((r) => r.h >= 4 && r.w <= 3 * r.h);
+  const heights = (tall.length > 0 ? tall : group.map((s) => s.bounds)).map((r) => r.h).sort((a, b) => a - b);
+  const mid = Math.floor(heights.length / 2);
+  const glyph = Math.max(8, heights.length % 2 === 1 ? heights[mid] : (heights[mid - 1] + heights[mid]) / 2);
+  const minGap = CELL_CUT_GAP_FACTOR * glyph;
+  // runs of ink left to right, cut at each gap at least `minGap` wide
+  const runs: S[][] = [];
+  let reach = -Infinity;
+  for (const s of [...group].sort((a, b) => a.bounds.x - b.bounds.x)) {
+    const last = runs[runs.length - 1];
+    if (last && s.bounds.x - reach < minGap) last.push(s);
+    else runs.push([s]);
+    reach = Math.max(reach, s.bounds.x + s.bounds.w);
+  }
+  if (runs.length < 2) return [group];
+  const keys = runs.map((run) => cellOf(boxOf(run.map((s) => s.bounds)), cells)?.key ?? null);
+  const first = keys.find((k): k is string => k !== null);
+  if (first === undefined) return [group];
+  const parts: Array<{ key: string; strokes: S[] }> = [];
+  runs.forEach((run, i) => {
+    const key = keys[i] ?? parts[parts.length - 1]?.key ?? first;
+    const last = parts[parts.length - 1];
+    if (last && last.key === key) last.strokes.push(...run);
+    else parts.push({ key, strokes: [...run] });
+  });
+  return parts.length < 2 ? [group] : parts.map((p) => p.strokes);
 }
 
 /**

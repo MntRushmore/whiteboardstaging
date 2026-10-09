@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LearningBus } from "../bus";
-import { MISTAKES, MISTAKE_KINDS, outcomeOf, SKILLS, isSkillId, type AttemptCounts, type LearningSignal } from "../contracts";
+import { COARSE_SKILL_IDS, FINER_SKILLS, isCoarseSkillId, MISTAKES, MISTAKE_KINDS, outcomeOf, SKILLS, isSkillId, skillDef, type AttemptCounts, type LearningSignal } from "../contracts";
+import { K8_SKILL_IDS, K8_SKILLS } from "../grades";
 import { LearnerHintSchema } from "../hint";
 import { clearPracticeMarker, hasPracticeMarker, PRACTICE_MARKER_TTL_MS, readPracticeMarker, writePracticeMarker, type StorageLike } from "../practiceMarker";
 
@@ -31,6 +32,37 @@ describe("skills and mistakes", () => {
     expect(isSkillId("two_step_equations")).toBe(true);
     expect(isSkillId("nope")).toBe(false);
   });
+  it("the K–8 skills are skills: arithmetic, named from K8_SKILLS, in each strand's teaching order", () => {
+    for (const id of K8_SKILL_IDS) {
+      expect(isSkillId(id), id).toBe(true);
+      expect(skillDef(id), id).toMatchObject({ name: K8_SKILLS[id].name, area: "arithmetic" });
+    }
+    // only Algebra 1's fraction review is in a course
+    expect(SKILLS.filter((s) => (K8_SKILL_IDS as readonly string[]).includes(s.id) && s.courses.length > 0).map((s) => s.id)).toEqual(["add_fractions_unlike"]);
+    const at = (id: string) => SKILLS.findIndex((s) => s.id === id);
+    for (const [a, b] of [
+      ["add_within_10", "add_within_20"],
+      ["add_within_20", "add_within_100"],
+      ["add_within_100", "multi_digit_add_subtract"],
+      ["times_tables", "long_division"],
+      ["equivalent_fractions", "divide_fractions"],
+      ["decimals_add_subtract", "proportions"],
+    ]) expect(at(a), `${a} before ${b}`).toBeLessThan(at(b));
+  });
+
+  it("the coarse skills stay (stored rows use them); each is split into finer ones", () => {
+    for (const id of COARSE_SKILL_IDS) {
+      expect(isSkillId(id), id).toBe(true);
+      expect(isCoarseSkillId(id), id).toBe(true);
+      expect(skillDef(id)?.courses, id).toEqual([]);
+    }
+    expect(isCoarseSkillId("add_within_10")).toBe(false);
+    const finer = Object.values(FINER_SKILLS).flat();
+    expect(new Set(finer).size).toBe(finer.length);
+    // every K–8 skill but proportions (new in 7th grade) came out of a coarse one
+    expect([...finer].sort()).toEqual(K8_SKILL_IDS.filter((id) => id !== "proportions").sort());
+  });
+
   it("every mistake kind has a label and a tip", () => {
     for (const k of MISTAKE_KINDS) {
       expect(MISTAKES[k].label.length).toBeGreaterThan(0);

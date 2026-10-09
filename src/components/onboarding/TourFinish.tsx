@@ -50,7 +50,7 @@ export function TourFinish({ onContinue }: { onContinue: () => void }) {
       >
         <div className="relative mx-auto size-20">
           <ConfettiBurst count={44} spread={150} style={{ left: "50%", top: "50%" }} />
-          <span aria-hidden className={`grid size-20 place-items-center rounded-full bg-gradient-to-br from-amber-300 via-pink-400 to-violet-500 text-white shadow-lg ${styles.badge}`}>
+          <span aria-hidden className={`grid size-20 place-items-center rounded-full bg-blue-600 text-white shadow-lg ${styles.badge}`}>
             <PartyPopper className="size-10" strokeWidth={1.8} />
           </span>
         </div>

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useEditor, useValue } from "tldraw";
 import type { AssistanceMode } from "@/hooks/useAssistanceMode";
 import { skillDef } from "@/lib/learning/contracts";
+import { gradeLabel } from "@/lib/learning/grades";
 import { courseName, matchTopic, TOPIC_COPY, TOPIC_PROBLEMS, topicGroups, upNext, type TopicId } from "@/lib/learning/topics";
 import type { LiveController } from "@/lib/live/contracts";
 import { clientMetric } from "@/lib/logger";
@@ -46,9 +47,16 @@ export default function TopicSheet({ boardId, userId, controller, onModeChange, 
   const [busy, setBusy] = useState<TopicId | null>(null);
   const busyRef = useRef(false);
 
+  const grade = data.status === "ready" ? data.grade : null;
+
   const view = useMemo(() => {
     if (data.status !== "ready") return null;
-    return { choice: upNext(data.course, data.levels, data.weakSkills), groups: topicGroups(data.course, data.levels), course: courseName(data.course) };
+    return {
+      choice: upNext(data.course, data.levels, data.weakSkills, data.grade),
+      groups: topicGroups(data.course, data.levels, data.grade),
+      course: courseName(data.course),
+      grade: gradeLabel(data.grade),
+    };
   }, [data]);
 
   const start = useCallback(
@@ -89,7 +97,7 @@ export default function TopicSheet({ boardId, userId, controller, onModeChange, 
 
   const ask = useCallback(
     (text: string) => {
-      const topic = matchTopic(text);
+      const topic = matchTopic(text, grade);
       clientMetric("topics.ask", { routed: Boolean(topic), from: "board" });
       if (topic) {
         void start(topic);
@@ -98,7 +106,7 @@ export default function TopicSheet({ boardId, userId, controller, onModeChange, 
       topicSheetOpen.set(false);
       onAsk(text);
     },
-    [onAsk, start],
+    [onAsk, start, grade],
   );
 
   const chips = view ? [view.choice.next && { kind: "next" as const, topic: view.choice.next }, view.choice.weakest && { kind: "weak" as const, topic: view.choice.weakest }].filter((c) => c !== null && c !== undefined) : [];
@@ -129,9 +137,9 @@ export default function TopicSheet({ boardId, userId, controller, onModeChange, 
                 ))}
               </div>
             )}
-            <AskBox busy={false} onSubmit={ask} />
+            <AskBox busy={false} onSubmit={ask} grade={grade} />
             {view ? (
-              <TopicList mine={view.groups.mine} others={view.groups.others} course={view.course} busy={busy} onPick={(id) => void start(id)} />
+              <TopicList mine={view.groups.mine} others={view.groups.others} course={view.course} grade={view.grade} busy={busy} onPick={(id) => void start(id)} />
             ) : (
               <div className={styles.cardSkeleton} aria-hidden />
             )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextStep, parseStacked, placeName, placesLeft, workStacked, type StackedRead } from "../columnArithmetic";
+import { nextStep, parseStacked, placeName, placesLeft, stackedAnalysis, workStacked, type StackedRead } from "../columnArithmetic";
 
 /**
  * Column (stacked) arithmetic (`engine/columnArithmetic.ts`): the array Mathpix reads a stacked sum
@@ -37,9 +37,10 @@ describe("reading the array", () => {
   });
 
   it.each([
-    // long multiplication as Mathpix read it: rows under the rule, the second rule a fraction
-    ["\\begin{array}{r}\n23 \\\\\n\\times 45 \\\\\n\\hline 115 \\\\\n\\frac{920}{1035}\n\\end{array}", "two rows under the rule"],
-    ["\\begin{array}{r} 23 \\\\ \\times 45 \\\\ \\hline 115 \\\\ 920 \\\\ \\hline 1035 \\end{array}", "two rules"],
+    ["\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 966 \\\\ 12 \\end{array}", "two rows under the rule of a sum"],
+    ["\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 966 \\\\ \\hline 12 \\end{array}", "two rules under a sum"],
+    ["\\begin{array}{r} 23 \\\\ \\times 4 \\\\ \\hline 12 \\\\ 80 \\end{array}", "rows under a product by one digit"],
+    ["\\begin{array}{r} 23 \\\\ \\times 45 \\\\ \\hline 115 \\\\ 9.2 \\\\ \\hline 1035 \\end{array}", "a row with a point"],
     ["\\begin{array}{r} 286 \\\\ 680 \\\\ \\hline 966 \\end{array}", "no operator"],
     ["\\begin{array}{r} +286 \\\\ +680 \\\\ \\hline 966 \\end{array}", "an operator on the first number"],
     ["\\begin{array}{r} 286 \\\\ +680 \\\\ -12 \\\\ \\hline 954 \\end{array}", "two kinds of operator"],
@@ -199,5 +200,91 @@ describe("decimals, lined up on the point", () => {
     expect(placeName(1, 2)).toBe("tenths");
     expect(placeName(2, 2)).toBe("ones");
     expect(placeName(3, 0)).toBe("thousands");
+  });
+});
+
+describe("long multiplication: a row for each digit, then their sum", () => {
+  const LONG = (rows: string) => `\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline ${rows} \\end{array}`;
+
+  it.each<[string, string, Partial<StackedRead>]>([
+    ["two rules", LONG("138 \\\\ 920 \\\\ \\hline 1058"), { rows: ["138", "920"], answer: "1058" }],
+    ["the second rule read as a fraction's bar (Mathpix's read of the tutor's hand)", LONG("138 \\\\ \\frac{920}{1058}"), { rows: ["138", "920"], answer: "1058" }],
+    ["a + before the last row", LONG("138 \\\\ +920 \\\\ \\hline 1058"), { rows: ["138", "920"], answer: "1058" }],
+    ["the last row underlined", LONG("138 \\\\ \\underline{920} \\\\ 1058"), { rows: ["138", "920"], answer: "1058" }],
+    ["the rows, the sum still to come", LONG("138 \\\\ 920"), { rows: ["138", "920"], answer: "" }],
+    ["the rows and the second rule", LONG("138 \\\\ 920 \\\\ \\hline"), { rows: ["138", "920"], answer: "" }],
+  ])("reads %s", (_name, latex, want) => {
+    expect(parseStacked(latex)).toEqual({ op: "×", operands: ["46", "23"], ...want });
+  });
+
+  it("46 × 23: 138, 920, 1058 — right; the 0 holding the place may be left out", () => {
+    expect(work(LONG("138 \\\\ 920 \\\\ \\hline 1058"))).toMatchObject({ result: "1058", right: true, wrong: -1, long: { want: [138, 920], wrong: -1 } });
+    expect(work(LONG("138 \\\\ 92 \\\\ \\hline 1058"))).toMatchObject({ right: true, long: { wrong: -1 } });
+    expect(stackedAnalysis(work(LONG("138 \\\\ 920 \\\\ \\hline 1058")), true)).toMatchObject({ verdict: "ok", solved: true });
+  });
+
+  it("a wrong row is the mistake, said in a child's words — the sum under it is not judged again", () => {
+    const w = work(LONG("138 \\\\ 820 \\\\ \\hline 958"));
+    expect(w).toMatchObject({ right: false, wrong: -1, long: { wrong: 1 }, note: "Check the row for the 2 tens: 46 × 20." });
+    expect(stackedAnalysis(w, true)).toMatchObject({ verdict: "mismatch", note: "Check the row for the 2 tens: 46 × 20." });
+    expect(work(LONG("128 \\\\ 920 \\\\ \\hline 1048"))).toMatchObject({ long: { wrong: 0 }, note: "Check the row for the 3 ones: 46 × 3." });
+    expect(work(LONG("138 \\\\ 920 \\\\ 46 \\\\ \\hline 1104"))).toMatchObject({ long: { wrong: 2 }, note: "There is one row for each digit of 23." });
+  });
+
+  it("right rows, a wrong sum: ringed in its column", () => {
+    const w = work(LONG("138 \\\\ 920 \\\\ \\hline 1048"));
+    expect(w).toMatchObject({ right: false, wrong: 1, long: { wrong: -1 } });
+    expect(stackedAnalysis(w, true).verdict).toBe("mismatch");
+    // ...but only on a read the board is sure of
+    expect(stackedAnalysis(w, false).verdict).toBe("unknown");
+  });
+
+  it("right so far is no mark: the rows without their sum, or the first row alone under the rule", () => {
+    expect(stackedAnalysis(work(LONG("138 \\\\ 920")), true)).toMatchObject({ verdict: "none" });
+    expect(stackedAnalysis(work(LONG("138")), true)).toMatchObject({ verdict: "none" });
+    // the product itself straight under the rule is the answer; anything else there is wrong
+    expect(stackedAnalysis(work(LONG("1058")), true)).toMatchObject({ verdict: "ok", solved: true });
+    expect(stackedAnalysis(work(LONG("1048")), true)).toMatchObject({ verdict: "mismatch" });
+  });
+
+  it("a zero in the bottom number has no row of its own: 123 × 205 = 615 + 24600", () => {
+    const w = work("\\begin{array}{r} 123 \\\\ \\times 205 \\\\ \\hline 615 \\\\ 24600 \\\\ \\hline 25215 \\end{array}");
+    expect(w).toMatchObject({ right: true, long: { want: [615, 24600], wrong: -1 } });
+  });
+
+  it("the other ways a class sets it out are right too: partial products, the rows the other way round, a row of zeros", () => {
+    const ok = { verdict: "ok", solved: true };
+    // partial products (the four-row method): 6 × 3, 40 × 3, 6 × 20, 40 × 20
+    expect(stackedAnalysis(work(LONG("18 \\\\ 120 \\\\ 120 \\\\ +800 \\\\ \\hline 1058")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(LONG("18 \\\\ 120 \\\\ 120 \\\\ \\frac{+800}{1058}")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(LONG("800 \\\\ 120 \\\\ 120 \\\\ 18 \\\\ \\hline 1058")), true)).toMatchObject(ok);
+    // the tens row first
+    expect(stackedAnalysis(work(LONG("920 \\\\ +138 \\\\ \\hline 1058")), true)).toMatchObject(ok);
+    // a row of zeros for a 0 in the bottom number
+    const BY = (bottom: string, rows: string) => `\\begin{array}{r} 46 \\\\ \\times ${bottom} \\\\ \\hline ${rows} \\end{array}`;
+    expect(stackedAnalysis(work(BY("105", "230 \\\\ 000 \\\\ +4600 \\\\ \\hline 4830")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(BY("205", "230 \\\\ 000 \\\\ 9200 \\\\ \\hline 9430")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(BY("20", "00 \\\\ 920 \\\\ \\hline 920")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(BY("30", "000 \\\\ 1380 \\\\ \\hline 1380")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(BY("30", "00 \\\\ 138 \\\\ \\hline 1380")), true)).toMatchObject(ok);
+  });
+
+  it("set out another way, a wrong answer is still ringed, and right so far is still no mark", () => {
+    // partial products, the total wrong
+    expect(stackedAnalysis(work(LONG("18 \\\\ 120 \\\\ 120 \\\\ 800 \\\\ \\hline 1048")), true)).toMatchObject({ verdict: "mismatch" });
+    // a partial product wrong, and the total its sum
+    const slip = work(LONG("18 \\\\ 120 \\\\ 120 \\\\ 700 \\\\ \\hline 958"));
+    expect(stackedAnalysis(slip, true)).toMatchObject({ verdict: "mismatch", note: "Check the rows: together they are 46 × 23." });
+    // the rows the other way round, one of them wrong: the row is named
+    expect(stackedAnalysis(work(LONG("920 \\\\ 128 \\\\ \\hline 1048")), true)).toMatchObject({ verdict: "mismatch", note: "Check the row for the 3 ones: 46 × 3." });
+    // a zero row where a row should be: the total is wrong
+    expect(stackedAnalysis(work(LONG("138 \\\\ 000 \\\\ \\hline 138")), true)).toMatchObject({ verdict: "mismatch" });
+    // two partial products, the total still to come
+    expect(stackedAnalysis(work(LONG("18 \\\\ 120")), true)).toMatchObject({ verdict: "none" });
+    expect(stackedAnalysis(work(LONG("18 \\\\ 120 \\\\ \\hline")), true)).toMatchObject({ verdict: "none" });
+  });
+
+  it("nothing for Help to write into it: the rows are the student's", () => {
+    expect(nextStep(work(LONG("138")), new Set())).toBeNull();
   });
 });

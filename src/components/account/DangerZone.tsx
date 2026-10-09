@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink, Loader2, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/components/AuthProvider";
+import { useFamily } from "@/components/family/useFamily";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -24,6 +26,9 @@ import { deleteOwnAccount, isPlanStillActiveError } from "@/lib/billing/deleteAc
 import { billingPortalUrl, mustCancelBeforeDeleting } from "@/lib/billing/unlimited";
 import { PLAN_COPY } from "@/lib/billing/unlimitedPlan";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
+import { removeKidsImages } from "@/lib/family/client";
+import { isKidEmail } from "@/lib/family/contracts";
+import { FAMILY_COPY } from "@/lib/family/copy";
 
 /**
  * Delete account: a dialog that arms only once the user types DELETE, then
@@ -37,6 +42,10 @@ import { useUnlimited } from "@/lib/billing/useUnlimited";
  * customer portal instead: the app has no Stripe key, so deleting the account
  * could never stop the charges. deleteOwnAccount checks the plan again before
  * touching anything (another tab may have started one), and that refusal lands here too.
+ *
+ * A grown-up's kid profiles go with the account (the dialog says so when there are kids): their
+ * saved images first (DELETE /api/family), their accounts in the same RPC as the grown-up's. A kid
+ * profile sees no Delete button: only their grown-up removes them, from the Family page.
  */
 export function DangerZone({ email }: { email: string }) {
   const router = useRouter();
@@ -50,6 +59,11 @@ export function DangerZone({ email }: { email: string }) {
   const armed = deleteConfirmed(typed);
   const mustCancel = mustCancelBeforeDeleting(plan.state) || planRefused;
   const portal = billingPortalUrl(email);
+  // the kids whose profiles go with this account, named in the dialog
+  const { user } = useAuth();
+  const kid = isKidEmail(email);
+  const { state: family } = useFamily(kid ? null : user?.id);
+  const kidNames = family?.role === "parent" ? family.members.filter((m) => !m.isParent).map((m) => m.displayName).join(", ") : "";
 
   function close() {
     if (deleting) return;
@@ -64,10 +78,12 @@ export function DangerZone({ email }: { email: string }) {
     setDeleting(true);
     setError(null);
     try {
-      // Own Storage objects go first (the DB cascade cannot remove files), then the
-      // RPC, then the local session is dropped without a /logout round-trip.
-      const { assets } = await deleteOwnAccount(supabase);
+      // The kids' and own Storage objects go first (the DB cascade cannot remove files), then the
+      // RPC (the kids' accounts with this one), then the local session is dropped without a
+      // /logout round-trip.
+      const { assets, kidImages } = await deleteOwnAccount(supabase, { removeKidImages: removeKidsImages });
       if (assets.error) console.warn("Some saved images could not be removed:", assets);
+      if (kidImages?.error) console.warn("Some of the kids' saved images were left for the cleanup:", kidImages);
       // Full page load, not router.replace: the account is gone, so a fresh provider (and a
       // fresh React tree) is the only state we can trust. Falls back to the router when
       // `window` is unavailable.
@@ -76,7 +92,8 @@ export function DangerZone({ email }: { email: string }) {
     } catch (err) {
       setDeleting(false);
       if (isPlanStillActiveError(err)) {
-        // nothing was removed: the plan was checked first
+        // The plan was checked first, so nothing was removed. (Had the RPC itself refused, for a
+        // plan started in another tab meanwhile, only saved images went: never an account.)
         setPlanRefused(true);
         plan.refresh();
         return;
@@ -84,6 +101,14 @@ export function DangerZone({ email }: { email: string }) {
       console.warn("Account deletion failed:", err);
       setError(describeError(err, ACCOUNT_COPY.deleteFallback));
     }
+  }
+
+  if (kid) {
+    return (
+      <Card data-testid="kid-delete">
+        <SectionHeader title={FAMILY_COPY.kidDeleteTitle} description={FAMILY_COPY.kidDelete} />
+      </Card>
+    );
   }
 
   return (
@@ -94,7 +119,7 @@ export function DangerZone({ email }: { email: string }) {
         description="Deleting your account removes your boards, saved images and usage history for good."
       />
       <CardContent className={SECTION_BODY}>
-        <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>
+        <Button variant="destructive" size="sm" className="pointer-coarse:h-11" onClick={() => setOpen(true)}>
           <Trash2 className="w-4 h-4" />
           Delete account
         </Button>
@@ -131,7 +156,9 @@ export function DangerZone({ email }: { email: string }) {
             <DialogHeader>
               <DialogTitle>Delete your account?</DialogTitle>
               <DialogDescription>
-                This permanently deletes {email} and every board on it. This can&apos;t be undone. Type{" "}
+                This permanently deletes {email} and every board on it.{" "}
+                {kidNames && <>{FAMILY_COPY.deleteAlsoKids(kidNames)} </>}
+                This can&apos;t be undone. Type{" "}
                 <span className="font-mono font-semibold">{DELETE_CONFIRM_WORD}</span> to confirm.
               </DialogDescription>
             </DialogHeader>

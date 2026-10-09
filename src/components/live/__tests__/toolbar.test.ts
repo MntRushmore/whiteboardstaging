@@ -111,6 +111,47 @@ describe("boardToolbarView", () => {
     expect(toolbar({ mode: "answer", liveAvailable: false }).canHelp).toBe(false);
   });
 
+  it("keeps every grown-up control in the bar on the ordinary board", () => {
+    const view = toolbar();
+    expect(view.simple).toBe(false);
+    expect(Object.values(view.place).every((p) => p === "bar")).toBe(true);
+    // what turns the simple board's exceptions on changes nothing here
+    expect(toolbar({ tour: true }).place).toEqual(view.place);
+    expect(view.kidStatus).toBe(false);
+  });
+
+  it("simple board: a kid's bar is Help me (Back and the save pill are always there), the rest behind More", () => {
+    const view = toolbar({ simple: true });
+    expect(view.simple).toBe(true);
+    expect(view.askButton).toBe("help");
+    expect(view.place).toEqual({ dial: "more", auto: "more", ask: "more", pill: "more", ink: "more", report: "more" });
+  });
+
+  it("simple board: Auto stays on and the mode stays as it was — nothing is switched, only moved", () => {
+    const simple = toolbar({ simple: true });
+    const full = toolbar();
+    expect(simple.autoSwitch).toEqual(full.autoSwitch);
+    expect(simple.canHelp).toBe(full.canHelp);
+    expect(simple.showHintLayer).toBe(full.showHintLayer);
+    // a grown-up who turned the dial to Solve in More gets the kid a Solve it button
+    expect(toolbar({ simple: true, mode: "answer" }).askButton).toBe("solve");
+    expect(toolbar({ simple: true, mode: "off" }).askButton).toBe(null);
+  });
+
+  it("simple board: a kid who tapped Help me sees the kid's own status in the bar (Thinking…, Try again), never the grown-up pill and its menu", () => {
+    const view = toolbar({ simple: true });
+    expect(view.kidStatus).toBe(true);
+    expect(view.place.pill).toBe("more");
+    // with Live off nothing reads, so nothing fails: no status at all
+    expect(toolbar({ simple: true, liveEnabled: false }).kidStatus).toBe(false);
+    expect(toolbar({ simple: true, liveAvailable: false }).kidStatus).toBe(false);
+  });
+
+  it("simple board: Ask stays in the bar while the guided tour's coach mark points at it", () => {
+    expect(toolbar({ simple: true, tour: true }).place.ask).toBe("bar");
+    expect(toolbar({ simple: true, tour: false }).place.ask).toBe("more");
+  });
+
   it("names the action Help, never Draw help", () => {
     expect(LIVE_COPY.pill.help).toBe("Help");
     const strings = JSON.stringify(LIVE_COPY);

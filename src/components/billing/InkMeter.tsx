@@ -2,12 +2,14 @@
 
 import { useEffect } from "react";
 import { InfinityIcon } from "lucide-react";
+import { useAuth } from "@/components/AuthProvider";
 import { InkBottle } from "@/components/billing/InkBottle";
 import { openInkDialog } from "@/lib/billing/inkDialog";
 import { INK_COPY, bottleFill, formatInk, inkTone } from "@/lib/billing/inkSummary";
 import { UNLIMITED_METER_COPY, hasPlan, isUnlimited } from "@/lib/billing/unlimited";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
+import { isKidEmail } from "@/lib/family/kidEmail";
 import { cn } from "@/lib/utils";
 
 const TONE_CLASS = {
@@ -35,8 +37,11 @@ const PILL = "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 te
  * worry the student: the meter shows ∞ and "Unlimited" instead, quietly, and offers no packs (it
  * is not a button). The board is told the balance is unlimited, so an "out of ink" left over from
  * before the plan arrived clears and the refused help runs.
+ *
+ * A kid profile (src/lib/family) sees no meter at all: kids never see billing.
  */
 export function InkMeter({ className, onBalance }: { className?: string; onBalance?: (balance: number) => void }) {
+  const { user } = useAuth();
   const { summary } = useInkSummary();
   const { state } = useUnlimited();
   const unlimited = isUnlimited(state);
@@ -47,6 +52,9 @@ export function InkMeter({ className, onBalance }: { className?: string; onBalan
     onBalance?.(unlimited ? Number.POSITIVE_INFINITY : balance);
   }, [balance, unlimited, onBalance]);
   if (!summary) return null;
+  // A kid profile shares the grown-up's plan and never sees billing: no meter (as in the app bar),
+  // so no way into the plan's dialog. The balance above still reaches the board.
+  if (isKidEmail(user?.email)) return null;
   if (!unlimited && !hasPlan(state)) return null;
   if (unlimited) {
     return (

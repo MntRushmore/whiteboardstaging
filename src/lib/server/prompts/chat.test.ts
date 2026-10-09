@@ -294,7 +294,7 @@ describe("chat prompt: the learner", () => {
   it("the weak-spots example: every problem verified by the engine and filed under the skills it is for", async () => {
     const engine = await getEngine();
     expect(CHAT_LEARNER_RULES).toContain(
-      `Request: practice my weak spots (LEARNER weak skills: two_step_equations, fractions) → ${JSON.stringify({ reply: WEAK_SPOTS_EXAMPLE.reply, actions: [{ type: "write_problems", problems: WEAK_SPOTS_EXAMPLE.problems }] })}`,
+      `Request: practice my weak spots (LEARNER weak skills: two_step_equations, add_fractions_unlike) → ${JSON.stringify({ reply: WEAK_SPOTS_EXAMPLE.reply, actions: [{ type: "write_problems", problems: WEAK_SPOTS_EXAMPLE.problems }] })}`,
     );
     const { actions } = cleanChatActions([{ type: "write_problems", problems: [...WEAK_SPOTS_EXAMPLE.problems] }]);
     expect(actions).toHaveLength(1);

@@ -3,7 +3,9 @@
  * full EmailDeps whose every outside call is recorded. No network, no database.
  */
 import { vi } from "vitest";
+import type { FamilyActivity, LearnerActivity } from "@/lib/email/activity";
 import type { EmailLogKey, EmailLogStore } from "@/lib/email/log";
+import type { NudgeTrialRow } from "@/lib/email/nudges";
 import type { SendEmailInput, SendEmailResult } from "@/lib/email/resend";
 import type { EmailDeps, EmailEnv } from "@/lib/email/server";
 import type { TrialRow } from "@/lib/email/trialReminders";
@@ -44,6 +46,7 @@ export const PORTAL = "https://billing.stripe.com/p/login/test_123";
 export function testEnv(over: Partial<EmailEnv> = {}): EmailEnv {
   return {
     cronSecret: "unit-cron-secret",
+    reportLinkSecret: "unit-link-secret",
     hasServiceRole: true,
     resend: { apiKey: "re_unit_test", from: "Agathon <hello@mail.agathon.app>" },
     siteUrl: SITE,
@@ -69,6 +72,10 @@ export function fakeDeps(opts: {
   emails?: Record<string, string | null | { error: string }>;
   /** unlimited_subscriptions by Stripe id, for the "free trial started" email */
   subscriptions?: Record<string, StartedRow | { error: string }>;
+  /** trialing subscriptions for the nudges */
+  nudgeTrials?: NudgeTrialRow[] | { error: string };
+  /** each account's family activity; by default the account alone, with nothing done */
+  activity?: Record<string, FamilyActivity | { error: string }>;
 } = {}): FakeDeps {
   const log = memoryEmailLog();
   const sent: SendEmailInput[] = [];
@@ -93,6 +100,8 @@ export function fakeDeps(opts: {
       if (v !== null && typeof v === "object") return v;
       return { email: v === undefined ? `${userId}@example.com` : v };
     }),
+    findNudgeTrials: vi.fn(async () => opts.nudgeTrials ?? []),
+    readFamilyActivity: vi.fn(async (userId: string) => opts.activity?.[userId] ?? quietFamily(userId)),
     send: vi.fn(async (message: SendEmailInput) => {
       const reply = sendReplies.shift() ?? { ok: true as const, id: `re_${++ids}` };
       if (reply.ok) sent.push(message);
@@ -104,6 +113,11 @@ export function fakeDeps(opts: {
     }),
   };
   return deps;
+}
+
+/** An account on its own that has done nothing yet. */
+export function quietFamily(userId: string, over: Partial<LearnerActivity> = {}): FamilyActivity {
+  return { learners: [{ userId, displayName: null, isKid: false, onboardedAt: null, attempts: [], practice: [], ...over }] };
 }
 
 /** A pino-shaped logger that swallows everything. */

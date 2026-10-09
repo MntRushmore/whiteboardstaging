@@ -5,6 +5,7 @@ import { Lightbulb, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { liveStore } from "@/lib/live/liveStore";
+import { say } from "@/lib/speech/say";
 import { LIVE_COPY } from "./copy";
 
 /** The tour's coach mark points here (`BoardTour`). */
@@ -19,8 +20,10 @@ export const ASK_BUTTON_ATTR = "data-ask-button";
  *
  * Hovered with a mouse or focused from the keyboard, it outlines the problem it would act on
  * (`liveStore.askHover`, `ProblemHighlight`). A touch has no hover: a tap is the ask itself.
+ *
+ * `big`: the simple board's (src/components/kidmode), a 56 px target for a young kid's finger.
  */
-export function AskButton({ kind, glow, onAsk }: { kind: "help" | "solve"; glow: number; onAsk: () => boolean }) {
+export function AskButton({ kind, glow, onAsk, big = false }: { kind: "help" | "solve"; glow: number; onAsk: () => boolean; big?: boolean }) {
   const solve = kind === "solve";
   const label = solve ? LIVE_COPY.ask.solve : LIVE_COPY.ask.help;
   const near = useRef({ hover: false, focus: false });
@@ -34,7 +37,7 @@ export function AskButton({ kind, glow, onAsk }: { kind: "help" | "solve"; glow:
     <Button
       key={glow}
       size="sm"
-      className={`h-8 rounded-full bg-blue-600 px-3.5 font-semibold text-white shadow-sm hover:bg-blue-700${glow > 0 ? " ask-glow" : ""}`}
+      className={`${big ? "h-14 gap-2.5 px-6 text-lg font-bold [&_svg]:size-6!" : "h-8 px-3.5 font-semibold"} rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700${glow > 0 ? " ask-glow" : ""}`}
       title={`${solve ? LIVE_COPY.ask.solveHint : LIVE_COPY.ask.helpHint}. ${LIVE_COPY.ask.pickHint}`}
       {...{ [ASK_BUTTON_ATTR]: kind }}
       onPointerEnter={(e) => e.pointerType === "mouse" && point({ hover: true })}
@@ -42,7 +45,9 @@ export function AskButton({ kind, glow, onAsk }: { kind: "help" | "solve"; glow:
       onFocus={(e) => point({ focus: e.currentTarget.matches(":focus-visible") })}
       onBlur={() => point({ focus: false })}
       onClick={() => {
-        if (!onAsk()) toast(LIVE_COPY.ask.nothingYet);
+        if (onAsk()) return;
+        toast(LIVE_COPY.ask.nothingYet);
+        say(LIVE_COPY.ask.nothingYet); // read aloud, when on
       }}
     >
       {solve ? <Sparkles className="h-4 w-4" aria-hidden /> : <Lightbulb className="h-4 w-4" aria-hidden />}

@@ -1,6 +1,7 @@
 /**
  * What the email routes read from outside the request: the env, the service-role email log, the
- * caller's profile, the subscriptions, an account's address, Resend, the clock. The routes
+ * caller's profile, the subscriptions, an account's address, a family's activity (the trial's
+ * emails), Resend, the clock. The routes
  * (src/app/api/email/welcome, src/app/api/cron/trial-reminders, and the billing webhook's
  * "free trial started" email) call `emailDeps`; tests replace it.
  * Route files may not read process.env or export helpers (routeProtection.test.ts), so all of this
@@ -10,10 +11,13 @@
  */
 import { getServerEnv } from "@/lib/env";
 import { LEGAL } from "@/lib/legal";
+import { readFamilyActivity, type FamilyActivity } from "@/lib/email/activity";
 import { supabaseEmailLog, type EmailLogStore } from "@/lib/email/log";
+import { trialsStartedSince, type NudgeTrialRow } from "@/lib/email/nudges";
 import { DEFAULT_EMAIL_FROM, sendEmail, type ResendConfig, type SendEmailInput, type SendEmailResult } from "@/lib/email/resend";
 import { trialsEndingBetween, type TrialRow } from "@/lib/email/trialReminders";
 import { startedSubscription, type StartedRow } from "@/lib/email/unlimitedStarted";
+import { reportLinkSecrets } from "@/lib/report/unsubscribe";
 import { serviceClient, userClient } from "@/lib/server/billing";
 
 /** Where links point when NEXT_PUBLIC_SITE_URL is unset: production (an email never links to localhost by accident). */
@@ -22,6 +26,8 @@ export const PRODUCTION_SITE_URL = `https://${LEGAL.siteHost}`;
 export type EmailEnv = {
   /** CRON_SECRET (trimmed; placeholders are unset); the cron answers 503 without it. */
   cronSecret: string | undefined;
+  /** Signs the weekly email's unsubscribe link: REPORT_LINK_SECRET, else CRON_SECRET (src/lib/report/unsubscribe.ts). */
+  reportLinkSecret: string | undefined;
   /** Whether SUPABASE_SERVICE_ROLE_KEY is set: the email log needs it (503 without). */
   hasServiceRole: boolean;
   /** RESEND_API_KEY and EMAIL_FROM. */
@@ -62,6 +68,7 @@ export function getEmailEnv(): EmailEnv {
   const manage = resolveManageUrl(env.NEXT_PUBLIC_BILLING_PORTAL_URL, siteUrl);
   return {
     cronSecret: env.CRON_SECRET?.trim() || undefined,
+    reportLinkSecret: reportLinkSecrets(env)?.sign,
     hasServiceRole: Boolean(env.SUPABASE_SERVICE_ROLE_KEY),
     resend: { apiKey: env.RESEND_API_KEY ?? null, from: env.EMAIL_FROM?.trim() || DEFAULT_EMAIL_FROM },
     siteUrl,
@@ -82,6 +89,10 @@ export type EmailDeps = {
   findSubscription: (subscriptionId: string) => Promise<StartedRow | null | { error: string }>;
   /** An account's email address (auth.users), through the service role; null when it has none. */
   emailOf: (userId: string) => Promise<{ email: string | null } | { error: string }>;
+  /** Trialing subscriptions started at or after `since` (the nudges), through the service role. */
+  findNudgeTrials: (since: Date) => Promise<NudgeTrialRow[] | { error: string }>;
+  /** What an account and its kids did since `since` (src/lib/email/activity.ts), through the service role. */
+  readFamilyActivity: (userId: string, since: Date) => Promise<FamilyActivity | { error: string }>;
   send: (message: SendEmailInput, config: ResendConfig) => Promise<SendEmailResult>;
   now: () => Date;
   sleep: (ms: number) => Promise<void>;
@@ -109,6 +120,8 @@ export const emailDeps: EmailDeps = {
     if (error) return { error: error.message };
     return { email: data.user?.email ?? null };
   },
+  findNudgeTrials: (since) => trialsStartedSince(admin(), since),
+  readFamilyActivity: (userId, since) => readFamilyActivity(admin(), userId, since),
   send: (message, config) => sendEmail(message, config),
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),

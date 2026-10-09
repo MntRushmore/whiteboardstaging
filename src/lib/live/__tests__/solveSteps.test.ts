@@ -209,6 +209,10 @@ describe("solveSteps: the answer the engine already has", () => {
     ["3.2 kg \\cdot 9.8 m/s^2", "31.36\\,\\mathrm{N}"],
     ["5 km/h \\text{ to } m/s", "1.389\\,\\mathrm{m/s}"],
     ["\\frac{d}{dx} x^3", "3x^{2}"],
+    // a sum of mixed numbers is answered in one, as the class works it — a fraction stays one
+    ["2\\frac{1}{3} + 1\\frac{1}{2}", "3\\frac{5}{6}"],
+    ["2\\frac{1}{2} + 1\\frac{1}{2} =", "4"],
+    ["\\frac{7}{3} + \\frac{3}{2}", "\\frac{23}{6}"],
   ])("localAnswerFor(%s)", (latex, expected) => {
     expect(localAnswerFor(engine, latex)).toBe(expected);
   });

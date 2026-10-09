@@ -162,6 +162,12 @@ function useSavedVisible(state: SyncState): boolean {
 export interface SaveStatusProps {
   sync: SyncState;
   onRetry: () => void;
+  /**
+   * The simple board's: only what needs a grown-up (offline, a failed or refused save, a merge, a
+   * nearly full board). Its routine Saved / Saving… beside Help me read to a 6-year-old as a "check
+   * my answer" button, or the tutor's tick (QA, 2026-10-09).
+   */
+  quiet?: boolean;
 }
 
 /**
@@ -176,11 +182,11 @@ export function saveStatusIcon(view: SaveStatusView): "saved" | "busy" | null {
   return null;
 }
 
-export function SaveStatus({ sync, onRetry }: SaveStatusProps) {
+export function SaveStatus({ sync, onRetry, quiet }: SaveStatusProps) {
   const savedVisible = useSavedVisible(sync);
   useReportSaveError(sync);
   const view = saveStatusViewFor(sync, savedVisible);
-  if (!view) return null;
+  if (!view || (quiet && saveStatusIcon(view))) return null;
   const icon = saveStatusIcon(view);
   return (
     <span

@@ -216,6 +216,12 @@
 .tile[data-tile="independent"] {
   --tile-color: var(--success);
 }
+/* a finger's tap: 44 px and up on a touch screen */
+@media (pointer: coarse) {
+  .practice.practice {
+    min-height: 44px;
+  }
+}
 .tile[data-tile="streak"] {
   --tile-color: oklch(60% 0.18 45);
 }
@@ -439,11 +445,9 @@
 .skill[data-level="mastered"] {
   --level-color: var(--level-mastered);
   --level-fill: var(--level-mastered-fill);
-  /* the small celebration: a green wash, a warmer border and a star */
+  /* the small celebration: a faint green fill, a greener border and a star */
   border-color: color-mix(in oklab, var(--success) 28%, var(--border));
-  background:
-    radial-gradient(120% 90% at 100% 0%, color-mix(in oklab, oklch(85% 0.12 85) 26%, transparent), transparent 60%),
-    color-mix(in oklab, var(--success) 6%, var(--surface));
+  background: color-mix(in oklab, var(--success) 6%, var(--surface));
 }
 .skillHead {
   display: flex;
@@ -655,7 +659,7 @@
   padding: var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
-  background: var(--arc-gradient-soft);
+  background: var(--surface);
 }
 @media (min-width: 640px) {
   .grownUps {
@@ -697,6 +701,14 @@
   width: 9rem;
   height: 1.25rem;
   border-radius: var(--radius-pill);
+}
+/* the skill path's place at the top: its longer header and the trail's panel */
+.skeletonPathHeading {
+  width: min(20rem, 80%);
+}
+.skeletonPath {
+  height: 12rem;
+  border-radius: var(--radius-panel);
 }
 @keyframes progress-pulse {
   0%,

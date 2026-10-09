@@ -15,6 +15,10 @@ import { problemMetaOf } from "../chat/cells";
 import type { ChatAction, ChatRunReport } from "../chat/contracts";
 import { PROBLEM_WORK_META } from "../chat/work";
 import { analyzeColumn } from "../localSolve";
+import { learningBus } from "@/lib/learning/bus";
+import type { AttemptRecord, LearningSignal } from "@/lib/learning/contracts";
+import { AttemptTracker } from "@/lib/learning/tracker";
+import { doneOf, initialProgress, progressReducer, starsOf } from "@/lib/daily/progress";
 
 /**
  * The tutor works the problems it wrote. A student with nothing under `1. 2\sin x = 1` who presses
@@ -606,6 +610,139 @@ describe("live loop — the tutor works the problems it wrote", () => {
       // done: the next ask's problem, without the flash a student's own move gives
       expect(at(3)).toBe(true);
       expect(liveStore.helpTarget.get()!.changedAt).toBe(changedAt);
+    });
+  });
+
+  describe("Today's practice: a young class's sums side by side", () => {
+    const SUMS = [["9 + 3"], ["4 + 9"], ["7 + 4"], ["5 + 3"], ["8 + 8"]];
+    /** the board's fit zoom: a phone held upright, an iPad */
+    const zoomTo = (z: number) => ((editor as unknown as { getBaseZoom: () => number }).getBaseZoom = () => z);
+    /** the bottom of problem n's ink */
+    const headBottom = (n: number) => box(problemInk(n)).b;
+    const markKinds = (lineId: string) => [...new Set(tutor().filter((s) => s.meta.lineId === lineId && meta(s).mark).map((s) => String(meta(s).mark).split(":")[0]))];
+
+    /** A child's answer under problem n, `size` CSS px tall at the board's zoom, `at` page px into its cell; read as `latex`. */
+    async function answerUnder(n: number, text: string, latex: string, o: { zoom: number; size: number; at: number }): Promise<string> {
+      const h = Math.round(o.size / o.zoom);
+      script.push(latex);
+      const before = new Set(Object.keys(liveStore.lines.get()));
+      editor.putUser(inkLine(text, Math.round(cellOf(n).x + o.at), Math.round(headBottom(n) + 0.6 * h), h, Math.round(0.15 * h)));
+      await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 300);
+      await settleUntil(() => Object.entries(liveStore.lines.get()).some(([id, st]) => !before.has(id) && Boolean(st.analysis)));
+      await landed();
+      const added = Object.keys(liveStore.lines.get()).find((id) => !before.has(id));
+      if (!added) throw new Error(`${text} under problem ${n} produced no line`);
+      return added;
+    }
+
+    for (const [device, zoom, size, at] of [
+      ["a phone", 0.22, 30, [60, 60]],
+      ["an iPad", 0.52, 60, [200, 40]],
+    ] as const) {
+      it(`answers under two problems on one row (${device}): two lines, each its own tick, each problem its own star`, async () => {
+        zoomTo(zoom);
+        const signals: LearningSignal[] = [];
+        learningBus.reset();
+        const off = learningBus.onSignal((s) => signals.push(s));
+        try {
+          start("feedback");
+          await run([{ type: "write_problems", problems: SUMS }]);
+          await landed();
+          const one = await answerUnder(1, "12", "12", { zoom, size, at: at[0] });
+          expect(markKinds(one)).toEqual(["check"]);
+          const two = await answerUnder(2, "13", "13", { zoom, size, at: at[1] });
+          await landed();
+          const lines = liveStore.lines.get();
+          // two lines, the first left as it was (still ticked), the second its own
+          expect(Object.keys(lines)).toHaveLength(2);
+          expect(lines[one].line.strokeIds).toHaveLength(inkLine("12", 0, 0, 100).length);
+          expect(lines[one].latex).toBe("12");
+          expect(lines[two].latex).toBe("13");
+          expect(lines[one].analysis).toMatchObject({ solved: true });
+          expect(lines[two].analysis).toMatchObject({ solved: true });
+          expect(markKinds(one)).toEqual(["check"]);
+          expect(markKinds(two)).toEqual(["check"]);
+          expect(lines[one].line.column).not.toBe(lines[two].line.column);
+          expect(streamCalls).toEqual([]);
+          // the learning record: each answer is its own problem's, solved — two attempts, two stars
+          const said = signals.filter((s): s is Extract<LearningSignal, { type: "line" }> => s.type === "line");
+          const keys = [...new Set(said.map((s) => s.problemKey))];
+          expect(keys).toHaveLength(2);
+          expect(keys.every((k) => k.includes("#cell:"))).toBe(true);
+          expect(said.filter((s) => s.solved).map((s) => s.latex)).toEqual(["12", "13"]);
+          const published: AttemptRecord[] = [];
+          let ids = 0;
+          const tracker = new AttemptTracker({ now: () => Date.now(), newId: () => `att-${++ids}`, course: null, save: async () => undefined, publish: (r) => published.push(r) });
+          for (const s of signals) tracker.handle(s);
+          let progress = initialProgress(5);
+          for (const record of published) progress = progressReducer(progress, { type: "attempt", record, boardId: "board-1" });
+          expect(doneOf(progress)).toBe(2);
+          expect(starsOf(progress)).toBe(2);
+        } finally {
+          off();
+          learningBus.reset();
+        }
+      });
+    }
+
+    it("Help me after a right answer: the next problem, never the answered one (a second tap neither)", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: SUMS }]);
+      await landed();
+      const one = await answerUnder(1, "12", "12", { zoom: 1, size: 60, at: 60 });
+      expect(markKinds(one)).toEqual(["check"]);
+      const keyOf = (n: number) => `p:${handBlockOf(problemInk(n)[0].meta)}`;
+      expect(loop.requestHelp()).toBe(true);
+      await landed();
+      expect(workOn(1)).toEqual([]);
+      expect(workOn(2).map((w) => w.kind)).toEqual(["step"]);
+      expect(liveStore.helpTarget.get()?.key).toBe(keyOf(2));
+      // a second tap: never the answered problem
+      loop.requestHelp();
+      await landed();
+      expect(workOn(1)).toEqual([]);
+      expect(liveStore.helpTarget.get()?.key).toBe(keyOf(2));
+      expect(streamCalls).toEqual([]);
+      expect(liveStore.solving.get()).toBeFalsy();
+    });
+
+    it("Solve after a right answer: the next problem worked out; every problem answered, nothing asked again", async () => {
+      start("answer");
+      await run([{ type: "write_problems", problems: [["9 + 3"], ["4 + 9"]] }]);
+      await landed();
+      await answerUnder(1, "12", "12", { zoom: 1, size: 60, at: 60 });
+      await help();
+      expect(workOn(1)).toEqual([]);
+      expect(workOn(2).map((w) => w.kind)).toEqual(["solution"]);
+      expect(streamCalls).toEqual([]);
+      // problem 2 answered by the student too: Help has nothing to give, and says so — no model asked
+      const fresh = await run([{ type: "new_screen" }, { type: "write_problems", problems: [["9 + 3"], ["4 + 9"]] }]);
+      expect(fresh).toBeTruthy();
+      await landed();
+      await answerUnder(1, "12", "12", { zoom: 1, size: 60, at: 60 });
+      await answerUnder(2, "13", "13", { zoom: 1, size: 60, at: 60 });
+      const count = tutor().length;
+      expect(loop.requestHelp()).toBe(false);
+      await landed();
+      expect(tutor()).toHaveLength(count);
+      expect(streamCalls).toEqual([]);
+    });
+
+    it("the pen's last stroke under the next problem (an `=` started, no line yet): Help is about that one", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: SUMS }]);
+      await landed();
+      await answerUnder(1, "12", "12", { zoom: 1, size: 60, at: 60 });
+      // an `=` under problem 3: signs only, no line until its number comes
+      editor.putUser(inkLine("=", Math.round(cellOf(3).x + 60), Math.round(headBottom(3) + 40), 60));
+      await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 300);
+      await landed();
+      expect(loop.requestHelp()).toBe(true);
+      await landed();
+      expect(workOn(1)).toEqual([]);
+      expect(workOn(2)).toEqual([]);
+      expect(workOn(3).map((w) => w.kind)).toEqual(["step"]);
+      expect(streamCalls).toEqual([]);
     });
   });
 });

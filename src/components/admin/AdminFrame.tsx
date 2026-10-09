@@ -3,7 +3,7 @@
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Bug, ChartNoAxesColumn, LayoutGrid, OctagonAlert, UsersRound } from "lucide-react";
+import { ArrowLeft, Bug, ChartNoAxesColumn, Funnel, Gift, LayoutGrid, OctagonAlert, UsersRound } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
 import { AppHeader, APP_CONTENT_CLASS } from "@/components/app/AppHeader";
@@ -124,6 +124,8 @@ export function AdminFrame({ notFound, access, resource, page, documentTitle, mi
 const NAV_ICONS: Record<ConsolePage, ReactNode> = {
   overview: <ChartNoAxesColumn size={16} strokeWidth={1.9} aria-hidden />,
   users: <UsersRound size={16} strokeWidth={1.9} aria-hidden />,
+  funnel: <Funnel size={16} strokeWidth={1.9} aria-hidden />,
+  referrals: <Gift size={16} strokeWidth={1.9} aria-hidden />,
   boards: <LayoutGrid size={16} strokeWidth={1.9} aria-hidden />,
   bugs: <Bug size={16} strokeWidth={1.9} aria-hidden />,
   issues: <OctagonAlert size={16} strokeWidth={1.9} aria-hidden />,

@@ -456,7 +456,7 @@ export function localAnswerFor(engine: LiveEngine, latex: string, ctx: Omit<Anal
   const usable = (result: string | undefined): string | null => {
     const tex = result?.trim();
     if (!tex) return null;
-    return normalizeMath(tex) === normalizeMath(line) ? null : tex;
+    return normalizeMath(tex) === normalizeMath(line) ? null : inProblemForm(line, tex);
   };
 
   const direct = usable(analysis.resultLatex);
@@ -466,6 +466,25 @@ export function localAnswerFor(engine: LiveEngine, latex: string, ctx: Omit<Anal
   // `calculate` reads a line with no backslash as calculator text, where `2x2` keeps its x: the
   // times sign goes in as LaTeX, as every other reader of the line sees it
   return usable(safely(() => engine.calculate(timesBetweenNumbers(line)))?.latex);
+}
+
+/** `2\frac{1}{3}`: a mixed number somewhere in a line (a whole number right before a fraction of two). */
+const MIXED_NUMBER = /(?:^|[^\d.}])\d+\s*\\[dt]?frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}/;
+
+/**
+ * An answer written as the problem writes its numbers: a sum of mixed numbers (`2\frac{1}{3} +
+ * 1\frac{1}{2}`) is answered in one (`3\frac{5}{6}`), as the class working in them expects — not the
+ * improper `\frac{23}{6}`, right but in a form the child was not working in. Any other answer as it is.
+ */
+export function inProblemForm(line: string, answer: string): string {
+  if (!MIXED_NUMBER.test(line)) return answer;
+  const m = /^(-?)\s*\\frac\s*\{\s*(\d+)\s*\}\s*\{\s*(\d+)\s*\}$/.exec(answer.trim());
+  if (!m) return answer;
+  const n = Number(m[2]);
+  const d = Number(m[3]);
+  if (d === 0 || n <= d) return answer;
+  const rest = n % d;
+  return `${m[1]}${Math.floor(n / d)}${rest ? `\\frac{${rest}}{${d}}` : ""}`;
 }
 
 /**

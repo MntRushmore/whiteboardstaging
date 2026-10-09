@@ -61,12 +61,11 @@ import { noteInkBalance } from "@/lib/live/liveStore";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
 import { useFeatureLabs } from "@/lib/featureLabs";
-import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shapes";
+import { liveShapeUtils, liveTools, liveUiOverrides } from "@/shapes";
 import { LIVE_KILL_SWITCH } from "@/lib/live/contracts";
 import { useLiveMath } from "@/lib/live/useLiveMath";
 import { autoActs, useLiveSettings } from "@/lib/live/liveSettings";
-import { ScreenStrip, ScreenStripCorner, screenStripSlot } from "@/components/screens/ScreenStrip";
-import { PenStyleButton } from "@/components/board/PenStyleButton";
+import { screenStripSlot } from "@/components/screens/ScreenStrip";
 import { liveDebugEnabled } from "@/lib/live/liveDebug";
 import { ScreenBackground, ScreenFrame } from "@/components/screens/ScreenFrame";
 import { applyScreenCamera } from "@/lib/screens/screens";
@@ -79,19 +78,23 @@ import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
 import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 import { boardToolbarView } from "@/components/live/toolbar";
 import { AskButton } from "@/components/live/AskButton";
-import { BoardChatPanel, CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
-import { CHAT_COPY } from "@/components/chat/chatView";
-import { useChatOpen } from "@/components/chat/useBoardChat";
+import { setSimpleBoard, useSimpleBoard, useSimpleBoardGrade } from "@/components/kidmode/useSimpleBoard";
+import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, KidStatus, usePreloadKidDock } from "@/components/kidmode/slots";
+import { KID_COPY } from "@/components/kidmode/copy";
+import { CHAT_BUTTON_COPY, CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
+import { useChatOpen } from "@/components/chat/useChatOpen";
 import { useLecture } from "@/components/lecture/useLecture";
 import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
 import { hasPracticeMarker } from "@/lib/learning/practiceMarker";
+import { hasDailyMarker } from "@/lib/daily/dailyMarker";
 import { clearAskKickoff, readAskKickoff } from "@/lib/boards/askKickoff";
 import { topicSheetOpen } from "@/components/topics/topicSheetState";
 import type { ChatKickoff } from "@/components/chat/BoardChatPanel";
 import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
 import { useBoardLearning } from "@/components/learning/useBoardLearning";
 import { registerStrokeTimes } from "@/lib/replay/stampTimes";
+import { whenIdle } from "@/lib/whenIdle";
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
@@ -113,10 +116,21 @@ const ProblemHighlight = React.lazy(() => import("@/components/live/ProblemHighl
 // (the Progress page's marker): both load after the board, the second only on a practice board.
 const NowYouTry = React.lazy(() => import("@/components/learning/NowYouTry"));
 const PracticeBoard = React.lazy(() => import("@/components/learning/PracticeBoard"));
+// Today's practice: the stars, and the celebration at the day's goal (only on the day's board)
+const DailyBoard = React.lazy(() => import("@/components/daily/DailyBoard"));
 // "Replay my board" (Board options): the board drawn again, full screen; fetched on the first open.
 const KidReplay = React.lazy(() => import("@/components/replay/KidReplay"));
 // New topic (the screen strip's button): the topic picker as a sheet, loaded on the first tap.
 const TopicSheet = React.lazy(() => import("@/components/topics/TopicSheet"));
+// The board chat (Ask): nothing to show until it opens, so it loads in idle time once the board is
+// up, or beside the board's own load when it was left open (docs/BUNDLE.md).
+const loadChatPanel = () => import("@/components/chat/BoardChatPanel");
+const BoardChatPanel = React.lazy(() => loadChatPanel().then((m) => ({ default: m.BoardChatPanel })));
+function preloadChatPanel(): void {
+  void loadChatPanel().catch(() => {
+    /* tried again when it opens */
+  });
+}
 
 /** The help tabs: 6 px of padding on a board under 768 px (a 10.2" iPad sideways with Ask docked), 8 px from there. */
 const HELP_TAB_CLASS = "px-1.5 @3xl/bar:px-2";
@@ -233,6 +247,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   const [tourHelpAsk, setTourHelpAsk] = useState<{ n: number; ok: boolean } | null>(null);
   // a practice board opened from the Progress page: its problems are written once (PracticeBoard)
   const [practiceBoard] = useState(() => hasPracticeMarker(id));
+  // the day's Today's practice board: its stars and celebration (DailyBoard), after a reload too
+  const [dailyBoard] = useState(() => hasDailyMarker(id));
   // words from the topic picker ("What do you want to work on?"): Ask opens and sends them once
   const [kickoff, setKickoff] = useState<ChatKickoff | null>(() => {
     const k = readAskKickoff(id);
@@ -242,6 +258,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   useEffect(() => {
     if (kickoff) openChat(true);
   }, [kickoff, openChat]);
+  // the Ask panel's chunk, ready before the first tap on Ask
+  useEffect(() => whenIdle(preloadChatPanel), []);
   const askTutor = useCallback((message: string) => setKickoff((k) => ({ id: (k?.id ?? 0) + 1, message })), []);
   // New topic: the sheet is mounted from its first opening on (so it can close with its own motion)
   const topicOpen = useValue("topic sheet open", () => topicSheetOpen.get(), []);
@@ -293,6 +311,16 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
 
   const narrowBoard = screenStripSlot(useBreakpoint()) === "corner";
 
+  // The simple board for young kids (src/components/kidmode): K–3 by default once the grade is read
+  // (BoardPage, beside the board's own load), the switch's choice on this device after that.
+  const userId = user?.id;
+  const simpleBoard = useSimpleBoard(userId) === true;
+  const switchSimpleBoard = useCallback((on: boolean) => userId && setSimpleBoard(userId, on), [userId]);
+  const [moreOpen, setMoreOpen] = useState(false);
+  // More goes with the simple board, however it was switched off (More's own switch, Board options,
+  // another tab): closed, so switched back on, the kid's board does not open with the grown-ups' card
+  if (moreOpen && !simpleBoard) setMoreOpen(false);
+
   // One place decides what the bar shows (see src/components/live/toolbar.ts).
   const toolbar = boardToolbarView({
     mode: assistanceMode,
@@ -300,7 +328,159 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     liveAvailable: !LIVE_KILL_SWITCH,
     auto: live.auto,
     hideAiShapes: live.hideAiShapes,
+    simple: simpleBoard,
+    tour: guided,
   });
+  const { place } = toolbar;
+
+  // stuck? the one thing to tap: the next step, or in Solve the rest of them (a kid's is big)
+  const askButton = toolbar.askButton && (
+    <AskButton
+      kind={toolbar.askButton}
+      glow={askGlow}
+      big={toolbar.simple}
+      onAsk={() => {
+        const ok = controller.requestHelp();
+        if (guided) setTourHelpAsk((a) => ({ n: (a?.n ?? 0) + 1, ok }));
+        return ok;
+      }}
+    />
+  );
+
+  // The grown-up controls, each made once: the bar shows those `place` puts there; on the simple
+  // board More lays the rest out as labelled rows (mounted while it is closed, so the pill and the
+  // meter keep working), and the kid's own status takes the pill's place in the bar.
+  const toggleAuto = () => updateLive({ auto: !toolbar.autoSwitch?.on });
+  const toggleChat = () => {
+    chat.onOpenChange(!chat.open);
+    setMoreOpen(false);
+  };
+  const dial = (
+    <Tabs
+      value={assistanceMode}
+      onValueChange={(value) => {
+        setAssistanceMode(value as AssistanceMode);
+        setAskGlow((n) => n + 1);
+      }}
+      className="w-auto shadow-sm rounded-lg"
+    >
+      <TabsList aria-label="How much help">
+        <TabsTrigger value="off" className={HELP_TAB_CLASS}>Off</TabsTrigger>
+        <TabsTrigger value="feedback" className={HELP_TAB_CLASS}>Feedback</TabsTrigger>
+        <TabsTrigger value="suggest" className={HELP_TAB_CLASS}>Suggest</TabsTrigger>
+        <TabsTrigger value="answer" className={HELP_TAB_CLASS}>Solve</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  );
+  // Board options' items, wherever its menu opens: the pill's "…", or More's row
+  const menuProps = {
+    liveRunning: toolbar.liveRunning,
+    liveAvailable: !LIVE_KILL_SWITCH,
+    onLiveEnabledChange: (enabled: boolean) => updateLive({ enabled }),
+    canHelp: toolbar.canHelp,
+    onClearMarks: () => controller.clearMarks(),
+    onShowModeInfo: () => setModeInfoOpen(true),
+    onReportProblem: openReport,
+    onReplay: openReplay,
+  };
+  const pill = (menu: boolean) => (
+    <LiveErrorBoundary>
+      <LiveStatusPill
+        editor={editor}
+        {...menuProps}
+        onHelp={() => controller.requestHelp()}
+        simpleBoard={userId ? { on: simpleBoard, onChange: switchSimpleBoard } : undefined}
+        menu={menu}
+      />
+    </LiveErrorBoundary>
+  );
+  // the plan (∞), or the ink a plan spends right now; none on the guided board. Tapping a count opens
+  // the ink dialog. Once the balance covers the refused call again (a pack landed), its "out of ink"
+  // pill goes; with none left, Auto spends nothing.
+  const ink = <InkMeter onBalance={noteInkBalance} />;
+  // a chunk that fails to load (an offline tab, a stale deploy) hides the button, not the board
+  const extras = (features.stickers || features.pdfUpload) && (
+    <LiveErrorBoundary>
+      <React.Suspense fallback={null}>
+        {features.stickers && <StickerLibrary />}
+        {features.pdfUpload && <PdfUpload />}
+      </React.Suspense>
+    </LiveErrorBoundary>
+  );
+  const askChat = (
+    <Button
+      variant={chat.open ? "secondary" : "outline"}
+      size="sm"
+      className={chat.open ? "shadow-sm" : "bg-white shadow-sm"}
+      title={CHAT_BUTTON_COPY.buttonHint}
+      aria-label={CHAT_BUTTON_COPY.button}
+      aria-expanded={chat.open}
+      {...{ [CHAT_TOGGLE_ATTR]: "" }}
+      onClick={toggleChat}
+    >
+      <MessageSquare className="h-4 w-4" />
+      {/* open, the panel names itself: the button is its icon unless the board is wide */}
+      <span className={chat.open ? "ml-1.5 hidden @5xl/bar:inline" : "ml-1.5"}>{CHAT_BUTTON_COPY.button}</span>
+    </Button>
+  );
+  const bar = (
+    <>
+      {place.dial === "bar" && dial}
+      {/*
+        Auto: the tabs say how much help, this says when — by itself once the student pauses
+        (on), or only on the ask button (off). The whole pill is the touch target (32 px tall).
+        A plain button with role="switch" rather than the Radix switch: the board's first load is
+        at its budget, and this needs nothing a button does not already do.
+      */}
+      {toolbar.autoSwitch && place.auto === "bar" && (
+        <button
+          type="button"
+          role="switch"
+          aria-checked={toolbar.autoSwitch.on}
+          title={toolbar.autoSwitch.hint}
+          onClick={toggleAuto}
+          className="group flex h-8 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-full border bg-white pl-2.5 pr-1.5 text-xs font-medium shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {LIVE_COPY.auto.label}
+          <span aria-hidden className="inline-flex h-5 w-9 items-center rounded-full bg-input p-0.5 transition-colors group-aria-checked:bg-primary">
+            <span className="block size-4 rounded-full bg-background shadow transition-transform group-aria-checked:translate-x-4" />
+          </span>
+        </button>
+      )}
+      {!toolbar.simple && askButton}
+      {place.ask === "bar" && askChat}
+      {/* Lecture mode is hidden for now (owner, 2026-10-03): its button is out of the bar; the
+          code, LectureBar and the dev handles stay, so it comes back with this one line. */}
+      {place.pill === "bar" && pill(true)}
+      {toolbar.kidStatus && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <KidStatus editor={editor} liveRunning={toolbar.liveRunning} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
+      {place.ink === "bar" && ink}
+      {place.report === "bar" && (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 rounded-full bg-white px-3 shadow-sm"
+            title={BETA_COPY.hint}
+            aria-label="Report a bug"
+            onClick={openReport}
+          >
+            <Bug className="size-3.5" aria-hidden />
+            <span className="hidden text-xs font-medium @5xl/bar:inline">Report a bug</span>
+          </Button>
+          {extras}
+        </>
+      )}
+      {/* last: it comes and goes with every save, and must not move the controls before it; on the
+          simple board only what needs a grown-up (no routine Saved beside Help me) */}
+      <SaveStatus sync={sync} onRetry={() => void retrySave()} quiet={toolbar.simple} />
+    </>
+  );
 
   return (
     <>
@@ -309,6 +489,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         and see what the tutor is doing. Everything rare — the Live
         preference, the help-mode explainer — hangs off the status pill's "…" menu rather
         than competing with them. Report a bug has a button of its own while we are in beta.
+        On the simple board the row is Back and a big Help me, and the rest waits behind More.
       */}
       {/*
         The bar's width class is the board's width, not the window's (a container, `bar`): with
@@ -323,27 +504,42 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           top: '16px',
           left: '16px',
           display: 'flex',
-          alignItems: 'flex-start',
+          // the simple board's Back sits level with its taller Help me
+          alignItems: toolbar.simple ? 'center' : 'flex-start',
           gap: '12px',
           // The controls wrap beside the back button (an upright iPad keeps one row) and leave
           // room for the pen's swatch at the top-right. On a phone-narrow board they drop under
-          // the back button instead: the screen strip takes that corner (screenStripSlot).
-          flexWrap: narrowBoard ? 'wrap' : 'nowrap',
-          maxWidth: 'calc(100% - 72px)',
+          // the back button instead: the screen strip takes that corner (screenStripSlot). The
+          // simple board's Help me stays beside Back; what follows it wraps under them.
+          flexWrap: narrowBoard || toolbar.simple ? 'wrap' : 'nowrap',
+          // the simple board's More takes the top-right corner (the pen's swatch steps aside)
+          maxWidth: toolbar.simple ? 'calc(100% - 144px)' : 'calc(100% - 72px)',
           // the wrapped bar's empty space is no target: on a phone the screen strip in the corner
           // sits under it (its ‹ › + and New topic were not tappable); the controls take taps
           pointerEvents: 'none',
         }}
       >
-        <Button
-          variant="ghost"
-          size="icon"
-          className="pointer-events-auto shrink-0"
-          aria-label="Back to my whiteboards"
-          onClick={() => router.push("/")}
-        >
-          <ArrowLeft01Icon size={20} strokeWidth={2} />
-        </Button>
+        {toolbar.simple ? (
+          <button
+            type="button"
+            className="pointer-events-auto flex size-12 shrink-0 cursor-pointer items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={KID_COPY.back}
+            title={KID_COPY.back}
+            onClick={() => router.push("/")}
+          >
+            <ArrowLeft01Icon size={24} strokeWidth={2.25} />
+          </button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="pointer-events-auto shrink-0"
+            aria-label="Back to my whiteboards"
+            onClick={() => router.push("/")}
+          >
+            <ArrowLeft01Icon size={20} strokeWidth={2} />
+          </Button>
+        )}
         {/*
           A board 768–1023 px wide (an upright iPad, or one sideways with Ask docked) fits this
           row only just: below @5xl the gaps are 6 px, the ink meter is the bottle and the number,
@@ -352,113 +548,48 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           nor a long status ever pushes the other controls onto a second row (Solve's steps
           button still wraps the status end there).
         */}
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5 *:pointer-events-auto @5xl/bar:gap-2">
-          <Tabs
-            value={assistanceMode}
-            onValueChange={(value) => {
-              setAssistanceMode(value as AssistanceMode);
-              setAskGlow((n) => n + 1);
-            }}
-            className="w-auto shadow-sm rounded-lg"
-          >
-            <TabsList aria-label="How much help">
-              <TabsTrigger value="off" className={HELP_TAB_CLASS}>Off</TabsTrigger>
-              <TabsTrigger value="feedback" className={HELP_TAB_CLASS}>Feedback</TabsTrigger>
-              <TabsTrigger value="suggest" className={HELP_TAB_CLASS}>Suggest</TabsTrigger>
-              <TabsTrigger value="answer" className={HELP_TAB_CLASS}>Solve</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          {/*
-            Auto: the tabs say how much help, this says when — by itself once the student pauses
-            (on), or only on the ask button (off). The whole pill is the touch target (32 px tall).
-            A plain button with role="switch" rather than the Radix switch: the board's first load is
-            at its budget, and this needs nothing a button does not already do.
-          */}
-          {toolbar.autoSwitch && (
-            <button
-              type="button"
-              role="switch"
-              aria-checked={toolbar.autoSwitch.on}
-              title={toolbar.autoSwitch.hint}
-              onClick={() => updateLive({ auto: !toolbar.autoSwitch?.on })}
-              className="group flex h-8 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-full border bg-white pl-2.5 pr-1.5 text-xs font-medium shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {LIVE_COPY.auto.label}
-              <span aria-hidden className="inline-flex h-5 w-9 items-center rounded-full bg-input p-0.5 transition-colors group-aria-checked:bg-primary">
-                <span className="block size-4 rounded-full bg-background shadow transition-transform group-aria-checked:translate-x-4" />
-              </span>
-            </button>
-          )}
-          {/* stuck? the one thing to tap: the next step, or in Solve the rest of them */}
-          {toolbar.askButton && (
-            <AskButton
-              kind={toolbar.askButton}
-              glow={askGlow}
-              onAsk={() => {
-                const ok = controller.requestHelp();
-                if (guided) setTourHelpAsk((a) => ({ n: (a?.n ?? 0) + 1, ok }));
-                return ok;
-              }}
-            />
-          )}
-          <Button
-            variant={chat.open ? "secondary" : "outline"}
-            size="sm"
-            className={chat.open ? "shadow-sm" : "bg-white shadow-sm"}
-            title={CHAT_COPY.buttonHint}
-            aria-label={CHAT_COPY.button}
-            aria-expanded={chat.open}
-            {...{ [CHAT_TOGGLE_ATTR]: "" }}
-            onClick={() => chat.onOpenChange(!chat.open)}
-          >
-            <MessageSquare className="h-4 w-4" />
-            {/* open, the panel names itself: the button is its icon unless the board is wide */}
-            <span className={chat.open ? "ml-1.5 hidden @5xl/bar:inline" : "ml-1.5"}>{CHAT_COPY.button}</span>
-          </Button>
-          {/* Lecture mode is hidden for now (owner, 2026-10-03): its button is out of the bar; the
-              code, LectureBar and the dev handles stay, so it comes back with this one line. */}
-          <LiveErrorBoundary>
-            <LiveStatusPill
-              editor={editor}
-              liveRunning={toolbar.liveRunning}
-              liveAvailable={!LIVE_KILL_SWITCH}
-              onLiveEnabledChange={(enabled) => updateLive({ enabled })}
-              onHelp={() => controller.requestHelp()}
-              canHelp={toolbar.canHelp}
-              onClearMarks={() => controller.clearMarks()}
-              onShowModeInfo={() => setModeInfoOpen(true)}
-              onReportProblem={openReport}
-              onReplay={openReplay}
-            />
-          </LiveErrorBoundary>
-          {/* the plan (∞), or the ink a plan spends right now; none on the guided board. Tapping a count opens the ink dialog */}
-          {/* once the balance covers the refused call again (a pack landed), its "out of ink" pill goes;
-              with none left, Auto spends nothing */}
-          <InkMeter onBalance={noteInkBalance} />
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 rounded-full bg-white px-3 shadow-sm"
-            title={BETA_COPY.hint}
-            aria-label="Report a bug"
-            onClick={openReport}
-          >
-            <Bug className="size-3.5" aria-hidden />
-            <span className="hidden text-xs font-medium @5xl/bar:inline">Report a bug</span>
-          </Button>
-          {/* a chunk that fails to load (an offline tab, a stale deploy) hides the button, not the board */}
-          {(features.stickers || features.pdfUpload) && (
-            <LiveErrorBoundary>
-              <React.Suspense fallback={null}>
-                {features.stickers && <StickerLibrary />}
-                {features.pdfUpload && <PdfUpload />}
-              </React.Suspense>
-            </LiveErrorBoundary>
-          )}
-          {/* last: it comes and goes with every save, and must not move the controls before it */}
-          <SaveStatus sync={sync} onRetry={() => void retrySave()} />
+        {toolbar.simple && askButton && <div className="pointer-events-auto shrink-0">{askButton}</div>}
+        {/*
+          The simple board's rest (the pill while it speaks up, the save pill): beside Help me when
+          they fit, else a row of their own under it, as wide as the board (More is only beside
+          the first row).
+        */}
+        <div
+          className={`flex flex-wrap items-center *:pointer-events-auto ${
+            toolbar.simple ? "max-w-[calc(100cqw-32px)] shrink-0 gap-2 empty:hidden" : "min-w-0 gap-1.5 @5xl/bar:gap-2"
+          }`}
+        >
+          {bar}
         </div>
       </div>
+      {/* lazy, warmed while the board loads (usePreloadKidDock); a chunk that fails hides More, not the board */}
+      {toolbar.simple && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <GrownUpMore
+              open={moreOpen}
+              onOpenChange={setMoreOpen}
+              simpleOn={simpleBoard}
+              onSimpleChange={switchSimpleBoard}
+              controls={{
+                dial,
+                auto: toolbar.autoSwitch,
+                onAutoChange: toggleAuto,
+                ask: place.ask === "more" ? chat.open : null,
+                onAsk: toggleChat,
+                onTopic: () => {
+                  topicSheetOpen.set(true);
+                  setMoreOpen(false);
+                },
+                status: pill(false),
+                ink,
+                extras,
+                menu: menuProps,
+              }}
+            />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
       </div>
 
       {/* The explainer opens from Board options; the report from there or its button in the bar. */}
@@ -552,6 +683,13 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           </React.Suspense>
         </LiveErrorBoundary>
       )}
+      {dailyBoard && user && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <DailyBoard boardId={id} userId={user.id} controller={controller} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
       {topicMounted && user && (
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
@@ -563,7 +701,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         chat.host &&
         createPortal(
           <LiveErrorBoundary>
-            <BoardChatPanel boardId={id} controller={controller} onClose={() => chat.onOpenChange(false)} kickoff={kickoff} onKickoffSent={() => clearAskKickoff(id)} />
+            <React.Suspense fallback={null}>
+              <BoardChatPanel boardId={id} controller={controller} onClose={() => chat.onOpenChange(false)} kickoff={kickoff} onKickoffSent={() => clearAskKickoff(id)} />
+            </React.Suspense>
           </LiveErrorBoundary>,
           chat.host,
         )}
@@ -614,6 +754,10 @@ export default function BoardPage() {
   const userId = user?.id;
   // The board chat: off by default, remembered per device; the page lays it out beside the board.
   const [chatOpen, setChatOpen] = useChatOpen();
+  // left open (or opened by a kickoff): the panel's chunk comes down while the board does
+  useEffect(() => {
+    if (chatOpen) preloadChatPanel();
+  }, [chatOpen]);
   const [chatHost, setChatHost] = useState<HTMLElement | null>(null);
   // With the on-screen keyboard up for the Ask panel docked beside the board (an iPad held sideways), the root
   // is laid over the part of the screen the keyboard leaves (src/components/board/keyboardFit.ts).
@@ -652,6 +796,11 @@ export default function BoardPage() {
   // known, and the tour clears it as it ends: the next board is gated).
   const guidedBoard = useMemo(() => (userId ? isGuidedBoard(onboardingStorage(), userId, id) : false), [userId, id]);
   usePlanGate({ enabled: !guidedBoard, page: "board" });
+  // The simple board: the student's grade is read (a dynamic import, one small query) beside the
+  // board's own load rather than after it, so a kid's first board seldom opens on the grown-up bar;
+  // and a kid's dock comes down while the board does. Neither holds the board up.
+  useSimpleBoardGrade(userId);
+  usePreloadKidDock(useSimpleBoard(userId));
 
   const retryLoad = useCallback(() => {
     setInitialData(null);
@@ -738,16 +887,18 @@ export default function BoardPage() {
         embeds={BOARD_EMBEDS}
         assets={assetStoreBundle?.store}
         components={{
+          // each slot as the simple board has it: its kid dock carries the tools, colours and pages
+          // (src/components/kidmode/slots.tsx)
           MenuPanel: null,
-          NavigationPanel: ScreenStrip,
+          NavigationPanel: BoardNavigationPanel,
           // a narrow board's strip, in the corner the style panel leaves free (screenStripSlot)
-          SharePanel: ScreenStripCorner,
+          SharePanel: BoardSharePanel,
           HelperButtons: null,
           Background: ScreenBackground,
           OnTheCanvas: ScreenFrame,
-          Toolbar: LiveToolbar,
+          Toolbar: BoardToolbar,
           // the pen's colour and size on request, not a panel always open over the screen
-          StylePanel: PenStyleButton,
+          StylePanel: BoardStylePanel,
           // tldraw's own error screen offers "Reset data", which clears localStorage
           ErrorFallback: BoardCrashed,
         }}

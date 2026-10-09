@@ -47,9 +47,14 @@
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4, 1rem);
 }
+/* Up next and Keep at it: one card shape, side by side as equals; one alone does not stretch across a
+   laptop with its level stranded at the far end */
 @media (min-width: 768px) {
   .cards[data-count="2"] {
-    grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cards[data-count="1"] > .card {
+    max-width: 40rem;
   }
 }
 
@@ -64,14 +69,7 @@
   border-radius: var(--radius-panel, 1.625rem);
   background: var(--t-surface);
 }
-.card[data-kind="next"] {
-  background: var(--arc-gradient-soft, var(--t-surface));
-}
-@media (min-width: 640px) {
-  .card[data-kind="next"] {
-    padding: var(--space-6, 1.5rem);
-  }
-}
+
 .cardIcon {
   display: grid;
   flex: none;
@@ -83,11 +81,7 @@
   background: var(--t-raised);
   color: var(--t-fg);
 }
-.card[data-kind="weak"] .cardIcon {
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 0.95rem;
-}
+
 .cardBody {
   display: flex;
   min-width: 0;
@@ -106,38 +100,24 @@
 .cardTitle {
   margin: var(--space-1, 0.25rem) 0 0;
   font-family: var(--font-display, inherit);
-  font-size: var(--text-2xl, 1.75rem);
+  font-size: var(--text-xl, 1.375rem);
   font-weight: 500;
   letter-spacing: var(--tracking-display, -0.03em);
-  line-height: 1.12;
+  line-height: 1.15;
   overflow-wrap: anywhere;
 }
-.card[data-kind="weak"] .cardTitle {
-  font-size: var(--text-xl, 1.375rem);
-}
-/* A phone: Up next stays big, the weakest spot is one short card under it, and the boards are not
-   pushed off the first screen */
+/* A phone: short cards under Today's practice and the path, so the boards are not pushed off the
+   first screens */
 @media (max-width: 639px) {
   .card {
     gap: var(--space-3, 0.75rem);
     padding: var(--space-4, 1rem);
   }
-  .cardIcon {
-    width: 2.75rem;
-    height: 2.75rem;
-    border-radius: 0.95rem;
-  }
-  .card[data-kind="weak"] .cardIcon,
-  .card[data-kind="weak"] .cardBlurb {
+  .cardBlurb {
     display: none;
   }
-  .card[data-kind="weak"] .cardActions {
+  .cardActions {
     padding-top: var(--space-3, 0.75rem);
-  }
-}
-@media (max-width: 479px) {
-  .cardTitle {
-    font-size: var(--text-xl, 1.375rem);
   }
 }
 .cardBlurb {
@@ -148,7 +128,7 @@
 }
 .cardActions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-3, 0.75rem);
   /* at the bottom of a card stretched to its row's height */
@@ -156,12 +136,22 @@
   padding-top: var(--space-4, 1rem);
 }
 .cardActions .level {
+  min-width: 0;
   margin-left: auto;
 }
+/* as tall as one Keep at it card (a phone has no blurb) */
 .cardSkeleton {
-  height: 11rem;
+  height: 9.25rem;
   border-radius: var(--radius-panel, 1.625rem);
   background: color-mix(in oklab, var(--t-border) 60%, transparent);
+}
+@media (min-width: 640px) {
+  .cardSkeleton {
+    height: 11.5rem;
+  }
+}
+.cards[data-count="1"] > .cardSkeleton {
+  max-width: 40rem;
 }
 @media (prefers-reduced-motion: no-preference) {
   .cardSkeleton {
@@ -181,12 +171,19 @@
   align-items: start;
   gap: var(--space-3, 0.75rem);
 }
+/* a K–3 kid: Pick a topic alone (the words box is inside it) */
+.askRowWrap[data-young] > .browse {
+  justify-self: start;
+}
+.dialogAsk {
+  margin-bottom: var(--space-2, 0.5rem);
+}
 @media (min-width: 768px) {
-  .askRowWrap {
+  .askRowWrap:not([data-young]) {
     grid-template-columns: minmax(0, 1fr) auto;
   }
   /* level with the box: below the question's one line (its line height and the gap under it) */
-  .askRowWrap > .browse {
+  .askRowWrap:not([data-young]) > .browse {
     margin-top: calc(var(--text-base, 1rem) * var(--leading-body, 1.4) + var(--space-2, 0.5rem));
   }
 }
@@ -616,7 +613,7 @@
   padding: 0 1rem;
   border: 1px solid var(--t-border-strong);
   border-radius: 999px;
-  background: var(--arc-gradient-soft, var(--t-muted));
+  background: var(--t-muted);
   color: var(--t-fg);
   font: inherit;
   font-size: 0.95rem;

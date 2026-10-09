@@ -15,6 +15,7 @@ import { boardFromStore } from "./loadBoard";
 import { REPLAY_SPEEDS, SEEK_STEP_MS, speedFor, type ReplayPlayer } from "./player";
 import { ReplayCanvas, useReplayPlayer } from "./ReplayCanvas";
 import { Scrubber, type ScrubberMarker } from "./Scrubber";
+import { SaveVideoButton } from "./SaveVideo";
 
 /** A lively first speed: the whole replay in about 25 seconds (a short board at 1x). */
 export function kidSpeed(durationMs: number): number {
@@ -258,21 +259,25 @@ export default function KidReplay({ editor, boardId, onClose }: { editor: Editor
       aria-modal="true"
       aria-label={KID_REPLAY_COPY.title}
       data-testid="kid-replay"
-      className="fixed inset-0 z-1300 flex flex-col bg-linear-to-b from-sky-50 via-violet-50 to-fuchsia-50 pb-[env(safe-area-inset-bottom)]"
+      className="fixed inset-0 z-1300 flex flex-col bg-violet-50 pb-[env(safe-area-inset-bottom)]"
     >
       <header className="flex items-center justify-between gap-3 px-4 pt-3 pb-2">
         <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-violet-950 sm:text-xl">
           <Sparkles className="size-5 text-amber-400" aria-hidden />
           {KID_REPLAY_COPY.title}
         </h2>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={KID_REPLAY_COPY.close}
-          className="grid size-11 place-items-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-black/5 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-300"
-        >
-          <X className="size-5" aria-hidden />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* the replay as a video to send (the recorder loads on the tap) */}
+          <SaveVideoButton player={player} disabled={empty} />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={KID_REPLAY_COPY.close}
+            className="grid size-11 place-items-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-black/5 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-300"
+          >
+            <X className="size-5" aria-hidden />
+          </button>
+        </div>
       </header>
 
       <main className="relative min-h-0 flex-1 px-3 sm:px-4">

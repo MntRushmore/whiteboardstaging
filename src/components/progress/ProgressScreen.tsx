@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, BookOpen, Plus, RefreshCw, Sprout } from "lucide-react";
@@ -10,6 +10,9 @@ import { usePlanGate } from "@/components/billing/usePlanGate";
 import { PROGRESS_COPY, buildProgressView, progressStateFor, type ProgressState, type ProgressView } from "@/lib/learning/progressView";
 import { Button } from "@/registry/components/button/button";
 import { EmptyState } from "@/registry/components/empty-state/empty-state";
+import { ProgressPath } from "@/components/path/ProgressPath";
+import { ShareProgressButton } from "@/components/share/ShareProgressButton";
+import { isKidEmail } from "@/lib/family/contracts";
 import { ActivityChart } from "./ActivityChart";
 import { GrownUps, LevelLadder, MistakeList, ProgressSkeleton, Section, SkillMap, WeekTiles } from "./ProgressSections";
 import { RecentProblems } from "./RecentProblems";
@@ -22,15 +25,20 @@ export interface ProgressContentProps {
   error: string | null;
   onRetry: () => void;
   actions: BoardActions;
+  /** the skill path (`ProgressPath`), first under the title once the record is read */
+  path?: ReactNode;
+  /** "Share progress" (`ShareProgressButton`), at the end of the title row once there is work to show */
+  share?: ReactNode;
 }
 
 /**
  * The page under the header, for each state: skeletons while loading, a retry on failure, a
  * friendly start (and the course's skills) before any problem, and otherwise, top to bottom:
- * this week, the last 4 weeks, the skills, the slips to watch, recent problems and a paragraph
- * for grown-ups. Takes a finished view model (`buildProgressView`), so it renders from fixtures too.
+ * the skill path, this week, the last 4 weeks, the skills, the slips to watch, recent problems and
+ * a paragraph for grown-ups. Takes a finished view model (`buildProgressView`) and the path as an
+ * element, so it renders from fixtures too.
  */
-export function ProgressContent({ state, view, error, onRetry, actions }: ProgressContentProps) {
+export function ProgressContent({ state, view, error, onRetry, actions, path, share }: ProgressContentProps) {
   const newBoardButton = (
     <Button onClick={actions.newBoard} disabled={actions.busy !== null} aria-busy={actions.busy === "new" || undefined}>
       <Plus size={16} strokeWidth={2} aria-hidden />
@@ -54,6 +62,7 @@ export function ProgressContent({ state, view, error, onRetry, actions }: Progre
               {view.course}
             </span>
           )}
+          {state === "ready" && share}
         </div>
       </header>
 
@@ -75,6 +84,7 @@ export function ProgressContent({ state, view, error, onRetry, actions }: Progre
         </div>
       ) : state === "empty" ? (
         <>
+          {path}
           <div data-state="empty" className={styles.state}>
             <EmptyState
               icon={<Sprout size={24} strokeWidth={1.6} />}
@@ -92,6 +102,7 @@ export function ProgressContent({ state, view, error, onRetry, actions }: Progre
         </>
       ) : (
         <>
+          {path}
           <Section id="week-title" title={PROGRESS_COPY.weekTitle} hint={PROGRESS_COPY.weekHint}>
             <WeekTiles tiles={view.tiles} />
           </Section>
@@ -176,7 +187,32 @@ export function ProgressScreen() {
         <div className={styles.banners}>
           <AuthErrorBanner />
         </div>
-        <ProgressContent state={state} view={view} error={data.status === "error" ? data.error : null} onRetry={reload} actions={actions} />
+        <ProgressContent
+          state={state}
+          view={view}
+          error={data.status === "error" ? data.error : null}
+          onRetry={reload}
+          actions={actions}
+          path={data.status === "ready" && user ? <ProgressPath userId={user.id} skills={data.summary.skills} /> : null}
+          share={
+            // not for a kid profile: sharing to the world is the grown-up's call (they share each kid's week from /report)
+            data.status === "ready" && view && user && !isKidEmail(user.email) ? (
+              <ShareProgressButton
+                placement="end"
+                userId={user.id}
+                card={{
+                  name: data.profile.displayName,
+                  grade: data.profile.grade,
+                  course: view.course,
+                  problems: view.week.problems,
+                  independent: view.week.independent,
+                  streak: data.summary.streakDays,
+                  mastered: data.summary.strongSkills,
+                }}
+              />
+            ) : null
+          }
+        />
       </main>
     </div>
   );

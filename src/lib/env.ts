@@ -53,8 +53,11 @@ const envSchema = z.object({
   LIVE_MODEL_LECTURE: optionalString,
   LIVE_MODEL_SKETCH: optionalString,
 
-  // Lecture mode's realtime speech-to-text (ElevenLabs Scribe). Unset: the browser's recognizer.
+  // ElevenLabs: lecture mode's realtime speech-to-text (Scribe) and read aloud's voice
+  // (POST /api/live/speak). Unset: the browser's own recognizer and voice.
   ELEVENLABS_API_KEY: optionalString,
+  // Read aloud's ElevenLabs voice id (src/lib/speech/tts.ts); unset: TTS.defaultVoiceId.
+  LIVE_VOICE_ID: optionalString,
 
   // Billing: ink packs (all optional; see docs/ARCHITECTURE.md "Billing").
   BILLING_ENFORCE: optionalString,
@@ -73,6 +76,10 @@ const envSchema = z.object({
   // Storage GC cron (GET|POST /api/admin/gc): Vercel sends `Authorization: Bearer <CRON_SECRET>`.
   // Also the trial-reminder cron (GET /api/cron/trial-reminders).
   CRON_SECRET: optionalString,
+  // Signs the weekly report email's unsubscribe link (src/lib/report/unsubscribe.ts); unset: CRON_SECRET.
+  // A link signed with the _PREVIOUS value still works, so a rotation keeps it there for 30 days.
+  REPORT_LINK_SECRET: optionalString,
+  REPORT_LINK_SECRET_PREVIOUS: optionalString,
 
   // Transactional email through Resend (src/lib/email). Unset: nothing is sent, nothing breaks.
   RESEND_API_KEY: optionalString,
@@ -133,7 +140,7 @@ export function getRateLimitBackend(): RateLimitBackend {
   return raw?.trim().toLowerCase() === "memory" ? "memory" : "db";
 }
 
-/** True when lecture mode's realtime recognizer (ElevenLabs) is configured. */
+/** True when ElevenLabs is configured: lecture mode's realtime recognizer and read aloud's voice. */
 export function hasElevenLabs(): boolean {
   return Boolean(getServerEnv().ELEVENLABS_API_KEY);
 }

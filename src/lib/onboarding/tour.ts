@@ -3,7 +3,8 @@
  * a reload resumes, and how far the student's ask in the panel has got. No React, no storage, no
  * network. Its own module, so only the tour's lazy chunk carries it (not the home, not the board).
  */
-import type { TourMarkerStep } from "./marker";
+import type { StarterProblem } from "./courses";
+import type { TourMarker, TourMarkerStep } from "./marker";
 import type { MarkKind, QuestionWhy } from "./marks";
 
 /**
@@ -75,6 +76,16 @@ export type TourEvent =
 
 export function initialTour(step: TourMarkerStep = "problem"): TourState {
   return { step, outcome: null, unread: false, unjudged: false, help: "waiting", asks: 0, askFrom: 0, skipped: false };
+}
+
+/**
+ * Where a reload picks the tour up, from its marker (`markerStepOf`): the step, and the tick coach
+ * mark 1 got (`TourMarker.ticked`). Coach mark 2 needs that tick to put the next problem on the
+ * board for Help me (`helpProblemFor`); without it a reload between the tick and that problem came
+ * back to a solved board, where Help me had nothing to write.
+ */
+export function resumeTour(marker: Pick<TourMarker, "step" | "ticked"> | null | undefined): TourState {
+  return { ...initialTour(marker?.step ?? "problem"), outcome: marker?.ticked ? "tick" : null };
 }
 
 export function tourReducer(state: TourState, event: TourEvent): TourState {
@@ -155,6 +166,34 @@ export function markerStepOf(step: TourStep): TourMarkerStep | null {
     case "done":
       return null;
   }
+}
+
+/**
+ * Coach mark 2 on a starter its first step solves (`oneStep`: `3 + 4`, then `7`): the problem the
+ * tour writes for Help me to work on, or null. Once the student's answer is ticked there is nothing
+ * left on that problem to help with — Help me said yes and wrote nothing, and the coach mark waited
+ * until "still working on it" — so the next starter of their set goes on the board (a fresh screen)
+ * as coach mark 2 opens. Only after a tick: a ringed answer is still Help me's to fix, and a
+ * student who skipped ahead with Next has the first problem still to do.
+ */
+export function helpProblemFor(
+  state: Pick<TourState, "step" | "outcome">,
+  starter: StarterProblem | null,
+  starters: readonly StarterProblem[],
+): StarterProblem | null {
+  if (state.step !== "help" || state.outcome !== "tick" || !starter?.oneStep) return null;
+  const key = starter.lines.join(";");
+  return starters.find((s) => s.lines.join(";") !== key) ?? null;
+}
+
+/**
+ * What coach mark 2 says Help me writes (`helpCopy`): the answer or the next step, by the problem
+ * it works on — the one the tour wrote for it (`fresh`, from `helpProblemFor`) once that is on the
+ * board, else the starter. The two need not agree: a Geometry student's `x + 65° = 180°` is
+ * answered in one step, and the problem after it, `3^{2} + 4^{2} = c^{2}`, is not.
+ */
+export function helpWordsFor(starter: StarterProblem | null, fresh: StarterProblem | null): { answer: boolean; fresh: boolean } {
+  return { answer: Boolean((fresh ?? starter)?.oneStep), fresh: fresh !== null };
 }
 
 /**

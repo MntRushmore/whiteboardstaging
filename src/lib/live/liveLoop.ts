@@ -1,6 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
+import { say } from "@/lib/speech/say";
 import { Box, createShapeId } from "tldraw";
 import type {
   Editor,
@@ -133,7 +134,8 @@ import { captureInkCrop } from "./inkCrop";
 import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, leadingSigns, ownTicks, readYoungHand } from "./youngHand";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
-import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, workStacked, type StackedWork } from "./engine/columnArithmetic";
+import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, stackedAnalysis, workStacked, type StackedWork } from "./engine/columnArithmetic";
+import { bracketLine, isArithmetic, isSlip, judgeLine, MISREAD_STACK } from "./engine/columnWork";
 import { stackGrid, stackGroups, type StackGrid, type StackedSum } from "./stackedSums";
 import { parseDomainPiece } from "./engine/domain";
 import { figureAnswer, isValueLabel, labelKey, looksLikeUnknown } from "./figure";
@@ -489,13 +491,6 @@ const STACK_META = "stackFor";
 const STACK_RING_CONFIDENCE = 0.85;
 /** between two digits of a stacked sum the tutor writes, a beat (not a whole line's pause) */
 const STACK_DIGIT_GAP_MS = 200;
-/**
- * A read that is a stacked sum's last row over its answer, read as a fraction: no one writes a
- * fraction whose numerator starts with `+` or `x` — `\frac{+680}{966}` is `+ 680` over a rule over
- * `966`. Should `stackedSums.ts` ever miss the layout, the line is still never answered as a
- * fraction (`= 0.7039`): it is treated as a stacked sum this cannot work, quiet.
- */
-const MISREAD_STACK = /^\s*\\frac\s*\{\s*(?:\+|\\times(?![a-zA-Z])|\\cdot(?![a-zA-Z]))/;
 /** on the strokes of a tutor's mark (tick / ring / question mark): its `markKey` */
 const MARK_META = "mark";
 /** on a question mark's strokes: why the tutor put it there (`UnjudgedReason`) */
@@ -580,28 +575,6 @@ export function isAiNote(meta: unknown): boolean {
   return typeof meta === "object" && meta !== null && (meta as Record<string, unknown>)[AI_NOTE_META] === true;
 }
 
-/** A number, as a young student writes an answer: `14`, `-3`, `2.5`, `\frac{3}{4}`, `3/4` (an `=` before it allowed). */
-const BARE_NUMBER = /^\s*=?\s*-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}|\d+\s*\/\s*\d+)\s*$/;
-/** The same, as the last side of a line (`7 + 5 = 12`'s `12`): the line ends in the answer. */
-const PLAIN_NUMBER = /^\s*-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}|\d+\s*\/\s*\d+)\s*$/;
-
-/** What follows a line's last `=` (the whole line when it has none). */
-function lastSide(latex: string): string {
-  const at = latex.lastIndexOf("=");
-  return at === -1 ? latex : latex.slice(at + 1);
-}
-
-/** Maths with digits and no letters: arithmetic (`18 + 15 - 19`, `6 \times 4 = 24`, `\frac{1}{2} + \frac{1}{4}`). */
-function isArithmetic(latex: string): boolean {
-  const bare = latex.replace(/\\(?:frac|dfrac|tfrac|times|div|cdot|left|right|quad|qquad|,|;|:|!)/g, " ");
-  return /\d/.test(bare) && !/[a-zA-Z\\]/.test(bare);
-}
-
-/** A step the engine rings (it does not follow), or one carried on from such a step (`LineAnalysis.carried`). */
-function isSlip(a: LineAnalysis): boolean {
-  return a.verdict === "mismatch" || Boolean(a.carried);
-}
-
 function isShapeRecord(r: unknown): r is TLShape {
   return typeof r === "object" && r !== null && (r as { typeName?: string }).typeName === "shape";
 }
@@ -683,6 +656,8 @@ function defaultDeps(): LiveLoopDeps {
     planFigure: (spec, opts) => defaultPlanFigure(spec, opts),
     notify: (message) => {
       toast(message);
+      // read aloud (when on): Help me's and Solve's notes are the tutor talking too
+      say(message);
     },
   };
 }
@@ -2489,9 +2464,14 @@ export class LiveLoop implements LiveController {
    * answer is a number, and a young student writes just the number.
    */
   private arithmeticProblem(state: LiveLineState): boolean {
+    return this.arithmeticLines(state) !== null;
+  }
+
+  /** The problem `state` is in, when it has no letters (`arithmeticProblem`): its lines; else null. */
+  private arithmeticLines(state: LiveLineState): string[] | null {
     const head = this.columnHeads.get(state.line.column);
     const lines = head ? head.lines : [this.columnLines(state.line.column).find((s) => s.latex && s.line.row <= state.line.row)?.latex ?? state.latex];
-    return lines.length > 0 && lines.every(isArithmetic);
+    return lines.length > 0 && lines.every(isArithmetic) ? [...lines] : null;
   }
 
   /**
@@ -2618,7 +2598,9 @@ export class LiveLoop implements LiveController {
       const ctx = this.columnContext(step);
       const previous = aboveLatex === above.latex ? ctx.previous : engine.analyzeLine(aboveLatex, { ...this.columnContext(above), mode });
       const original = ctx.original === above.analysis ? previous : ctx.original;
-      const a = engine.analyzeLine(stepLatex, { previous, original, mode });
+      // arithmetic is judged against the problem (a young student's working: `judge`), anything else
+      // against the line above
+      const a = this.arithmeticProblem(step) ? this.judge(step, stepLatex, { ...ctx, previous, original }) : engine.analyzeLine(stepLatex, { previous, original, mode });
       return a.verdict === "ok" || Boolean(a.solved);
     } catch {
       return false;
@@ -3030,7 +3012,33 @@ export class LiveLoop implements LiveController {
   private problemState(cell: ProblemCell): ProblemState {
     const busy = this.problemBusy(cell);
     const work = this.tutorWorkOn(cell);
-    return { work: this.workUnder(cell) !== null, solved: work.solved || busy, started: work.solved || work.lines.length > 0 || busy, busy };
+    return { work: this.workUnder(cell) !== null, solved: work.solved || busy, started: work.solved || work.lines.length > 0 || busy, busy, done: this.problemDone(cell) };
+  }
+
+  /**
+   * The student has answered one of the chat's problems (`ProblemState.done`): their last line under
+   * it the tutor can judge is its answer, right — the `12` ticked under `9 + 3`.
+   */
+  private problemDone(cell: ProblemCell): boolean {
+    const mine = Object.values(liveStore.lines.get()).filter((s) => this.columnHeads.get(s.line.column)?.key === cell.key && this.judgeable(s));
+    const last = mine.sort((a, b) => a.line.bounds.y + a.line.bounds.h - (b.line.bounds.y + b.line.bounds.h))[mine.length - 1];
+    return Boolean(last?.analysis?.solved) && !this.modelFlagged(last);
+  }
+
+  /**
+   * `state` is a line of the student's under one of the chat's problems, which they have answered
+   * (`problemDone`): Help me and Solve it are about the next problem, not this one again.
+   */
+  private onAnsweredProblem(state: LiveLineState | undefined): boolean {
+    const head = state ? this.columnHeads.get(state.line.column) : undefined;
+    return Boolean(head) && this.problemDone(head!);
+  }
+
+  /** The chat's problem the pen's last stroke is in (a cell key), whether or not that stroke is a line yet. */
+  private penCell(cells: readonly ProblemCell[]): string | null {
+    const shape = this.penStrokeId ? this.editor.getShape(this.penStrokeId as TLShapeId) : undefined;
+    const b = shape ? this.editor.getShapePageBounds(shape) : undefined;
+    return b ? (cellOf(boxToRect(b), cells)?.key ?? null) : null;
   }
 
   /** Which of the chat's problems an ask is about (`chat/work.ts`); null with none on this screen. */
@@ -3039,7 +3047,9 @@ export class LiveLoop implements LiveController {
     if (cells.length === 0) return null;
     const state = (c: ProblemCell) => this.problemState(c);
     const touched = this.targetProblem();
-    return depth === "solve" ? pickForSolve(cells, touched, state) : pickForStep(cells, touched, state);
+    // where the pen last wrote, for a problem answered: the next one is the one the student is on
+    const pen = this.picked() ? null : this.penCell(cells);
+    return depth === "solve" ? pickForSolve(cells, touched, state, pen) : pickForStep(cells, touched, state, pen);
   }
 
   /**
@@ -3193,30 +3203,35 @@ export class LiveLoop implements LiveController {
     // a stacked sum is worked column by column, never as a line (its rule is no fraction bar)
     if (this.stackLike(state)) return this.stackAnalysis(state);
     try {
-      const ctx = this.columnContext(state);
-      let a = this.engine.analyzeLine(state.latex, { ...ctx, mode: this.opts.mode });
-      // arithmetic (no letters anywhere in the problem): a lone number is the answer (`= 9` too), and
-      // so is the one after the end of the problem written again beside it (`3 = 7` after `4 +`); a
-      // right plain number — or a true fact, `7 + 5 = 12` — is the problem solved
-      if (this.arithmeticProblem(state)) {
-        const bare = this.answerBeside(state) ?? (BARE_NUMBER.test(state.latex) ? `= ${withoutRelation(state.latex)}` : null);
-        if (ctx.previous && bare) {
-          const answer = this.engine.analyzeLine(bare, { ...ctx, mode: this.opts.mode });
-          if (answer.verdict === "ok" || answer.verdict === "mismatch") a = { ...answer, bareAnswer: true };
-        }
-        if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(state.latex))) a = { ...a, solved: true };
-      }
-      if (a.verdict !== "mismatch" || a.solved) return a;
-      // not right from the last right line: carried on from the slip right above it? Then the
-      // mistake is that slip's (ringed already), and this step gets no mark of its own
-      const slip = this.slipAbove(state);
-      if (!slip) return a;
-      const fromSlip = this.engine.analyzeLine(state.latex, { ...ctx, previous: slip, mode: this.opts.mode });
-      return fromSlip.verdict === "ok" ? { ...a, verdict: "none", carried: true } : a;
+      return this.judge(state, state.latex);
     } catch (e) {
       console.warn("[live] analyzeLine threw", e);
       return { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
     }
+  }
+
+  /**
+   * `state`'s line, read as `latex`, judged in its column (`engine/columnWork.ts`): against the last
+   * right line above it, or — arithmetic, no letters anywhere in the problem — against the problem,
+   * as a young student's working (a side calculation, a lone number, a remainder). The page's part
+   * is handed in: the problem, the working above, a line on the problem's own row, the slip above.
+   */
+  private judge(state: LiveLineState, latex: string, ctx = this.columnContext(state)): LineAnalysis {
+    const arithmetic = this.arithmeticLines(state);
+    return judgeLine(this.engine!, latex, {
+      ctx: { ...ctx, mode: this.opts.mode },
+      arithmetic,
+      above: arithmetic ? this.workAbove(state) : [],
+      beside: arithmetic ? this.answerBeside(state) : null,
+      slip: this.slipAbove(state),
+    });
+  }
+
+  /** The student's lines above `state` in its column, as read: the working so far (a stacked sum is a problem of its own). */
+  private workAbove(state: LiveLineState): string[] {
+    return this.columnLines(state.line.column)
+      .filter((s) => s.line.row < state.line.row && s.latex && !this.stackOf(s.line))
+      .map((s) => s.latex);
   }
 
   private decisionFor(state: LiveLineState, extra: { userAsked?: boolean; settled?: boolean } = {}): PolicyDecision {
@@ -6838,8 +6853,9 @@ export class LiveLoop implements LiveController {
     const line = this.helpTargetLine();
     let column = line ? line.line.column : null;
     let cell: ProblemCell | null = null;
-    // a line still being read is the one Help waits for; one read that it cannot act on hands over to the chat's problems
-    if (cells.length > 0 && (!line || (line.analysis && !this.actsOn(line)))) {
+    // a line still being read is the one Help waits for; one read that it cannot act on, or the
+    // answer to a problem the student has finished, hands over to the chat's problems
+    if (cells.length > 0 && (!line || (line.analysis && (!this.actsOn(line) || this.onAnsweredProblem(line))))) {
       const pick = this.problemPick(this.opts.mode === "answer" ? "solve" : "step");
       if (pick && pick.kind !== "none") {
         const work = pick.kind === "student" ? this.workUnder(pick.cell) : null;
@@ -6896,7 +6912,9 @@ export class LiveLoop implements LiveController {
     let target = this.askedLine(lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine());
     // The chat's problems: with no line of the student's to act on, Solve steps is about the current
     // problem — worked out under it; pressed again once it is, the next one (`chat/work.ts`).
-    if (!lineId && this.opts.enabled && this.opts.mode === "answer" && !this.actsOn(target)) {
+    // A problem the student has answered is not asked about again: the next one still to do is.
+    const answered = !lineId && this.onAnsweredProblem(target);
+    if (!lineId && this.opts.enabled && this.opts.mode === "answer" && (answered || !this.actsOn(target))) {
       const pick = this.problemPick("solve");
       // the tutor is writing the current problem's work already: that is the answer to this ask
       if (pick?.kind === "busy") return;
@@ -6908,6 +6926,7 @@ export class LiveLoop implements LiveController {
       // every problem worked out, and the last ink is a stray mark under one: nothing to do
       else if (pick && (!target || this.columnHeads.has(target.line.column))) return;
     }
+    if (answered && target && this.onAnsweredProblem(target)) return;
     if (!target || !target.latex) return;
     if (this.opts.mode !== "answer") {
       this.requestCheck(target.line.id);
@@ -7013,10 +7032,13 @@ export class LiveLoop implements LiveController {
     }
     // asked on the `x = 3` under `3x + 24 =` (or the lone `3` of an `x =` read apart): that line (`askedLine`)
     const target = this.askedLine(this.helpTargetLine());
-    // The chat's problems: with no line of the student's to help with, Help is about the current one.
-    if (!this.actsOn(target) && this.helpWithProblem(target)) return true;
-    // nothing on this screen to help with: the button says so
-    if (!target) return false;
+    // The chat's problems: with no line of the student's to help with, Help is about the current one
+    // — and after a right answer to one of them, about the next one still to do: never the answered
+    // one again (it asked the model to solve it, and showed "Solving…" for nothing).
+    const answered = this.onAnsweredProblem(target);
+    if ((answered || !this.actsOn(target)) && this.helpWithProblem(answered ? undefined : target)) return true;
+    // nothing on this screen to help with (every problem on it answered): the button says so
+    if (!target || answered) return false;
     if (needsLook(target)) {
       // No sentences on the board: ink the tutor cannot read as maths gets a "?" beside it
       // (write it again, larger or clearer) — not a model's paragraph about the picture.
@@ -7314,10 +7336,12 @@ export class LiveLoop implements LiveController {
    */
   private stackWork(state: LiveLineState): StackState | null {
     const sum = this.stackOf(state.line);
-    const read = sum && !sum.more ? parseStacked(state.latex) : null;
-    if (!sum || !read || read.operands.length !== sum.rows.length) return null;
+    const read = sum ? parseStacked(state.latex) : null;
+    // rows under the answer row are long multiplication's, or a block this cannot work
+    if (!sum || !read || (sum.more && !read.rows) || read.operands.length !== sum.rows.length) return null;
     const grid = stackGrid(sum, rowPlaces(read));
-    const work = workStacked(read, grid.answerLast === null ? {} : { answerLast: grid.answerLast });
+    // long multiplication's sum is not on the row under the rule: it is lined up as the numbers are
+    const work = workStacked(read, grid.answerLast === null || read.rows ? {} : { answerLast: grid.answerLast });
     return work ? { sum, grid, work, key: `${read.op} ${read.operands.join(" ")}` } : null;
   }
 
@@ -7328,19 +7352,12 @@ export class LiveLoop implements LiveController {
    * answered, never sent to a model.
    */
   private stackAnalysis(state: LiveLineState): LineAnalysis {
-    const quiet: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
-    const work = this.stackWork(state)?.work;
-    if (!work) return quiet;
-    const wrong = work.wrong !== -1;
-    if (wrong && state.confidence < STACK_RING_CONFIDENCE) return quiet;
-    return {
-      kind: wrong || work.right ? "equation" : "expression",
-      math: "",
-      resultLatex: "",
-      verdict: wrong ? "mismatch" : work.right ? "ok" : "none",
-      note: work.note,
-      ...(work.right ? { solved: true } : {}),
-    };
+    const sure = state.confidence >= STACK_RING_CONFIDENCE;
+    const s = this.stackWork(state);
+    if (s || parseStacked(state.latex) || !this.engine) return stackedAnalysis(s?.work ?? null, sure);
+    // no sum: a long-division bracket with its working under it, read as one block — its quotient
+    // judged against the problem; anything else stays quiet
+    return bracketLine(this.engine, state.latex, this.arithmeticLines(state), sure, this.opts.mode);
   }
 
   /** What the tutor has written into this sum already, by row (`STACK_META`, `HAND_PART_META`). */
@@ -7380,7 +7397,8 @@ export class LiveLoop implements LiveController {
   private markRect(state: LiveLineState, kind: MarkKind): Rect {
     const sum = kind === "question" ? null : this.stackOf(state.line);
     const answer = sum?.answer?.rect;
-    if (!answer) return state.line.bounds;
+    // long multiplication (its rows under the rule): the mark goes round, or after, the whole block
+    if (!answer || sum?.more) return state.line.bounds;
     if (kind === "check") return { ...answer, w: rectMaxX(state.line.bounds) - answer.x };
     const s = this.stackWork(state);
     return (s && s.work.wrong !== -1 && s.grid.answerGlyph(s.work.wrong)) || answer;
@@ -7390,7 +7408,8 @@ export class LiveLoop implements LiveController {
   private stackLeft(state: LiveLineState, step: boolean): boolean {
     const id = state.line.id;
     const s = this.reading.has(id) || this.rt.get(id)?.checkAbort ? null : this.stackWork(state);
-    if (!s || s.work.wrong !== -1) return false;
+    // long multiplication's rows are the student's to write: the tutor marks them, never fills them in
+    if (!s || s.work.wrong !== -1 || s.work.long) return false;
     const tutor = this.tutorStackPlaces(state, s.key).a;
     return step ? stackNextStep(s.work, tutor) !== null : placesLeft(s.work, tutor).length > 0;
   }
@@ -7403,7 +7422,8 @@ export class LiveLoop implements LiveController {
    */
   private helpStack(state: LiveLineState): void {
     const s = this.stackWork(state);
-    if (!s) return;
+    // long multiplication: marked, never written into
+    if (!s || s.work.long) return;
     if (s.work.wrong !== -1) {
       if (state.analysis?.verdict === "mismatch") this.suggestNextStep(state.line.id, { now: true });
       return;
@@ -7423,7 +7443,8 @@ export class LiveLoop implements LiveController {
    */
   private solveStack(state: LiveLineState): void {
     const s = this.stackWork(state);
-    if (!s) return;
+    // long multiplication: marked, never written into (its sum is not on the row under the rule)
+    if (!s || s.work.long) return;
     const { work, grid } = s;
     if (work.wrong !== -1 && state.analysis?.verdict !== "mismatch") return;
     const tutor = this.tutorStackPlaces(state, s.key);
@@ -7445,7 +7466,7 @@ export class LiveLoop implements LiveController {
   private stackFix(state: LiveLineState): { s: StackState; items: StackItem[] } | null {
     const s = state.analysis?.verdict === "mismatch" ? this.stackWork(state) : null;
     const p = s?.work.wrong ?? -1;
-    if (!s || p < 0 || p >= s.work.digits.length || this.tutorStackPlaces(state, s.key).f.has(p)) return null;
+    if (!s || s.work.long || p < 0 || p >= s.work.digits.length || this.tutorStackPlaces(state, s.key).f.has(p)) return null;
     return { s, items: [{ row: "f", place: p, digit: String(s.work.digits[p]) }] };
   }
 

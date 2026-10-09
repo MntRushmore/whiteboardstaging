@@ -51,6 +51,33 @@ describe("which problem the tutor works", () => {
     expect(pickForSolve(CELLS, null, states({ hb_1: { solved: true, started: true } }))).toEqual({ kind: "tutor", cell: TWO });
   });
 
+  it("a problem the student has answered is not the current one: the next one still to do is", () => {
+    const FOUR = cell("hb_4", 4, ["5 + 3"], { x: 48, y: 472, w: 500, h: 400 });
+    const GRID = [ONE, TWO, THREE, FOUR];
+    // 1 answered (ticked): Help is about 2, the next in reading order — Solve and a step alike
+    expect(currentProblem(GRID, "hb_1", states({ hb_1: { work: true, done: true } }))).toBe(TWO);
+    expect(pickForStep(GRID, "hb_1", states({ hb_1: { work: true, done: true } }))).toEqual({ kind: "tutor", cell: TWO });
+    expect(pickForSolve(GRID, "hb_1", states({ hb_1: { work: true, done: true } }))).toEqual({ kind: "tutor", cell: TWO });
+    // 2 already given its step by the tutor (started, not worked out): still 2 — a second tap never goes back to 1
+    expect(pickForStep(GRID, "hb_1", states({ hb_1: { work: true, done: true }, hb_2: { started: true } }))).toEqual({ kind: "tutor", cell: TWO });
+    // 2 answered too, and 3 worked out by the tutor: 4
+    expect(currentProblem(GRID, "hb_2", states({ hb_1: { work: true, done: true }, hb_2: { work: true, done: true }, hb_3: { solved: true } }))).toBe(FOUR);
+    // a problem with a wrong answer under it is still to do: its work gets the help
+    expect(pickForStep(GRID, "hb_1", states({ hb_1: { work: true, done: true }, hb_2: { work: true } }))).toEqual({ kind: "student", cell: TWO });
+    // the pen's last stroke is under 3 (an `=` started there, no line yet): 3, the one nearest it
+    expect(currentProblem(GRID, "hb_1", states({ hb_1: { work: true, done: true } }), "hb_3")).toBe(THREE);
+    // ...but not when 3 is answered too, nor when the pen is still in the answered one
+    expect(currentProblem(GRID, "hb_1", states({ hb_1: { work: true, done: true }, hb_3: { work: true, done: true } }), "hb_3")).toBe(TWO);
+    expect(currentProblem(GRID, "hb_1", states({ hb_1: { work: true, done: true } }), "hb_1")).toBe(TWO);
+    // after the last, round to the first still to do
+    expect(currentProblem(GRID, "hb_4", states({ hb_4: { work: true, done: true }, hb_1: { work: true, done: true } }))).toBe(TWO);
+    // every problem answered: nothing, never the answered one again
+    const all = states({ hb_1: { work: true, done: true }, hb_2: { work: true, done: true }, hb_3: { work: true, done: true }, hb_4: { work: true, done: true } });
+    expect(currentProblem(GRID, "hb_2", all)).toBeNull();
+    expect(pickForStep(GRID, "hb_2", all)).toEqual({ kind: "none" });
+    expect(pickForSolve(GRID, "hb_2", all)).toEqual({ kind: "none" });
+  });
+
   it("the tutor's work on a problem has a line id of its own, stable across a reload", () => {
     expect(problemLineId(ONE)).toBe("problem:hb_1");
   });

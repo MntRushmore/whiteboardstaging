@@ -11,24 +11,27 @@ import { getLiveSettings, updateLiveSettings } from "@/lib/live/liveSettings";
 import { clientMetric } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 import { ASK_BUTTON_ATTR } from "@/components/live/AskButton";
-import { CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
+import { CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
+// the pen in either bar (tldraw's toolbar, or a K–3 kid's simple board's dock), and the simple board's More
+import { MORE_SELECTOR as MORE, PEN_SELECTOR as PEN } from "@/components/kidmode/tourAnchors";
 import { useChatMessages } from "@/components/chat/useBoardChat";
 import { startersFor, type StarterProblem } from "@/lib/onboarding/courses";
 import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writeTourMarker } from "@/lib/onboarding/marker";
 import { HOME_PATH, PLAN_PATH, writePlanMarker } from "@/lib/onboarding/planMarker";
 import type { Box } from "@/lib/onboarding/placement";
 import { isTutorWork, markKindOf, questionWhyOf } from "@/lib/onboarding/marks";
-import { askProgress, COACH_COUNT, coachNumber, initialTour, markerStepOf, tourAutoAtEnd, tourAutoBefore, tourReducer } from "@/lib/onboarding/tour";
+import { askProgress, COACH_COUNT, coachNumber, helpProblemFor, helpWordsFor, markerStepOf, resumeTour, tourAutoAtEnd, tourAutoBefore, tourReducer } from "@/lib/onboarding/tour";
 import { asOnboardingClient, saveOnboarding } from "@/lib/onboarding/storage";
 import { sendWelcomeEmail } from "@/lib/email/client";
 import { askCopy, helpCopy, MORE_LIKE_THESE, TOUR_COPY, writeCopy } from "@/lib/onboarding/tourCopy";
+import { coachSpeech } from "@/lib/speech/tutorWords";
 import { CoachMark } from "./CoachMark";
 import { TourFinish } from "./TourFinish";
 import styles from "./tour.module.css";
 
 /**
  * The guided first board (loaded with a dynamic import, only on the board the welcome created).
- * The tutor writes one starter problem from the student's course through the board chat's own
+ * The tutor writes one starter problem from the student's grade or course through the board chat's own
  * executor — the engine checks it and the tutor's hand writes it, no model and no ink — and then
  * three coach marks, one at a time, each asking the student to do one thing on the real board and
  * waiting for the board to answer (`tourReducer`):
@@ -57,7 +60,6 @@ export interface BoardTourProps {
   onFinished: () => void;
 }
 
-const PEN = '[data-testid="tools.draw"]';
 const MODES = '[aria-label="How much help"]';
 const HELP = `[${ASK_BUTTON_ATTR}]`;
 const ASK = `[${CHAT_TOGGLE_ATTR}]`;
@@ -81,7 +83,22 @@ function problemOnPage(editor: Editor): string[] | null {
   return null;
 }
 
-function matchStarter(starters: readonly StarterProblem[], lines: string[] | null): StarterProblem | null {
+/**
+ * Every problem on the board, screen by screen (a reload mid-tour): each one's lines, once. The
+ * starter is on the first screen; the problem the tour writes for coach mark 2 goes on a new one.
+ */
+function problemsOnBoard(editor: Editor): string[][] {
+  const out = new Map<string, string[]>();
+  for (const page of editor.getPages()) {
+    for (const id of editor.getPageShapeIds(page.id)) {
+      const p = problemMetaOf(editor.getShape(id)?.meta);
+      if (p && !out.has(p.lines.join(";"))) out.set(p.lines.join(";"), p.lines);
+    }
+  }
+  return [...out.values()];
+}
+
+function matchStarter(starters: readonly StarterProblem[], lines: readonly string[] | null | undefined): StarterProblem | null {
   if (!lines) return null;
   return starters.find((s) => s.lines.join(";") === lines.join(";")) ?? null;
 }
@@ -156,10 +173,11 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   const editor = useEditor();
   const router = useRouter();
   const marker = useMemo(() => readTourMarker(browserStorage(), userId), [userId]);
-  const [state, dispatch] = useReducer(tourReducer, marker?.step ?? "problem", initialTour);
-  const starters = useMemo(() => startersFor(marker?.course, marker?.starter ?? 0), [marker]);
-  // the starter on the board (its hint goes in the first coach mark); a resumed tour finds it on the page
-  const [starter, setStarter] = useState<StarterProblem | null>(() => matchStarter(starters, problemOnPage(editor)));
+  const [state, dispatch] = useReducer(tourReducer, marker, resumeTour);
+  const starters = useMemo(() => startersFor(marker?.course, marker?.starter ?? 0, marker?.grade), [marker]);
+  // the starter on the board (its hint goes in the first coach mark); a resumed tour finds it on the
+  // board's first screen (coach mark 2's problem may be on the screen it reloads on)
+  const [starter, setStarter] = useState<StarterProblem | null>(() => matchStarter(starters, problemsOnBoard(editor)[0]));
   const messages = useChatMessages(boardId);
   const mounted = useRef(false);
   const writing = useRef(false);
@@ -207,17 +225,39 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
         const report = await controller.runChatActions([{ type: "write_problems", problems: [[...s.lines]] }], { origin: "starter" });
         if (report.problemsWritten > 0) {
           setStarter(s);
-          clientMetric("onboarding.tour.problem", { course: marker?.course ?? null, problem: s.lines.join("; "), ms: Date.now() - startedAt });
+          clientMetric("onboarding.tour.problem", { course: marker?.course ?? null, grade: marker?.grade ?? null, problem: s.lines.join("; "), ms: Date.now() - startedAt });
           return;
         }
       }
-      clientMetric("onboarding.tour.problem", { course: marker?.course ?? null, problem: null, ms: Date.now() - startedAt });
+      clientMetric("onboarding.tour.problem", { course: marker?.course ?? null, grade: marker?.grade ?? null, problem: null, ms: Date.now() - startedAt });
     })()
       .catch((e) => clientMetric("onboarding.tour.problem.failed", { error: e instanceof Error ? e.message : String(e) }))
       .finally(() => {
         if (mounted.current) dispatch({ type: "problemReady" });
       });
   }, [state.step, editor, controller, starters, marker]);
+
+  // Coach mark 2 after a ticked answer to a one-step starter (`3 + 4`, `7`): Help me would find
+  // nothing left to do, so the next starter of the set goes on the board for it, once.
+  const helpProblem = helpProblemFor(state, starter, starters);
+  // the problem written for it, which coach mark 2's words are about; a reload finds it on the board
+  // (and does not write it twice)
+  const [freshProblem, setFreshProblem] = useState<StarterProblem | null>(() =>
+    helpProblem && problemsOnBoard(editor).some((lines) => lines.join(";") === helpProblem.lines.join(";")) ? helpProblem : null,
+  );
+  const helpWritten = useRef(freshProblem !== null);
+  useEffect(() => {
+    if (!helpProblem || helpWritten.current || !controller.runChatActions) return;
+    helpWritten.current = true;
+    controller
+      .runChatActions([{ type: "write_problems", problems: [[...helpProblem.lines]] }], { origin: "starter" })
+      .then((report) => {
+        clientMetric("onboarding.tour.helpProblem", { problem: helpProblem.lines.join("; "), written: report.problemsWritten > 0 });
+        if (report.problemsWritten > 0 && mounted.current) setFreshProblem(helpProblem);
+      })
+      .catch((e) => clientMetric("onboarding.tour.problem.failed", { error: e instanceof Error ? e.message : String(e) }));
+  }, [helpProblem, controller]);
+  const words = { answer: Boolean(starter?.oneStep) };
 
   // The tutor's marks: coach mark 1 waits for a tick or a ring on the student's line, and a
   // question mark (the tutor could not read the line, or read it but found nothing to check)
@@ -322,7 +362,13 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
     clientMetric("onboarding.tour.step", { step: state.step, outcome: state.outcome });
     const step = markerStepOf(state.step);
     if (step && marker) {
-      writeTourMarker(browserStorage(), userId, { ...marker, boardId, step, ...(autoBefore.current === undefined ? {} : { autoBefore: autoBefore.current }) });
+      writeTourMarker(browserStorage(), userId, {
+        ...marker,
+        boardId,
+        step,
+        ...(autoBefore.current === undefined ? {} : { autoBefore: autoBefore.current }),
+        ...(state.outcome === "tick" ? { ticked: true as const } : {}),
+      });
       return;
     }
     if ((state.step === "finish" || state.step === "done") && !completed.current) {
@@ -361,8 +407,9 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   }, [editor]);
   // the tick or ring being explained, else the pen
   const markFallback = useCallback(() => shapesRect(editor, lastMark.current) ?? rectOfSelector(PEN) ?? penFallback(), [editor, penFallback]);
-  // no Help me in the bar (Live switched off): the dial, where help is turned on
-  const helpFallback = useCallback(() => rectOfSelector(MODES) ?? penFallback(), [penFallback]);
+  // no Help me in the bar (Live switched off): the dial, where help is turned on; on the simple
+  // board the dial is behind More (hidden, so not found), so More
+  const helpFallback = useCallback(() => rectOfSelector(MODES) ?? rectOfSelector(MORE) ?? penFallback(), [penFallback]);
   // the step the tutor wrote, else the button that asked for it
   const wroteFallback = useCallback(() => shapesRect(editor, wrote.current) ?? helpFallback(), [editor, helpFallback]);
   // "3 more like these" in the panel; its suggestions are gone once it has messages: its text box
@@ -377,7 +424,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   switch (state.step) {
     case "write":
     case "result": {
-      const copy = writeCopy(state, starter?.hint ?? null);
+      const copy = writeCopy(state, starter?.hint ?? null, words);
       const result = state.step === "result";
       const ring = result && state.outcome === "ring";
       return (
@@ -390,6 +437,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
           tone={state.step === "write" ? "blue" : ring ? "amber" : "green"}
           focusKey={`${state.step}:${state.outcome}:${state.unread}:${state.unjudged}`}
           title={copy.title}
+          speech={coachSpeech(copy.title, copy.body)}
           primary={{ label: copy.button, onClick: next, variant: copy.waiting ? "outline" : "default" }}
         >
           {copy.body}
@@ -398,7 +446,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
     }
     case "help":
     case "helped": {
-      const copy = helpCopy(state.step, state.help, mode === "answer");
+      const copy = helpCopy(state.step, state.help, mode === "answer", helpWordsFor(starter, freshProblem));
       const helped = state.step === "helped";
       return (
         <CoachMark
@@ -411,6 +459,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
           pulse={!helped && state.help === "waiting"}
           focusKey={`${state.step}:${state.help}`}
           title={copy.title}
+          speech={coachSpeech(copy.title, copy.body)}
           primary={{ label: copy.button, onClick: next, variant: copy.waiting ? "outline" : "default" }}
         >
           {copy.body}
@@ -432,6 +481,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
           pulse={progress !== "busy"}
           focusKey={`${state.step}:${progress}:${messages.length === 0}`}
           title={copy.title}
+          speech={coachSpeech(copy.title, copy.body)}
           primary={{ label: copy.button, onClick: next, variant: "outline" }}
         >
           {copy.body}

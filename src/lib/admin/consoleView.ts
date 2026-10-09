@@ -37,12 +37,14 @@ export const CONSOLE_COPY = {
 
 // ------------------------------------------------------------------ the nav
 
-export const CONSOLE_PAGES = ["overview", "users", "boards", "bugs", "issues"] as const;
+export const CONSOLE_PAGES = ["overview", "users", "funnel", "referrals", "boards", "bugs", "issues"] as const;
 export type ConsolePage = (typeof CONSOLE_PAGES)[number];
 
 export const CONSOLE_PAGE_LABELS: Record<ConsolePage, string> = {
   overview: "Overview",
   users: "Users",
+  funnel: "Funnel",
+  referrals: "Referrals",
   boards: "Boards",
   bugs: "Bugs",
   issues: "Issues",
@@ -51,6 +53,10 @@ export const CONSOLE_PAGE_LABELS: Record<ConsolePage, string> = {
 export const CONSOLE_PAGE_HREFS: Record<ConsolePage, string> = {
   overview: ADMIN_PAGES.overview,
   users: ADMIN_PAGES.users,
+  // the growth funnel (src/lib/funnel/report.ts FUNNEL_PATHS.page)
+  funnel: "/admin/funnel",
+  // "Give a month, get a month" (src/lib/referral/admin.ts REFERRAL_PATHS.page)
+  referrals: "/admin/referrals",
   boards: ADMIN_PAGES.boards,
   bugs: ADMIN_PAGES.bugs,
   issues: ADMIN_PAGES.issues,

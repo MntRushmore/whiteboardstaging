@@ -14,8 +14,15 @@
  * down". Resend answers 409 when the same key arrives with a different body, or while the first
  * request with it is still in flight.
  *
+ * Kid profiles. Every email Agathon sends passes through `sendEmail`, so the rule "nothing ever
+ * emails a kid address" (src/lib/family/contracts.ts) is kept here, first: an address on the kid
+ * domain answers `{ ok: false, error: KID_ADDRESS_REFUSED }` and nothing reaches Resend, whatever the
+ * caller (welcome, reminders, nudges, alerts). The callers also skip such an address themselves
+ * (billingRecipient, runWelcome), so this is the net under them, not the only check.
+ *
  * Server-only (it reads the server env); the browser side is src/lib/email/client.ts.
  */
+import { isKidEmail } from "@/lib/family/contracts";
 import { getServerEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
 
@@ -32,6 +39,9 @@ export const SEND_TIMEOUT_MS = 10_000;
 
 export const NOT_CONFIGURED = "not configured";
 
+/** What `sendEmail` answers for a kid profile's address (src/lib/family/contracts.ts, isKidEmail). */
+export const KID_ADDRESS_REFUSED = "refused: a kid profile's address is never sent to";
+
 export const emailLogger = logger.child({ module: "email" });
 
 export type EmailTag = { name: string; value: string };
@@ -46,6 +56,11 @@ export type SendEmailInput = {
   idempotencyKey?: string;
   /** For filtering in Resend's dashboard; names and values are reduced to [A-Za-z0-9_-]. */
   tags?: Record<string, string> | EmailTag[];
+  /**
+   * Extra headers on the email itself (Resend's `headers`), such as List-Unsubscribe and
+   * List-Unsubscribe-Post (RFC 8058). A name must be a header token and a value one line, or nothing is sent.
+   */
+  headers?: Record<string, string>;
 };
 
 export type SendEmailResult =
@@ -98,6 +113,18 @@ export function isSendableAddress(value: string): boolean {
   return value.length <= 320 && ADDRESS_RE.test(value);
 }
 
+/** An email header's name (RFC 5322 field name: printable ASCII but `:`) and a one-line value. */
+const HEADER_NAME_RE = /^[!-9;-~]{1,76}$/;
+const HEADER_VALUE_RE = /^[^\r\n\0]{0,2000}$/;
+
+/** The headers when every one is well formed (none set: undefined), else null. */
+function emailHeaders(headers: SendEmailInput["headers"]): Record<string, string> | undefined | null {
+  if (!headers) return undefined;
+  const entries = Object.entries(headers);
+  if (entries.length === 0) return undefined;
+  return entries.every(([name, value]) => HEADER_NAME_RE.test(name) && typeof value === "string" && HEADER_VALUE_RE.test(value)) ? Object.fromEntries(entries) : null;
+}
+
 /** Resend's `Retry-After` (seconds) or `ratelimit-reset` (seconds), in ms. */
 function retryAfterMsOf(headers: Headers): number | undefined {
   for (const name of ["retry-after", "ratelimit-reset"]) {
@@ -124,6 +151,11 @@ function describeError(status: number, body: unknown): string {
  * result says what happened. `config` defaults to the server env; tests pass `fetchImpl`.
  */
 export async function sendEmail(input: SendEmailInput, config: ResendConfig = resendConfigFromEnv()): Promise<SendEmailResult> {
+  // First, before anything else: a kid profile's address is never sent to, whoever asks.
+  if (isKidEmail(input.to)) {
+    emailLogger.warn({ subject: input.subject, tags: input.tags }, "refused to email a kid profile's address");
+    return { ok: false, error: KID_ADDRESS_REFUSED };
+  }
   const apiKey = config.apiKey?.trim();
   if (!apiKey) {
     emailLogger.warn({ subject: input.subject }, "RESEND_API_KEY is not set: email not sent");
@@ -137,6 +169,8 @@ export async function sendEmail(input: SendEmailInput, config: ResendConfig = re
   if (key !== undefined && (key.length === 0 || key.length > MAX_IDEMPOTENCY_KEY_LENGTH)) {
     return { ok: false, error: `invalid request: the idempotency key must be 1-${MAX_IDEMPOTENCY_KEY_LENGTH} characters` };
   }
+  const extraHeaders = emailHeaders(input.headers);
+  if (extraHeaders === null) return { ok: false, error: "invalid request: a header name or value is not allowed" };
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
@@ -152,6 +186,7 @@ export async function sendEmail(input: SendEmailInput, config: ResendConfig = re
     html: input.html,
     text: input.text,
     tags: tagList(input.tags),
+    headers: extraHeaders,
   });
 
   const doFetch = config.fetchImpl ?? fetch;

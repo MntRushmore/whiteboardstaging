@@ -9,6 +9,7 @@ import { clientMetric } from "@/lib/logger";
 import { reportUserError } from "@/lib/reportAppError";
 import { DEFAULT_BOARD_TITLE } from "@/lib/boards/boardTitle";
 import type { CourseId } from "@/lib/onboarding/courseIds";
+import type { Grade } from "@/lib/learning/grades";
 import { readLearnerProfile } from "@/lib/learning/profile";
 import { asOnboardingClient, createFirstBoard } from "@/lib/onboarding/storage";
 import type { AttemptRecord, LearningSummary, SkillId } from "@/lib/learning/contracts";
@@ -25,6 +26,8 @@ const PRACTICE_COUNT = 4;
 
 export interface ProgressProfile {
   course: CourseId | null;
+  /** 0..8: the grade's path skills are listed before they are practised */
+  grade: Grade | null;
   displayName: string | null;
 }
 
@@ -53,7 +56,7 @@ async function fetchProgress(userId: string): Promise<ProgressData> {
     const [attempts, profile] = await Promise.all([loadAttempts(), readProfile(userId)]);
     const now = Date.now();
     const tzOffsetMinutes = new Date(now).getTimezoneOffset();
-    const summary = summarize(attempts, now, { course: profile.course, tzOffsetMinutes });
+    const summary = summarize(attempts, now, { course: profile.course, grade: profile.grade, tzOffsetMinutes });
     clientMetric("progress.viewed", { problems: summary.totals.problems });
     return { status: "ready", attempts, summary, profile, now, tzOffsetMinutes };
   } catch (error) {

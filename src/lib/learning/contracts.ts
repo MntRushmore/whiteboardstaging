@@ -16,6 +16,7 @@
  */
 import type { CourseId } from "@/lib/onboarding/courseIds";
 import type { LineKind } from "@/lib/live/contracts";
+import { K8_SKILLS } from "./grades";
 import { MISTAKE_KINDS, type MistakeKind } from "./hint";
 
 export { MISTAKE_KINDS, type MistakeKind } from "./hint";
@@ -39,14 +40,46 @@ export interface SkillDef {
 /**
  * Every skill the record files a problem under, in teaching order within each area. `classifyProblem`
  * (`skills.ts`) maps a problem to exactly one of these; `other` when nothing fits.
+ *
+ * Arithmetic is the K–8 path's fine skills (`grades.ts`, their names from `K8_SKILLS`), strand by
+ * strand — adding and taking away, then times and sharing, then fractions, then decimals, percents
+ * and ratios — each strand in the order a school teaches it. The four original coarse skills
+ * (`COARSE_SKILL_IDS`) stay at the end of their strand: rows stored before 2026-10-09 use them.
  */
 export const SKILLS = [
-  // arithmetic (younger students; course "other")
+  // arithmetic: adding and taking away (K–4)
+  { id: "add_within_10", name: K8_SKILLS.add_within_10.name, area: "arithmetic", courses: [] },
+  { id: "subtract_within_10", name: K8_SKILLS.subtract_within_10.name, area: "arithmetic", courses: [] },
+  { id: "add_within_20", name: K8_SKILLS.add_within_20.name, area: "arithmetic", courses: [] },
+  { id: "subtract_within_20", name: K8_SKILLS.subtract_within_20.name, area: "arithmetic", courses: [] },
+  { id: "add_tens", name: K8_SKILLS.add_tens.name, area: "arithmetic", courses: [] },
+  { id: "add_within_100", name: K8_SKILLS.add_within_100.name, area: "arithmetic", courses: [] },
+  { id: "subtract_within_100", name: K8_SKILLS.subtract_within_100.name, area: "arithmetic", courses: [] },
+  { id: "add_subtract_within_1000", name: K8_SKILLS.add_subtract_within_1000.name, area: "arithmetic", courses: [] },
+  { id: "multi_digit_add_subtract", name: K8_SKILLS.multi_digit_add_subtract.name, area: "arithmetic", courses: [] },
   { id: "add_subtract", name: "Adding and subtracting", area: "arithmetic", courses: [] },
+  // arithmetic: times and sharing (3–4)
+  { id: "times_tables", name: K8_SKILLS.times_tables.name, area: "arithmetic", courses: [] },
+  { id: "division_facts", name: K8_SKILLS.division_facts.name, area: "arithmetic", courses: [] },
+  { id: "multiply_by_tens", name: K8_SKILLS.multiply_by_tens.name, area: "arithmetic", courses: [] },
+  { id: "multiply_multi_digit", name: K8_SKILLS.multiply_multi_digit.name, area: "arithmetic", courses: [] },
+  { id: "long_division", name: K8_SKILLS.long_division.name, area: "arithmetic", courses: [] },
   { id: "multiply_divide", name: "Multiplying and dividing", area: "arithmetic", courses: [] },
+  // arithmetic: the rest of the numbers an Algebra 1 student reviews first
   { id: "negative_numbers", name: "Negative numbers", area: "arithmetic", courses: ["algebra1"] },
   { id: "order_of_operations", name: "Order of operations", area: "arithmetic", courses: ["algebra1"] },
-  { id: "fractions", name: "Fractions", area: "arithmetic", courses: ["algebra1"] },
+  // arithmetic: fractions (4–6); Algebra 1 reviews adding unlike fractions (the coarse skill's place)
+  { id: "equivalent_fractions", name: K8_SKILLS.equivalent_fractions.name, area: "arithmetic", courses: [] },
+  { id: "add_fractions_like", name: K8_SKILLS.add_fractions_like.name, area: "arithmetic", courses: [] },
+  { id: "add_fractions_unlike", name: K8_SKILLS.add_fractions_unlike.name, area: "arithmetic", courses: ["algebra1"] },
+  { id: "multiply_fractions", name: K8_SKILLS.multiply_fractions.name, area: "arithmetic", courses: [] },
+  { id: "divide_fractions", name: K8_SKILLS.divide_fractions.name, area: "arithmetic", courses: [] },
+  { id: "fractions", name: "Fractions", area: "arithmetic", courses: [] },
+  // arithmetic: decimals, percents and ratios (5–7)
+  { id: "decimals_add_subtract", name: K8_SKILLS.decimals_add_subtract.name, area: "arithmetic", courses: [] },
+  { id: "decimals_multiply", name: K8_SKILLS.decimals_multiply.name, area: "arithmetic", courses: [] },
+  { id: "percents", name: K8_SKILLS.percents.name, area: "arithmetic", courses: [] },
+  { id: "proportions", name: K8_SKILLS.proportions.name, area: "arithmetic", courses: [] },
   { id: "decimals_percents", name: "Decimals and percents", area: "arithmetic", courses: [] },
   { id: "powers_roots", name: "Powers and square roots", area: "arithmetic", courses: ["algebra1"] },
   // algebra
@@ -102,6 +135,28 @@ export function skillDef(id: string): SkillDef | undefined {
   return SKILLS.find((s) => s.id === id);
 }
 
+/**
+ * The original coarse arithmetic skills (2026-10-04), split into the K–8 path's finer ones on
+ * 2026-10-09. Rows stored under them stay valid, and the summary re-files such a row under the fine
+ * skill its problem shows (`summary.ts`); new problems go under a coarse skill only when no fine one
+ * fits (`9 \times 4 \div 6`, a mix of fraction steps). They keep their practice problems (an old weak
+ * spot can still be practised) but are not topics: the finer skills replace them in the picker.
+ */
+export const COARSE_SKILL_IDS = ["add_subtract", "multiply_divide", "fractions", "decimals_percents"] as const satisfies readonly SkillId[];
+export type CoarseSkillId = (typeof COARSE_SKILL_IDS)[number];
+
+export function isCoarseSkillId(value: unknown): value is CoarseSkillId {
+  return typeof value === "string" && (COARSE_SKILL_IDS as readonly string[]).includes(value);
+}
+
+/** The finer K–8 skills each coarse skill was split into: where its kind of problem goes now. */
+export const FINER_SKILLS: Readonly<Record<CoarseSkillId, readonly SkillId[]>> = {
+  add_subtract: ["add_within_10", "subtract_within_10", "add_within_20", "subtract_within_20", "add_tens", "add_within_100", "subtract_within_100", "add_subtract_within_1000", "multi_digit_add_subtract"],
+  multiply_divide: ["times_tables", "division_facts", "multiply_by_tens", "multiply_multi_digit", "long_division"],
+  fractions: ["equivalent_fractions", "add_fractions_like", "add_fractions_unlike", "multiply_fractions", "divide_fractions"],
+  decimals_percents: ["decimals_add_subtract", "decimals_multiply", "percents"],
+};
+
 // ------------------------------------------------------------------ mistakes
 
 export interface MistakeDef {
@@ -114,7 +169,7 @@ export interface MistakeDef {
 
 export const MISTAKES: Readonly<Record<MistakeKind, MistakeDef>> = {
   sign: { kind: "sign", label: "Plus and minus signs", tip: "When a term moves across the = or you multiply by a negative, check its sign." },
-  arithmetic: { kind: "arithmetic", label: "Number slips", tip: "Slow down on the adding and multiplying, and check each one." },
+  arithmetic: { kind: "arithmetic", label: "Number slips", tip: "Take each sum one small step at a time, then check it once more." },
   distribution: { kind: "distribution", label: "Distributing", tip: "Multiply every term inside the brackets, not just the first one." },
   both_sides: { kind: "both_sides", label: "Both sides of the =", tip: "Whatever you do to one side of the =, do to the other side too." },
   combining_terms: { kind: "combining_terms", label: "Combining like terms", tip: "Only add terms with the same letter and power: 3x + 2x, never 3x + 2." },
@@ -344,7 +399,7 @@ export interface SkillProgress {
   attempts: number;
   /** attempts with an INDEPENDENT_OUTCOMES outcome */
   independent: number;
-  /** ISO, the latest attempt's start; null for a course skill never practised */
+  /** ISO, the latest attempt's start; null for a course or path skill never practised */
   lastAt: string | null;
 }
 
@@ -370,7 +425,7 @@ export interface LearningSummary {
   days: DayActivity[];
   /** consecutive local days with at least one problem, ending today or yesterday */
   streakDays: number;
-  /** skills worked on, plus the course's skills not yet practised (level `new`), in SKILLS order */
+  /** skills worked on, plus the grade's path and the course's skills not yet practised (level `new`), in SKILLS order */
   skills: SkillProgress[];
   /** worked on and not mastered, weakest first (at most 5) */
   weakSkills: SkillId[];

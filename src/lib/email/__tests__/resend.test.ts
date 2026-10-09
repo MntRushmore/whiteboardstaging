@@ -11,6 +11,7 @@ vi.hoisted(() => {
 import { resetServerEnvCache } from "@/lib/env";
 import {
   DEFAULT_EMAIL_FROM,
+  KID_ADDRESS_REFUSED,
   NOT_CONFIGURED,
   RESEND_API_URL,
   emailConfigured,
@@ -82,6 +83,17 @@ describe("sendEmail", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("never sends to a kid profile's address, whoever asks, even without a key", async () => {
+    for (const to of ["kid-3f2a@kids.agathon.app", "  KID-3F2A@Kids.Agathon.App ", "anything@kids.agathon.app"]) {
+      expect(await sendEmail({ ...message, to }, config()), to).toEqual({ ok: false, error: KID_ADDRESS_REFUSED });
+      expect(await sendEmail({ ...message, to }, config({ apiKey: null })), to).toEqual({ ok: false, error: KID_ADDRESS_REFUSED });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    // a grown-up on a look-alike domain is not a kid
+    reply(200, { id: "re_ok" });
+    expect(await sendEmail({ ...message, to: "parent@notkids.agathon.app" }, config())).toEqual({ ok: true, id: "re_ok" });
+  });
+
   it("refuses a bad request before calling Resend", async () => {
     for (const to of ["", "not-an-email", "a@b.c, d@e.f", "Name <a@b.c>", "a@b"]) {
       const result = await sendEmail({ ...message, to }, config());
@@ -90,6 +102,24 @@ describe("sendEmail", () => {
     expect((await sendEmail({ ...message, subject: " " }, config())).ok).toBe(false);
     expect(await sendEmail({ ...message, idempotencyKey: "k".repeat(257) }, config())).toMatchObject({ ok: false, error: expect.stringMatching(/idempotency key/) });
     expect(await sendEmail({ ...message, idempotencyKey: "" }, config())).toMatchObject({ ok: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("carries extra email headers (List-Unsubscribe, RFC 8058), and none when there are none", async () => {
+    reply(200, { id: "re_1" });
+    const headers = { "List-Unsubscribe": "<https://x.example/api/report/unsubscribe?u=a&t=b>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" };
+    expect(await sendEmail({ ...message, headers }, config())).toEqual({ ok: true, id: "re_1" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).headers).toEqual(headers);
+    reply(200, { id: "re_2" });
+    await sendEmail({ ...message, headers: {} }, config());
+    expect("headers" in JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toBe(false);
+  });
+
+  it("refuses a header that could break the email open (a newline, a bad name) before calling Resend", async () => {
+    const bad: Record<string, string>[] = [{ "List-Unsubscribe": "<https://x.example>\r\nBcc: a@b.c" }, { "Bad Name": "x" }, { "X:Y": "x" }, { "": "x" }];
+    for (const headers of bad) {
+      expect(await sendEmail({ ...message, headers }, config()), JSON.stringify(headers)).toMatchObject({ ok: false, error: expect.stringMatching(/header/) });
+    }
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

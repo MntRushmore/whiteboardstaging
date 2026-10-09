@@ -1,11 +1,64 @@
 "use client";
 
-import { ArrowRight, CheckCheck, GraduationCap, HeartHandshake, Hourglass, Lightbulb, MessageSquare, Sparkles } from "lucide-react";
+import { ArrowRight, CalendarCheck, ChartColumn, CheckCheck, Gift, HeartHandshake, Hourglass, Route, Sparkles, Users } from "lucide-react";
 import { PLAN_COPY } from "@/lib/onboarding/plan";
+import { PLAN_REFERRAL_COPY } from "@/lib/billing/planChoice";
+import { FAMILY_COPY } from "@/lib/family/copy";
 import { Button } from "@/registry/components/button/button";
 import styles from "./plan.module.css";
 
-const PERK_ICONS = { help: Lightbulb, ask: MessageSquare, check: CheckCheck, courses: GraduationCap } as const;
+const PERK_ICONS = { daily: CalendarCheck, path: Route, check: CheckCheck, kids: Users, report: ChartColumn } as const;
+
+/** The plan screen for a kid profile: what the plan gives, and that their grown-up looks after it. */
+function KidPlanOffer({ soon, onContinue }: { soon: boolean; onContinue: () => void }) {
+  return (
+    <section aria-labelledby="plan-title" data-onboarding="plan" data-view="kid" className={styles.card}>
+      <div className={styles.hero}>
+        <p className={`${styles.kicker} ${styles.rise}`}>
+          <Sparkles size={16} strokeWidth={2} aria-hidden />
+          {FAMILY_COPY.kidPlanTitle}
+        </p>
+        <h1 id="plan-title" className={`${styles.title} ${styles.rise}`}>
+          {PLAN_COPY.title}
+        </h1>
+      </div>
+      <div className={styles.body}>
+        <h2 className={styles.srOnly}>{PLAN_COPY.perksTitle}</h2>
+        <ul className={styles.perks}>
+          {PLAN_COPY.perks.map((p) => {
+            const Icon = PERK_ICONS[p.id];
+            return (
+              <li key={p.id} className={`${styles.perk} ${styles.rise}`}>
+                <span aria-hidden className={styles.perkIcon}>
+                  <Icon size={20} strokeWidth={1.9} />
+                </span>
+                {p.text}
+              </li>
+            );
+          })}
+        </ul>
+        <div className={`${styles.grownUp} ${styles.rise}`} data-testid="kid-plan">
+          <span aria-hidden className={styles.grownUpIcon}>
+            <HeartHandshake size={22} strokeWidth={1.8} />
+          </span>
+          <div>
+            <p className={styles.grownUpTitle}>{FAMILY_COPY.kidBilling}</p>
+            <p className={styles.grownUpHint}>{FAMILY_COPY.kidPlanBody}</p>
+          </div>
+        </div>
+        <div className={`${styles.actions} ${styles.rise}`}>
+          {soon ? (
+            <Button size="lg" variant="secondary" className={styles.later} onClick={onContinue}>
+              {PLAN_COPY.continue}
+            </Button>
+          ) : (
+            <p className={styles.disclosure}>{FAMILY_COPY.kidPlanSwitch}</p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export interface PlanOfferProps {
   /**
@@ -20,22 +73,40 @@ export interface PlanOfferProps {
   onStart: () => void;
   /** Continue (`soon` only): on to the home */
   onContinue: () => void;
+  /**
+   * A kid profile (src/lib/family): the plan is their grown-up's, so no price, no checkout and no
+   * disclosure, only "Your grown-up looks after this" (the app bar's switcher takes them to the
+   * grown-up).
+   */
+  kid?: boolean;
+  /**
+   * A friend invited this family and the referral link is set (src/lib/billing/planChoice.ts
+   * `referralApplies`): the first month is free instead of 7 days, said in the price and why under
+   * it; `chargeDate` is then 30 days away. Never for a plan started again.
+   */
+  friendMonth?: boolean;
 }
 
 /**
  * The plan screen's card (the route is src/app/(platform)/welcome/plan): Agathon Unlimited, its
- * price crossed out under "Free for 7 days", what it gives in four pictures, and — because the
+ * price crossed out under "Free for 7 days", what it gives in five lines, and — because the
  * student is a child and the card is a grown-up's — "This part is for a grown-up" above the one
  * button, with the auto-renewal said plainly right under it. There is no free plan, so there is no
  * "Maybe later" (the app header's menu still has Account and Sign out). A plan that ended is
  * offered again without the free trial. Without a checkout link the button says Coming soon and
  * Continue goes home.
  *
+ * A family a friend invited (`friendMonth`) sees "First month free" in place of "Free for 7 days",
+ * and why under the price; the rest of the card is the same.
+ *
  * Presentational: the route reads the session and the subscription and decides `view`.
  */
-export function PlanOffer({ view, chargeDate, starting = false, onStart, onContinue }: PlanOfferProps) {
+export function PlanOffer({ view, chargeDate, starting = false, onStart, onContinue, kid = false, friendMonth = false }: PlanOfferProps) {
   const soon = view === "soon";
   const restart = view === "restart";
+  if (kid) return <KidPlanOffer soon={soon} onContinue={onContinue} />;
+  // a friend's month is for a first plan, and only when there is a checkout to open
+  const friend = friendMonth && view === "offer";
   return (
     <section aria-labelledby="plan-title" data-onboarding="plan" data-view={view} className={styles.card}>
       <div className={styles.hero}>
@@ -57,9 +128,16 @@ export function PlanOffer({ view, chargeDate, starting = false, onStart, onConti
                 <span className={styles.srOnly}>{PLAN_COPY.priceWas} </span>
                 <s>{PLAN_COPY.price}</s>
               </span>
-              <span className={styles.free}>{PLAN_COPY.free}</span>
+              <span className={styles.free}>{friend ? PLAN_REFERRAL_COPY.friendFree : PLAN_COPY.free}</span>
             </p>
             <p className={`${styles.then} ${styles.rise}`}>{PLAN_COPY.then}</p>
+            {friend && (
+              <p className={`${styles.friend} ${styles.rise}`} data-testid="plan-friend">
+                <Gift size={16} strokeWidth={2} aria-hidden />
+                {/* two unbreakable halves: a narrow screen breaks before the reason, never inside either */}
+                <span className={styles.nowrap}>{PLAN_REFERRAL_COPY.friendLead}</span> <span className={styles.nowrap}>{PLAN_REFERRAL_COPY.friendWhy}</span>
+              </p>
+            )}
           </>
         )}
       </div>

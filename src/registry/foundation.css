@@ -46,17 +46,6 @@
   --shadow-resting: 0 1px 2px oklch(0% 0 0 / .035);
   --shadow-raised: 0 6px 18px oklch(0% 0 0 / .065), 0 1px 3px oklch(0% 0 0 / .035);
   --shadow-floating: 0 20px 48px oklch(0% 0 0 / .105), 0 3px 10px oklch(0% 0 0 / .045);
-  /* Brand gradient: soft lavender to warm peach. Light enough for dark text (--arc-gradient-foreground, >12:1). */
-  --arc-gradient-from: oklch(90% .045 300);
-  --arc-gradient-to: oklch(92% .045 65);
-  --arc-gradient: linear-gradient(100deg, var(--arc-gradient-from), var(--arc-gradient-to));
-  --arc-gradient-foreground: oklch(22% .01 300);
-  /* Faint wash for backgrounds and tinted panels. */
-  --arc-gradient-soft: linear-gradient(135deg, oklch(97.5% .016 300), oklch(98% .016 65));
-  /* Hairline borders and rules. */
-  --arc-gradient-line: linear-gradient(100deg, oklch(83% .06 300), oklch(86% .06 65));
-  /* Text-safe stops for gradient text and small marks (>4.5:1 on the surface). */
-  --arc-gradient-ink: linear-gradient(100deg, oklch(47% .1 300), oklch(50% .09 55));
   --space-1: .25rem; --space-2: .5rem; --space-3: .75rem; --space-4: 1rem;
   --space-5: 1.25rem; --space-6: 1.5rem; --space-8: 2rem; --space-10: 2.5rem;
   --space-12: 3rem; --space-16: 4rem; --space-20: 5rem; --space-24: 6rem;
@@ -110,12 +99,6 @@
   --shadow-resting: 0 1px 2px oklch(0% 0 0 / .18);
   --shadow-raised: 0 8px 22px oklch(0% 0 0 / .22);
   --shadow-floating: 0 22px 55px oklch(0% 0 0 / .34);
-  --arc-gradient-from: oklch(38% .05 300);
-  --arc-gradient-to: oklch(40% .045 60);
-  --arc-gradient-foreground: oklch(96% .005 300);
-  --arc-gradient-soft: linear-gradient(135deg, oklch(23.5% .016 300), oklch(24% .014 65));
-  --arc-gradient-line: linear-gradient(100deg, oklch(48% .06 300), oklch(52% .055 65));
-  --arc-gradient-ink: linear-gradient(100deg, oklch(82% .07 300), oklch(86% .065 70));
 }
 
 :root[data-accent="neutral"] { --accent: oklch(33% 0 0); --accent-strong: oklch(24% 0 0); --accent-subtle: oklch(33% 0 0 / .1); }

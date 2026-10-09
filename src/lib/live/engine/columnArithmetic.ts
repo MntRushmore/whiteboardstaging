@@ -29,13 +29,28 @@
  * missing digits for Solve, in the student's hand, in their columns. No model is ever asked.
  *
  * In scope: `+` with two or more numbers, `-` and `x` with two, whole numbers, and decimals lined up
- * on the point for `+` and `-`. Out of it, and quiet (`null`): long multiplication's rows of partial
- * products and long division (more than one row under the rule, or a second rule), a subtraction
- * whose answer would be negative, decimals in a product, a read that is not numbers. Quiet is the
- * point: the tutor says nothing rather than write a wrong "answer" under a child's sum.
+ * on the point for `+` and `-`. And LONG MULTIPLICATION, read as one block too:
+ *
+ *        46
+ *     x  23        \begin{array}{r} 46 \\ \times 23 \\ \hline 138 \\ 920 \\ \hline 1058 \end{array}
+ *     -----
+ *       138        a row for each digit of the bottom number (46 × 3, 46 × 20), its place's zero
+ *       920        written or left out (`92` shifted left), maybe a `+` before the last; a second
+ *     -----        rule, and their sum — which Mathpix also reads with the last row as a fraction
+ *      1058        over it (`\frac{920}{1058}`). Each row is checked, then the sum column by column.
+ *
+ * The rows may come the other way round (920, then 138), with a row of zeros for a 0 digit, or as
+ * the partial products (18, 120, 120, 800): rows that make the product are right (`workRows`).
+ *
+ * A single row under the rule of a product by two digits or more is the answer when it is the
+ * product, and the first row of the working when it is that row (right so far: no mark).
+ * Out of scope, and quiet (`null`): long division (`primaryWork.ts` reads its bracket), a
+ * subtraction whose answer would be negative, decimals in a product, a read that is not numbers.
+ * Quiet is the point: the tutor says nothing rather than write a wrong "answer" under a child's sum.
  *
  * Pure string and digit work: no mathjs, so it is small, and the loop calls it directly.
  */
+import type { LineAnalysis } from "../contracts";
 
 export type StackOp = "+" | "-" | "×";
 
@@ -44,8 +59,18 @@ export interface StackedRead {
   op: StackOp;
   /** the numbers above the rule, top to bottom, as written (`286`, `3.50`) — no sign, no commas */
   operands: string[];
-  /** the student's answer under the rule as written ('' while it is empty) */
+  /** the student's answer under the rule as written ('' while it is empty); in long multiplication, the sum of the rows */
   answer: string;
+  /** long multiplication: the rows between the two rules, top to bottom, as written (`138`, `920` or `92`) */
+  rows?: string[];
+}
+
+/** Long multiplication's rows, checked (`StackedWork.rows`). */
+export interface LongRows {
+  /** what each row should be, top to bottom: the top number times each nonzero digit of the bottom one, in its place */
+  want: number[];
+  /** the first row that is wrong (or one too many), or -1 */
+  wrong: number;
 }
 
 /** The sum worked out and the student's answer judged, place by place. */
@@ -68,10 +93,12 @@ export interface StackedWork extends StackedRead {
   written: Map<number, number>;
   /** the rightmost place whose digit is wrong (or written where the answer has none), or -1 */
   wrong: number;
-  /** every place of the answer written, and right */
+  /** every place of the answer written, and right (in long multiplication, every row right too) */
   right: boolean;
   /** a short note about the first wrong place, in a child's words ('' when nothing is wrong) */
   note: string;
+  /** long multiplication's rows (`StackedRead.rows`), checked */
+  long?: LongRows;
 }
 
 const PLACE_NAMES = ["ones", "tens", "hundreds", "thousands", "ten thousands", "hundred thousands", "millions"];
@@ -152,10 +179,8 @@ export function parseStacked(latex: string): StackedRead | null {
   const rows = arrayRows(latex);
   if (!rows) return null;
   const rule = rows.indexOf("rule");
-  if (rule < 2 || rows.lastIndexOf("rule") !== rule) return null;
+  if (rule < 2) return null;
   const above = rows.slice(0, rule) as string[];
-  const below = rows.slice(rule + 1) as string[];
-  if (below.length > 1) return null;
   const parsed = above.map(operandRow);
   if (parsed.some((p) => p === null)) return null;
   const items = parsed as Array<{ op: StackOp | null; number: string }>;
@@ -165,13 +190,56 @@ export function parseStacked(latex: string): StackedRead | null {
   if (ops.size !== 1 || items[items.length - 1].op === null) return null;
   const op = [...ops][0];
   if (op !== "+" && items.length !== 2) return null;
+  const operands = items.map((p) => p.number);
+  const after = rows.slice(rule + 1);
+  if (op === "×" && /^\d{2,}$/.test(operands[1])) {
+    const long = longRows(after);
+    if (long) return { op, operands, ...long };
+  }
+  if (after.includes("rule") || after.length > 1) return null;
   let answer = "";
-  if (below.length === 1) {
-    const n = numberOf(cleanRow(below[0]));
+  if (after.length === 1) {
+    const n = numberOf(cleanRow(after[0] as string));
     if (n === null) return null;
     answer = n;
   }
-  return { op, operands: items.map((p) => p.number), answer };
+  return { op, operands, answer };
+}
+
+/**
+ * Long multiplication's rows under the first rule (`after`), and their sum: two rows or more, or a
+ * second rule — under which one row, the sum — or the last row read as a fraction over the sum
+ * (`\frac{920}{1058}`, the second rule taken for its bar). A row may start with `+`. Null when it is
+ * not that (one row and no second rule is the answer itself, read by `parseStacked`).
+ */
+function longRows(after: ReadonlyArray<string | "rule">): { rows: string[]; answer: string } | null {
+  const second = after.indexOf("rule");
+  let middle = (second === -1 ? after : after.slice(0, second)) as string[];
+  const under = second === -1 ? [] : after.slice(second + 1);
+  if (under.includes("rule") || under.length > 1) return null;
+  let answer = "";
+  if (under.length === 1) {
+    const n = numberOf(cleanRow(under[0] as string));
+    if (n === null) return null;
+    answer = n;
+  }
+  // the last row and the sum, read as a fraction (the second rule as its bar)
+  const last = middle[middle.length - 1];
+  const frac = second === -1 && last ? /^\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}$/.exec(last.trim()) : null;
+  if (frac) {
+    const sum = numberOf(cleanRow(frac[2]));
+    if (sum === null) return null;
+    middle = [...middle.slice(0, -1), frac[1]];
+    answer = sum;
+  }
+  if (middle.length === 0 || (second === -1 && !frac && middle.length < 2)) return null;
+  const rows: string[] = [];
+  for (const row of middle) {
+    const n = numberOf(cleanRow(row).replace(/^\+/, ""));
+    if (n === null || n.includes(".")) return null;
+    rows.push(n);
+  }
+  return { rows, answer };
 }
 
 /** How many digits a number has after its point. */
@@ -286,8 +354,131 @@ export function workStacked(read: StackedRead, opts: WorkOptions = {}): StackedW
   }
   const right = wrong === -1 && digits.every((d, p) => mine.get(p) === d);
   const work: StackedWork = { ...read, result: written(digits, decimals), decimals, digits, width, carries, written: mine, wrong, right, note: "" };
-  work.note = wrong === -1 ? "" : noteFor(work, nums, wrong, decimalsOf(answer));
-  return work;
+  // a product by two digits or more with one row under the rule that is its first row (46 × 3 under
+  // 46 × 23): the working started, right so far — not a wrong answer
+  if (op === "×" && !read.rows && wrong !== -1 && answer && Number(answer) === Number(operands[0]) * Number(operands[1].slice(-1)) && operands[1].length > 1) work.wrong = -1;
+  work.note = work.wrong === -1 ? "" : noteFor(work, nums, work.wrong, decimalsOf(answer));
+  return read.rows ? workRows(work, read.rows) : work;
+}
+
+/**
+ * Each row matched to a different one of `n` wanted rows it `fits` (Kuhn's augmenting paths; a row
+ * tries its own place first, so rows in order stay in order): for each row, its wanted row, or -1.
+ */
+function matchRows(rows: readonly number[], n: number, fits: (row: number, j: number) => boolean): number[] {
+  const owner = new Array<number>(n).fill(-1);
+  const place = (i: number, seen: boolean[]): boolean => {
+    const order = i < n ? [i, ...[...Array(n).keys()].filter((j) => j !== i)] : [...Array(n).keys()];
+    for (const j of order) {
+      if (seen[j] || !fits(rows[i], j)) continue;
+      seen[j] = true;
+      if (owner[j] === -1 || place(owner[j], seen)) {
+        owner[j] = i;
+        return true;
+      }
+    }
+    return false;
+  };
+  rows.forEach((_, i) => place(i, new Array<boolean>(n).fill(false)));
+  const of = new Array<number>(rows.length).fill(-1);
+  owner.forEach((i, j) => {
+    if (i !== -1) of[i] = j;
+  });
+  return of;
+}
+
+/**
+ * Long multiplication's rows checked (`StackedRead.rows`), set out as a class sets them out: a row
+ * for each nonzero digit of the bottom number — the top number times it, in its place, its zeros
+ * written or left out (`92` for 46 × 20) — ones first or the other way round, with a row of zeros
+ * for a 0 digit or without; or the partial products, a place of one number times a place of the
+ * other (18, 120, 120, 800 for 46 × 23; or 920 and 138 as 40 × 23 and 6 × 23). Rows that make the
+ * product are right, and the sum under them is judged column by column as any answer (`work`). Rows
+ * that make part of it are right so far. A wrong row is named only when the rows are the standard
+ * ones (as many as the digits, or every one there and one too many); set out any other way, the sum
+ * under them is what is ringed when it is wrong — never a row while the sum is still to come. Right
+ * when the rows make the product and the sum is complete and right.
+ */
+function workRows(work: StackedWork, rows: readonly string[]): StackedWork {
+  const [topWritten, bottomWritten] = work.operands;
+  const top = Number(topWritten);
+  const bottomNumber = Number(bottomWritten);
+  const product = top * bottomNumber;
+  const bottom = [...bottomWritten].reverse().map(Number);
+  const topDigits = [...topWritten].reverse().map(Number);
+  const want: number[] = [];
+  const at: number[] = [];
+  bottom.forEach((d, place) => {
+    if (d === 0) return;
+    want.push(top * d * 10 ** place);
+    at.push(place);
+  });
+  // a place of one times a place of the other, and the top number's places times the bottom one
+  const cells: number[] = [];
+  topDigits.forEach((x, i) =>
+    bottom.forEach((y, j) => {
+      if (x && y) cells.push(x * 10 ** i * y * 10 ** j);
+    }),
+  );
+  const pieces = new Set([...cells, ...want, ...topDigits.map((x, i) => x * 10 ** i * bottomNumber).filter((n) => n > 0)]);
+  // a row of zeros holds the place of a 0 digit (or of a partial product with a 0 in it): one each
+  let zeros = Math.max(bottom.filter((d) => d === 0).length, topDigits.length * bottom.length - cells.length);
+  const kept = rows.map(Number).filter((n) => !(n === 0 && zeros-- > 0));
+
+  const fits = (n: number, j: number) => n === want[j] || (at[j] > 0 && n * 10 ** at[j] === want[j]);
+  const matched = matchRows(kept, want.length, fits);
+  const known = kept.every((n, i) => matched[i] !== -1 || pieces.has(n));
+  const made = kept.reduce((sum, n, i) => sum + (matched[i] !== -1 ? want[matched[i]] : n), 0);
+  const quiet: LongRows = { want, wrong: -1 };
+  const rowsNote = `Check the rows: together they are ${topWritten} × ${bottomWritten}.`;
+  // the standard rows in any order, or rows of the working that make the product
+  if ((kept.length === want.length && matched.every((j) => j !== -1)) || (known && made === product)) {
+    return { ...work, long: quiet, right: work.right };
+  }
+  // rows of the working that make part of it: right so far (a sum under them is judged)
+  if (known && made < product) {
+    const note = work.wrong === -1 ? "" : matched.every((j) => j !== -1) ? `There is one row for each digit of ${bottomWritten}.` : rowsNote;
+    return { ...work, long: quiet, right: false, note };
+  }
+  // the standard rows, one of them wrong (or one too many): that row is the mistake
+  const unmatched = kept.map((_, i) => i).filter((i) => matched[i] === -1);
+  const missing = want.map((_, j) => j).filter((j) => !matched.includes(j));
+  if (kept.length === want.length || (kept.length > want.length && missing.length === 0)) {
+    const wrong = unmatched[0];
+    // written the other way round: the rows that are right say so
+    const reversed = matched.some((j, i) => j !== -1 && j !== i && j === want.length - 1 - i);
+    const pair = reversed ? [...missing].reverse()[0] : missing[0];
+    const note =
+      pair === undefined
+        ? `There is one row for each digit of ${bottomWritten}.`
+        : `Check the row for the ${bottom[at[pair]]} ${placeName(at[pair], 0)}: ${topWritten} × ${bottom[at[pair]] * 10 ** at[pair]}.`;
+    return { ...work, long: { want, wrong }, wrong: -1, right: false, note };
+  }
+  // set out some other way: the rows are not judged, the sum under them is
+  return { ...work, long: quiet, right: false, note: work.wrong === -1 ? "" : made !== product ? rowsNote : work.note };
+}
+
+/**
+ * A stacked sum's line analysis, as the loop marks it (`LiveLoop.stackAnalysis`) and the young kids'
+ * scoreboard replays it: complete and right is `solved` (a tick); a wrong digit is a `mismatch` with
+ * its note (a ring) — only on a read the caller is `sure` of; empty or right so far is nothing yet. A
+ * sum this file cannot work (`work` null) is `unknown`: read back, never marked, never answered,
+ * never sent to a model.
+ */
+export function stackedAnalysis(work: StackedWork | null, sure: boolean): LineAnalysis {
+  const quiet: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
+  if (!work) return quiet;
+  // a wrong digit in the answer, or a wrong row of long multiplication
+  const wrong = work.wrong !== -1 || (work.long?.wrong ?? -1) !== -1;
+  if (wrong && !sure) return quiet;
+  return {
+    kind: wrong || work.right ? "equation" : "expression",
+    math: "",
+    resultLatex: "",
+    verdict: wrong ? "mismatch" : work.right ? "ok" : "none",
+    note: work.note,
+    ...(work.right ? { solved: true } : {}),
+  };
 }
 
 /** The note about the first wrong place: the classic slip when it is one, else where to look. */

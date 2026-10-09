@@ -6,6 +6,8 @@
 import { TOPIC_COURSE } from "./corpus";
 import { STAGE_LABEL, STAGES, type Verdict } from "./judge";
 import type { StageCounts, Summary } from "./offline";
+import { renderYoungSection } from "./young/report";
+import type { YoungScoreboard } from "./young/young";
 
 export function pct(n: number, d: number): string {
   return d === 0 ? "—" : `${((100 * n) / d).toFixed(0)}%`;
@@ -129,7 +131,7 @@ export function answerTable(summary: Summary): string {
   return table(keys as string[], [keys.map((k) => String(summary.answers[k]))]);
 }
 
-export function renderOfflineMarkdown(board: { verdicts: Verdict[]; summary: Summary }): string {
+export function renderOfflineMarkdown(board: { verdicts: Verdict[]; summary: Summary }, young?: YoungScoreboard): string {
   const { verdicts, summary } = board;
   const failing = verdicts.filter((v) => !v.pass);
   const warned = verdicts.filter((v) => v.pass && v.warnings.length > 0);
@@ -162,6 +164,7 @@ export function renderOfflineMarkdown(board: { verdicts: Verdict[]; summary: Sum
     "",
     topicTable(summary),
     "",
+    ...(young ? [renderYoungSection(young)] : []),
     "## Failure patterns",
     "",
     "Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. One problem can appear under several stages.",

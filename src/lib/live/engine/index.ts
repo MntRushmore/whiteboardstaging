@@ -47,6 +47,7 @@ import { isGeometryName } from "./geometryNotation";
 import { judgeOperation, operandMath, parseOperationLine, plainRelation } from "./operationLine";
 import { linearRelation, operationResult } from "./operationResult";
 import { domainChain, isTrigLine, parseDomainPiece, splitDomain, type DomainBounds } from "./domain";
+import { judgePrimaryLine } from "./primaryWork";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -759,6 +760,16 @@ export function createEngine(mod: MathModule): LiveEngine {
     const closed = (source: string) => safeVars(source)?.length === 0;
     if (out.verdict === "none" && out.math && !/\d\.\d/.test(rest) && closed(out.math) && closed(ctx.previous.math) && !/\d\.\d/.test(ctx.previous.math)) {
       if (expressionsEquivalent(math, ctx.previous.math, out.math, []) === "mismatch") out.verdict = "mismatch";
+    }
+    // ...but a decimal that is not even the value rounded to its places is a wrong claim, as a wrong
+    // whole number is: `= 5.25` under `3.45 + 2.8` (6.25) is ringed; `= 7.07` under `\sqrt{50}` is not
+    const places = decimalsIn(rest);
+    if (out.verdict === "none" && out.math && places !== null && closed(out.math) && closed(ctx.previous.math)) {
+      const claimed = safeEvaluate(math, out.math);
+      const actual = safeEvaluate(math, ctx.previous.math);
+      const c = claimed.ok ? toNumber(claimed.value) : null;
+      const a = actual.ok ? toNumber(actual.value) : null;
+      if (c !== null && a !== null && Number.isFinite(c) && Number.isFinite(a) && Math.abs(c - a) > 0.5 * 10 ** -places + 1e-9 * Math.max(1, Math.abs(a))) out.verdict = "mismatch";
     }
     return out;
   };
@@ -1612,8 +1623,31 @@ export function createEngine(mod: MathModule): LiveEngine {
     normalize: normalizeLatex,
   };
 
+  /**
+   * A young student's line of working under a problem with no letters (`primaryWork.ts`), as a line
+   * analysis: the line's own analysis (its kind and maths, as any line's), its mark and whether it
+   * solves the problem judged against the problem. Null when it is not such a line.
+   */
+  const judgeWork: NonNullable<LiveEngine["judgeWork"]> = ({ problem, above, latex, ctx }) => {
+    try {
+      const judged = judgePrimaryLine(problem, above, latex);
+      if (!judged) return null;
+      const kind = judged.relation ? "equation" : "expression";
+      const own = analyzeLine(latex, ctx);
+      const same = own.kind === kind;
+      const out: LineAnalysis = { kind, math: same && own.math ? own.math : judged.math, resultLatex: same ? own.resultLatex : "", verdict: judged.verdict, note: judged.note };
+      if (judged.solved) out.solved = true;
+      if (judged.bare) out.bareAnswer = true;
+      if (judged.carried) out.carried = true;
+      return out;
+    } catch {
+      return null;
+    }
+  };
+
   return {
     analyzeLine,
+    judgeWork,
     solveFromLines: (lines: readonly string[]) => {
       try {
         // `\frac{dy}{dx}` / `f'(2)` under a definition, or a calculus line under a system: calculus answers

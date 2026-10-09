@@ -196,11 +196,15 @@ export function independentWording(independent: number, problems: number): { per
   return { percent, phrase };
 }
 
-/** The streak tile's words under the number. */
+/**
+ * The streak tile's words under the number: days in a row with ANY problem solved. Said as "days of
+ * math in a row", never "streak": the home's flame is the Today's practice streak (finished sets
+ * only, `TODAY_COPY.streak`), a different number.
+ */
 export function streakWording(days: number): { label: string; hint: string } {
   const n = Math.max(0, Math.floor(days || 0));
   return {
-    label: n === 1 ? "day in a row" : "days in a row",
+    label: n === 1 ? "day of math in a row" : "days of math in a row",
     hint: n === 0 ? "Solve one today to start!" : n === 1 ? "Come back tomorrow!" : "Keep it going!",
   };
 }

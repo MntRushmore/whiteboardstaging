@@ -1,0 +1,52 @@
+/* The sign-in panel's still board (MiniBoard.tsx): a white board card with the hero's ink on it. */
+.board {
+  position: relative;
+  container-type: inline-size;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid oklch(91% 0 0);
+  border-radius: var(--radius-panel);
+  background: #fff;
+  box-shadow: var(--shadow-raised);
+}
+
+.ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* tldraw's black and blue, at the board's pen sizes (as on the landing page's hero) */
+.student,
+.tutor {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.student {
+  stroke: #1d1d1d;
+  stroke-width: 6.4;
+}
+.tutor {
+  stroke: #4465e9;
+  stroke-width: 4.2;
+}
+
+/* What the board says beside the circle: the landing page's amber "So close!" bubble. */
+.miss {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #fde68a;
+  border-radius: 1.1em;
+  padding: 0.42em 0.85em;
+  background: #fffbeb;
+  box-shadow: 0 0.4em 1.2em oklch(0% 0 0 / 0.07);
+  color: #78350f;
+  font-family: var(--font-body);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}

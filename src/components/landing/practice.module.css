@@ -1,0 +1,309 @@
+/* What they'll practice: a segmented grade picker (a native radio group) over the chosen grade's
+   skill path. CSS shows the chosen panel with :has(); where :has() is missing every panel shows and
+   the chips hide, so nothing is ever out of reach. */
+
+.picker {
+  margin-top: clamp(3rem, 2rem + 3vw, 4.5rem);
+}
+
+/* ---- The chips ------------------------------------------------------------------------------- */
+.chips {
+  display: grid;
+  max-width: 40rem;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.25rem;
+  margin: 0 auto;
+  border: 0;
+  border-radius: 1.125rem;
+  padding: 0.25rem;
+  background: var(--neutral-2);
+}
+.chipWide {
+  grid-column: span 3;
+}
+@media (min-width: 760px) {
+  .chips {
+    display: flex;
+    width: max-content;
+    max-width: 100%;
+    border-radius: 999px;
+  }
+  .chipWide {
+    grid-column: auto;
+  }
+}
+.chip {
+  position: relative;
+  display: block;
+}
+/* The radio itself: invisible, but it is what takes focus and the arrow keys. */
+.chipInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.chipFace {
+  display: flex;
+  min-width: 3.25rem;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.875rem;
+  padding: 0 0.875rem;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+@media (min-width: 760px) {
+  .chipFace {
+    border-radius: 999px;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .chipInput:hover + .chipFace {
+    color: var(--foreground);
+  }
+}
+.chipInput:checked + .chipFace {
+  background: var(--background);
+  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.08), 0 2px 8px oklch(0% 0 0 / 0.06);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.chipInput:focus-visible + .chipFace {
+  outline: 2px solid #0562ef;
+  outline-offset: 2px;
+}
+
+/* ---- The panels ------------------------------------------------------------------------------ */
+.panels {
+  margin-top: clamp(2.5rem, 2rem + 2vw, 3.5rem);
+}
+.panel + .panel {
+  margin-top: 4rem;
+}
+@supports selector(:has(*)) {
+  .panel {
+    display: none;
+  }
+  .panel + .panel {
+    margin-top: 0;
+  }
+  .picker:has([data-tab-input="0"]:checked) [data-tab="0"],
+  .picker:has([data-tab-input="1"]:checked) [data-tab="1"],
+  .picker:has([data-tab-input="2"]:checked) [data-tab="2"],
+  .picker:has([data-tab-input="3"]:checked) [data-tab="3"],
+  .picker:has([data-tab-input="4"]:checked) [data-tab="4"],
+  .picker:has([data-tab-input="5"]:checked) [data-tab="5"],
+  .picker:has([data-tab-input="6"]:checked) [data-tab="6"],
+  .picker:has([data-tab-input="7"]:checked) [data-tab="7"],
+  .picker:has([data-tab-input="8"]:checked) [data-tab="8"],
+  .picker:has([data-tab-input="hs"]:checked) [data-tab="hs"] {
+    display: block;
+    animation: panel-in var(--duration-considered) var(--ease-enter) both;
+  }
+}
+/* From a laptop up every panel takes the same room (the tallest one's), so the page below does not
+   jump as a parent goes from grade to grade. On a phone, where High school is far taller, each panel
+   keeps its own height. */
+@supports selector(:has(*)) {
+  @media (min-width: 900px) {
+    .panels {
+      display: grid;
+    }
+    .panel {
+      display: block;
+      grid-area: 1 / 1;
+      visibility: hidden;
+    }
+    .picker:has([data-tab-input="0"]:checked) [data-tab="0"],
+    .picker:has([data-tab-input="1"]:checked) [data-tab="1"],
+    .picker:has([data-tab-input="2"]:checked) [data-tab="2"],
+    .picker:has([data-tab-input="3"]:checked) [data-tab="3"],
+    .picker:has([data-tab-input="4"]:checked) [data-tab="4"],
+    .picker:has([data-tab-input="5"]:checked) [data-tab="5"],
+    .picker:has([data-tab-input="6"]:checked) [data-tab="6"],
+    .picker:has([data-tab-input="7"]:checked) [data-tab="7"],
+    .picker:has([data-tab-input="8"]:checked) [data-tab="8"],
+    .picker:has([data-tab-input="hs"]:checked) [data-tab="hs"] {
+      visibility: visible;
+    }
+  }
+}
+@supports not selector(:has(*)) {
+  .chips {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none !important;
+  }
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+.panelHead {
+  text-align: center;
+}
+.panelTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 1.25rem + 1vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+.panelNote {
+  margin: 0.5rem 0 0;
+  color: var(--text-secondary);
+  font-size: 1.0625rem;
+}
+
+/* ---- A grade's path: a column of stops on a phone, a row of them from a tablet up ----------- */
+.trail {
+  position: relative;
+  display: grid;
+  max-width: 26rem;
+  gap: 1.5rem;
+  margin: 2.5rem auto 0;
+  padding: 0;
+  list-style: none;
+}
+/* the road between the stops */
+.trail::before {
+  position: absolute;
+  top: 1.75rem;
+  bottom: 1.75rem;
+  left: 1.75rem;
+  width: 2px;
+  background: var(--border);
+  content: "";
+  transform: translateX(-50%);
+}
+.stop {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+.stopIcon {
+  display: grid;
+  width: 3.5rem;
+  height: 3.5rem;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--background);
+  color: var(--foreground);
+}
+.stopText {
+  display: grid;
+  gap: 0.125rem;
+}
+.stopName {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.stopBlurb {
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+@media (min-width: 900px) {
+  .trail {
+    /* never narrower than three stops' room, so Kindergarten's two do not huddle in the middle */
+    max-width: calc(max(var(--n), 3) * 11.5rem);
+    grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+    gap: 1.5rem;
+    margin-top: 3rem;
+  }
+  .trail::before {
+    top: 2rem;
+    bottom: auto;
+    left: calc(50% / var(--n));
+    right: calc(50% / var(--n));
+    width: auto;
+    height: 2px;
+    transform: translateY(-50%);
+  }
+  .stop {
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    text-align: center;
+  }
+  .stopIcon {
+    width: 4rem;
+    height: 4rem;
+  }
+  .stopText {
+    max-width: 12rem;
+  }
+}
+
+/* ---- High school: the four courses ------------------------------------------------------------ */
+.courses {
+  display: grid;
+  gap: 2rem;
+  margin: 2.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 700px) {
+  .courses {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1100px) {
+  .courses {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.course {
+  border-top: 1px solid var(--border);
+  padding-top: 1.25rem;
+}
+.courseName {
+  margin: 0;
+  font-size: 1.1875rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.courseBlurb {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+/* A course's topics as small chips: a list, so no line ever starts with a separator. */
+.courseTopics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.courseTopics li {
+  border-radius: 999px;
+  padding: 0.25rem 0.625rem;
+  background: var(--neutral-2);
+  font-size: 0.875rem;
+  line-height: 1.35;
+}

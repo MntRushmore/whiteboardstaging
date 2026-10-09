@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/components/AuthProvider";
+import { AttributionCapture } from "@/components/funnel/AttributionCapture";
 import { geistMono, geistSans } from "./fonts";
 
 export const metadata: Metadata = {
@@ -34,7 +35,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>{children}<AttributionCapture /></AuthProvider>
         <Toaster />
       </body>
     </html>

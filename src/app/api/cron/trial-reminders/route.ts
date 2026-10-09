@@ -2,13 +2,18 @@ import { json } from "@/lib/server/auth";
 import { checkRateLimit, clientIp, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { bearerMatches } from "@/lib/server/storageGc";
 import { emailLogger } from "@/lib/email/resend";
+import { runTrialNudges, type NudgeSummary } from "@/lib/email/nudges";
 import { emailDeps, type EmailEnv } from "@/lib/email/server";
 import { runTrialReminders, type TrialReminderSummary } from "@/lib/email/trialReminders";
 import { runStartedSweep, type StartedSweepSummary } from "@/lib/email/unlimitedStarted";
+import { runWeeklyReports, WEEKLY_RUN_BUDGET_MS, type WeeklyReportSummary } from "@/lib/email/weeklyReportSend";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-/** Up to MAX_SENDS_PER_RUN sends, spaced for Resend's rate limit. */
+/**
+ * Up to MAX_SENDS_PER_RUN reminders and NUDGE_MAX_SENDS_PER_RUN nudges, spaced for Resend's rate
+ * limit, then the weekly emails until WEEKLY_RUN_BUDGET_MS after the run began.
+ */
 export const maxDuration = 60;
 
 /**
@@ -30,8 +35,21 @@ export const maxDuration = 60;
  * (`runStartedSweep`, src/lib/email/unlimitedStarted.ts: trials with more than a day left and no
  * such email in email_log). Its failure is logged and reported, never a 500 for the reminders.
  *
+ * And the free trial's nudges (`runTrialNudges`, src/lib/email/nudges.ts, 2026-10-09): "<Name>'s
+ * first practice is ready" about a day into a trial nobody has practiced in yet, and what the kids
+ * did around day 4. Here rather than in a cron of their own because Vercel Hobby allows few crons.
+ * Same rules: once each (email_log), never to a trial set to cancel, failures reported, never a 500.
+ *
+ * And the Sunday weekly report (`runWeeklyReports`, src/lib/email/weeklyReportSend.ts, 2026-10-09),
+ * OFF unless WEEKLY_REPORT_EMAILS=on (`{ enabled: false }` then, nothing read): each plan holder's
+ * family week, once per week (email_log), never to an opted-out account or a kid. Same rules again,
+ * but no fixed count: every due family, oldest last email first, until WEEKLY_RUN_BUDGET_MS after
+ * this run began; the rest go on the next day's run while the week is due (Sunday to Tuesday).
+ *
  * Body: `{ dryRun, window, found, due, alreadySent, sent, failed, skipped, deferred, wouldSend?,
- * started: { found, alreadySent, sent, failed, skipped, wouldSend? } | { error } }`.
+ * started: { found, alreadySent, sent, failed, skipped, wouldSend? } | { error },
+ * nudges: { found, due, sent, alreadySent, failed, deferred, skipped, wouldSend? } | { error },
+ * weeklyReport: { enabled: false } | { enabled, weekStart, found, sent, ... } | { error } }`.
  */
 
 /** Per-IP budget: the cron fires once a day; 10/min stops a leaked URL from being hammered. */
@@ -70,6 +88,8 @@ export async function GET(req: Request) {
   }
 
   const startedAt = Date.now();
+  // on the senders' own clock: the weekly emails start no new family after this
+  const weeklyDeadline = emailDeps.now().getTime() + WEEKLY_RUN_BUDGET_MS;
   let summary: TrialReminderSummary;
   try {
     summary = await runTrialReminders(emailDeps, env, { dryRun }, log.child({ requestId }));
@@ -84,7 +104,21 @@ export async function GET(req: Request) {
     started = { error: "could not run" };
     log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "free trial started catch-up failed");
   }
+  let nudges: NudgeSummary | { error: string };
+  try {
+    nudges = await runTrialNudges(emailDeps, env, { dryRun }, log.child({ requestId }));
+  } catch (err) {
+    nudges = { error: "could not run" };
+    log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "trial nudges failed");
+  }
+  let weeklyReport: WeeklyReportSummary | { error: string };
+  try {
+    weeklyReport = await runWeeklyReports(emailDeps, env, { dryRun, deadline: weeklyDeadline }, log.child({ requestId }));
+  } catch (err) {
+    weeklyReport = { error: "could not run" };
+    log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "weekly report emails failed");
+  }
   const { wouldSend, ...counts } = summary;
-  log.info({ requestId, durationMs: Date.now() - startedAt, ...counts, wouldSend: wouldSend?.length, started }, "trial reminders summary");
-  return Response.json({ ...summary, started }, { headers: { "Cache-Control": "no-store" } });
+  log.info({ requestId, durationMs: Date.now() - startedAt, ...counts, wouldSend: wouldSend?.length, started, nudges, weeklyReport }, "trial reminders summary");
+  return Response.json({ ...summary, started, nudges, weeklyReport }, { headers: { "Cache-Control": "no-store" } });
 }
