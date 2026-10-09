@@ -289,6 +289,30 @@
   }
 }
 
+/* "New to Agathon? See how it works": under the form, to the parent landing page (/parents). */
+.newHere {
+  margin: var(--space-6) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.newHereLink {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  border-radius: var(--space-2);
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 4px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .newHereLink:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
 /* A state that replaces the form: "Check your email", the reset link's states. */
 .state {
   display: grid;

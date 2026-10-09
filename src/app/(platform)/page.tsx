@@ -21,6 +21,7 @@ import {
   type BoardSort,
 } from '@/app/dashboardState';
 import { describeError } from '@/lib/errorMessage';
+import { signedOutDestination } from '@/lib/landing/links';
 import { reportUserError } from '@/lib/reportAppError';
 import { AppHeader, APP_CONTENT_CLASS } from '@/components/app/AppHeader';
 import { ButtonLink } from '@/components/app/ButtonLink';
@@ -160,12 +161,13 @@ export default function Dashboard() {
   const renameInputRef = useRef<HTMLInputElement>(null);
   const deleteCancelRef = useRef<HTMLButtonElement>(null);
 
-  // Auth gate: redirect to login if not authenticated. When the sign-in
+  // Auth gate: a signed-out visitor goes to the parent landing page, keeping the query (?ref=,
+  // utm_*), or to /login when an email link brought them (signedOutDestination). When the sign-in
   // service could not be reached we show a banner with Retry instead, so a
   // flaky connection does not bounce a signed-in student to /login.
   useEffect(() => {
     if (!authLoading && !user && !authError) {
-      router.replace('/login');
+      router.replace(signedOutDestination(window.location.search, window.location.hash));
     }
   }, [user, authLoading, authError, router]);
 
