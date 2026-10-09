@@ -49,6 +49,8 @@ export const LIMITS = {
   // Switching profiles, per caller. The grown-up's PIN has its own budget per FAMILY (PIN_ATTEMPTS,
   // src/lib/family/server/pin.ts), counted in the database.
   familySwitch: { limit: 20, windowMs: MINUTE },
+  // The weekly report (src/app/api/report): the page's week picker and a replay's board.
+  report: { limit: 30, windowMs: MINUTE },
   // Live Math routes (budgets are defined once, in the shared contracts).
   liveRecognize: LIVE_RATE_LIMITS.liveRecognize,
   liveCheck: LIVE_RATE_LIMITS.liveCheck,
