@@ -1,9 +1,21 @@
 "use client";
 
-import { ADMIN_API, AdminBugSchema, type AdminBug, type AdminBugList, type AdminIssue, type AdminIssueList, type AdminUserDetail, type BugStatus, type IssueStatus } from "@/lib/admin/contracts";
+import {
+  ADMIN_API,
+  AdminBugReplySchema,
+  AdminBugSchema,
+  type AdminBug,
+  type AdminBugList,
+  type AdminBugReplyEmail,
+  type AdminIssue,
+  type AdminIssueList,
+  type AdminUserDetail,
+  type BugStatus,
+  type IssueStatus,
+} from "@/lib/admin/contracts";
 import { applyBugPatch } from "@/lib/admin/bugsView";
 import { applyIssuePatch } from "@/lib/admin/issuesView";
-import { patchAdmin } from "./adminData";
+import { patchAdmin, postAdmin } from "./adminData";
 import { mutateResources } from "./useAdminResource";
 
 /** A loaded answer of the bug list (any query). */
@@ -37,6 +49,20 @@ export async function updateBug(before: AdminBug, patch: { status?: BugStatus; n
   const parsed = AdminBugSchema.safeParse(body);
   if (parsed.success) showBug(parsed.data);
   return { ok: true };
+}
+
+/**
+ * Replies to a report's reporter: POSTed (not shown first: the reply is only theirs once it is
+ * saved), then the report as the server now has it is shown everywhere, its thread with the reply.
+ * The answer says whether the email went; an answer of another shape still counts as sent.
+ */
+export async function replyToBug(bug: AdminBug, body: string): Promise<{ ok: true; email: AdminBugReplyEmail | null } | { ok: false; error: string }> {
+  const res = await postAdmin(ADMIN_API.bugMessages(bug.id), { body });
+  if (!res.ok) return res;
+  const parsed = AdminBugReplySchema.safeParse(res.body);
+  if (!parsed.success) return { ok: true, email: null };
+  showBug(parsed.data.bug);
+  return { ok: true, email: parsed.data.email };
 }
 
 function showIssue(fingerprint: string, change: (i: AdminIssue) => AdminIssue) {

@@ -11,6 +11,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { FeatureLabsPanel } from "@/components/FeatureLabsPanel";
 import { BugReportButton } from "@/components/BugReportButton";
 import { BetaBadge } from "@/components/app/BetaBadge";
+// The dot on Report a bug: one small RPC once the page is idle and on focus (no page code).
+import { useBugUnread } from "@/lib/bugReports/unread";
 // The is_admin() hint only (no admin page code): asked once the page is idle, then remembered.
 import { useIsAdmin } from "@/components/admin/useIsAdmin";
 // Nothing imported here may reach tldraw: this header renders on prerendered pages (see InkBottle).
@@ -79,8 +81,8 @@ function UnlimitedLink() {
 }
 
 /**
- * The app bar for signed-in pages: product name and the beta badge on the left; Report a bug,
- * the plan's meter and the account menu (Progress, Account, Billing, Family, Weekly report, Feature Labs, Admin for
+ * The app bar for signed-in pages: product name and the beta badge on the left; Report a bug (a dot
+ * when we replied to one of their reports and they have not read it), the plan's meter and the account menu (Progress, Account, Billing, Family, Weekly report, Feature Labs, Admin for
  * admins, Sign out) on the right; a kid profile's menu is Progress and Switch profile, with no meter
  * (kids never see billing). Self-contained
  * (reads the session and the ink summary itself), so any page can drop it in above an
@@ -97,6 +99,8 @@ export function AppHeader({ className }: { className?: string }) {
   const [labsOpen, setLabsOpen] = useState(false);
   // Asked once the page is idle and remembered for the tab session: a student's header never waits on it.
   const isAdmin = useIsAdmin(user?.id);
+  // Our replies to their bug reports they have not opened; never asked signed out.
+  const unreadReplies = useBugUnread(user?.id);
   const email = user?.email ?? "";
   // A kid profile (src/lib/family): no billing, no meter, and a menu of Progress and Switch profile.
   const kid = isKidEmail(email);
@@ -131,7 +135,7 @@ export function AppHeader({ className }: { className?: string }) {
 
         {user && (
           <div className={styles.end}>
-            <BugReportButton variant="header" />
+            <BugReportButton variant="header" unread={unreadReplies} />
             <Suspense fallback={null}>
               <ProfileSwitcher />
             </Suspense>

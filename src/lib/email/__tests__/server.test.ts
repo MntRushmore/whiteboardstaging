@@ -37,6 +37,7 @@ describe("getEmailEnv", () => {
     "EMAIL_FROM",
     "NEXT_PUBLIC_SITE_URL",
     "NEXT_PUBLIC_BILLING_PORTAL_URL",
+    "ALERT_EMAIL",
   ];
   const saved: Record<string, string | undefined> = {};
   beforeEach(() => {
@@ -66,6 +67,7 @@ describe("getEmailEnv", () => {
       siteUrl: PRODUCTION_SITE_URL,
       manageUrl: `${PRODUCTION_SITE_URL}/account`,
       manageIsPortal: false,
+      alertEmail: null,
     });
   });
 
@@ -77,6 +79,7 @@ describe("getEmailEnv", () => {
       EMAIL_FROM: "Agathon <team@mail.agathon.app>",
       NEXT_PUBLIC_SITE_URL: "https://whiteboard.example.com",
       NEXT_PUBLIC_BILLING_PORTAL_URL: "https://billing.stripe.com/p/login/xyz",
+      ALERT_EMAIL: " owner@example.com ",
     });
     resetServerEnvCache();
     expect(getEmailEnv()).toEqual({
@@ -88,7 +91,14 @@ describe("getEmailEnv", () => {
       siteUrl: "https://whiteboard.example.com",
       manageUrl: "https://billing.stripe.com/p/login/xyz",
       manageIsPortal: true,
+      alertEmail: "owner@example.com",
     });
+  });
+
+  it("an ALERT_EMAIL that is not one plain address is none", () => {
+    Object.assign(process.env, { ALERT_EMAIL: "Owner <owner@example.com>, two@example.com" });
+    resetServerEnvCache();
+    expect(getEmailEnv().alertEmail).toBeNull();
   });
 
   it("signs the unsubscribe link with REPORT_LINK_SECRET when it is set", () => {

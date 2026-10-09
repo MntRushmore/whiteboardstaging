@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Bug, Loader2, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { Bug, Loader2, MessagesSquare, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,6 +21,8 @@ import { getClientLogs } from "@/lib/logger";
 import { reportUserError } from "@/lib/reportAppError";
 import { useAuth } from "@/components/AuthProvider";
 import { describeError } from "@/lib/errorMessage";
+// the path alone (no contract, no page code): the board loads this dialog too
+import { REPORTS_PATH } from "@/lib/bugReports/paths";
 
 const SEND_FAILED_FALLBACK = "The report didn't reach us. Retry in a moment.";
 
@@ -72,13 +75,22 @@ interface BugReportButtonProps {
    * tldraw into every page's bundle.
    */
   screenshot?: () => Promise<string | null>;
+  /**
+   * Our replies they have not opened (the app header passes it: src/lib/bugReports/unread.ts): a dot
+   * on the header's trigger and a count on the dialog's "Your reports". The board passes none.
+   */
+  unread?: number;
 }
+
+/** "Your reports", with how many replies are new. Kept here (not the reports' copy) so the board's lazy dialog stays small. */
+export const reportsLinkLabel = (unread: number) => (unread <= 0 ? "Your reports" : unread === 1 ? "Your reports (1 new reply)" : `Your reports (${unread} new replies)`);
 
 /**
  * Report a bug: a message, plus diagnostics and recent logs, into `bug_reports`. On a board it
  * also attaches a screenshot of the canvas (`screenshot`); elsewhere (the app header) there is none.
+ * The dialog links to /reports, where our replies are read and answered.
  */
-export function BugReportButton({ boardId, open: openProp, onOpenChange, variant = "board", screenshot }: BugReportButtonProps) {
+export function BugReportButton({ boardId, open: openProp, onOpenChange, variant = "board", screenshot, unread = 0 }: BugReportButtonProps) {
   const { user } = useAuth();
   const controlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
@@ -142,10 +154,16 @@ export function BugReportButton({ boardId, open: openProp, onOpenChange, variant
       {!controlled && (
         <DialogTrigger asChild>
           {variant === "header" ? (
-            <Button variant="ghost" size="sm" className="h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground hover:text-foreground" title="Report a bug">
+            <Button variant="ghost" size="sm" className="relative h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground hover:text-foreground" title="Report a bug">
               <Bug className="size-3.5" aria-hidden />
               <span className="hidden text-xs font-medium sm:inline">Report a bug</span>
               <span className="sr-only sm:hidden">Report a bug</span>
+              {unread > 0 && (
+                <>
+                  <span data-testid="bug-unread-dot" aria-hidden className="absolute right-1 top-1 size-2 rounded-full bg-red-500 ring-2 ring-background" />
+                  <span className="sr-only">{unread === 1 ? ", 1 new reply to your reports" : `, ${unread} new replies to your reports`}</span>
+                </>
+              )}
             </Button>
           ) : (
             <Button
@@ -185,6 +203,18 @@ export function BugReportButton({ boardId, open: openProp, onOpenChange, variant
           <p className="text-xs text-muted-foreground">
             Sent: your message{screenshot ? ", a screenshot of your board" : ""}, recent console
             logs, your browser info, and your account email.
+          </p>
+          <p className="text-xs">
+            <Link
+              href={REPORTS_PATH}
+              onClick={() => setOpen(false)}
+              data-testid="bug-reports-link"
+              className="inline-flex items-center gap-1 rounded-sm font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <MessagesSquare className="size-3.5" aria-hidden />
+              {reportsLinkLabel(unread)}
+            </Link>
+            <span className="text-muted-foreground"> · what you sent before, and our replies</span>
           </p>
           {sendError && (
             <div

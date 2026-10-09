@@ -1,10 +1,12 @@
 /**
  * /admin/bugs: the bug report inbox. New, Seen, Fixed and Won't fix; each report's words, who sent
- * it from what device, its board, screenshot and logs; and the keys that triage it. Pure.
+ * it from what device, its board, screenshot and logs; the conversation with the reporter (replies
+ * from the inbox, theirs from /reports: 2026-10-09); and the keys that triage it. Pure.
  */
-import { ADMIN_API, ADMIN_PAGES, BUG_STATUSES, type AdminBug, type BugStatus } from "./contracts";
+import type { BugMessageAuthor } from "@/lib/bugReports/contracts";
+import { ADMIN_API, ADMIN_PAGES, BUG_STATUSES, type AdminBug, type AdminBugReplyEmail, type BugStatus } from "./contracts";
 import { CONSOLE_COPY, boardHref, clockWithSeconds, deviceView, exactTime, personName, userHref, type DeviceView, type Tone } from "./consoleView";
-import { formatCount, formatWhen, relativeTime, type ViewClock } from "./view";
+import { formatCount, formatWhen, plural, relativeTime, type ViewClock } from "./view";
 
 export const BUG_STATUS_LABELS: Record<BugStatus, string> = {
   new: "New",
@@ -73,6 +75,35 @@ export const BUGS_COPY = {
   openInbox: (n: number) => (n === 0 ? "Open the inbox" : `Open the inbox (${formatCount(n)} new)`),
   noneNew: "No new bug reports.",
   noMessage: "(no message)",
+  conversation: "Conversation",
+  conversationEmpty: "No replies yet. What you send here is emailed to them (a kid profile's grown-up, for a kid), and they can answer on their Your bug reports page.",
+  noReporter: "This report came from no account, so there's no one to reply to.",
+  fromUs: "Agathon",
+  replyLabel: "Reply to them",
+  replyPlaceholder: "Write in plain words. They read it on Agathon and get it by email.",
+  send: "Send reply",
+  sending: "Sending…",
+  sendKeys: "Ctrl or ⌘ + Enter sends",
+  waiting: "Waiting on you",
+  messages: (n: number) => plural(n, "message"),
+  seenByThem: (ago: string) => `They read it ${ago}`,
+  notSeenYet: "They haven't opened it yet",
+  replySent: "Reply sent",
+  replyEmail: (email: AdminBugReplyEmail): string => {
+    if (email.status === "sent") return email.to === "grown_up" ? "We emailed their grown-up too." : "We emailed them too.";
+    if (email.status === "failed") return "It's saved, but the email didn't go out. They'll still see it on Agathon.";
+    switch (email.reason) {
+      case "no_email":
+        return "No email went out: their account has no address we can use. They'll see it on Agathon.";
+      case "no_grown_up":
+        return "No email went out: this kid profile has no grown-up we could find. They'll see it on Agathon.";
+      case "no_reporter":
+        return "No email went out: the report came from no account.";
+      case "not_configured":
+        return "No email went out: email isn't set up on this server. They'll see it on Agathon.";
+    }
+  },
+  replyFailed: (error: string) => `Couldn't send the reply: ${error}`,
 } as const;
 
 export function bugCounts(bugs: readonly AdminBug[]): Record<BugStatus, number> {
@@ -139,6 +170,46 @@ export interface BugView {
   note: string;
   /** "Fixed Oct 3" */
   resolved: string | null;
+  /** the conversation, oldest first */
+  thread: ThreadMessageView[];
+  /** the reporter wrote last */
+  waiting: boolean;
+  /** an account sent it, so there is someone to answer */
+  canReply: boolean;
+  /** after a reply of ours: "They read it 2 h ago", or that they have not opened it yet */
+  seenByThem: string | null;
+}
+
+export interface ThreadMessageView {
+  id: string;
+  author: BugMessageAuthor;
+  /** "Agathon", or the reporter's name */
+  who: string;
+  body: string;
+  when: string;
+  ago: string;
+  whenTitle: string;
+}
+
+/** The conversation as the inbox shows it, and whether the reporter has read our latest reply. */
+export function threadView(bug: AdminBug, clock: ViewClock): { thread: ThreadMessageView[]; seenByThem: string | null } {
+  const reporter = bugSender(bug);
+  const thread = bug.thread.map((m) => ({
+    id: m.id,
+    author: m.author,
+    who: m.author === "admin" ? BUGS_COPY.fromUs : reporter,
+    body: m.body,
+    when: formatWhen(m.at, clock),
+    ago: relativeTime(m.at, clock.now) ?? formatWhen(m.at, clock),
+    whenTitle: exactTime(m.at, clock),
+  }));
+  const lastOurs = [...bug.thread].reverse().find((m) => m.author === "admin");
+  let seenByThem: string | null = null;
+  if (lastOurs) {
+    const seen = bug.reporterSeenAt ? Date.parse(bug.reporterSeenAt) : NaN;
+    seenByThem = Number.isFinite(seen) && seen >= Date.parse(lastOurs.at) ? BUGS_COPY.seenByThem(relativeTime(bug.reporterSeenAt, clock.now) ?? formatWhen(bug.reporterSeenAt!, clock)) : BUGS_COPY.notSeenYet;
+  }
+  return { thread, seenByThem };
 }
 
 /** The message's first line, at most `max` characters. */
@@ -181,6 +252,9 @@ export function bugView(bug: AdminBug, clock: ViewClock): BugView {
     logs: bug.logs.map((l, i) => ({ key: `${i}`, level: logLevel(l.level), levelLabel: LOG_LEVEL_LABELS[logLevel(l.level)], time: clockWithSeconds(l.time, clock.timeZone), text: l.text })),
     note: bug.note ?? "",
     resolved: resolvedWhen ? BUGS_COPY.resolved(bug.status, resolvedWhen) : null,
+    ...threadView(bug, clock),
+    waiting: bug.waiting,
+    canReply: Boolean(bug.userId),
   };
 }
 

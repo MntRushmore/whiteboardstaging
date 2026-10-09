@@ -9,9 +9,11 @@
  *   pg_cron every 5 min ──► /api/admin/health ──checks──► health_checks ──► alert email (ALERT_EMAIL)
  *   /admin (admins only) ◄── /api/admin/overview ◄── app_events, health_checks, usage_events, profiles…
  *
- * Runtime dependency: zod only (shared by server routes and the /admin page).
+ * Runtime dependency: zod only (shared by server routes and the /admin page), and the bug replies'
+ * contract (src/lib/bugReports/contracts.ts), which is zod only too.
  */
 import { z } from "zod";
+import { BUG_MESSAGE_MAX, BugMessageSchema } from "@/lib/bugReports/contracts";
 
 // ------------------------------------------------------------------ app events
 
@@ -373,6 +375,12 @@ export const AdminBugSchema = z.object({
   diagnostics: z.record(z.string(), z.unknown()).nullable(),
   /** bug_reports.logs, noise entries removed, newest last, at most 200 */
   logs: z.array(z.object({ level: z.string(), time: z.string(), text: z.string() })),
+  /** bug_report_messages: the admins' replies and the reporter's, oldest first (2026-10-09) */
+  thread: z.array(BugMessageSchema),
+  /** the last message is the reporter's: they are waiting on an answer */
+  waiting: z.boolean(),
+  /** bug_reports.reporter_seen_at: when the reporter last opened their replies; null: never */
+  reporterSeenAt: z.string().nullable(),
 });
 export type AdminBug = z.infer<typeof AdminBugSchema>;
 
@@ -382,6 +390,27 @@ export type AdminBugList = z.infer<typeof AdminBugListSchema>;
 
 /** PATCH ADMIN_ROUTES.bug(id) */
 export const AdminBugPatchSchema = z.object({ status: z.enum(BUG_STATUSES).optional(), note: z.string().max(2000).nullable().optional() });
+
+/** POST ADMIN_API.bugMessages(id): an admin's reply, trimmed (src/lib/bugReports/contracts.ts has the shared rules). */
+export const AdminBugReplyInputSchema = z.object({ body: z.string().trim().min(1, "Write a reply first.").max(BUG_MESSAGE_MAX) });
+
+/**
+ * Whether the reply's email went out: to the reporter, or to a kid profile's grown-up. `skipped`
+ * with why (no account on the report, no address, email not set up here); `failed` when Resend
+ * refused or could not be reached. The reply is saved either way.
+ */
+export const BUG_REPLY_EMAIL_SKIPS = ["no_reporter", "no_email", "no_grown_up", "not_configured"] as const;
+export const AdminBugReplyEmailSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("sent"), to: z.enum(["reporter", "grown_up"]) }),
+  z.object({ status: z.literal("skipped"), reason: z.enum(BUG_REPLY_EMAIL_SKIPS) }),
+  // `to` null: it failed before the recipient was known (the account could not be read)
+  z.object({ status: z.literal("failed"), to: z.enum(["reporter", "grown_up"]).nullable() }),
+]);
+export type AdminBugReplyEmail = z.infer<typeof AdminBugReplyEmailSchema>;
+
+/** POST ADMIN_API.bugMessages(id) answers the report as it now stands (the reply in its thread) and the email's fate. */
+export const AdminBugReplySchema = z.object({ bug: AdminBugSchema, email: AdminBugReplyEmailSchema });
+export type AdminBugReply = z.infer<typeof AdminBugReplySchema>;
 
 export const ISSUE_STATUSES = ["open", "muted", "fixed"] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
@@ -522,6 +551,8 @@ export const ADMIN_API = {
   bug: (id: string) => `/api/admin/bugs/${id}`,
   /** GET: the screenshot's bytes (image/png), Cache-Control private */
   bugScreenshot: (id: string) => `/api/admin/bugs/${id}/screenshot`,
+  /** POST { body }: reply to the reporter (saved, then emailed) */
+  bugMessages: (id: string) => `/api/admin/bugs/${id}/messages`,
   /** GET list, PATCH state */
   issues: "/api/admin/issues",
 } as const;

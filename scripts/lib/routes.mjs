@@ -165,6 +165,16 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
+    path: "/api/admin/bugs/[id]/messages",
+    file: "src/app/api/admin/bugs/[id]/messages/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "zod",
+    purpose: "Admin console: reply to a bug report's reporter (new moves to seen; logged as bug.reply with the length only), then email them, or a kid profile's grown-up",
+    status: "active",
+  },
+  {
     path: "/api/admin/bugs/[id]/screenshot",
     file: "src/app/api/admin/bugs/[id]/screenshot/route.ts",
     methods: ["GET"],
@@ -245,6 +255,16 @@ export const API_ROUTES = Object.freeze([
     // Without a valid Stripe-Signature it answers 400; without the secrets, 503.
     withoutTokenStatus: [400, 503],
     purpose: "Stripe-compatible billing webhook: ink pack purchases and refunds via the service role (other apps' events on the shared account are ignored)",
+    status: "active",
+  },
+  {
+    path: "/api/bug-reports/[id]/messages",
+    file: "src/app/api/bug-reports/[id]/messages/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "bugReply",
+    body: "zod",
+    purpose: "A reporter writes back on their own bug report (bug_report_reply() as the user); the operator is emailed after the answer",
     status: "active",
   },
   {

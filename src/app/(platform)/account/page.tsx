@@ -12,6 +12,7 @@ import { DangerZone } from "@/components/account/DangerZone";
 import { BillingCard } from "@/components/account/BillingCard";
 import { GradeSection } from "@/components/account/GradeSection";
 import { FamilySection } from "@/components/account/FamilySection";
+import { ReportsSection } from "@/components/account/ReportsSection";
 import { KidAccountCard } from "@/components/family/KidAccountCard";
 import { useFamily } from "@/components/family/useFamily";
 import { ReferralCard } from "@/components/referral/ReferralCard";
@@ -50,7 +51,8 @@ function AccountSkeleton() {
 
 /**
  * /account: Billing (`#billing`: Agathon Unlimited, its next charge, the card and invoices, cancel),
- * then the profile and account deletion, in one ~768 px column. There is no free plan and no ink
+ * then the profile, the way to their bug reports and our replies (/reports), and account deletion,
+ * in one ~768 px column. There is no free plan and no ink
  * to buy (2026-10-05), so Billing comes first: every way in is about the plan (the header's
  * "Unlimited", its menu's Billing, the ink dialog's "See your plan"). Auth-gated like the
  * dashboard, but never paywalled: a student without a plan must still reach Billing, their
@@ -133,6 +135,7 @@ export default function AccountPage() {
           // a kid profile: one friendly card, nothing of the grown-up's (billing, email, delete)
           <div className="space-y-6" data-state="ready">
             <KidAccountCard userId={user.id} fallbackName={FAMILY_COPY.you} />
+            <ReportsSection />
           </div>
         ) : (
           <div className="space-y-6" data-state="ready">
@@ -142,6 +145,7 @@ export default function AccountPage() {
             {!hasKids && <GradeSection userId={user.id} />}
             <FamilySection email={email} />
             <ReferralCard />
+            <ReportsSection />
             <DangerZone email={email} />
           </div>
         )}

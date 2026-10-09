@@ -12,7 +12,9 @@
  * email_log, the learning record's learning_attempts: LEARNING_CHECKS, and the admin system's
  * service-role-only admins, app_events, health_checks and alert_state with is_admin() and
  * prune_admin_rows(): ADMIN_CHECKS, and the families' families and family_members with the shared
- * plan and the kids' deletion: FAMILY_CHECKS, and the referrals: REFERRAL_CHECKS, all run after the rest), the
+ * plan and the kids' deletion: FAMILY_CHECKS, the referrals: REFERRAL_CHECKS, and the bug report replies'
+ * bug_report_messages with my_bug_reports(), bug_report_reply(), bug_reports_mark_seen() and
+ * my_bug_unread_count(): BUG_REPLY_CHECKS, all run after the rest), the
  * storage buckets, the version and history triggers and the RPCs (consume_credits, credit_summary,
  * ink_summary, rate_limit_hit, usage_by_day, save_onboarding, delete_own_account;
  * and that a user can call none of the service-role RPCs refund_credits,
@@ -38,7 +40,7 @@
  */
 import { createSupabaseHttp, loadDotEnvLocal, resolveSupabaseEnv, waitForHealth } from "./lib/supabaseHttp.mjs";
 import { bootstrapVerifyContext } from "./lib/verifyContext.mjs";
-import { ADMIN_CHECKS, ALL_CHECKS, FAMILY_CHECKS, formatResults, LEARNING_CHECKS, REFERRAL_CHECKS, runAllChecks } from "./lib/rlsChecks.mjs";
+import { ADMIN_CHECKS, ALL_CHECKS, BUG_REPLY_CHECKS, FAMILY_CHECKS, formatResults, LEARNING_CHECKS, REFERRAL_CHECKS, runAllChecks } from "./lib/rlsChecks.mjs";
 
 loadDotEnvLocal();
 
@@ -86,7 +88,7 @@ const ctx = {
 
 let results = [];
 try {
-  results = await runAllChecks(ctx, [...ALL_CHECKS, ...LEARNING_CHECKS, ...ADMIN_CHECKS, ...FAMILY_CHECKS, ...REFERRAL_CHECKS]);
+  results = await runAllChecks(ctx, [...ALL_CHECKS, ...LEARNING_CHECKS, ...ADMIN_CHECKS, ...FAMILY_CHECKS, ...REFERRAL_CHECKS, ...BUG_REPLY_CHECKS]);
 } finally {
   const notes = await bootstrap.cleanup();
   console.log(formatResults(results));

@@ -37,8 +37,17 @@ export async function readAdmin<T>(url: string, schema: ZodType<T, ZodTypeDef, u
 
 /** A PATCH with a JSON body; the answer's JSON (or null) when it went through. */
 export async function patchAdmin(url: string, body: unknown): Promise<{ ok: true; body: unknown } | { ok: false; error: string }> {
+  return sendAdmin("PATCH", url, body);
+}
+
+/** A POST with a JSON body (a reply to a bug report); the answer's JSON (or null) when it went through. */
+export async function postAdmin(url: string, body: unknown): Promise<{ ok: true; body: unknown } | { ok: false; error: string }> {
+  return sendAdmin("POST", url, body);
+}
+
+async function sendAdmin(method: "PATCH" | "POST", url: string, body: unknown): Promise<{ ok: true; body: unknown } | { ok: false; error: string }> {
   try {
-    const res = await adminFetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const res = await adminFetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) throw await apiErrorFromResponse(res);
     return { ok: true, body: await res.json().catch(() => null) };
   } catch (err) {

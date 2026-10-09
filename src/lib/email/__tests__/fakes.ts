@@ -52,6 +52,7 @@ export function testEnv(over: Partial<EmailEnv> = {}): EmailEnv {
     siteUrl: SITE,
     manageUrl: PORTAL,
     manageIsPortal: true,
+    alertEmail: "owner@example.com",
     ...over,
   };
 }

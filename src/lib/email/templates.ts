@@ -17,7 +17,10 @@
  * inject markup or a `javascript:` link. One narrow exception (2026-10-09): the free trial's emails
  * to the grown-up name the student ("Maya's first practice is ready"), but only as a FIRST NAME
  * reduced by `safeFirstName` (src/lib/email/activity.ts) to a single word of letters, which cannot
- * carry a link or a sentence; anything else is no name, and the email reads without one.
+ * carry a link or a sentence; anything else is no name, and the email reads without one. And a
+ * second (the same day): a reply to a bug report quotes the report back to whoever sent it (or to
+ * a kid's grown-up), as ONE line cut short with anything that looks like a link or an address
+ * replaced (`quotableLine`); the reply itself is staff's words, escaped.
  *
  * How the HTML is built (what email clients actually render): a table layout (Outlook ignores
  * flex/grid and most `max-width` on divs), every style inline (Gmail drops most <style> blocks),
@@ -604,5 +607,115 @@ export function trialProgressEmail(input: TrialProgressInput): RenderedEmail {
   ].join("\n");
   const html = layout({ title: subject, preheader, card, footer: escapeHtml(footer) });
   const text = textBody([title, lead, progressText(progress), trial, `To stop, use Manage or cancel: ${manage}`, `Open Agathon: ${home}`, "--", footer]);
+  return { subject, html, text };
+}
+
+/* ------------------------------------------------------------------------- */
+/* A reply to a bug report                                                    */
+/* ------------------------------------------------------------------------- */
+
+/** How much of a report the reply email quotes back, at most. */
+export const QUOTE_MAX = 120;
+
+/** Anything a mail app could turn into a link: a URL, an email address, a bare domain. */
+const LINKISH = /\b(?:https?:\/\/|www\.)\S+|[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b(?:\/\S*)?/gi;
+
+/**
+ * A report quoted back in an email: its first line with words in it, anything that looks like a link
+ * or an address replaced by "[link]", white space collapsed, at most `max` characters. "" when there
+ * is nothing to quote. The reporter typed it and sign-up does not confirm an address (see the module
+ * comment), so the quote carries no link and no more than a line of their words.
+ */
+export function quotableLine(text: string, max = QUOTE_MAX): string {
+  const first = text.split(/\r?\n/).find((l) => l.trim()) ?? "";
+  const line = first.replace(LINKISH, "[link]").replace(/\s+/g, " ").trim();
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
+
+/** The reporter's page at one report: `<site>/reports#<id>`. Throws for an id that is not a uuid. */
+export function bugReportLink(siteUrl: string, reportId: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reportId)) throw new Error(`not a report id: ${JSON.stringify(reportId)}`);
+  return emailHref(`${siteLink(siteUrl, "/reports")}#${reportId}`);
+}
+
+export type BugReplyEmailInput = {
+  /** The site's origin; the button opens the report on /reports. */
+  siteUrl: string;
+  /** The report's id (a uuid): where the button lands. */
+  reportId: string;
+  /** The reply as staff wrote it: escaped, its line breaks kept. */
+  reply: string;
+  /** The report as it was sent: quoted as one line (`quotableLine`), or not at all when it has no words. */
+  reported: string;
+  /** When the report was sent. */
+  reportedAt: Date;
+  /**
+   * Set for a kid profile's report, which goes to their grown-up: the kid's first name as
+   * `safeFirstName` gives it (null when there is none to use). Absent for the reporter's own address.
+   */
+  kid?: { name: string | null };
+  timeZone?: string;
+};
+
+/**
+ * Sent each time staff reply to a bug report (POST /api/admin/bugs/<id>/messages;
+ * src/lib/email/bugReply.ts): to the reporter's address, or, for a kid profile's report, to the
+ * kid's grown-up, never to the kid's address. What they sent (one line), the reply, and the button
+ * that opens the conversation on /reports, where they can answer. A grown-up is told the answer is
+ * on the kid's profile.
+ */
+export function bugReplyEmail(input: BugReplyEmailInput): RenderedEmail {
+  const { day } = formatEmailDate(input.reportedAt, input.timeZone);
+  const href = bugReportLink(input.siteUrl, input.reportId);
+  const site = siteLink(input.siteUrl, "/");
+  const kid = input.kid ?? null;
+  const name = kid?.name ?? null;
+  const quote = quotableLine(input.reported);
+  const reply = input.reply.trim();
+  const replyLines = reply.split(/\r?\n/);
+
+  const subject = !kid ? "We replied to your bug report" : name ? `We replied to ${name}'s bug report` : "We replied to a bug report from your family";
+  const preheader = quotableLine(reply, 100) || "Read our reply on Agathon.";
+  const sent = !kid ? `You sent us a bug report on ${day}` : name ? `${name} sent us a bug report on ${day}` : `Someone in your family sent us a bug report on ${day}`;
+  const sentLine = quote ? `${sent}:` : `${sent}.`;
+  const ours = "Here's our reply:";
+  const how = !kid
+    ? "You can read the whole conversation and write back on Agathon."
+    : `To read the whole conversation and write back, switch to ${name ? `${name}'s` : "their"} profile on Agathon, then open Report a bug and Your bug reports.`;
+  const footer = !kid
+    ? "You're getting this email because you sent a bug report from Agathon with this address."
+    : "You're getting this email because a kid profile in your Agathon family sent a bug report, and you're its grown-up.";
+
+  const box = (inner: string, opts: { quiet: boolean }) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;">
+<tr><td style="padding:14px 16px;border-radius:10px;${opts.quiet ? `background-color:#f9fafb;border:1px solid ${CARD_BORDER};` : `background-color:#ffffff;border:1px solid #d1d5db;`}">
+${inner}
+</td></tr>
+</table>`;
+  const quoted = paragraph(escapeHtml(`“${quote}”`), { muted: true, margin: "0", size: 15 });
+  const replyHtml = paragraph(replyLines.map((l) => escapeHtml(l)).join("<br>"), { margin: "0" });
+
+  const card = [
+    heading(subject),
+    paragraph(escapeHtml(sentLine)),
+    ...(quote ? [box(quoted, { quiet: true })] : []),
+    paragraph(escapeHtml(ours)),
+    box(replyHtml, { quiet: false }),
+    button("Read and reply", href),
+    paragraph(escapeHtml(how), { muted: true, size: 14 }),
+  ].join("\n");
+
+  const html = layout({ title: subject, preheader, card, footer: `${escapeHtml(footer)} ${link("Open Agathon", site)}` });
+  const text = textBody([
+    subject,
+    sentLine,
+    ...(quote ? [`“${quote}”`] : []),
+    ours,
+    reply,
+    `Read and reply: ${href}`,
+    how,
+    "--",
+    footer,
+    `Agathon: ${site}`,
+  ]);
   return { subject, html, text };
 }

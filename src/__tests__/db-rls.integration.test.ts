@@ -10,7 +10,7 @@
  * are created and, when a service role key is available, deleted afterwards.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ADMIN_CHECKS, ALL_CHECKS, FAMILY_CHECKS, LEARNING_CHECKS, REFERRAL_CHECKS, runCheck } from "../../scripts/lib/rlsChecks.mjs";
+import { ADMIN_CHECKS, ALL_CHECKS, BUG_REPLY_CHECKS, FAMILY_CHECKS, LEARNING_CHECKS, REFERRAL_CHECKS, runCheck } from "../../scripts/lib/rlsChecks.mjs";
 import type { CheckContext } from "../../scripts/lib/rlsChecks.mjs";
 import { resolveSupabaseEnv, waitForHealth } from "../../scripts/lib/supabaseHttp.mjs";
 import { bootstrapVerifyContext } from "../../scripts/lib/verifyContext.mjs";
@@ -53,8 +53,9 @@ suite(title, () => {
   // LEARNING_CHECKS: the learning record (learning_attempts), and ADMIN_CHECKS: the admin system's
   // tables (admins, app_events, health_checks, alert_state), kept out of ALL_CHECKS because the
   // in-memory fake in verifyRls.test.ts does not model them; same users, after the rest. FAMILY_CHECKS
-  // (families, family_members, the shared plan), then REFERRAL_CHECKS (referrals) last.
-  for (const check of [...ALL_CHECKS, ...LEARNING_CHECKS, ...ADMIN_CHECKS, ...FAMILY_CHECKS, ...REFERRAL_CHECKS]) {
+  // (families, family_members, the shared plan), then REFERRAL_CHECKS (referrals), then
+  // BUG_REPLY_CHECKS (bug_report_messages and the reporter's functions) last.
+  for (const check of [...ALL_CHECKS, ...LEARNING_CHECKS, ...ADMIN_CHECKS, ...FAMILY_CHECKS, ...REFERRAL_CHECKS, ...BUG_REPLY_CHECKS]) {
     it(
       check.name,
       async () => {

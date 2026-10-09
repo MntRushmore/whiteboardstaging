@@ -1,7 +1,9 @@
 /**
  * The operator's alert emails (to ALERT_EMAIL, never to a user), as pure functions: input ->
  * `{ subject, html, text }`. The health route decides when one goes out
- * (src/lib/server/health/alerts.ts); this module only words it.
+ * (src/lib/server/health/alerts.ts); this module only words it. One more is not about health: a
+ * reporter wrote back on their bug report (`reporterRepliedEmail`, sent by
+ * POST /api/bug-reports/<id>/messages through src/lib/email/bugReply.ts).
  *
  * Who reads these. Rushil, on a phone, often away from a laptop. So the subject alone says what
  * broke and why ("Mathpix is down: keys rejected (401)"), the first line says since when, the
@@ -13,7 +15,7 @@
  * stripped of line breaks in the subject (a header must be one line). Links go through
  * `siteLink`, so a bad NEXT_PUBLIC_SITE_URL throws before anything is sent.
  */
-import type { Service } from "@/lib/admin/contracts";
+import { ADMIN_PAGES, type Service } from "@/lib/admin/contracts";
 import { escapeHtml, formatEmailDate, siteLink, type RenderedEmail } from "@/lib/email/templates";
 
 /** How each service is named in an alert, as the owner thinks of it. */
@@ -193,4 +195,34 @@ export function alertEmail(input: AlertEmailInput, ctx: AlertContext): RenderedE
       );
     }
   }
+}
+
+/** How much of a reporter's reply the email quotes, at most (the inbox has all of it). */
+export const MAX_REPLY_QUOTE = 2000;
+
+export type ReporterRepliedInput = {
+  /** the reporter's account address (null: none known) */
+  who: string | null;
+  /** the report, opened in the inbox by the link */
+  reportId: string;
+  /** what they wrote */
+  body: string;
+};
+
+/**
+ * "maya@example.com replied to their bug report": to ALERT_EMAIL when a reporter writes back on
+ * /reports. Their words (escaped, a paragraph per line, at most MAX_REPLY_QUOTE characters) and one
+ * link: the report in the bug inbox.
+ */
+export function reporterRepliedEmail(input: ReporterRepliedInput, ctx: { siteUrl: string }): RenderedEmail {
+  const who = input.who?.trim() ? oneLine(input.who, 80) : "Someone";
+  const words = input.body.trim();
+  const lines = words
+    .slice(0, MAX_REPLY_QUOTE)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const cut = words.length > MAX_REPLY_QUOTE ? ["(Cut short here: the rest is in the inbox.)"] : [];
+  const inbox = { label: "Open it in the bug inbox", href: siteLink(ctx.siteUrl, `${ADMIN_PAGES.bugs}?id=${encodeURIComponent(input.reportId)}`) };
+  return render(`${who} replied to their bug report`, ["They wrote:", ...lines, ...cut], inbox);
 }

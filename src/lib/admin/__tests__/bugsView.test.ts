@@ -46,6 +46,9 @@ function bug(over: Partial<AdminBug> = {}): AdminBug {
       { level: "error", time: "2026-10-08T18:47:41Z", text: "solve failed: 502" },
       { level: "trace", time: "2026-10-08T18:47:42Z", text: "x" },
     ],
+    thread: [],
+    waiting: false,
+    reporterSeenAt: null,
     ...over,
   };
 }

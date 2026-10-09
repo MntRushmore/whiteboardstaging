@@ -7,14 +7,24 @@
  * few MB, plus whether there is one); only the screenshot route reads the screenshot itself.
  * A report's log keeps its last MAX_LOGS lines, browser and extension noise removed (isNoise over
  * the line's words).
+ *
+ * Each report comes with its thread (bug_report_messages, 20261009160000_bug_replies.sql): the listed
+ * reports' messages are read together, THREAD_BATCH report ids per request (a page of
+ * ADMIN_LIMITS.bugs reports is two requests however many messages), never one read per report.
+ * Replying is src/lib/server/adminConsole/bugReplies.ts.
  */
 import { ADMIN_LIMITS, BUG_STATUSES, type AdminBug, type AdminBugList, type BugStatus } from "@/lib/admin/contracts";
+import { BUG_MESSAGE_AUTHORS, BUG_MESSAGE_MAX, type BugMessage, type BugMessageAuthor } from "@/lib/bugReports/contracts";
 import { reportPath } from "@/lib/server/adminOverview";
 import { auditChange, auditLook } from "./audit";
 import { logLineIsNoise } from "./noise";
 import { restClient, type ConsoleDeps, type Rest } from "./rest";
 
-export const BUG_SELECT = "id,created_at,user_id,user_email,board_id,message,diagnostics,logs,status,admin_note,resolved_at,has_screenshot";
+export const BUG_SELECT = "id,created_at,user_id,user_email,board_id,message,diagnostics,logs,status,admin_note,resolved_at,reporter_seen_at,has_screenshot";
+/** Report ids per read of their messages (about 4 KB of URL). */
+export const THREAD_BATCH = 100;
+/** Messages per report at most, the oldest (a thread is a few messages; this only guards the page). */
+export const MAX_THREAD = 200;
 /** Log lines per report, the newest. */
 export const MAX_LOGS = 200;
 /** One log line's words at most. */
@@ -36,6 +46,16 @@ export interface BugViewRow {
   admin_note: string | null;
   resolved_at: string | null;
   has_screenshot: boolean | null;
+  reporter_seen_at?: string | null;
+}
+
+/** One bug_report_messages row. */
+export interface BugMessageRow {
+  id: string;
+  report_id: string;
+  author: string;
+  body: string | null;
+  created_at: string;
 }
 
 const asObject = (v: unknown): Record<string, unknown> | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
@@ -71,9 +91,22 @@ export function bugLogs(raw: unknown): AdminBug["logs"] {
   return lines.slice(-MAX_LOGS);
 }
 
-export function toAdminBug(row: BugViewRow): AdminBug {
+/** A stored message as the inbox shows it; null for an author the contract does not know. */
+export function toBugMessage(row: BugMessageRow): BugMessage | null {
+  if (!(BUG_MESSAGE_AUTHORS as readonly string[]).includes(row.author)) return null;
+  return { id: row.id, author: row.author as BugMessageAuthor, body: (row.body ?? "").slice(0, BUG_MESSAGE_MAX), at: row.created_at };
+}
+
+/** A thread oldest first (ties by id, as my_bug_reports() orders them), at most MAX_THREAD. */
+export function sortThread(thread: readonly BugMessage[]): BugMessage[] {
+  return [...thread].sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).slice(0, MAX_THREAD);
+}
+
+/** One report for the inbox, with its thread (`waiting` when the reporter wrote last). */
+export function toAdminBug(row: BugViewRow, thread: readonly BugMessage[] = []): AdminBug {
   const diagnostics = asObject(row.diagnostics);
   const status = (BUG_STATUSES as readonly string[]).includes(row.status ?? "") ? (row.status as BugStatus) : "new";
+  const messages = sortThread(thread);
   return {
     id: row.id,
     at: row.created_at,
@@ -88,13 +121,46 @@ export function toAdminBug(row: BugViewRow): AdminBug {
     hasScreenshot: row.has_screenshot === true,
     diagnostics,
     logs: bugLogs(row.logs),
+    thread: messages,
+    waiting: messages.at(-1)?.author === "reporter",
+    reporterSeenAt: row.reporter_seen_at ?? null,
   };
 }
 
-/** Reports newest first, at most `limit`, narrowed by `filter` (`user_id=eq.…`). */
+/** These reports' messages, by report, each oldest first: THREAD_BATCH ids per request, the batches in parallel. */
+export async function threadsFor(rest: Rest, reportIds: readonly string[]): Promise<Map<string, BugMessage[]>> {
+  const ids = [...new Set(reportIds)];
+  const out = new Map<string, BugMessage[]>();
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += THREAD_BATCH) batches.push(ids.slice(i, i + THREAD_BATCH));
+  const pages = await Promise.all(
+    batches.map((batch) =>
+      rest.paged<BugMessageRow>({
+        table: "bug_report_messages",
+        params: { select: "id,report_id,author,body,created_at", report_id: `in.(${batch.join(",")})`, order: "created_at.asc,id.asc" },
+      }),
+    ),
+  );
+  for (const { rows } of pages) {
+    for (const row of rows) {
+      const message = toBugMessage(row);
+      if (!message) continue;
+      const list = out.get(row.report_id) ?? [];
+      list.push(message);
+      out.set(row.report_id, list);
+    }
+  }
+  return out;
+}
+
+/** Reports newest first, at most `limit`, narrowed by `filter` (`user_id=eq.…`), each with its thread. */
 export async function bugsWhere(rest: Rest, filter: Record<string, string>, limit: number = ADMIN_LIMITS.bugs): Promise<AdminBug[]> {
   const rows = await rest.rows<BugViewRow>({ table: "admin_bug_rows", params: { select: BUG_SELECT, ...filter, order: "created_at.desc", limit: String(limit) } });
-  return rows.map(toAdminBug);
+  const threads = await threadsFor(
+    rest,
+    rows.map((r) => r.id),
+  );
+  return rows.map((row) => toAdminBug(row, threads.get(row.id)));
 }
 
 export async function buildBugList(deps: ConsoleDeps): Promise<AdminBugList> {
