@@ -42,7 +42,7 @@ describe("read aloud's switch", () => {
 
   it("storeChoice: stored, and announced to this tab", () => {
     const storage = memoryStorage();
-    const target = { dispatchEvent: vi.fn(() => true) };
+    const target = { dispatchEvent: vi.fn<(event: Event) => boolean>(() => true) };
     storeChoice(storage, true, target);
     expect(storage.data[READ_ALOUD_KEY]).toBe("on");
     const event = target.dispatchEvent.mock.calls[0][0] as unknown as CustomEvent<string>;
