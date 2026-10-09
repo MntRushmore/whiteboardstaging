@@ -29,10 +29,21 @@
  * missing digits for Solve, in the student's hand, in their columns. No model is ever asked.
  *
  * In scope: `+` with two or more numbers, `-` and `x` with two, whole numbers, and decimals lined up
- * on the point for `+` and `-`. Out of it, and quiet (`null`): long multiplication's rows of partial
- * products and long division (more than one row under the rule, or a second rule), a subtraction
- * whose answer would be negative, decimals in a product, a read that is not numbers. Quiet is the
- * point: the tutor says nothing rather than write a wrong "answer" under a child's sum.
+ * on the point for `+` and `-`. And LONG MULTIPLICATION, read as one block too:
+ *
+ *        46
+ *     x  23        \begin{array}{r} 46 \\ \times 23 \\ \hline 138 \\ 920 \\ \hline 1058 \end{array}
+ *     -----
+ *       138        a row for each digit of the bottom number (46 × 3, 46 × 20), its place's zero
+ *       920        written or left out (`92` shifted left), maybe a `+` before the last; a second
+ *     -----        rule, and their sum — which Mathpix also reads with the last row as a fraction
+ *      1058        over it (`\frac{920}{1058}`). Each row is checked, then the sum column by column.
+ *
+ * A single row under the rule of a product by two digits or more is the answer when it is the
+ * product, and the first row of the working when it is that row (right so far: no mark).
+ * Out of scope, and quiet (`null`): long division (`primaryWork.ts` reads its bracket), a
+ * subtraction whose answer would be negative, decimals in a product, a read that is not numbers.
+ * Quiet is the point: the tutor says nothing rather than write a wrong "answer" under a child's sum.
  *
  * Pure string and digit work: no mathjs, so it is small, and the loop calls it directly.
  */
@@ -45,8 +56,18 @@ export interface StackedRead {
   op: StackOp;
   /** the numbers above the rule, top to bottom, as written (`286`, `3.50`) — no sign, no commas */
   operands: string[];
-  /** the student's answer under the rule as written ('' while it is empty) */
+  /** the student's answer under the rule as written ('' while it is empty); in long multiplication, the sum of the rows */
   answer: string;
+  /** long multiplication: the rows between the two rules, top to bottom, as written (`138`, `920` or `92`) */
+  rows?: string[];
+}
+
+/** Long multiplication's rows, checked (`StackedWork.rows`). */
+export interface LongRows {
+  /** what each row should be, top to bottom: the top number times each nonzero digit of the bottom one, in its place */
+  want: number[];
+  /** the first row that is wrong (or one too many), or -1 */
+  wrong: number;
 }
 
 /** The sum worked out and the student's answer judged, place by place. */
@@ -69,10 +90,12 @@ export interface StackedWork extends StackedRead {
   written: Map<number, number>;
   /** the rightmost place whose digit is wrong (or written where the answer has none), or -1 */
   wrong: number;
-  /** every place of the answer written, and right */
+  /** every place of the answer written, and right (in long multiplication, every row right too) */
   right: boolean;
   /** a short note about the first wrong place, in a child's words ('' when nothing is wrong) */
   note: string;
+  /** long multiplication's rows (`StackedRead.rows`), checked */
+  long?: LongRows;
 }
 
 const PLACE_NAMES = ["ones", "tens", "hundreds", "thousands", "ten thousands", "hundred thousands", "millions"];
@@ -153,10 +176,8 @@ export function parseStacked(latex: string): StackedRead | null {
   const rows = arrayRows(latex);
   if (!rows) return null;
   const rule = rows.indexOf("rule");
-  if (rule < 2 || rows.lastIndexOf("rule") !== rule) return null;
+  if (rule < 2) return null;
   const above = rows.slice(0, rule) as string[];
-  const below = rows.slice(rule + 1) as string[];
-  if (below.length > 1) return null;
   const parsed = above.map(operandRow);
   if (parsed.some((p) => p === null)) return null;
   const items = parsed as Array<{ op: StackOp | null; number: string }>;
@@ -166,13 +187,56 @@ export function parseStacked(latex: string): StackedRead | null {
   if (ops.size !== 1 || items[items.length - 1].op === null) return null;
   const op = [...ops][0];
   if (op !== "+" && items.length !== 2) return null;
+  const operands = items.map((p) => p.number);
+  const after = rows.slice(rule + 1);
+  if (op === "×" && /^\d{2,}$/.test(operands[1])) {
+    const long = longRows(after);
+    if (long) return { op, operands, ...long };
+  }
+  if (after.includes("rule") || after.length > 1) return null;
   let answer = "";
-  if (below.length === 1) {
-    const n = numberOf(cleanRow(below[0]));
+  if (after.length === 1) {
+    const n = numberOf(cleanRow(after[0] as string));
     if (n === null) return null;
     answer = n;
   }
-  return { op, operands: items.map((p) => p.number), answer };
+  return { op, operands, answer };
+}
+
+/**
+ * Long multiplication's rows under the first rule (`after`), and their sum: two rows or more, or a
+ * second rule — under which one row, the sum — or the last row read as a fraction over the sum
+ * (`\frac{920}{1058}`, the second rule taken for its bar). A row may start with `+`. Null when it is
+ * not that (one row and no second rule is the answer itself, read by `parseStacked`).
+ */
+function longRows(after: ReadonlyArray<string | "rule">): { rows: string[]; answer: string } | null {
+  const second = after.indexOf("rule");
+  let middle = (second === -1 ? after : after.slice(0, second)) as string[];
+  const under = second === -1 ? [] : after.slice(second + 1);
+  if (under.includes("rule") || under.length > 1) return null;
+  let answer = "";
+  if (under.length === 1) {
+    const n = numberOf(cleanRow(under[0] as string));
+    if (n === null) return null;
+    answer = n;
+  }
+  // the last row and the sum, read as a fraction (the second rule as its bar)
+  const last = middle[middle.length - 1];
+  const frac = second === -1 && last ? /^\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}$/.exec(last.trim()) : null;
+  if (frac) {
+    const sum = numberOf(cleanRow(frac[2]));
+    if (sum === null) return null;
+    middle = [...middle.slice(0, -1), frac[1]];
+    answer = sum;
+  }
+  if (middle.length === 0 || (second === -1 && !frac && middle.length < 2)) return null;
+  const rows: string[] = [];
+  for (const row of middle) {
+    const n = numberOf(cleanRow(row).replace(/^\+/, ""));
+    if (n === null || n.includes(".")) return null;
+    rows.push(n);
+  }
+  return { rows, answer };
 }
 
 /** How many digits a number has after its point. */
@@ -287,8 +351,45 @@ export function workStacked(read: StackedRead, opts: WorkOptions = {}): StackedW
   }
   const right = wrong === -1 && digits.every((d, p) => mine.get(p) === d);
   const work: StackedWork = { ...read, result: written(digits, decimals), decimals, digits, width, carries, written: mine, wrong, right, note: "" };
-  work.note = wrong === -1 ? "" : noteFor(work, nums, wrong, decimalsOf(answer));
-  return work;
+  // a product by two digits or more with one row under the rule that is its first row (46 × 3 under
+  // 46 × 23): the working started, right so far — not a wrong answer
+  if (op === "×" && !read.rows && wrong !== -1 && answer && Number(answer) === Number(operands[0]) * Number(operands[1].slice(-1)) && operands[1].length > 1) work.wrong = -1;
+  work.note = work.wrong === -1 ? "" : noteFor(work, nums, work.wrong, decimalsOf(answer));
+  return read.rows ? workRows(work, read.rows) : work;
+}
+
+/**
+ * Long multiplication's rows checked (`StackedRead.rows`): row i is the top number times the i-th
+ * nonzero digit of the bottom one from the right, with its place's zeros or written shifted without
+ * them (`92` for 46 × 20). The first wrong row is the mistake; with every row right, the sum under
+ * them is judged column by column as any answer (`work`). Right when every row is there and right,
+ * and the sum is complete and right.
+ */
+function workRows(work: StackedWork, rows: readonly string[]): StackedWork {
+  const top = Number(work.operands[0]);
+  const bottom = [...work.operands[1]].reverse().map(Number);
+  const want: number[] = [];
+  const at: number[] = [];
+  bottom.forEach((d, place) => {
+    if (d === 0) return;
+    want.push(top * d * 10 ** place);
+    at.push(place);
+  });
+  let wrong = -1;
+  for (let i = 0; i < rows.length && wrong === -1; i++) {
+    const n = Number(rows[i]);
+    if (i >= want.length || (n !== want[i] && !(at[i] > 0 && n * 10 ** at[i] === want[i]))) wrong = i;
+  }
+  const long: LongRows = { want, wrong };
+  if (wrong !== -1) {
+    const place = at[wrong];
+    const note =
+      wrong >= want.length
+        ? `There is one row for each digit of ${work.operands[1]}.`
+        : `Check the row for the ${bottom[place]} ${placeName(place, 0)}: ${work.operands[0]} × ${bottom[place] * 10 ** place}.`;
+    return { ...work, long, wrong: -1, right: false, note };
+  }
+  return { ...work, long, right: work.right && rows.length === want.length };
 }
 
 /**
@@ -301,7 +402,8 @@ export function workStacked(read: StackedRead, opts: WorkOptions = {}): StackedW
 export function stackedAnalysis(work: StackedWork | null, sure: boolean): LineAnalysis {
   const quiet: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
   if (!work) return quiet;
-  const wrong = work.wrong !== -1;
+  // a wrong digit in the answer, or a wrong row of long multiplication
+  const wrong = work.wrong !== -1 || (work.long?.wrong ?? -1) !== -1;
   if (wrong && !sure) return quiet;
   return {
     kind: wrong || work.right ? "equation" : "expression",
