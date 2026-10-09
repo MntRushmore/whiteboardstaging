@@ -92,6 +92,24 @@ describe("buildAdminOverview over a week of tables", () => {
     expect(crash.samples[0].userEmail).toBeNull();
   });
 
+  it("errors: noise (a browser's or an extension's script) is left out of the total, the users, the hours and the groups", async () => {
+    const tables = adminTables();
+    const crash = (i: number, e: Record<string, unknown>) => ({ id: 900_000 + i, at: iso((i + 1) * 10 * MIN), source: "client", level: "error", kind: "client.error", code: null, route: "/board", user_id: uid(50 + i), board_id: null, request_id: null, release: null, ...e });
+    tables.app_events.push(
+      // Brave's / an extension's injected script, and Safari's masked extension URL
+      ...Array.from({ length: 4 }, (_, i) => crash(i, { message: "TypeError: Cannot read properties of null (reading 'postMessage')", meta: { stack: "at inject (chrome-extension://abcdef/inpage.js:1:2)" } })),
+      crash(4, { message: "Error: blocked", meta: { stack: "at x (webkit-masked-url://hidden/:1:1)" } }),
+      crash(5, { message: "ResizeObserver loop completed with undelivered notifications.", meta: {} }),
+      // the same source and level, ours: counted
+      crash(6, { message: "TypeError: board is undefined", meta: { stack: "at render (/_next/static/chunks/app.js:1:2)" } }),
+    );
+    const { errors } = await run(tables).overview;
+    expect(errors.total24h).toBe(20);
+    expect(errors.users24h).toBe(4);
+    expect(errors.perHour.reduce((n, h) => n + h.errors, 0)).toBe(21);
+    expect(errors.groups.filter((g) => g.kind === "client.error").map((g) => g.message)).toEqual(["TypeError: board is undefined"]);
+  });
+
   it("AI: calls per route (metered and Unlimited), failures once per request, fallbacks", async () => {
     const { ai } = await run().overview;
     const by = Object.fromEntries(ai.routes.map((r) => [r.route, r]));

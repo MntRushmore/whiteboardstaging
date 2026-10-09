@@ -6,6 +6,7 @@
  *   health_checks (id, at, service, ok, latency_ms, detail)        one row per service per run
  *   alert_state   (key pk, status ok|firing, since, last_sent_at, failures)  the alerts' memory
  *   app_events    (at, source, level, kind, code, message, route, user_id, …)  read for the error spike
+ *   admin_issues  (fingerprint, status, …)                         muted issues, left out of the spike
  *   prune_admin_rows()                                              retention (RETENTION_DAYS), once a day
  *
  * Every helper throws a RestError on any failure, naming the table and PostgREST's message; the
@@ -128,7 +129,15 @@ export async function saveAlertStates(rest: Rest, states: AlertState[]): Promise
 
 // ------------------------------------------------------------------ app_events
 
-export type ErrorEventRow = { kind: string; code: string | null; message: string | null; user_id: string | null; source: string };
+export type ErrorEventRow = {
+  kind: string;
+  code: string | null;
+  message: string | null;
+  user_id: string | null;
+  source: string;
+  /** meta->>stack: the top of a browser crash's stack, for the noise rule */
+  stack?: string | null;
+};
 
 /** At most this many events are read for the spike: far past any threshold, small enough to group in memory. */
 export const SPIKE_READ_LIMIT = 2000;
@@ -136,7 +145,7 @@ export const SPIKE_READ_LIMIT = 2000;
 /** Errors students saw (sources live, client, server) since `since`, newest first. Health events are not counted. */
 export async function recentErrorEvents(rest: Rest, since: Date): Promise<ErrorEventRow[]> {
   const q = new URLSearchParams({
-    select: "kind,code,message,user_id,source",
+    select: "kind,code,message,user_id,source,stack:meta->>stack",
     level: "eq.error",
     source: "in.(live,client,server)",
     at: `gte.${since.toISOString()}`,
@@ -146,9 +155,21 @@ export async function recentErrorEvents(rest: Rest, since: Date): Promise<ErrorE
   return restGet<ErrorEventRow[]>(rest, `app_events?${q}`);
 }
 
+// ------------------------------------------------------------------ admin_issues
+
+/**
+ * The fingerprints of the issues an admin muted (admin_issues, 20261008000000_admin_console.sql):
+ * the error spike leaves them out. Throws a RestError like the rest; the caller counts everything
+ * when it cannot read them.
+ */
+export async function mutedFingerprints(rest: Rest): Promise<Set<string>> {
+  const rows = await restGet<Array<{ fingerprint: string }>>(rest, "admin_issues?select=fingerprint&status=eq.muted");
+  return new Set(rows.map((r) => r.fingerprint));
+}
+
 // ------------------------------------------------------------------ retention
 
-/** prune_admin_rows(): deletes app_events and health_checks past RETENTION_DAYS. Answers whatever the function returns. */
+/** prune_admin_rows(): deletes app_events and health_checks past RETENTION_DAYS, admin_audit past 180 days. Answers whatever the function returns. */
 export async function pruneAdminRows(rest: Rest): Promise<unknown> {
   return call(rest, "rpc/prune_admin_rows", { method: "POST", headers: headers(rest, { "Content-Type": "application/json" }), body: "{}" });
 }

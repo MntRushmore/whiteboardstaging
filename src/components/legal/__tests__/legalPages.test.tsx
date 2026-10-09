@@ -202,6 +202,18 @@ describe("privacy: who gets what", () => {
     // no leftover promise that providers keep data "for a limited time"
     expect(privacy).not.toContain("may keep what they receive for a limited time");
   });
+
+  it("says our staff may look at a student's boards and bug reports, why, that each look is logged, and that nothing is shared", () => {
+    expect(ids(PAGES["/privacy"])).toContain("staff");
+    expect(privacy).toContain("We look to fix problems and to make the tutor better");
+    expect(privacy).toContain("Each look is logged: who looked, at what, and when.");
+    expect(privacy).toContain("it is never shared, sold or used for advertising");
+    // the children's notice and the security section say so too, and the log's retention is the prune's
+    expect(privacy).toContain("and our staff when they need to fix a problem or improve the tutor (each look is logged");
+    expect(privacy).toContain("by our staff (each look logged)");
+    const retention = /admin_audit where at < now\(\) - interval '(\d+) days'/.exec(readFileSync(join(MIGRATIONS, "20261008000000_admin_console.sql"), "utf8"));
+    expect(privacy).toContain(`kept for ${retention?.[1]} days. It names the board or account, never what is on it.`);
+  });
 });
 
 describe("legal pages: dates", () => {

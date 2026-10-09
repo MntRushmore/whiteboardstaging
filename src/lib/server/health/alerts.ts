@@ -9,7 +9,10 @@
  *                       repeatAfterMin while it lasts, "back up (down N min)" on the way out.
  *   spike:errors        ok ──≥minErrors from ≥minUsers in windowMin──► firing ──under──► ok
  *                       email the top 3 error groups on the way in and every repeatAfterMin,
- *                       "back to normal" on the way out.
+ *                       "back to normal" on the way out. Not counted: noise (a browser's or an
+ *                       extension's own script, eventIsNoise) and the issues an admin muted
+ *                       (admin_issues; issueFingerprint). An issue marked fixed still counts: if
+ *                       it spikes again, that is a regression.
  *   credits:openrouter  ok ──credit < lowCreditsUsd──► firing ──credit ≥ lowCreditsUsd──► ok
  *                       one email per episode (the owner tops up by hand); re-armed by a top-up.
  *
@@ -31,11 +34,12 @@
  * database check failed, and nothing else is decided this run.
  */
 import type pino from "pino";
-import { ALERT_RULES, SERVICES, type Service } from "@/lib/admin/contracts";
+import { ALERT_RULES, issueFingerprint, SERVICES, type Service } from "@/lib/admin/contracts";
+import { eventIsNoise } from "@/lib/server/adminConsole/noise";
 import { alertEmail, type AlertEmailInput, type AlertErrorGroup } from "@/lib/email/alerts";
 import type { ResendConfig, SendEmailInput, SendEmailResult } from "@/lib/email/resend";
 import type { CheckResult } from "@/lib/server/health/checks";
-import { loadAlertStates, recentErrorEvents, saveAlertStates, SPIKE_READ_LIMIT, type AlertState, type ErrorEventRow, type Rest } from "@/lib/server/health/store";
+import { loadAlertStates, mutedFingerprints, recentErrorEvents, saveAlertStates, SPIKE_READ_LIMIT, type AlertState, type ErrorEventRow, type Rest } from "@/lib/server/health/store";
 
 export type { AlertState } from "@/lib/server/health/store";
 
@@ -151,6 +155,11 @@ export function summarizeErrors(rows: ErrorEventRow[], limit = SPIKE_READ_LIMIT)
   }
   const sorted = [...groups.values()].sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind));
   return { errors: rows.length, users: users.size, groups: sorted, capped: rows.length >= limit };
+}
+
+/** The errors the spike counts: not noise, not a muted issue. */
+export function spikeEvents(rows: readonly ErrorEventRow[], muted: ReadonlySet<string>): ErrorEventRow[] {
+  return rows.filter((r) => !eventIsNoise(r) && !muted.has(issueFingerprint(r.kind, r.code, r.message ?? "")));
 }
 
 /** Is it a spike? At least minErrors errors from at least minUsers distinct users. */
@@ -291,7 +300,7 @@ export async function evaluateAlerts(deps: AlertDeps, results: CheckResult[]): P
   const note = (key: string, d: Delivery) => summary[d].push(key);
 
   const spikeSince = new Date(deps.now.getTime() - rules.errorSpike.windowMin * MIN);
-  const [statesRead, eventsRead] = await Promise.allSettled([loadAlertStates(deps.rest), recentErrorEvents(deps.rest, spikeSince)]);
+  const [statesRead, eventsRead, mutedRead] = await Promise.allSettled([loadAlertStates(deps.rest), recentErrorEvents(deps.rest, spikeSince), mutedFingerprints(deps.rest)]);
 
   if (statesRead.status === "rejected") {
     summary.stateless = true;
@@ -307,7 +316,11 @@ export async function evaluateAlerts(deps: AlertDeps, results: CheckResult[]): P
   }
 
   let spike: SpikeSummary | null = null;
-  if (eventsRead.status === "fulfilled") spike = summarizeErrors(eventsRead.value);
+  let muted = new Set<string>();
+  if (mutedRead.status === "fulfilled") muted = mutedRead.value;
+  else deps.log.warn({ error: mutedRead.reason instanceof Error ? mutedRead.reason.message : String(mutedRead.reason) }, "admin_issues could not be read; muted issues count towards the spike this run");
+  // Capped is about the read (SPIKE_READ_LIMIT rows came back), whatever is left out of the count.
+  if (eventsRead.status === "fulfilled") spike = { ...summarizeErrors(spikeEvents(eventsRead.value, muted)), capped: eventsRead.value.length >= SPIKE_READ_LIMIT };
   else deps.log.warn({ error: eventsRead.reason instanceof Error ? eventsRead.reason.message : String(eventsRead.reason) }, "app_events could not be read; the error spike is not judged this run");
 
   const decisions = decideAll(results, spike, statesRead.value, deps.now, rules);

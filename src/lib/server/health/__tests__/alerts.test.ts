@@ -9,7 +9,7 @@ vi.hoisted(() => {
   process.env.LOG_LEVEL = "silent";
 });
 
-import { ALERT_RULES } from "@/lib/admin/contracts";
+import { ALERT_RULES, issueFingerprint } from "@/lib/admin/contracts";
 import type { SendEmailInput, SendEmailResult } from "@/lib/email/resend";
 import { logger } from "@/lib/logger";
 import {
@@ -22,6 +22,7 @@ import {
   idleState,
   isSpike,
   notifiedSince,
+  spikeEvents,
   summarizeErrors,
   throttleOpen,
   timeBucket,
@@ -301,7 +302,7 @@ describe("decideAll", () => {
 type Call = { method: string; url: string; body: unknown };
 
 /** A PostgREST double: alert_state rows, app_events rows, and every write recorded. */
-function fakeRest(opts: { states?: Array<Record<string, unknown>> | "error"; events?: ErrorEventRow[] | "error"; saveFails?: boolean } = {}) {
+function fakeRest(opts: { states?: Array<Record<string, unknown>> | "error"; events?: ErrorEventRow[] | "error"; saveFails?: boolean; muted?: string[] } = {}) {
   const calls: Call[] = [];
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -311,6 +312,8 @@ function fakeRest(opts: { states?: Array<Record<string, unknown>> | "error"; eve
     if (url.includes("/rest/v1/alert_state") && method === "GET") return opts.states === "error" ? reply(503, { message: "upstream connect error" }) : reply(200, opts.states ?? []);
     if (url.includes("/rest/v1/alert_state") && method === "POST") return opts.saveFails ? reply(500, { message: "nope" }) : reply(201, null);
     if (url.includes("/rest/v1/app_events")) return opts.events === "error" ? reply(404, { code: "PGRST205", message: "no table" }) : reply(200, opts.events ?? []);
+    // admin_issues: absent unless the test gives muted fingerprints (the spike then counts everything)
+    if (url.includes("/rest/v1/admin_issues") && opts.muted) return reply(200, opts.muted.map((fingerprint) => ({ fingerprint })));
     return reply(404, { message: `no fake for ${url}` });
   });
   return { calls, fetchImpl: fetchImpl as unknown as typeof fetch };
@@ -408,6 +411,41 @@ describe("evaluateAlerts", () => {
     expect(query).toContain("level=eq.error");
     expect(query).toContain("source=in.(live,client,server)");
     expect(query).toContain(`at=gte.${new Date(at(5).getTime() - 15 * 60_000).toISOString()}`);
+  });
+
+  it("noise and muted issues are not counted towards the spike (a fixed issue is)", async () => {
+    const extension = { kind: "client.error", code: null, message: "TypeError: x is undefined", user_id: null, source: "client", stack: "at f (chrome-extension://abc/content.js:1:2)" };
+    const noise = Array.from({ length: 6 }, (_, i) => ({ ...extension, user_id: `n${i}` }));
+    const events = [
+      ...noise,
+      ...rows([
+        ["live.chat", "The tutor is busy (attempt 1)", "u1", 3],
+        ["live.chat", "The tutor is busy (attempt 2)", "u2", 3],
+        ["live.solve", "upstream 502", "u3", 3],
+      ]),
+    ];
+    const muted = issueFingerprint("live.chat", null, "The tutor is busy (attempt 9)");
+    expect(spikeEvents(events, new Set([muted])).map((e) => e.kind)).toEqual(["live.solve", "live.solve", "live.solve"]);
+
+    // muted and noise out: 3 errors from 1 person, no spike
+    const quiet = fakeRest({ events, muted: [muted] });
+    const { d, sent } = deps(quiet);
+    await evaluateAlerts(d, ALL_OK);
+    expect(sent).toHaveLength(0);
+    expect(decodeURIComponent(quiet.calls.find((c) => c.url.includes("admin_issues"))!.url)).toContain("status=eq.muted");
+    expect(decodeURIComponent(quiet.calls.find((c) => c.url.includes("app_events"))!.url)).toContain("stack:meta->>stack");
+
+    // nothing muted: the chat errors count (9 from 3 people, plus 6 noise that never do) — still under 10
+    const unmuted = fakeRest({ events, muted: [] });
+    const second = deps(unmuted);
+    await evaluateAlerts(second.d, ALL_OK);
+    expect(second.sent).toHaveLength(0);
+
+    // admin_issues unreadable: everything but noise counts; one more error makes it a spike
+    const more = fakeRest({ events: [...events, ...rows([["live.solve", "upstream 502", "u4", 1]])] });
+    const third = deps(more);
+    await evaluateAlerts(third.d, ALL_OK);
+    expect(third.sent.map((m) => m.subject)).toEqual(["Errors spiking: 10 in 15 min from 4 people"]);
   });
 
   it("app_events unreadable: the spike is not judged, the down rules still are", async () => {

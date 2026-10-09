@@ -91,6 +91,7 @@ import { topicSheetOpen } from "@/components/topics/topicSheetState";
 import type { ChatKickoff } from "@/components/chat/BoardChatPanel";
 import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
 import { useBoardLearning } from "@/components/learning/useBoardLearning";
+import { registerStrokeTimes } from "@/lib/replay/stampTimes";
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
@@ -112,6 +113,8 @@ const ProblemHighlight = React.lazy(() => import("@/components/live/ProblemHighl
 // (the Progress page's marker): both load after the board, the second only on a practice board.
 const NowYouTry = React.lazy(() => import("@/components/learning/NowYouTry"));
 const PracticeBoard = React.lazy(() => import("@/components/learning/PracticeBoard"));
+// "Replay my board" (Board options): the board drawn again, full screen; fetched on the first open.
+const KidReplay = React.lazy(() => import("@/components/replay/KidReplay"));
 // New topic (the screen strip's button): the topic picker as a sheet, loaded on the first tap.
 const TopicSheet = React.lazy(() => import("@/components/topics/TopicSheet"));
 
@@ -218,6 +221,10 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     setReportMounted(true);
     setReportOpen(true);
   }, []);
+  // "Replay my board": a new key each open, so a replay that failed once can be opened again
+  const [replayKey, setReplayKey] = useState<number | null>(null);
+  const openReplay = useCallback(() => setReplayKey((k) => (k ?? 0) + 1), []);
+  const closeReplay = useCallback(() => setReplayKey(null), []);
   const { user } = useAuth();
   const [guided, setGuided] = useState(() => isGuidedBoard(onboardingStorage(), user?.id, id));
   const endTour = useCallback(() => setGuided(false), []);
@@ -421,6 +428,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               onClearMarks={() => controller.clearMarks()}
               onShowModeInfo={() => setModeInfoOpen(true)}
               onReportProblem={openReport}
+              onReplay={openReplay}
             />
           </LiveErrorBoundary>
           {/* the plan (∞), or the ink a plan spends right now; none on the guided board. Tapping a count opens the ink dialog */}
@@ -465,6 +473,19 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
             <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} screenshot={() => captureBoardScreenshot(editor)} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
+      {replayKey !== null && (
+        <LiveErrorBoundary key={replayKey}>
+          <React.Suspense
+            fallback={
+              <div role="status" className="fixed inset-0 z-1300 grid place-items-center bg-white/70 text-sm font-medium text-gray-600 backdrop-blur-sm">
+                {LIVE_COPY.pill.replayLoading}
+              </div>
+            }
+          >
+            <KidReplay editor={editor} boardId={id} onClose={closeReplay} />
           </React.Suspense>
         </LiveErrorBoundary>
       )}
@@ -745,6 +766,10 @@ export default function BoardPage() {
               return;
             }
           }
+          // From here on every shape the student makes is stamped with its pen-down time and every
+          // stroke with its pen-up time, inside the change that makes it (no extra save or undo
+          // step; never the tutor's writing): the replay's clock (src/lib/replay/stampTimes.ts).
+          const stopStrokeTimes = registerStrokeTimes(editor);
           // An overlay the student never accepted is a proposal, not part of the board: it
           // would otherwise reopen full-canvas over work they have moved on from. Dropping
           // it here is the same outcome as Reject (see dropPendingAiOverlays). Only boards
@@ -792,6 +817,7 @@ export default function BoardPage() {
             // …and for drawing a figure spec in the tutor's hand: `__agathonDrawFigure(spec)`.
             void import("@/lib/live/figureDraw/board").then(({ drawFigureOnBoard }) => Object.assign(window, { __agathonDrawFigure: (spec: unknown) => drawFigureOnBoard(editor, spec) }));
           }
+          return stopStrokeTimes;
         }}
       >
         <BoardContent id={id} initialVersion={initialVersion} chat={{ open: chatOpen, onOpenChange: setChatOpen, host: chatHost }} />

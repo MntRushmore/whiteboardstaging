@@ -90,9 +90,12 @@ export const LEGAL = {
  * Agathon Unlimited, the emails, and the AI services named; 2026-10-05, no free plan (the app needs
  * Agathon Unlimited after the guided first board) and ink packs no longer sold; 2026-10-06, "free
  * week" became "free trial" (the trial was 3 days for a few hours that day, then 7 again: the text
- * now says the trial is the length checkout showed; accepted_terms_at tells the two texts apart).
+ * now says the trial is the length checkout showed; accepted_terms_at tells the two texts apart);
+ * 2026-10-08, the Privacy Policy says our staff may look at a student's boards and bug reports to fix
+ * problems and improve the tutor, that each look is logged (admin_audit, kept 180 days), and that
+ * nothing they see is shared.
  */
-export const TERMS_VERSION = "2026-10-06";
+export const TERMS_VERSION = "2026-10-08";
 
 /** True for a value still in [square brackets]. */
 export function isPlaceholder(value: string): boolean {

@@ -11,6 +11,8 @@ import type { AttemptRecord, LearningSignal } from "./contracts";
 import type { LearnerHint } from "./hint";
 
 const MAX_BUFFER = 500;
+/** attempts remembered for `attempts()` (a board session rarely has more than a few dozen) */
+const MAX_ATTEMPTS = 200;
 
 type Listener<T> = (value: T) => void;
 
@@ -20,6 +22,7 @@ export class LearningBus {
   private readonly attemptListeners = new Set<Listener<AttemptRecord>>();
   private readonly learnerListeners = new Set<Listener<LearnerHint | undefined>>();
   private hint: LearnerHint | undefined;
+  private readonly latest = new Map<string, AttemptRecord>();
 
   emit(signal: LearningSignal): void {
     if (this.signalListeners.size === 0) {
@@ -45,7 +48,15 @@ export class LearningBus {
 
   /** The tracker publishes an attempt each time it changes. */
   publishAttempt(record: AttemptRecord): void {
+    this.latest.delete(record.id);
+    this.latest.set(record.id, record);
+    if (this.latest.size > MAX_ATTEMPTS) this.latest.delete(this.latest.keys().next().value as string);
     for (const fn of [...this.attemptListeners]) safely(fn, record);
+  }
+
+  /** Each attempt published since the board opened, as it is now, oldest change first (the replay's "fixed 2 mistakes"). */
+  attempts(): AttemptRecord[] {
+    return [...this.latest.values()];
   }
 
   onAttempt(fn: Listener<AttemptRecord>): () => void {
@@ -77,6 +88,7 @@ export class LearningBus {
   reset(): void {
     this.buffer = [];
     this.hint = undefined;
+    this.latest.clear();
   }
 }
 

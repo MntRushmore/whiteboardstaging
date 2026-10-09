@@ -92,6 +92,10 @@ export default function PrivacyPage() {
             To tutor you, what you write is sent to AI services that read handwriting and answer (listed{" "}
             <a href="#providers">below</a>).
           </li>
+          <li>
+            Our staff may look at your boards and bug reports to fix problems and improve the tutor. Each look is
+            logged, and what they see is never shared (<a href="#staff">When our staff look</a>).
+          </li>
           <li>No ads. We never sell your data or share it for advertising. We send no marketing emails.</li>
           <li>
             Children under 13 need a parent’s consent; parents can see or delete their child’s data (
@@ -186,12 +190,23 @@ export default function PrivacyPage() {
           </li>
           <li>To send the emails listed under <a href="#emails">Emails we send</a>.</li>
           <li>To keep the service safe and fair: sign-in, rate limits, preventing abuse.</li>
-          <li>To find and fix problems, using error reports, logs and the bug reports you send.</li>
+          <li>
+            To find and fix problems, using error reports, logs and the bug reports you send, and, when we need to,
+            by looking at your boards (see <a href="#staff">When our staff look</a>).
+          </li>
           <li>To answer you when you contact us, and to tell you about important changes.</li>
         </ul>
         <p>
           We do <strong>not</strong> show ads, sell your personal information, share it for advertising, or build
           marketing profiles. We do not use your boards to train AI models.
+        </p>
+        <h3 id="staff">When our staff look</h3>
+        <p>
+          A few people at {LEGAL.productName} can look at a student’s boards (and their recent history), learning
+          record and bug reports, including a bug report’s screenshot. We look to fix problems and to make the tutor
+          better: to see what went wrong when something breaks, or how the tutor helped on a hard problem. Each look is
+          logged: who looked, at what, and when. What our staff see stays with {LEGAL.productName}: it is never shared,
+          sold or used for advertising.
         </p>
       </LegalSection>
 
@@ -312,8 +327,10 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Who sees it:</strong> only the service providers <a href="#providers">listed above</a>, to run the
-            tutor. No ads, no selling, no advertising use, no marketing to children. A child’s boards are private to
-            their account; there are no public profiles, sharing or messaging with other users.
+            tutor, and our staff when they need to fix a problem or improve the tutor (each look is logged; see{" "}
+            <a href="#staff">When our staff look</a>). No ads, no selling, no advertising use, no marketing to children.
+            A child’s boards are private to their account; there are no public profiles, sharing or messaging with
+            other users.
           </li>
           <li>
             <strong>Emails</strong> go to the account’s email address. If you set up your child’s account with your
@@ -388,6 +405,10 @@ export default function PrivacyPage() {
             deleted. Resend keeps a record of each email it sends for a limited time.
           </li>
           <li>
+            <strong>The log of staff looks:</strong> which of our staff looked at which board or bug report, and when,
+            kept for 180 days. It names the board or account, never what is on it.
+          </li>
+          <li>
             <strong>Copies for maintenance:</strong> before risky maintenance we sometimes copy the database. A copy is
             kept privately, only as long as we may need it to undo a problem.
           </li>
@@ -416,7 +437,8 @@ export default function PrivacyPage() {
       <LegalSection id="security" title="Security">
         <p>
           Connections to {LEGAL.productName} are encrypted (HTTPS). Each board can only be read by its owner’s
-          account, passwords are stored as hashes, and our provider keys stay on our servers. Images you add to a board
+          account and, when they need to, by our staff (each look logged), passwords are stored as hashes, and our
+          provider keys stay on our servers. Images you add to a board
           are stored at long, random web addresses that are not listed anywhere, so the tutor and your browser can load
           them; anyone given the exact address of an image could open it. No system is perfectly secure; if a breach
           affects your information, we will tell you as the law requires.

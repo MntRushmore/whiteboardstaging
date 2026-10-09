@@ -37,16 +37,20 @@ describe("the admin page body", () => {
 
   it("has its sections in order, each a labelled region", () => {
     const headings = [...html.matchAll(/<h2 id="([^"]+)"[^>]*>([^<]+)<\/h2>/g)].map((m) => [m[1], m[2]]);
+    // 2026-10-08 (the console): Live now joins, after Status and Money
     expect(headings).toEqual([
       ["status-title", "Status"],
       ["money-title", "Money"],
+      ["live-title", "Live now"],
       ["errors-title", "Errors students saw"],
       ["ai-title", "AI"],
       ["users-title", "Users and learning"],
       ["bugs-title", "Bug reports"],
     ]);
     for (const [id] of headings) expect(html).toContain(`aria-labelledby="${id}"`);
-    expect(html).toMatch(/<h1[^>]*>Admin<\/h1>/);
+    // the console's nav names the console; the page is its Overview
+    expect(html).toMatch(/<h1[^>]*>Overview<\/h1>/);
+    expect(html).toContain('href="/"');
   });
 
   it("status: the big line, then each service's state in colour, icon and words", () => {
@@ -166,15 +170,77 @@ describe("what the page loads", () => {
       return /\.(ts|tsx)$/.test(f) ? [full] : [];
     });
 
-  it("nothing on the admin page imports tldraw or the board", () => {
-    const sources = [...files(join(ROOT, "src/components/admin")), ...files(join(ROOT, "src/app/(platform)/admin")), join(ROOT, "src/lib/admin/view.ts"), join(ROOT, "src/lib/admin/contracts.ts")];
-    expect(sources.length).toBeGreaterThan(5);
+  // The board viewer (/admin/boards/[id]) is the one admin route that draws a board: its page loads
+  // the replay (tldraw) in a chunk of its own, so it is left out here and checked on its own below.
+  const VIEWER_ROUTE = join(ROOT, "src/app/(platform)/admin/boards/[id]");
+
+  /**
+   * Every console file (the overview and, from 2026-10-08, Users, a user, Boards, Bugs, Issues, their
+   * view modules and the dev fixtures). The board viewer at /admin/boards/[id] is the one page that
+   * loads tldraw (its own bundle), so its folder is left out here; the console only links to it.
+   */
+  const consoleSources = () =>
+    [...files(join(ROOT, "src/components/admin")), ...files(join(ROOT, "src/app/(platform)/admin")), ...files(join(ROOT, "src/lib/admin"))].filter(
+      (f) => !f.includes(join("admin", "boards", "[id]")) && !f.includes(join("components", "replay")),
+    );
+
+  it("nothing on the admin pages imports tldraw or the board", () => {
+    const sources = consoleSources();
+    expect(sources.length).toBeGreaterThan(25);
+    for (const name of ["UsersScreen.tsx", "UserScreen.tsx", "BoardsScreen.tsx", "BugsScreen.tsx", "IssuesScreen.tsx", "consoleView.ts", "usersView.ts", "userView.ts", "boardsView.ts", "bugsView.ts", "issuesView.ts", "consoleFixtures.ts"]) {
+      expect(sources.some((f) => f.endsWith(name)), name).toBe(true);
+    }
     for (const file of sources) {
-      const imports = [...readFileSync(file, "utf8").matchAll(/from\s+["']([^"']+)["']/g)].map((m) => m[1]);
+      const imports = [...readFileSync(file, "utf8").matchAll(/from\s+["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] ?? m[2]);
       for (const spec of imports) {
-        expect(spec, file).not.toMatch(/tldraw|\/board|@\/lib\/live|@\/shapes|@\/hooks\/use(Snapshot|AiOverlay)/);
+        // the board's code (a /board folder, the board page), the live loop, shapes, the replay; the
+        // one pure board module allowed is the title helper (LaTeX → readable text, no imports)
+        expect(spec, file).not.toMatch(/tldraw|katex|(^|\/)board(\/|$)|@\/app\/board|@\/components\/board|@\/lib\/boards\/(?!boardTitle$)|@\/lib\/live|@\/lib\/replay|@\/components\/replay|@\/shapes|@\/hooks\/use(Snapshot|AiOverlay)/);
       }
     }
+  });
+
+  it("…nor anything they import, all the way down (type-only imports aside)", () => {
+    const resolveSpec = (from: string, spec: string): string | null => {
+      const base = spec.startsWith("@/") ? join(ROOT, "src", spec.slice(2)) : spec.startsWith(".") ? join(from, "..", spec) : null;
+      if (!base) return null;
+      for (const ext of ["", ".ts", ".tsx", "/index.ts", "/index.tsx"]) {
+        const p = base + ext;
+        try {
+          if (statSync(p).isFile()) return p;
+        } catch {
+          // next
+        }
+      }
+      return null;
+    };
+    const seen = new Set<string>();
+    const packages = new Map<string, string>();
+    const queue = consoleSources();
+    while (queue.length) {
+      const file = queue.shift()!;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      const src = readFileSync(file, "utf8");
+      // static imports and re-exports that are not type-only (erased); dynamic imports are their own chunks
+      for (const m of src.matchAll(/^\s*(?:import|export)\s+(?!type\b)[^;]*?from\s+["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm)) {
+        const spec = m[1] ?? m[2];
+        const next = resolveSpec(file, spec);
+        if (next) queue.push(next);
+        else if (!spec.startsWith(".") && !spec.startsWith("@/") && !packages.has(spec)) packages.set(spec, file);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(40);
+    for (const [pkg, from] of packages) expect(pkg, from).not.toMatch(/tldraw|katex|pdfjs|mathjs/);
+  });
+
+  it("only the board viewer's route reaches the replay, and it fetches it as a chunk of its own", () => {
+    const others = [...files(join(ROOT, "src/components/admin")), ...files(join(ROOT, "src/app/(platform)/admin")).filter((f) => !f.startsWith(VIEWER_ROUTE))];
+    for (const file of others) expect(readFileSync(file, "utf8"), file).not.toMatch(/components\/(replay|adminBoard)/);
+    const screen = readFileSync(join(ROOT, "src/components/adminBoard/AdminBoardScreen.tsx"), "utf8");
+    const staticImports = [...screen.matchAll(/^import[^;]*from\s+["']([^"']+)["']/gm)].map((m) => m[1]);
+    for (const spec of staticImports) expect(spec).not.toMatch(/tldraw|@\/components\/replay|AdminBoardBody/);
+    expect(screen).toMatch(/dynamic\(\(\) => import\("\.\/AdminBoardBody"\)/);
   });
 
   it("the header asks is_admin() through the small hint module only", () => {

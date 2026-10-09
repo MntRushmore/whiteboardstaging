@@ -62,6 +62,13 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/cron/trial-reminders/route.ts", // GET only (Vercel cron); ?dryRun=1 is a query param
   "src/app/api/email/welcome/route.ts", // POST with an empty body: the server decides who and whether
   "src/app/api/admin/overview/route.ts", // GET only
+  // The admin console's reads (GET only; ids in the path, filters in the query string, zod-checked).
+  "src/app/api/admin/users/route.ts",
+  "src/app/api/admin/users/[id]/route.ts",
+  "src/app/api/admin/boards/route.ts",
+  "src/app/api/admin/boards/[id]/route.ts",
+  "src/app/api/admin/bugs/route.ts",
+  "src/app/api/admin/bugs/[id]/screenshot/route.ts",
 ]);
 
 export const API_ROUTES = Object.freeze([
@@ -98,6 +105,90 @@ export const API_ROUTES = Object.freeze([
     limit: "credits",
     body: "none",
     purpose: "The /admin page's overview (admins only): service health, errors students saw, AI failures, users, bug reports",
+    status: "active",
+  },
+  // The admin console (admins only; src/lib/admin/contracts.ts, ADMIN_API). requireAdmin =
+  // requireUser (401 without a token) + the admins table (404 for a non-admin), then the
+  // `adminConsole` bucket (screenshots: `adminScreenshot`). Looks at student content are written to
+  // admin_audit before they are answered.
+  {
+    path: "/api/admin/boards",
+    file: "src/app/api/admin/boards/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "none",
+    purpose: "Admin console: a page of boards, newest first (?userId= one user's, ?live=1 saved in the last minutes, ?before= next page); logged as boards.list",
+    status: "active",
+  },
+  {
+    path: "/api/admin/boards/[id]",
+    file: "src/app/api/admin/boards/[id]/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "none",
+    purpose: "Admin console: one board for the viewer and replay (snapshot streamed as stored, events, attempts, history); ?since=<version> answers { unchanged } when it is; logged as board.view",
+    status: "active",
+  },
+  {
+    path: "/api/admin/bugs",
+    file: "src/app/api/admin/bugs/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "none",
+    purpose: "Admin console: the bug inbox, newest first (status, note, logs without noise; no screenshots)",
+    status: "active",
+  },
+  {
+    path: "/api/admin/bugs/[id]",
+    file: "src/app/api/admin/bugs/[id]/route.ts",
+    methods: ["PATCH"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "zod",
+    purpose: "Admin console: triage a bug report (status new/seen/fixed/wontfix, note); logged as bug.update",
+    status: "active",
+  },
+  {
+    path: "/api/admin/bugs/[id]/screenshot",
+    file: "src/app/api/admin/bugs/[id]/screenshot/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "adminScreenshot",
+    body: "none",
+    purpose: "Admin console: a bug report's screenshot as image bytes (private, 5 min cache); logged as bug.screenshot",
+    status: "active",
+  },
+  {
+    path: "/api/admin/issues",
+    file: "src/app/api/admin/issues/route.ts",
+    methods: ["GET", "PATCH"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "zod",
+    purpose: "Admin console: app_events grouped into issues (?days=1|7|30), and their state (open, muted, fixed, note); PATCH logged as issue.update",
+    status: "active",
+  },
+  {
+    path: "/api/admin/users",
+    file: "src/app/api/admin/users/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "none",
+    purpose: "Admin console: every account, most recently active first (plan, boards, learning, AI calls, errors, bug reports)",
+    status: "active",
+  },
+  {
+    path: "/api/admin/users/[id]",
+    file: "src/app/api/admin/users/[id]/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "none",
+    purpose: "Admin console: one account (subscription, boards, learning record, activity, events, bug reports, emails); logged as user.view",
     status: "active",
   },
   {
