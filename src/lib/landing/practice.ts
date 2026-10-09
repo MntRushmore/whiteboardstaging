@@ -1,5 +1,5 @@
 /**
- * "What they'll practise" on the parent landing page: one tab per grade, Kindergarten to 8th, with
+ * "What they'll practice" on the parent landing page: one tab per grade, Kindergarten to 8th, with
  * that grade's skill path in teaching order, and a High school tab with the four courses. A parent
  * asks "is this at my kid's level?" before anything else, so the page answers with the real paths
  * (`GRADE_PATHS`, the skills' names and one-line examples from `K8_SKILLS` and `SKILLS`), never a
@@ -48,13 +48,33 @@ export const PRACTICE_COPY = {
   /** a grade's chip: "K", "1st" … "8th" (GRADES' `short`), and the high-school chip */
   highSchoolChip: "High school",
   highSchoolTitle: "High school courses",
-  /** "4 skills, in the order they're taught" */
-  skillCount: (n: number) => `${n} ${n === 1 ? "skill" : "skills"}, in the order schools teach them`,
-  courseCount: (n: number) => `${n} courses, each with its own topics`,
+  /** under a grade's name: no count (two skills for Kindergarten would undersell it) */
+  gradeNote: "Their path this year, one skill after another",
+  courseNote: "They pick the course they're taking",
 } as const;
 
+/**
+ * The app's skill blurbs in US English for this page, where every parent is in the US: the app's
+ * own words ("Brackets, or x on both sides") read like typos here. Whole words only.
+ */
+const US_WORDS: readonly [RegExp, string][] = [
+  [/\bBrackets\b/g, "Parentheses"],
+  [/\bbrackets\b/g, "parentheses"],
+  [/\bbracket\b/g, "parenthesis"],
+  [/\bthe way round\b/g, "the distance around"],
+  [/\bpractis(e|es|ed|ing)\b/g, "practic$1"],
+  [/\bmaths\b/g, "math"],
+  [/\bcolour/g, "color"],
+  [/\bcentre/g, "center"],
+];
+
+export function usEnglish(text: string): string {
+  return US_WORDS.reduce((out, [from, to]) => out.replace(from, to), text);
+}
+
 function skillOf(id: string): PracticeSkill {
-  return { id, name: pathSkillName(id), blurb: pathSkillBlurb(id), icon: pathIcon(id) };
+  const blurb = pathSkillBlurb(id);
+  return { id, name: usEnglish(pathSkillName(id)), blurb: blurb && usEnglish(blurb), icon: pathIcon(id) };
 }
 
 /** Every tab, Kindergarten first and High school last. */
@@ -70,8 +90,8 @@ export function practiceTabs(): PracticeTab[] {
   const courses: PracticeCourse[] = COURSES.filter((c) => c.id !== "other").map((c) => ({
     id: c.id,
     label: c.label,
-    blurb: c.blurb,
-    topics: courseTopicIds(c.id).filter(isTopicId).map(pathSkillName),
+    blurb: usEnglish(c.blurb),
+    topics: courseTopicIds(c.id).filter(isTopicId).map((t) => usEnglish(pathSkillName(t))),
   }));
   return [
     ...grades,

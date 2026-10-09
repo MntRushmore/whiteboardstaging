@@ -1,0 +1,50 @@
+/* A real board's lines as vector ink (InkPicture): the board's surface, a hairline, the panel
+   radius, and the board's pens (tldraw's black and the tutor's blue). Sized by its content, so the
+   card is never mostly empty. */
+
+.board {
+  position: relative;
+  container-type: inline-size;
+  width: 100%;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 1.75rem;
+  background: #fcfcfc;
+}
+.ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.ink path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.student {
+  stroke: #1d1d1d;
+  stroke-width: 5.2;
+}
+.tutor {
+  stroke: #4465e9;
+  stroke-width: 4;
+}
+
+/* The board's "try again" note (device.module.css .miss), beside the ring. */
+.note {
+  position: absolute;
+  max-width: 12em;
+  border: 1px solid #fde68a;
+  border-radius: 1.1em;
+  padding: 0.5em 0.9em;
+  background: #fffbeb;
+  box-shadow: 0 0.6cqw 1.8cqw oklch(0% 0 0 / 0.08);
+  color: #78350f;
+  font-family: var(--font-body);
+  font-size: clamp(0.75rem, 2.9cqw, 1.0625rem);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  transform: translateY(-50%);
+}

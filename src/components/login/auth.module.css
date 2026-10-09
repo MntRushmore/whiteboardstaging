@@ -69,6 +69,9 @@
   line-height: var(--leading-display);
   text-wrap: balance;
 }
+.headlineLine {
+  display: block;
+}
 .description {
   max-width: 28rem;
   margin: var(--space-4) 0 0;
@@ -95,11 +98,11 @@
   flex: none;
   color: var(--text-secondary);
 }
-/* Width follows the viewport height too, so the stack and the legal footer under it fit on a
-   laptop screen (36rem: the panel's text, paddings and the footer). */
-.panelPictures {
-  width: min(100% - var(--space-6), (100dvh - 36rem) * 1.38);
-  min-width: 18rem;
+/* The still board (MiniBoard). Width follows the viewport height too, so the board and the legal
+   footer under it fit on a laptop screen (32rem: the panel's text, paddings and the footer). */
+.panelBody > .panelBoard {
+  width: min(100%, 30rem, (100dvh - 33rem) * 2);
+  min-width: 20rem;
   margin-top: var(--space-10);
 }
 /* A short laptop (1280 x 720, 1366 x 768): tighter paddings keep the footer in view. */
@@ -110,9 +113,8 @@
   .panelBody {
     padding-block: var(--space-4) var(--space-2);
   }
-  .panelPictures {
-    min-width: 16rem;
-    margin-top: var(--space-6);
+  .panelBody > .panelBoard {
+    margin-top: var(--space-8);
   }
 }
 

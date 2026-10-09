@@ -1,6 +1,6 @@
 "use client";
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, ChartColumn, Plus, RefreshCw, Search } from 'lucide-react';
 import { toast } from "sonner";
@@ -21,7 +21,7 @@ import {
   type BoardSort,
 } from '@/app/dashboardState';
 import { describeError } from '@/lib/errorMessage';
-import { signedOutDestination } from '@/lib/landing/links';
+import { SIGNED_OUT_GATE_SCRIPT, signedOutDestination } from '@/lib/landing/links';
 import { reportUserError } from '@/lib/reportAppError';
 import { AppHeader, APP_CONTENT_CLASS } from '@/components/app/AppHeader';
 import { ButtonLink } from '@/components/app/ButtonLink';
@@ -123,6 +123,8 @@ async function readBoards(): Promise<BoardListItem[]> {
 }
 
 /** Re-renders every `ms` so "Edited 2 min ago" keeps up while the page is open. */
+const subscribeNever = () => () => {};
+
 function useNow(ms: number): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -172,6 +174,21 @@ export default function Dashboard() {
       router.replace(signedOutDestination(window.location.search, window.location.hash));
     }
   }, [user, authLoading, authError, router]);
+  // Before all that, the server HTML's gate (SIGNED_OUT_GATE_SCRIPT) sends a device with no stored
+  // session on before the first paint, with the page hidden. Rendered only into that HTML (and kept
+  // through hydration so it matches), never by a client render, where a script would not run.
+  const serverHtml = useSyncExternalStore(subscribeNever, () => false, () => true);
+  // If the gate hid the page and its own navigation never happened, the page must not stay blank:
+  // shown again once someone is signed in, and on the way out (the redirect above).
+  useEffect(() => {
+    if (user || authError) document.documentElement.style.removeProperty('visibility');
+  }, [user, authError]);
+  useEffect(
+    () => () => {
+      document.documentElement.style.removeProperty('visibility');
+    },
+    [],
+  );
 
   // A toast still on screen when the dashboard opens belongs to the page before it (the
   // sign-in page's "Signed in"): it would only sit over the cards. Toasts raised here stay.
@@ -383,6 +400,7 @@ export default function Dashboard() {
 
   return (
     <div className={styles.page}>
+      {serverHtml && <script dangerouslySetInnerHTML={{ __html: SIGNED_OUT_GATE_SCRIPT }} />}
       <AppHeader />
       {cheer && (
         <Suspense fallback={null}>

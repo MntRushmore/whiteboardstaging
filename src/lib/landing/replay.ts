@@ -17,23 +17,29 @@ import { celebrate, INITIAL_CELEBRATE, STREAK_FROM, streakText, type CelebrateSt
  * beat after the line is done, as it does on the board once the student pauses.
  */
 export const REPLAY_TIMING = {
-  /** before the first stroke: the page settles first */
-  startMs: 600,
+  /** before the first stroke: a beat once the iPad is in view (the replay waits for that) */
+  startMs: 300,
   /** per unit of stroke length */
-  msPerUnit: 2.4,
-  minStrokeMs: 90,
-  maxStrokeMs: 320,
+  msPerUnit: 2.1,
+  minStrokeMs: 80,
+  maxStrokeMs: 280,
   /** the pen lifting between strokes */
-  liftMs: 45,
+  liftMs: 38,
   /** the pause after a line before the tutor marks it */
-  beforeMarkMs: 320,
-  tickMs: 300,
-  ringMs: 650,
+  beforeMarkMs: 280,
+  tickMs: 260,
+  ringMs: 560,
   /** how long a cheer for a right answer stays up (a "try again" stays to the end) */
-  cheerMs: 1500,
+  cheerMs: 1400,
   /** after the mark, before the next line starts */
-  afterLineMs: 450,
+  afterLineMs: 360,
 } as const;
+
+/**
+ * The hero's story in about eight seconds (BOARD_LINES 0, 1 and 3): a right sum and its cheer, a
+ * slip ringed with "So close!", then a fraction ticked. The other two sums stay in the data.
+ */
+export const HERO_LINE_INDEXES = [0, 1, 3] as const;
 
 export type ReplayTiming = typeof REPLAY_TIMING;
 

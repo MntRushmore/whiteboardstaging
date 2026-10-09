@@ -31,6 +31,9 @@ const fineFor = (days: string) => `Nothing is charged for ${days}. We email you 
 /** The card question's answer, for a free trial of `days`. */
 const cardFor = (days: string) => `Yes. A grown-up adds a card to start the trial, and nothing is charged for ${days}. We email you a reminder a few days before it ends.`;
 
+/** The main button's one name, everywhere on the page and in its bar (the trial's length is said beside it). */
+const START = "Start free trial";
+
 /** The page's words for a plan (UNLIMITED_PLAN unless a test passes another). */
 export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
   const p = planWords(plan);
@@ -40,25 +43,26 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
     meta: {
       title: "Math practice kids actually do",
       ogTitle: "Agathon: math practice kids actually do",
-      description: `A math whiteboard for kindergarten to 8th grade. Kids work problems by hand, and a tutor ticks each right step, rings a slip and gives a hint instead of the answer. Free for ${p.days}.`,
-      ogAlt: "Agathon: math practice kids actually do. Sums written by hand on a whiteboard, ticked and ringed in blue by the tutor.",
+      description: `A math whiteboard for kindergarten to 8th grade. Kids work problems by hand, and a tutor checks every line: a check mark for a right step, a circle around a slip, and a hint instead of the answer. Free for ${p.days}.`,
+      ogAlt: "Agathon: math practice kids actually do. Problems written by hand on a whiteboard, checked and circled in blue by the tutor.",
     },
     nav: {
       signIn: "Sign in",
-      cta: "Try it free",
+      cta: START,
     },
     hero: {
       eyebrow: "Kindergarten to 8th grade",
       title: "Math practice kids actually do.",
-      lede: "Kids work problems by hand on a whiteboard, with a finger or a pen. A tutor checks each line as they write: a tick for a right step, a ring round a slip, a hint instead of the answer.",
-      start: p.start,
-      signIn: "Sign in",
+      lede: "Kids write by hand. A tutor checks every line.",
+      start: START,
+      /** the secondary link, to How it works on this page */
+      more: "See how it works",
       terms: p.terms,
     },
     replay: {
       /** the picture's description, for a screen reader */
       label:
-        "An Agathon board on an iPad. Five sums are written by hand, one after another. The tutor ticks 7 + 5 = 12, rings 9 − 3 = 5 and says “So close! Try that step again.”, then ticks 6 × 4 = 24, a half plus a quarter is three quarters, and 12 − 4 = 8.",
+        "An Agathon board on an iPad. Three problems are written by hand, one after another. The tutor puts a check mark by 7 + 5 = 12, circles 9 − 3 = 5 and says “So close! Try that step again.”, then checks a half plus a quarter is three quarters.",
       tick: "A right step",
       ring: "Take another look",
       again: "Watch again",
@@ -71,13 +75,14 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
           label: "Step 1",
           title: "Pick their grade.",
           body: "Kindergarten to 8th grade, or a high school course. Agathon lays out that grade's skills as a path, and the first problems are waiting on the board.",
+          phoneAlt: "A 3rd grader's path in Agathon, 2 of 4 done: Times tables mastered (three stars), Division facts next up (one star), then Multiplying by tens.",
           alt: "A 3rd grader's home in Agathon: their path, with 3-digit adding and subtracting done (three stars), Times tables next up (two stars), then Division facts and Multiplying by tens; under it, Up next: Times tables, with a Start button.",
         },
         {
           label: "Step 2",
           title: "They write. It checks.",
-          body: "Each line is read as it's written. A right step gets a blue tick and a cheer. A slip gets a ring and a nudge to try again, never a red cross.",
-          alt: "An Agathon board: 7 + 5 = 12 and 12 − 4 = 8 ticked in blue, and 9 − 3 = 5 ringed, with the note “So close! Try that step again.”",
+          body: "Each line is read as it's written. A right step gets a blue check mark and a cheer. A slip gets a circle and a nudge to try again, never a red X.",
+          alt: "An equation worked by hand on an Agathon board: 3x − 5 = 10, then 3x = 5 circled in blue with the note “So close! Try that step again.”, then 3x = 15 and x = 5, each with a blue check mark.",
         },
         {
           label: "Step 3",
@@ -85,13 +90,13 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
           /** the body around the Help me button: "Tap [Help me] and the tutor…" */
           bodyBefore: "Tap",
           helpButton: "Help me",
-          bodyAfter: "and the tutor writes just the next step, in its own handwriting, under theirs. The whole worked solution only appears if they ask for it.",
-          alt: "The ringed line 9 − 3 = 5 on an Agathon board, with the tutor's step 9 − 3 = 6 written underneath in blue handwriting.",
+          bodyAfter: "and the tutor writes just the next step, in its own handwriting, right beside theirs. The whole worked solution only appears if they ask for it.",
+          alt: "On an Agathon board, 3(x − 2) = 12 and then the slip 3x − 2 = 12, circled in blue; beside it the tutor has written the next step, 3x − 6 = 12, in blue handwriting.",
         },
       ],
     },
     practice: {
-      eyebrow: "What they'll practise",
+      eyebrow: "What they'll practice",
       title: "A path for every grade.",
       lede: "Each grade's skills, in the order schools teach them. Pick a grade to see its path.",
       legend: "Choose a grade",
@@ -116,7 +121,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
         },
         {
           title: "A weekly report",
-          body: "Each child's week on one page: what they practised, the skills they mastered, what to work on next, and a replay to watch.",
+          body: "Each child's week on one page: what they practiced, the skills they mastered, what to work on next, and a replay to watch.",
         },
       ],
     },
@@ -128,12 +133,12 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
       per: p.per,
       trial: `Free for the first ${p.days}.`,
       includes: [
-        `Up to ${MAX_KIDS} kids, each with their own profile`,
+        "Each kid's own profile, path and boards",
         "Help from the tutor on every board",
         "Today's practice, the skill path and Progress",
         "A weekly report for you",
       ],
-      start: p.start,
+      start: START,
       fine: fineFor(p.days),
     },
     faq: {
@@ -150,7 +155,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
         },
         {
           q: "Does it just give them the answer?",
-          a: "No. It marks their work first: a tick for a right step, a ring round a slip, and a nudge to try again. When they're stuck, Help me writes one step at a time. The whole worked solution only appears if they choose Solve.",
+          a: "No. It marks their work first: a check mark for a right step, a circle around a slip, and a nudge to try again. When they're stuck, Help me writes one step at a time. The whole worked solution only appears if they choose Solve.",
         },
         {
           q: "What happens to my child's data?",
@@ -178,7 +183,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
     closing: {
       title: `Try it free for ${p.days}.`,
       body: "Sign up with an email and a password, pick their grade, and the first problems are waiting on the board.",
-      start: p.start,
+      start: START,
       signIn: "Sign in",
     },
     /**
@@ -188,7 +193,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
      * plan's (UNLIMITED_PLAN.trialDays); this one is the referral link's (REFERRAL_TRIAL_DAYS).
      */
     invited: {
-      start: "Start your free month",
+      start: "Start free month",
       terms: `${PLAN_REFERRAL_COPY.friendLead} with a friend's invite, ${p.then}`,
       trial: `${PLAN_REFERRAL_COPY.friendFree}, with a friend's invite.`,
       fine: fineFor(friendDays),

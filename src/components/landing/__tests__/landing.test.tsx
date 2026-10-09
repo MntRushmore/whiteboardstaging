@@ -25,7 +25,9 @@ describe("/parents", () => {
     expect(text).toContain("$31");
     expect(text).toContain(`Free for 10 days, then $31 a month for up to ${MAX_KIDS} kids.`);
     expect(text).toContain("Agathon Test Plan");
-    expect(text).toContain("Start your free 10 days");
+    // one name for the main button everywhere; the trial's length is said beside it
+    expect(text).toContain("Start free trial");
+    expect(text).not.toMatch(/Try it free(?! for)|Start your free/);
     expect(text).not.toMatch(/\$25|7-day|7 days|free week/);
     expect(String(metadata.description)).toContain("Free for 10 days");
   });
@@ -57,7 +59,7 @@ describe("/parents", () => {
 
   it("describes every picture", () => {
     const imgs = [...html.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
-    expect(imgs.length).toBeGreaterThanOrEqual(5);
+    expect(imgs.length).toBeGreaterThanOrEqual(3);
     for (const img of imgs) {
       const alt = img.match(/alt="([^"]*)"/)?.[1];
       // the iPad's screen is the one blank alt: the figure around it describes the whole picture
@@ -65,6 +67,10 @@ describe("/parents", () => {
       else expect(alt && alt.length > 20, img).toBe(true);
     }
     expect(html).toMatch(/role="img" aria-label="An Agathon board on an iPad/);
+    // How it works' two boards are vector ink: each one is a labelled picture
+    const boards = [...html.matchAll(/<figure[^>]*role="img"[^>]*aria-label="([^"]*)"/g)].map((m) => m[1]);
+    expect(boards).toHaveLength(3);
+    for (const label of boards) expect(label.length).toBeGreaterThan(40);
   });
 
   it("sends Start to the sign-up form and Sign in to the sign-in form", () => {
@@ -81,6 +87,11 @@ describe("/parents", () => {
     expect(text).toContain("Pythagorean theorem");
   });
 
+  it("is in US English, for US parents: practice, math, a check mark", () => {
+    expect(text).not.toMatch(/practis|\bmaths\b|\bticks?\b|\bticked\b|\brings?\b|\bringed\b|ring round|colour|centre|\bbrackets?\b|the way round|favourite/i);
+    expect(String(metadata.description)).not.toMatch(/\bticks?\b|\brings?\b/);
+  });
+
   it("links the privacy answer to the Privacy Policy", () => {
     expect(html).toContain('href="/privacy"');
   });
@@ -88,7 +99,8 @@ describe("/parents", () => {
   it("says the plan is for up to MAX_KIDS kids, never every kid in the family (a 7th profile is refused)", () => {
     expect(text).not.toMatch(/every kid|whole family|unlimited kids/i);
     expect(LANDING_COPY.pricing.title).toBe(`One plan.\nUp to ${MAX_KIDS} kids.`);
-    expect(LANDING_COPY.pricing.includes[0]).toContain(`Up to ${MAX_KIDS} kids`);
+    // the headline says the number; the first line under the price says what each kid gets, not the number again
+    expect(LANDING_COPY.pricing.includes[0]).not.toContain(`Up to ${MAX_KIDS} kids`);
     // the FAQ and the profiles feature say the same number
     expect(text).toContain(`One plan covers up to ${MAX_KIDS} kids`);
     expect(text).toContain(`Up to ${MAX_KIDS} kids, each with their own name`);

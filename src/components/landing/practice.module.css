@@ -1,4 +1,4 @@
-/* What they'll practise: a segmented grade picker (a native radio group) over the chosen grade's
+/* What they'll practice: a segmented grade picker (a native radio group) over the chosen grade's
    skill path. CSS shows the chosen panel with :has(); where :has() is missing every panel shows and
    the chips hide, so nothing is ever out of reach. */
 
@@ -112,6 +112,33 @@
     animation: panel-in var(--duration-considered) var(--ease-enter) both;
   }
 }
+/* From a laptop up every panel takes the same room (the tallest one's), so the page below does not
+   jump as a parent goes from grade to grade. On a phone, where High school is far taller, each panel
+   keeps its own height. */
+@supports selector(:has(*)) {
+  @media (min-width: 900px) {
+    .panels {
+      display: grid;
+    }
+    .panel {
+      display: block;
+      grid-area: 1 / 1;
+      visibility: hidden;
+    }
+    .picker:has([data-tab-input="0"]:checked) [data-tab="0"],
+    .picker:has([data-tab-input="1"]:checked) [data-tab="1"],
+    .picker:has([data-tab-input="2"]:checked) [data-tab="2"],
+    .picker:has([data-tab-input="3"]:checked) [data-tab="3"],
+    .picker:has([data-tab-input="4"]:checked) [data-tab="4"],
+    .picker:has([data-tab-input="5"]:checked) [data-tab="5"],
+    .picker:has([data-tab-input="6"]:checked) [data-tab="6"],
+    .picker:has([data-tab-input="7"]:checked) [data-tab="7"],
+    .picker:has([data-tab-input="8"]:checked) [data-tab="8"],
+    .picker:has([data-tab-input="hs"]:checked) [data-tab="hs"] {
+      visibility: visible;
+    }
+  }
+}
 @supports not selector(:has(*)) {
   .chips {
     display: none;
@@ -201,7 +228,8 @@
 }
 @media (min-width: 900px) {
   .trail {
-    max-width: calc(var(--n) * 11.5rem);
+    /* never narrower than three stops' room, so Kindergarten's two do not huddle in the middle */
+    max-width: calc(max(var(--n), 3) * 11.5rem);
     grid-template-columns: repeat(var(--n), minmax(0, 1fr));
     gap: 1.5rem;
     margin-top: 3rem;
@@ -263,8 +291,19 @@
   color: var(--text-secondary);
   font-size: 1rem;
 }
+/* A course's topics as small chips: a list, so no line ever starts with a separator. */
 .courseTopics {
-  margin: 0.75rem 0 0;
-  font-size: 0.9375rem;
-  line-height: 1.55;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.courseTopics li {
+  border-radius: 999px;
+  padding: 0.25rem 0.625rem;
+  background: var(--neutral-2);
+  font-size: 0.875rem;
+  line-height: 1.35;
 }
