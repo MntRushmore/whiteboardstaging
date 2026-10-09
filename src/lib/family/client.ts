@@ -14,9 +14,11 @@
  * Switching: the server mints the other profile's session (POST /api/family/switch), the browser
  * takes it with `supabase.auth.setSession`, and the page reloads at `to` (the home by default): every
  * read the old profile made (boards, the plan, the learning record) belongs to someone else now, and
- * a full load is the one state that can be trusted.
+ * a full load is the one state that can be trusted. The session is shared by every tab, so every
+ * other open tab leaves for the home too (AuthProvider, src/lib/authUserChange.ts).
  */
 import { apiErrorFromResponse, authedFetch } from "@/lib/api-client";
+import { markProfileSwitch } from "@/lib/authUserChange";
 import { supabase } from "@/lib/supabase";
 import type { AddKidInput, FamilyMember, FamilyState, SwitchResult } from "./contracts";
 import { parseFamilyState } from "./members";
@@ -177,8 +179,16 @@ export async function switchProfile(to: string, opts: { pin?: string; dest?: str
   const tokens = (await res.json()) as SwitchResult;
   // the page reloads as `to`: nothing on it should read the family again as the old profile
   clearKept();
-  const { error } = await supabase.auth.setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token });
-  if (error) throw error;
+  // Every other open tab sees the new session and leaves for the home (AuthProvider,
+  // src/lib/authUserChange.ts); this one is marked so it goes to `dest` instead.
+  markProfileSwitch(true);
+  try {
+    const { error } = await supabase.auth.setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token });
+    if (error) throw error;
+  } catch (err) {
+    markProfileSwitch(false);
+    throw err;
+  }
   window.location.assign(safeDest(opts.dest));
 }
 
