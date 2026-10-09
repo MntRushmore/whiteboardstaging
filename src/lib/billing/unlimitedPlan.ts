@@ -8,6 +8,7 @@
  * Loaded with the account page only (not the board), so the copy can be generous.
  */
 import { UNLIMITED_PLAN, trialEndsOn, type UnlimitedState } from "@/lib/billing/unlimited";
+import { REFERRAL_TRIAL_DAYS } from "@/lib/billing/planChoice";
 
 export type PlanAction =
   /** start the free trial (the plan's Payment Link) */
@@ -50,6 +51,8 @@ export const PLAN_COPY = {
   billingSubtitle: "Your plan, your card and your invoices.",
   offer: `${UNLIMITED_PLAN.trialDays} days free, then ${PRICE} a month. Cancel any time.`,
   offerDetail: (firstCharge: string) => `A grown-up's card is needed at checkout. Nothing is charged until ${firstCharge}.`,
+  /** the offer to a family a friend invited, where the referral link is set (src/lib/billing/planChoice.ts) */
+  offerFriend: `Your first month is free, then ${PRICE} a month. Cancel any time.`,
   start: "Start the free trial",
   /** after a plan ended: a second plan has no free trial (`has_unlimited`'s first-trial rule) */
   restart: "Start Unlimited again",
@@ -73,9 +76,11 @@ export const PLAN_COPY = {
 
 /**
  * What the Plan section shows for `state` at `now`. `timeZone` is for tests (the page uses the
- * reader's own).
+ * reader's own). `friendMonth`: the offer is a friend's free first month (planChoice.ts
+ * `referralApplies`), so it says so and the first charge is 30 days away; only the offer to start a
+ * first plan changes.
  */
-export function unlimitedPlanView(state: UnlimitedState, opts: { now: Date; timeZone?: string }): PlanView {
+export function unlimitedPlanView(state: UnlimitedState, opts: { now: Date; timeZone?: string; friendMonth?: boolean }): PlanView {
   const tz = opts.timeZone;
   const trialEnd = planDate(state.trialEnd ?? state.currentPeriodEnd, tz);
   const periodEnd = planDate(state.currentPeriodEnd, tz);
@@ -167,15 +172,17 @@ export function unlimitedPlanView(state: UnlimitedState, opts: { now: Date; time
         action: "start",
         actionLabel: PLAN_COPY.restart,
       };
-    default:
+    default: {
+      const freeDays = opts.friendMonth ? REFERRAL_TRIAL_DAYS : UNLIMITED_PLAN.trialDays;
       return {
         kind: "offer",
         badge: null,
-        headline: PLAN_COPY.offer,
-        detail: PLAN_COPY.offerDetail(planDate(trialEndsOn(opts.now).toISOString(), tz) ?? `${UNLIMITED_PLAN.trialDays} days from now`),
+        headline: opts.friendMonth ? PLAN_COPY.offerFriend : PLAN_COPY.offer,
+        detail: PLAN_COPY.offerDetail(planDate(trialEndsOn(opts.now, freeDays).toISOString(), tz) ?? `${freeDays} days from now`),
         action: "start",
         actionLabel: PLAN_COPY.start,
       };
+    }
   }
 }
 

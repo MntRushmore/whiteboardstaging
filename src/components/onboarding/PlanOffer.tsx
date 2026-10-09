@@ -1,7 +1,8 @@
 "use client";
 
-import { ArrowRight, CheckCheck, GraduationCap, HeartHandshake, Hourglass, Lightbulb, MessageSquare, Sparkles } from "lucide-react";
+import { ArrowRight, CheckCheck, Gift, GraduationCap, HeartHandshake, Hourglass, Lightbulb, MessageSquare, Sparkles } from "lucide-react";
 import { PLAN_COPY } from "@/lib/onboarding/plan";
+import { PLAN_REFERRAL_COPY } from "@/lib/billing/planChoice";
 import { FAMILY_COPY } from "@/lib/family/copy";
 import { Button } from "@/registry/components/button/button";
 import styles from "./plan.module.css";
@@ -78,6 +79,12 @@ export interface PlanOfferProps {
    * grown-up).
    */
   kid?: boolean;
+  /**
+   * A friend invited this family and the referral link is set (src/lib/billing/planChoice.ts
+   * `referralApplies`): the first month is free instead of 7 days, said in the price and why under
+   * it; `chargeDate` is then 30 days away. Never for a plan started again.
+   */
+  friendMonth?: boolean;
 }
 
 /**
@@ -89,12 +96,17 @@ export interface PlanOfferProps {
  * offered again without the free trial. Without a checkout link the button says Coming soon and
  * Continue goes home.
  *
+ * A family a friend invited (`friendMonth`) sees "First month free" in place of "Free for 7 days",
+ * and why under the price; the rest of the card is the same.
+ *
  * Presentational: the route reads the session and the subscription and decides `view`.
  */
-export function PlanOffer({ view, chargeDate, starting = false, onStart, onContinue, kid = false }: PlanOfferProps) {
+export function PlanOffer({ view, chargeDate, starting = false, onStart, onContinue, kid = false, friendMonth = false }: PlanOfferProps) {
   const soon = view === "soon";
   const restart = view === "restart";
   if (kid) return <KidPlanOffer soon={soon} onContinue={onContinue} />;
+  // a friend's month is for a first plan, and only when there is a checkout to open
+  const friend = friendMonth && view === "offer";
   return (
     <section aria-labelledby="plan-title" data-onboarding="plan" data-view={view} className={styles.card}>
       <div className={styles.hero}>
@@ -116,9 +128,15 @@ export function PlanOffer({ view, chargeDate, starting = false, onStart, onConti
                 <span className={styles.srOnly}>{PLAN_COPY.priceWas} </span>
                 <s>{PLAN_COPY.price}</s>
               </span>
-              <span className={styles.free}>{PLAN_COPY.free}</span>
+              <span className={styles.free}>{friend ? PLAN_REFERRAL_COPY.friendFree : PLAN_COPY.free}</span>
             </p>
             <p className={`${styles.then} ${styles.rise}`}>{PLAN_COPY.then}</p>
+            {friend && (
+              <p className={`${styles.friend} ${styles.rise}`} data-testid="plan-friend">
+                <Gift size={16} strokeWidth={2} aria-hidden />
+                {PLAN_REFERRAL_COPY.friend}
+              </p>
+            )}
           </>
         )}
       </div>

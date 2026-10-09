@@ -1,12 +1,15 @@
 "use client";
 
-import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { ExternalLink, Gift, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader";
-import { billingPortalUrl, unlimitedCheckoutUrl } from "@/lib/billing/unlimited";
+import { PLAN_REFERRAL_COPY, planCheckoutUrl, referralApplies } from "@/lib/billing/planChoice";
+import { billingPortalUrl } from "@/lib/billing/unlimited";
 import { PLAN_COPY, billingFacts, unlimitedPlanView } from "@/lib/billing/unlimitedPlan";
+import { useReferred } from "@/lib/billing/useReferred";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { isKidEmail } from "@/lib/family/contracts";
 import { KidBillingCard } from "@/components/family/KidBillingCard";
@@ -29,16 +32,25 @@ const BADGE_CLASS: Record<string, string> = {
  * is cancelled. The plan re-reads when this tab gets focus again (useUnlimited), so a cancellation
  * shows once the webhook has it. The checkout carries the account's checkout reference from the
  * same read (never the user id), so the start button shows "Coming soon" until that read has landed.
+ * A family a friend invited starts at the referral Payment Link (its first month free) when that
+ * link is set, and is told why (src/lib/billing/planChoice.ts); a plan started again never is.
  */
 export function BillingCard({ email }: { email: string }) {
   const { state, loading, refresh } = useUnlimited();
-  const view = unlimitedPlanView(state, { now: new Date() });
+  const kid = isKidEmail(email);
+  const { user } = useAuth();
+  // a kid has no billing, so nothing is read for one
+  const referral = useReferred(kid ? null : user?.id);
+  // a friend's free month is for a first plan only
+  const choice = { referred: referral.referred && state.status === "none" };
+  const friendMonth = referralApplies(choice);
+  const view = unlimitedPlanView(state, { now: new Date(), friendMonth });
   const facts = billingFacts(state);
-  const checkout = unlimitedCheckoutUrl({ checkoutRef: state.checkoutRef, email });
+  const checkout = planCheckoutUrl({ checkoutRef: state.checkoutRef, email }, choice);
   const portal = billingPortalUrl(email);
 
   // A kid profile shares the grown-up's plan and never sees billing (src/lib/family).
-  if (isKidEmail(email)) return <KidBillingCard />;
+  if (kid) return <KidBillingCard />;
 
   return (
     <Card id="billing" className="scroll-mt-6" data-plan={view.kind}>
@@ -67,6 +79,13 @@ export function BillingCard({ email }: { email: string }) {
           </p>
           {view.detail && <p className="text-sm text-muted-foreground">{view.detail}</p>}
         </div>
+
+        {view.action === "start" && friendMonth && checkout && (
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground" data-testid="billing-friend">
+            <Gift className="size-4" aria-hidden />
+            {PLAN_REFERRAL_COPY.friend}
+          </p>
+        )}
 
         {view.action === "start" &&
           (checkout ? (
