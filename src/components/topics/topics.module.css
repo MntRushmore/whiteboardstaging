@@ -139,10 +139,19 @@
   min-width: 0;
   margin-left: auto;
 }
+/* as tall as one Keep at it card (a phone has no blurb) */
 .cardSkeleton {
-  height: 11rem;
+  height: 9.25rem;
   border-radius: var(--radius-panel, 1.625rem);
   background: color-mix(in oklab, var(--t-border) 60%, transparent);
+}
+@media (min-width: 640px) {
+  .cardSkeleton {
+    height: 11.5rem;
+  }
+}
+.cards[data-count="1"] > .cardSkeleton {
+  max-width: 40rem;
 }
 @media (prefers-reduced-motion: no-preference) {
   .cardSkeleton {
