@@ -11,7 +11,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import { DAILY_BOARD_COPY, TODAY_COPY } from "@/lib/daily/copy";
 import type { DailyStreak } from "@/lib/daily/contracts";
-import { Celebration, ProgressPill } from "../DailyBoard";
+import { CHAT_PROBLEM_META } from "@/lib/live/chat/cells";
+import { Celebration, problemsOnBoard, ProgressPill } from "../DailyBoard";
 import { StarRow, TodayView } from "../TodayCard";
 import type { TodayActions, TodayState } from "../useToday";
 
@@ -92,6 +93,15 @@ describe("TodayCard", () => {
     expect(out.match(/data-star=/g)).toHaveLength(5);
     expect(out).toContain(`aria-label="${TODAY_COPY.starsLabel(5, 5, 5)}"`);
   });
+
+  it("another card opening a board: Start, Continue and Practise more wait (disabled, not spinning)", () => {
+    const elsewhere: TodayActions = { ...actions, busy: "elsewhere" };
+    for (const phase of ["start", "continue", "done"] as const) {
+      const out = html(<TodayView state={ready({ phase, done: phase === "done" ? 5 : 2, boardId: phase === "start" ? null : "b" })} actions={elsewhere} />);
+      expect(out.match(/<button\b[^>]*\bdisabled=""/g)).toHaveLength(1);
+      expect(out).not.toContain('aria-busy="true"');
+    }
+  });
 });
 
 describe("DailyBoard", () => {
@@ -130,5 +140,29 @@ describe("DailyBoard", () => {
     expect(out).toContain(DAILY_BOARD_COPY.streak(1));
     expect(out).toContain(DAILY_BOARD_COPY.stars(5, 5));
     expect(out).toMatch(/<button[^>]*disabled=""[^>]*aria-busy="true"/);
+  });
+
+  it("the problems on the board, on every screen, each once (what a set cut short is finished from)", () => {
+    const cell = { x: 0, y: 0, w: 200, h: 200 };
+    const problem = (lines: string[], n: number) => ({ meta: { [CHAT_PROBLEM_META]: { n, lines, cell } } });
+    const pages: Record<string, Record<string, { meta: unknown }>> = {
+      // the set's screen: two problems, each written as several strokes, and the student's ink
+      "page:1": { a: problem(["3 + 4"], 1), b: problem(["3 + 4"], 1), c: problem(["5 + 6"], 2), d: { meta: {} } },
+      // a later screen: one more
+      "page:2": { e: problem(["7 + 8"], 1) },
+    };
+    const editor = {
+      getPages: () => Object.keys(pages).map((id) => ({ id })),
+      getPageShapeIds: (page: { id: string }) => new Set(Object.keys(pages[page.id])),
+      getShape: (id: string) => Object.values(pages).find((p) => id in p)?.[id],
+    } as unknown as Parameters<typeof problemsOnBoard>[0];
+    expect(problemsOnBoard(editor).map((p) => p.lines)).toEqual([["3 + 4"], ["5 + 6"], ["7 + 8"]]);
+    // an editor that throws: none, never an error on the board
+    expect(problemsOnBoard({ getPages: () => { throw new Error("gone"); } } as unknown as Parameters<typeof problemsOnBoard>[0])).toEqual([]);
+  });
+
+  it("the rest of a set cut short says how many", () => {
+    expect(DAILY_BOARD_COPY.topUpToast(1)).toBe("One more to finish today's set!");
+    expect(DAILY_BOARD_COPY.topUpToast(3)).toBe("3 more to finish today's set!");
   });
 });

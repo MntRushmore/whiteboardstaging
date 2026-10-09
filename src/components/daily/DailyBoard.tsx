@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useEditor, type Editor } from "tldraw";
 import { Flame, Home, Pencil, Star, X } from "lucide-react";
@@ -10,7 +10,8 @@ import type { LiveController } from "@/lib/live/contracts";
 import { clientMetric } from "@/lib/logger";
 import { DAILY_BOARD_COPY } from "@/lib/daily/copy";
 import { PILL, pillSpot, type PillSpot } from "@/lib/daily/pill";
-import { useDailyBoard } from "./useDailyBoard";
+import { boardProblems } from "@/lib/daily/progress";
+import { useDailyBoard, type BoardProblem } from "./useDailyBoard";
 import styles from "./dailyBoard.module.css";
 
 /**
@@ -60,6 +61,22 @@ function usePillSpot(editor: Editor, active: boolean): PillSpot {
     return () => ro?.disconnect();
   }, [editor, active]);
   return spot;
+}
+
+/** Every shape's meta on every screen of the board: the problems the tutor wrote carry theirs (`CHAT_PROBLEM_META`). */
+function* shapeMetas(editor: Pick<Editor, "getPages" | "getPageShapeIds" | "getShape">): Generator<unknown> {
+  for (const page of editor.getPages()) {
+    for (const id of editor.getPageShapeIds(page)) yield editor.getShape(id)?.meta;
+  }
+}
+
+/** The problems on the board, each once, on every screen (a set cut short is finished from these). */
+export function problemsOnBoard(editor: Pick<Editor, "getPages" | "getPageShapeIds" | "getShape">): BoardProblem[] {
+  try {
+    return boardProblems(shapeMetas(editor));
+  } catch {
+    return [];
+  }
 }
 
 /** The star slots: gold for solved alone, filled for done with help, empty for still to do. */
@@ -139,10 +156,11 @@ export function Celebration({ goal, stars, streak, writing, onHome, onKeepGoing,
   );
 }
 
-export default function DailyBoard({ boardId, controller }: DailyBoardProps) {
+export default function DailyBoard({ boardId, userId, controller }: DailyBoardProps) {
   const editor = useEditor();
   const router = useRouter();
-  const daily = useDailyBoard(boardId, controller);
+  const onBoard = useCallback(() => problemsOnBoard(editor), [editor]);
+  const daily = useDailyBoard(boardId, userId, controller, onBoard);
   const spot = usePillSpot(editor, Boolean(daily.marker));
   const { celebrating, dismiss } = daily;
 

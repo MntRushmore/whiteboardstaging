@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { clientMetric } from "@/lib/logger";
 import { reportUserError } from "@/lib/reportAppError";
+import { claimTopicOpen, releaseTopicOpen, subscribeOpening, topicOpening } from "@/components/topics/useTopicStart";
 import { DAILY_GOAL, localDay, type DailyRow, type DailyStreak } from "@/lib/daily/contracts";
-import { hasDailyMarker, writeDailyMarker } from "@/lib/daily/dailyMarker";
+import { readDailyMarker, writeDailyMarker } from "@/lib/daily/dailyMarker";
 import { TODAY_COPY } from "@/lib/daily/copy";
 import { findDailyMarker, readDailyNote, writeDailyNote } from "@/lib/daily/progress";
 import { continueDailyBoard, DAILY_MARKER_SKILL, startDailyBoard, weekdayName, type StartDeps } from "@/lib/daily/start";
@@ -24,8 +25,13 @@ import type { DailyPlanInput } from "@/lib/daily/plan";
  * Continue (today's board) and Practise more (another set, once the day is done).
  *
  * Reads are the student's own rows plus this device's notes (a board whose row has not landed, a
- * count ahead of the last save). A read that fails still gives Start, never an error on the home.
- * The planner and its generators are fetched after the card is up, so Start is instant.
+ * count ahead of the last save) — this student's only: profiles share a device. A read that fails
+ * still gives Start, never an error on the home. The planner and its generators are fetched after
+ * the card is up, so Start is instant.
+ *
+ * One board at a time for the whole home: Start, Continue and Practise more take the page's lock
+ * (`claimTopicOpen`, as the topic cards do), so a quick tap here and one on a topic card never make
+ * two boards; while another card holds it, these buttons wait (`busy: "elsewhere"`).
  */
 
 export type TodayPhase = "start" | "continue" | "done";
@@ -50,12 +56,15 @@ export type TodayState =
 /** A day finished this recently cheers on the home (the student came straight back from the board). */
 const JUST_FINISHED_MS = 15 * 60_000;
 
-/** Reads the day: the rows (with this device's notes folded in) and the streak. Never throws. */
-async function readToday(): Promise<Extract<TodayState, { status: "ready" }>> {
+const noOpening = () => null;
+
+/** Reads `userId`'s day: the rows (with this device's notes folded in) and the streak. Never throws. */
+async function readToday(userId: string): Promise<Extract<TodayState, { status: "ready" }>> {
   const today = localDay();
   const read = await loadDailyRows(today);
   const row: DailyRow | undefined = read.rows.find((r) => r.day === today);
-  const marker = findDailyMarker(today);
+  // this student's board only: a sibling's or the grown-up's on the same device is not theirs
+  const marker = findDailyMarker(today, userId);
   // the row is saved with its board the moment the board is made, so a row without one means the
   // board was deleted (Start makes a new one); this device's marker counts only when there is no
   // row at all (that first save failed) — never to reopen a deleted board
@@ -111,7 +120,8 @@ function usePlanInput(userId: string, today: string | null, wanted: boolean) {
 }
 
 export interface TodayActions {
-  busy: "start" | "continue" | "more" | null;
+  /** what this card is opening; "elsewhere" while another card on the page is opening a board */
+  busy: "start" | "continue" | "more" | "elsewhere" | null;
   start: () => void;
   continueToday: () => void;
   practiseMore: () => void;
@@ -155,10 +165,25 @@ export function useToday(userId: string): { state: TodayState; actions: TodayAct
     busyRef.current = next;
     setBusyState(next);
   }, []);
+  // this card's key to the page's lock: one board at a time for the whole home (the topic cards
+  // take it too); given back on a failure, or when the home goes away (a successful open keeps it
+  // while the page leaves)
+  const [owner] = useState(() => ({}));
+  useEffect(() => () => releaseTopicOpen(owner), [owner]);
+  const opening = useSyncExternalStore(subscribeOpening, topicOpening, noOpening);
+  /** This card's busy state and the page's lock, together; false while anything is opening. */
+  const claim = useCallback(
+    (next: "start" | "continue" | "more"): boolean => {
+      if (busyRef.current || !claimTopicOpen(owner, "daily")) return false;
+      setBusy(next);
+      return true;
+    },
+    [owner, setBusy],
+  );
 
   const refresh = useCallback(() => {
     let live = true;
-    void readToday().then(
+    void readToday(userId).then(
       (next) => {
         if (!live) return;
         setState(next);
@@ -172,7 +197,7 @@ export function useToday(userId: string): { state: TodayState; actions: TodayAct
     return () => {
       live = false;
     };
-  }, []);
+  }, [userId]);
 
   useEffect(() => refresh(), [refresh]);
   // back on the home from the board (a tab switch, the back button's cached page): read again
@@ -197,19 +222,20 @@ export function useToday(userId: string): { state: TodayState; actions: TodayAct
       toast.error(TODAY_COPY.failedTitle, { description });
       reportUserError({ kind: "live.practice", code, message: TODAY_COPY.failedTitle });
       setBusy(null);
+      releaseTopicOpen(owner);
     },
-    [setBusy],
+    [setBusy, owner],
   );
 
   const start = useCallback(() => {
-    if (busyRef.current) return;
-    setBusy("start");
+    if (!claim("start")) return;
     const today = localDay();
     void Promise.all([import("@/lib/daily/plan"), planInput(today)])
       .then(async ([{ planDailySet }, input]) => {
         const plan = planDailySet(input);
         if (plan.problems.length === 0) return fail("daily_no_problems", TODAY_COPY.noProblems);
         const deps: StartDeps = {
+          userId,
           createBoard: (title) => createFirstBoard(client, userId, title),
           writePracticeMarker: (m) => writePracticeMarker(m),
           writeDailyMarker: (m) => writeDailyMarker(m),
@@ -221,23 +247,21 @@ export function useToday(userId: string): { state: TodayState; actions: TodayAct
         if (!result.ok) return fail(result.error === "no_problems" ? "daily_no_problems" : "daily_create_failed", TODAY_COPY.failedLine);
         const count = (why: string) => plan.problems.filter((p) => p.why === why).length;
         clientMetric("daily.start", { goal: plan.goal, next: count("next"), weak: count("weak"), review: count("review"), saved: result.saved, marked: result.marked });
-        // busy stays set: the page is leaving
+        // busy and the lock stay set: the page is leaving
         router.push(`/board/${result.boardId}`);
       })
       .catch(() => fail("daily_start_failed", TODAY_COPY.failedLine));
-  }, [planInput, fail, router, setBusy, userId]);
+  }, [claim, planInput, fail, router, userId]);
 
   const continueToday = useCallback(() => {
-    if (busyRef.current || !ready?.boardId) return;
-    setBusy("continue");
-    const boardId = continueDailyBoard({ boardId: ready.boardId, day: ready.today, goal: ready.goal }, { hasDailyMarker, writeDailyMarker, now: Date.now });
+    if (!ready?.boardId || !claim("continue")) return;
+    const boardId = continueDailyBoard({ boardId: ready.boardId, day: ready.today, goal: ready.goal }, { userId, readDailyMarker: (id) => readDailyMarker(id), writeDailyMarker: (m) => writeDailyMarker(m), now: Date.now });
     clientMetric("daily.continue", { done: ready.done, goal: ready.goal });
     router.push(`/board/${boardId}`);
-  }, [ready, router, setBusy]);
+  }, [ready, claim, router, userId]);
 
   const practiseMore = useCallback(() => {
-    if (busyRef.current) return;
-    setBusy("more");
+    if (!claim("more")) return;
     const today = localDay();
     void Promise.all([import("@/lib/daily/plan"), planInput(today)])
       .then(async ([{ planDailySet }, input]) => {
@@ -251,7 +275,9 @@ export function useToday(userId: string): { state: TodayState; actions: TodayAct
         router.push(`/board/${board.value}`);
       })
       .catch(() => fail("daily_more_failed", TODAY_COPY.failedLine));
-  }, [planInput, fail, router, setBusy, userId]);
+  }, [claim, planInput, fail, router, userId]);
 
-  return { state, actions: { busy, start, continueToday, practiseMore }, preview };
+  // another card opening a board: these buttons wait for it
+  const shown = busy ?? (opening !== null ? "elsewhere" : null);
+  return { state, actions: { busy: shown, start, continueToday, practiseMore }, preview };
 }

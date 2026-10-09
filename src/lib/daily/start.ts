@@ -5,7 +5,12 @@
  * and clears it), the daily marker (`DailyBoard` shows the stars; it stays for the day) and the
  * progress note — then the row is saved with the board's id, so another device can Continue it.
  * Only the board itself is required: without storage the board opens blank, and without the row
- * the home still finds the board through this device's daily marker (`findDailyMarker`).
+ * the home still finds the board through this device's daily marker (`findDailyMarker`). The
+ * marker names the student (`userId`): profiles share a device, and only their own is theirs.
+ *
+ * The row's goal is the planned set's size, and it stays (`save_daily_practice` takes the goal on
+ * insert only). A set whose writing is cut short is finished on the board instead: `DailyBoard`
+ * writes what is missing once nothing on the board is left to do (`problemsShort`).
  *
  * The steps are injected, so `__tests__/start.test.ts` runs them against fakes.
  */
@@ -23,6 +28,8 @@ import type { DailySave } from "./store";
 export const DAILY_MARKER_SKILL = "daily";
 
 export interface StartDeps {
+  /** the signed-in student, named on the daily marker */
+  userId: string;
   createBoard: (title: string) => Promise<{ ok: true; value: string } | { ok: false; error: string }>;
   writePracticeMarker: (marker: PracticeMarker) => boolean;
   writeDailyMarker: (marker: DailyMarker) => boolean;
@@ -43,22 +50,26 @@ export async function startDailyBoard(plan: DailyPlan, title: string, deps: Star
   const problems = plan.problems.map((p) => [...p.lines]);
   // the problems first: they are the board; the daily marker and the note are its stars
   const marked = deps.writePracticeMarker({ boardId, skill: DAILY_MARKER_SKILL, problems, createdAt });
-  deps.writeDailyMarker({ boardId, day: plan.day, goal: plan.goal, createdAt });
+  deps.writeDailyMarker({ boardId, userId: deps.userId, day: plan.day, goal: plan.goal, createdAt });
   deps.writeNote({ boardId, day: plan.day, done: 0, stars: 0, counted: [], skills: [...new Set(plan.problems.map((p) => p.skill))], problems, createdAt });
   const row = await deps.save({ day: plan.day, boardId, goal: plan.goal, done: 0, stars: 0 });
   return { ok: true, boardId, saved: row !== null, marked };
 }
 
 /**
- * Continue: today's board, with its daily marker put back when this device has none (a second
- * device, or cleared storage), so the board shows its stars again. Its problems are on the board
- * already, so no practice marker.
+ * Continue: today's board, with its daily marker put back when this device has none of this
+ * student's for today (a second device, cleared storage, a marker from before markers named their
+ * student), so the board shows its stars again. Its problems are on the board already, so no
+ * practice marker (what is missing, `DailyBoard` writes).
  */
 export function continueDailyBoard(
   board: { boardId: string; day: string; goal: number },
-  deps: { hasDailyMarker: (boardId: string) => boolean; writeDailyMarker: (marker: DailyMarker) => boolean; now: () => number },
+  deps: { userId: string; readDailyMarker: (boardId: string) => DailyMarker | null; writeDailyMarker: (marker: DailyMarker) => boolean; now: () => number },
 ): string {
-  if (!deps.hasDailyMarker(board.boardId)) deps.writeDailyMarker({ boardId: board.boardId, day: board.day, goal: board.goal, createdAt: deps.now() });
+  const marker = deps.readDailyMarker(board.boardId);
+  if (!marker || marker.userId !== deps.userId || marker.day !== board.day) {
+    deps.writeDailyMarker({ boardId: board.boardId, userId: deps.userId, day: board.day, goal: board.goal, createdAt: deps.now() });
+  }
   return board.boardId;
 }
 

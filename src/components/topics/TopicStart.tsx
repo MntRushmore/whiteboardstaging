@@ -7,7 +7,7 @@ import { Dialog, DialogContent } from "@/registry/components/dialog/dialog";
 import { gradeLabel } from "@/lib/learning/grades";
 import { courseName, TOPIC_COPY, topicGroups, upNext, type TopicId, type TopicView } from "@/lib/learning/topics";
 import { AreaIcon, AskBox, LevelMark, TopicList } from "./TopicPicker";
-import { useTopicActions, useTopicData } from "./useTopicStart";
+import { useTopicActions, useTopicData, type OpeningKind } from "./useTopicStart";
 import styles from "./topics.module.css";
 
 /**
@@ -21,7 +21,7 @@ export interface TopicStartProps {
   userId: string;
 }
 
-function UpNextCard({ topic, kind, busy, onStart }: { topic: TopicView; kind: "next" | "weak"; busy: TopicId | "ask" | null; onStart: (id: TopicId) => void }) {
+function UpNextCard({ topic, kind, busy, onStart }: { topic: TopicView; kind: "next" | "weak"; busy: OpeningKind | null; onStart: (id: TopicId) => void }) {
   const next = kind === "next";
   const titleId = `topic-${kind}-title`;
   return (
@@ -70,7 +70,8 @@ export default function TopicStart({ userId }: TopicStartProps) {
     };
   }, [data]);
 
-  const busyTopic = actions.busy && actions.busy !== "ask" ? actions.busy : null;
+  // the list spins for a topic it is opening; while Ask or Today's practice holds the page's lock it stays as it is (the lock refuses a tap there)
+  const busyTopic = actions.busy && actions.busy !== "ask" && actions.busy !== "daily" ? actions.busy : null;
   const cards = view ? [view.choice.next, view.choice.weakest].filter((t): t is TopicView => t !== null) : [];
 
   return (
