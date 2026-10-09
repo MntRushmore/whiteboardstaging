@@ -1,36 +1,14 @@
 /**
- * Every word of the simple board. The dock's are for a 6-year-old: one short word under each picture,
- * read at a glance or not at all. The More card's are for the grown-up beside them.
+ * The simple board's words that ship with every board (the bar, Board options). Kept to the few the
+ * first load needs: the dock's are in `dockView.ts` (DOCK_COPY) and More's in `GrownUpMore.tsx`,
+ * both loaded only on a simple board (docs/BUNDLE.md).
  */
 export const KID_COPY = {
   /** the switch in Board options and at the top of More */
   simpleBoard: "Simple board",
   simpleBoardHint: "Fewer, bigger buttons for young kids",
-  /** the dock */
-  dock: "Tools",
-  pen: "Pen",
-  eraser: "Eraser",
-  undo: "Undo",
-  colour: "Colour",
-  colours: "Colours",
-  colourName: {
-    black: "Black",
-    red: "Red",
-    green: "Green",
-    violet: "Purple",
-  },
-  /** pages: the board's screens (src/lib/screens), named as a kid names them */
-  pages: "Pages",
-  newPage: "New page",
-  full: "This board is full",
-  prev: "Page before",
-  next: "Next page",
-  pageOf: (index: number, count: number) => `Page ${index} of ${count}`,
-  /** the bar */
+  /** the bar's Back */
   back: "Back to my boards",
-  more: "More",
-  moreHint: "More tools and settings, for grown-ups",
-  moreTitle: "For grown-ups",
-  close: "Close",
+  /** the screen strip's New topic, in More on the simple board */
   newTopic: "New topic",
 } as const;

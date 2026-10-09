@@ -9,6 +9,31 @@
  */
 
 /**
+ * The dock's words, for a 6-year-old: one short word under each picture, read at a glance or not at
+ * all. Pages are the board's screens (src/lib/screens), named as a kid names them.
+ */
+export const DOCK_COPY = {
+  dock: "Tools",
+  pen: "Pen",
+  eraser: "Eraser",
+  undo: "Undo",
+  colour: "Colour",
+  colours: "Colours",
+  colourName: {
+    black: "Black",
+    red: "Red",
+    green: "Green",
+    violet: "Purple",
+  },
+  pages: "Pages",
+  newPage: "New page",
+  full: "This board is full",
+  prev: "Page before",
+  next: "Next page",
+  pageOf: (index: number, count: number) => `Page ${index} of ${count}`,
+} as const;
+
+/**
  * The dock's colours: a few, big. Never blue: the tutor writes, ticks and rings in blue
  * (`TUTOR_INK_COLOR`), and a kid's blue line would read as the tutor's.
  */

@@ -4,17 +4,26 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Ellipsis, X } from "lucide-react";
 import { KID_COPY } from "./copy";
 
+/** More's words: for the grown-up beside the kid. */
+const MORE_COPY = {
+  more: "More",
+  hint: "More tools and settings, for grown-ups",
+  title: "For grown-ups",
+  close: "Close",
+} as const;
+
 /**
  * The simple board's one way to everything else: a small "More" at the top right, for the grown-up
  * beside the kid. It opens a card holding the "Simple board" switch and the grown-up bar's controls
- * (`BoardToolbarView.place` says which), passed in as `children`.
+ * (`BoardToolbarView.place` says which), passed in as `children`. Loaded lazily, on a simple board
+ * only (the board page warms it with the kid dock).
  *
  * The card is always mounted and only hidden while closed: the status pill in it keeps "Hide AI
  * shapes" applied and the ink meter keeps Live told the balance, open or not. It closes on the ×, a
  * tap outside it or Escape — not on a tap inside a menu or dialog it opened (Board options), which
  * React portals outside it.
  */
-export function GrownUpMore({
+export default function GrownUpMore({
   open,
   onOpenChange,
   simpleOn,
@@ -58,24 +67,24 @@ export function GrownUpMore({
         type="button"
         aria-expanded={open}
         aria-controls="grown-up-more"
-        title={KID_COPY.moreHint}
+        title={MORE_COPY.hint}
         onClick={() => onOpenChange(!open)}
         className="flex h-12 cursor-pointer select-none items-center gap-1.5 rounded-full border border-slate-200 bg-white/95 pl-3.5 pr-4 text-sm font-medium text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-slate-100 aria-expanded:text-slate-800 motion-reduce:transition-none"
       >
         <Ellipsis className="size-5" aria-hidden />
-        {KID_COPY.more}
+        {MORE_COPY.more}
       </button>
       <section
         id="grown-up-more"
-        aria-label={KID_COPY.moreTitle}
+        aria-label={MORE_COPY.title}
         hidden={!open}
         className="absolute right-0 top-full mt-2 w-[min(380px,calc(100cqw-32px))] rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_16px_40px_rgba(15,23,42,0.16),0_2px_8px_rgba(15,23,42,0.06)]"
       >
         <div className="mb-2 flex items-center justify-between pl-1">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">{KID_COPY.moreTitle}</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">{MORE_COPY.title}</h2>
           <button
             type="button"
-            aria-label={KID_COPY.close}
+            aria-label={MORE_COPY.close}
             onClick={() => onOpenChange(false)}
             className="flex size-9 cursor-pointer items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >

@@ -16,8 +16,7 @@ import {
 } from "tldraw";
 import { screenStripSlot } from "@/components/screens/ScreenStrip";
 import { addScreen, goToScreen, MAX_SCREENS, screenPosition } from "@/lib/screens/screens";
-import { KID_COPY } from "./copy";
-import { hitMarginFor, KID_COLORS, kidDockView, penSizeOnClose, penSizeOnOpen, type KidColor } from "./dockView";
+import { DOCK_COPY, hitMarginFor, KID_COLORS, kidDockView, penSizeOnClose, penSizeOnOpen, type KidColor } from "./dockView";
 
 /**
  * The simple board's dock, in tldraw's toolbar slot (`BoardToolbar`): Pen, Eraser, Undo, four big
@@ -47,23 +46,23 @@ export default function KidDock() {
   return (
     <div
       role="toolbar"
-      aria-label={KID_COPY.dock}
+      aria-label={DOCK_COPY.dock}
       data-kid-dock=""
       className="pointer-events-none mx-2 mb-[max(10px,env(safe-area-inset-bottom))] flex flex-wrap-reverse items-end justify-center gap-2"
     >
       <div className={SHELL}>
-        <DockButton label={KID_COPY.pen} pressed={view.pen} onClick={() => editor.setCurrentTool("draw")}>
+        <DockButton label={DOCK_COPY.pen} pressed={view.pen} onClick={() => editor.setCurrentTool("draw")}>
           <Pencil className="size-6" strokeWidth={2.25} aria-hidden />
         </DockButton>
-        <DockButton label={KID_COPY.eraser} pressed={view.eraser} onClick={() => editor.setCurrentTool("eraser")}>
+        <DockButton label={DOCK_COPY.eraser} pressed={view.eraser} onClick={() => editor.setCurrentTool("eraser")}>
           <Eraser className="size-6" strokeWidth={2.25} aria-hidden />
         </DockButton>
-        <DockButton label={KID_COPY.undo} disabled={!view.undo} onClick={() => editor.undo()}>
+        <DockButton label={DOCK_COPY.undo} disabled={!view.undo} onClick={() => editor.undo()}>
           <Undo2 className="size-6" strokeWidth={2.25} aria-hidden />
         </DockButton>
         <span aria-hidden className="mx-1 h-9 w-px shrink-0 bg-slate-200" />
         {view.colours.layout === "row" ? (
-          <div role="group" aria-label={KID_COPY.colours} className="flex items-center">
+          <div role="group" aria-label={DOCK_COPY.colours} className="flex items-center">
             {KID_COLORS.map((c) => (
               <Swatch key={c} color={c} selected={view.colours.current === c} onPick={pick} />
             ))}
@@ -72,21 +71,21 @@ export default function KidDock() {
           <ColourButton current={view.colours.current} onPick={pick} />
         )}
       </div>
-      <nav aria-label={KID_COPY.pages} className={SHELL}>
+      <nav aria-label={DOCK_COPY.pages} className={SHELL}>
         {view.pages.arrows && (
           <>
-            <button type="button" className={ARROW} aria-label={KID_COPY.prev} title={KID_COPY.prev} disabled={!view.pages.canPrev} onClick={() => goToScreen(editor, -1)}>
+            <button type="button" className={ARROW} aria-label={DOCK_COPY.prev} title={DOCK_COPY.prev} disabled={!view.pages.canPrev} onClick={() => goToScreen(editor, -1)}>
               <ChevronLeft className="size-7" strokeWidth={2.5} aria-hidden />
             </button>
-            <span className="min-w-11 text-center text-base font-semibold tabular-nums text-slate-700" aria-live="polite" aria-label={KID_COPY.pageOf(index, count)}>
+            <span className="min-w-11 text-center text-base font-semibold tabular-nums text-slate-700" aria-live="polite" aria-label={DOCK_COPY.pageOf(index, count)}>
               {view.pages.label}
             </span>
-            <button type="button" className={ARROW} aria-label={KID_COPY.next} title={KID_COPY.next} disabled={!view.pages.canNext} onClick={() => goToScreen(editor, 1)}>
+            <button type="button" className={ARROW} aria-label={DOCK_COPY.next} title={DOCK_COPY.next} disabled={!view.pages.canNext} onClick={() => goToScreen(editor, 1)}>
               <ChevronRight className="size-7" strokeWidth={2.5} aria-hidden />
             </button>
           </>
         )}
-        <DockButton label={KID_COPY.newPage} title={view.pages.canAdd ? KID_COPY.newPage : KID_COPY.full} disabled={!view.pages.canAdd} onClick={() => addScreen(editor)}>
+        <DockButton label={DOCK_COPY.newPage} title={view.pages.canAdd ? DOCK_COPY.newPage : DOCK_COPY.full} disabled={!view.pages.canAdd} onClick={() => addScreen(editor)}>
           <FilePlus2 className="size-6" strokeWidth={2.25} aria-hidden />
         </DockButton>
       </nav>
@@ -124,8 +123,8 @@ function Swatch({ color, selected, onPick }: { color: KidColor; selected: boolea
     <button
       type="button"
       className="flex size-12 shrink-0 cursor-pointer items-center justify-center rounded-full transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 active:scale-90 motion-reduce:transition-none"
-      aria-label={KID_COPY.colourName[color]}
-      title={KID_COPY.colourName[color]}
+      aria-label={DOCK_COPY.colourName[color]}
+      title={DOCK_COPY.colourName[color]}
       aria-pressed={selected}
       onClick={() => onPick(color)}
     >
@@ -161,11 +160,11 @@ function ColourButton({ current, onPick }: { current: KidColor | null; onPick: (
   }, [open]);
   return (
     <div ref={ref} className="relative">
-      <DockButton label={KID_COPY.colour} pressed={open} onClick={() => setOpen((o) => !o)}>
+      <DockButton label={DOCK_COPY.colour} pressed={open} onClick={() => setOpen((o) => !o)}>
         <span className="block size-6 rounded-full" style={{ background: dotOf(current ?? "black"), boxShadow: "inset 0 0 0 1px rgba(15,23,42,0.1)" }} />
       </DockButton>
       {open && (
-        <div role="group" aria-label={KID_COPY.colours} className={`${SHELL} absolute bottom-full right-0 mb-2`}>
+        <div role="group" aria-label={DOCK_COPY.colours} className={`${SHELL} absolute bottom-full right-0 mb-2`}>
           {KID_COLORS.map((c) => (
             <Swatch
               key={c}

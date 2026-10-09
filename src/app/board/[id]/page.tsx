@@ -79,8 +79,7 @@ import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 import { boardToolbarView, type BarPlace } from "@/components/live/toolbar";
 import { AskButton } from "@/components/live/AskButton";
 import { setSimpleBoard, useSimpleBoard, useSimpleBoardGrade } from "@/components/kidmode/useSimpleBoard";
-import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, usePreloadKidDock } from "@/components/kidmode/slots";
-import { GrownUpMore } from "@/components/kidmode/GrownUpMore";
+import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, usePreloadKidDock } from "@/components/kidmode/slots";
 import { KID_COPY } from "@/components/kidmode/copy";
 import { BoardChatPanel, CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
 import { CHAT_COPY } from "@/components/chat/chatView";
@@ -550,10 +549,15 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           {controls("bar")}
         </div>
       </div>
+      {/* lazy, warmed while the board loads (usePreloadKidDock); a chunk that fails hides More, not the board */}
       {toolbar.simple && (
-        <GrownUpMore open={moreOpen} onOpenChange={setMoreOpen} simpleOn={simpleBoard} onSimpleChange={switchSimpleBoard}>
-          {controls("more")}
-        </GrownUpMore>
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <GrownUpMore open={moreOpen} onOpenChange={setMoreOpen} simpleOn={simpleBoard} onSimpleChange={switchSimpleBoard}>
+              {controls("more")}
+            </GrownUpMore>
+          </React.Suspense>
+        </LiveErrorBoundary>
       )}
       </div>
 

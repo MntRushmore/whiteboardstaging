@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TUTOR_INK_COLOR } from "@/lib/live/answer";
-import { KID_COPY } from "../copy";
-import { hitMarginFor, isKidColor, KID_COLORS, kidDockView, LITTLE_HANDS, penSizeOnClose, penSizeOnOpen, type KidDockState } from "../dockView";
+import { DOCK_COPY, hitMarginFor, isKidColor, KID_COLORS, kidDockView, LITTLE_HANDS, penSizeOnClose, penSizeOnOpen, type KidDockState } from "../dockView";
 
 /** What the simple board's dock shows a young kid, and the little-hands rules behind it. */
 
@@ -33,7 +32,7 @@ describe("kidDockView", () => {
     expect(KID_COLORS.length).toBeLessThanOrEqual(5);
     expect(isKidColor(TUTOR_INK_COLOR)).toBe(false);
     expect(KID_COLORS).not.toContain("light-blue");
-    for (const c of KID_COLORS) expect(KID_COPY.colourName[c]).toMatch(/^[A-Z][a-z]+$/);
+    for (const c of KID_COLORS) expect(DOCK_COPY.colourName[c]).toMatch(/^[A-Z][a-z]+$/);
   });
 
   it("shows ‹ n / N › only once there is a page to go back to, and New page always", () => {
@@ -48,8 +47,8 @@ describe("kidDockView", () => {
   });
 
   it("names everything in one short word a 6-year-old reads", () => {
-    for (const word of [KID_COPY.pen, KID_COPY.eraser, KID_COPY.undo, KID_COPY.colour]) expect(word).toMatch(/^[A-Z][a-z]{1,7}$/);
-    expect(KID_COPY.newPage).toBe("New page");
+    for (const word of [DOCK_COPY.pen, DOCK_COPY.eraser, DOCK_COPY.undo, DOCK_COPY.colour]) expect(word).toMatch(/^[A-Z][a-z]{1,7}$/);
+    expect(DOCK_COPY.newPage).toBe("New page");
   });
 });
 

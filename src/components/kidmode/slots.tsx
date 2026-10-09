@@ -16,12 +16,17 @@ import { useSimpleBoard } from "./useSimpleBoard";
 
 const loadKidDock = () => import("./KidDock");
 const KidDock = React.lazy(loadKidDock);
+const loadGrownUpMore = () => import("./GrownUpMore");
+/** The simple board's More (the board page's bar): lazy like the dock, so a grown-up board pays for neither. */
+export const GrownUpMore = React.lazy(loadGrownUpMore);
 
-/** Fetches the kid dock's chunk ahead of time (the board page calls it while the board loads). */
+/** Fetches the kid dock's and More's chunks ahead of time (the board page calls it while the board loads). */
 export function preloadKidDock(): void {
-  void loadKidDock().catch(() => {
-    /* tried again when the dock mounts */
-  });
+  for (const load of [loadKidDock, loadGrownUpMore]) {
+    void load().catch(() => {
+      /* tried again when it mounts */
+    });
+  }
 }
 
 function useSimple(): boolean {
