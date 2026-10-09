@@ -33,7 +33,7 @@ Run it with `npm run bundle:check` (`node scripts/check-bundle.mjs`). Unit tests
 
 | Route | Measured first-load JS (gzip) | Budget (gzip) |
 | --- | --- | --- |
-| `/board/[id]` | ~1,070,200 B (1.02 MB) at `fix/board-reading` | **1,100,000 B (~1.05 MB)**: raised from 1,060,000 on 2026-10-04 (below) |
+| `/board/[id]` | 1,093,610 B (1.04 MB) at `fix/board-bundle` (2026-10-09, below) | **1,100,000 B (~1.05 MB)**: raised from 1,060,000 on 2026-10-04 (below) |
 
 The budget lives in `BUDGETS` in `scripts/check-bundle.mjs`. Raising it needs a line in this file saying
 what was added and why it could not be lazy-loaded. `/train` has no budget: trainer-only route, same
@@ -220,6 +220,52 @@ loading line, and the learning bus remembering this session's attempts. Lazy: th
 (`src/components/replay/KidReplay.tsx`, the timeline, the player, the stage; about 40 KB raw), fetched
 on the first tap of "Replay my board". The admin's viewer (`/admin/boards/[id]`) loads the same player
 as a chunk of its own after the board is read; that route's first load is 343,378 B, like `/admin`.
+
+## 2026-10-09: back under the budget after "kids come back" (`fix/board-bundle`)
+
+The night's merges (`13cb6fd..58218e1`: K-8 young work, the simple board, read aloud, families,
+Today's practice, the funnel) put `/board/[id]` at 1,101,725 B gzip at `58218e1`, 1,725 B over the
+budget. What grew, from a module-level diff of the two commits' first loads (`BUNDLE_SOURCEMAPS=1` builds,
+each chunk's map attributing its bytes to source files; +23.7 KB raw / -5.1 KB raw, about +7.1 KB
+gzip in all):
+
+| Grew (raw, minified) | Where from |
+| --- | --- |
+| +3.3 KB, +0.4 KB | sign-up attribution in the root layout (`AttributionCapture`, `src/lib/funnel/capture.ts`) and through it `src/lib/family/contracts.ts` (also the ink meter's `isKidEmail`): every route |
+| +2.1 KB | the board page: the simple bar (Back, the big Help me, More, New topic), the switch's wiring |
+| +1.7 KB, +1.6 KB | the young kids' engine work the loop runs synchronously: long multiplication in `engine/columnArithmetic.ts`, the new `engine/columnWork.ts` (moved out of `liveLoop.ts`, -0.5 KB there) |
+| +2.9 KB, +1.0 KB | read aloud (`say.ts`, `SpeakButton`, `tutorWords.ts`, its copy and contract, the speaker icon), and the hint layer's hook and the pill's new items (Simple board, Read hints aloud) |
+| +2.5 KB | the simple board's store and slots (`simpleBoard.ts`, `useSimpleBoard.ts`, `slots.tsx`, `copy.ts`); the dock and More were already lazy |
+| +0.5 KB, +0.3 KB | `hasDailyMarker` (`src/lib/daily/dailyMarker.ts`), the auth user watch (`src/lib/authUserChange.ts`) |
+
+Paid for by loading after the board what is only needed after a tap or once a hint is up, none of
+it a feature removed:
+
+- **The Ask panel** (`BoardChatPanel` with `useBoardChat`, `chatView` and `src/lib/live/chat/client.ts`;
+  a 14.8 KB raw / 6.0 KB gzip chunk): `React.lazy` in the page, fetched in idle time once the board
+  is up (`src/lib/whenIdle.ts`), or beside the board's own load when the panel was left open or a
+  topic's kickoff opens it. The page keeps only the Ask button's words and marker
+  (`src/components/chat/askButton.ts`) and the open-or-closed store (`useChatOpen.ts`).
+- **Board options' items** (`src/components/live/BoardMenu.tsx`, with the `ui/dropdown-menu`
+  wrappers and the read-aloud item's fallback; 7.1 KB raw / 2.1 KB gzip): the pill keeps Radix's
+  root and trigger and fetches the items as it mounts, just after the board. Radix's menu itself
+  stays in the first load: tldraw's own menus use it.
+- **The hint card's speaker** (`src/components/speech/HintSpeakButton.tsx`: `SpeakButton`,
+  `tutorWords.ts`, the icon; 2.2 KB raw / 1.2 KB gzip): loaded in idle time once the hint layer is
+  up, long before a first hint (a line read and checked); the card keeps the button's room meanwhile.
+  `say.ts` stays: Help me and the loop's notes call it synchronously.
+- **The sign-up capture's rules** (`capture.ts`; 2.7 KB raw / 1.2 KB gzip): `AttributionCapture`
+  reads the address and referrer at once and imports the rules to keep them, on every route.
+  `isKidEmail` moved to `src/lib/family/kidEmail.ts` (re-exported by `contracts.ts`), so the ink
+  meter no longer brings the families' contract.
+
+Left in the first load on purpose: the simple board's store and tldraw slots (they decide the bar
+and the toolbar on the first frame, so a kid's board never flashes the grown-up one), the column
+judge (`columnWork.ts`, `columnArithmetic.ts`: the loop judges a line synchronously once the engine
+is up, and moving them would change when the loop is ready), and the tiny `hasDailyMarker` /
+`hasPracticeMarker` checks. After: 1,093,610 B gzip (-8,115 B; CSS unchanged, 52,559 B), 6,390 B
+(6.2 KB) under the budget. Every other route is 0.3 to 1.2 KB gzip smaller (the capture), `/train`
+1.4 KB.
 
 ## Recommendations not done here (files owned elsewhere)
 

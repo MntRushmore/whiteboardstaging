@@ -11,6 +11,7 @@
  *    while the device's choice is "off", until it is switched on.
  */
 import type { Editor } from "tldraw";
+import { whenIdle } from "@/lib/whenIdle";
 import { READ_ALOUD_EVENT, READ_ALOUD_KEY } from "./contracts";
 
 type ReadAloudModule = typeof import("@/components/speech/readAloud");
@@ -47,10 +48,6 @@ export function sayNow(text: string): void {
   if (text.trim()) withModule((m) => m.sayNow(text));
 }
 
-/** Idle time after the board is up: the watcher loads then, not with the board. */
-const IDLE_TIMEOUT_MS = 4_000;
-const FALLBACK_DELAY_MS = 1_500;
-
 function switchedOff(): boolean {
   try {
     return window.localStorage.getItem(READ_ALOUD_KEY) === "off";
@@ -66,12 +63,9 @@ function switchedOff(): boolean {
  */
 export function watchReadAloud(editor: Editor): () => void {
   if (typeof window === "undefined") return () => undefined;
-  type IdleWindow = Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void };
-  const w = window as IdleWindow;
   let done = false;
   let stop: (() => void) | null = null;
-  let idle: number | null = null;
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  let cancelIdle: (() => void) | null = null;
 
   const start = () => {
     window.removeEventListener(READ_ALOUD_EVENT, onSwitch);
@@ -83,15 +77,14 @@ export function watchReadAloud(editor: Editor): () => void {
     if ((e as CustomEvent<unknown>).detail === "on") start();
   };
 
+  // idle time after the board is up: the watcher loads then, not with the board
   if (switchedOff()) window.addEventListener(READ_ALOUD_EVENT, onSwitch);
-  else if (typeof w.requestIdleCallback === "function") idle = w.requestIdleCallback(start, { timeout: IDLE_TIMEOUT_MS });
-  else timer = setTimeout(start, FALLBACK_DELAY_MS);
+  else cancelIdle = whenIdle(start);
 
   return () => {
     done = true;
     window.removeEventListener(READ_ALOUD_EVENT, onSwitch);
-    if (idle !== null) w.cancelIdleCallback?.(idle);
-    if (timer !== null) clearTimeout(timer);
+    cancelIdle?.();
     stop?.();
   };
 }

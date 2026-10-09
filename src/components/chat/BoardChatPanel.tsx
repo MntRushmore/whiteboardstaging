@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { LiveController } from "@/lib/live/contracts";
 import { CHAT_COPY, CHAT_SUGGESTIONS, sendsOnKey, WEAK_SPOTS_COPY, type ChatMessage } from "./chatView";
 import { useBoardChat } from "./useBoardChat";
+import { CHAT_TOGGLE_ATTR } from "./askButton";
 import { hasPlan, isUnlimited } from "@/lib/billing/unlimited";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
 
@@ -54,9 +55,6 @@ export function resetKickoffs(): void {
 
 /** Running out of ink: the board dialog's panel (the packs to buy), fetched only when a 402 arrives. */
 const OutOfInkPanel = lazy(() => import("@/components/billing/OutOfInkPanel").then((m) => ({ default: m.OutOfInkPanel })));
-
-/** A marker the board page gives the Ask button: Esc there closes the panel too. */
-export const CHAT_TOGGLE_ATTR = "data-chat-toggle";
 
 /**
  * The board chat: ask in words, the tutor writes it on the board in its hand, and the panel shows

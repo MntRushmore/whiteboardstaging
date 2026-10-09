@@ -11,7 +11,7 @@ import { getLiveSettings, updateLiveSettings } from "@/lib/live/liveSettings";
 import { clientMetric } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 import { ASK_BUTTON_ATTR } from "@/components/live/AskButton";
-import { CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
+import { CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
 import { useChatMessages } from "@/components/chat/useBoardChat";
 import { startersFor, type StarterProblem } from "@/lib/onboarding/courses";
 import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writeTourMarker } from "@/lib/onboarding/marker";

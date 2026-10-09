@@ -81,9 +81,8 @@ import { AskButton } from "@/components/live/AskButton";
 import { setSimpleBoard, useSimpleBoard, useSimpleBoardGrade } from "@/components/kidmode/useSimpleBoard";
 import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, usePreloadKidDock } from "@/components/kidmode/slots";
 import { KID_COPY } from "@/components/kidmode/copy";
-import { BoardChatPanel, CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
-import { CHAT_COPY } from "@/components/chat/chatView";
-import { useChatOpen } from "@/components/chat/useBoardChat";
+import { CHAT_BUTTON_COPY, CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
+import { useChatOpen } from "@/components/chat/useChatOpen";
 import { useLecture } from "@/components/lecture/useLecture";
 import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
@@ -95,6 +94,7 @@ import type { ChatKickoff } from "@/components/chat/BoardChatPanel";
 import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
 import { useBoardLearning } from "@/components/learning/useBoardLearning";
 import { registerStrokeTimes } from "@/lib/replay/stampTimes";
+import { whenIdle } from "@/lib/whenIdle";
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
@@ -122,6 +122,15 @@ const DailyBoard = React.lazy(() => import("@/components/daily/DailyBoard"));
 const KidReplay = React.lazy(() => import("@/components/replay/KidReplay"));
 // New topic (the screen strip's button): the topic picker as a sheet, loaded on the first tap.
 const TopicSheet = React.lazy(() => import("@/components/topics/TopicSheet"));
+// The board chat (Ask): nothing to show until it opens, so it loads in idle time once the board is
+// up, or beside the board's own load when it was left open (docs/BUNDLE.md).
+const loadChatPanel = () => import("@/components/chat/BoardChatPanel");
+const BoardChatPanel = React.lazy(() => loadChatPanel().then((m) => ({ default: m.BoardChatPanel })));
+function preloadChatPanel(): void {
+  void loadChatPanel().catch(() => {
+    /* tried again when it opens */
+  });
+}
 
 /** The help tabs: 6 px of padding on a board under 768 px (a 10.2" iPad sideways with Ask docked), 8 px from there. */
 const HELP_TAB_CLASS = "px-1.5 @3xl/bar:px-2";
@@ -249,6 +258,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   useEffect(() => {
     if (kickoff) openChat(true);
   }, [kickoff, openChat]);
+  // the Ask panel's chunk, ready before the first tap on Ask
+  useEffect(() => whenIdle(preloadChatPanel), []);
   const askTutor = useCallback((message: string) => setKickoff((k) => ({ id: (k?.id ?? 0) + 1, message })), []);
   // New topic: the sheet is mounted from its first opening on (so it can close with its own motion)
   const topicOpen = useValue("topic sheet open", () => topicSheetOpen.get(), []);
@@ -386,8 +397,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           variant={chat.open ? "secondary" : "outline"}
           size="sm"
           className={chat.open ? "shadow-sm" : "bg-white shadow-sm"}
-          title={CHAT_COPY.buttonHint}
-          aria-label={CHAT_COPY.button}
+          title={CHAT_BUTTON_COPY.buttonHint}
+          aria-label={CHAT_BUTTON_COPY.button}
           aria-expanded={chat.open}
           {...{ [CHAT_TOGGLE_ATTR]: "" }}
           onClick={() => {
@@ -397,7 +408,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         >
           <MessageSquare className="h-4 w-4" />
           {/* open, the panel names itself: the button is its icon unless the board is wide */}
-          <span className={chat.open ? "ml-1.5 hidden @5xl/bar:inline" : "ml-1.5"}>{CHAT_COPY.button}</span>
+          <span className={chat.open ? "ml-1.5 hidden @5xl/bar:inline" : "ml-1.5"}>{CHAT_BUTTON_COPY.button}</span>
         </Button>
       )}
       {/* New topic is the screen strip's, which the simple board's dock replaces */}
@@ -670,7 +681,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         chat.host &&
         createPortal(
           <LiveErrorBoundary>
-            <BoardChatPanel boardId={id} controller={controller} onClose={() => chat.onOpenChange(false)} kickoff={kickoff} onKickoffSent={() => clearAskKickoff(id)} />
+            <React.Suspense fallback={null}>
+              <BoardChatPanel boardId={id} controller={controller} onClose={() => chat.onOpenChange(false)} kickoff={kickoff} onKickoffSent={() => clearAskKickoff(id)} />
+            </React.Suspense>
           </LiveErrorBoundary>,
           chat.host,
         )}
@@ -721,6 +734,10 @@ export default function BoardPage() {
   const userId = user?.id;
   // The board chat: off by default, remembered per device; the page lays it out beside the board.
   const [chatOpen, setChatOpen] = useChatOpen();
+  // left open (or opened by a kickoff): the panel's chunk comes down while the board does
+  useEffect(() => {
+    if (chatOpen) preloadChatPanel();
+  }, [chatOpen]);
   const [chatHost, setChatHost] = useState<HTMLElement | null>(null);
   // With the on-screen keyboard up for the Ask panel docked beside the board (an iPad held sideways), the root
   // is laid over the part of the screen the keyboard leaves (src/components/board/keyboardFit.ts).

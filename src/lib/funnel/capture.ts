@@ -10,7 +10,8 @@
  * query, a `?ref=` code, and when. A value that looks like an email address is dropped, every value
  * is cut to ATTRIBUTION_FIELD_MAX characters, and an internal referrer (this site) is not a source.
  *
- * Every page loads this (AttributionCapture in the root layout), so it is tiny and pure: no React,
+ * Every page loads this (AttributionCapture in the root layout, with a dynamic import just after the
+ * page: it is in no page's first load), so it is small and pure: no React,
  * no Supabase, no network. Storage and the page are passed in, so the tests drive it without a
  * browser. Nothing here throws: a blocked localStorage means no attribution, never a broken page.
  */

@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import { atom, useValue, type Atom, type Editor } from "tldraw";
 import { Button } from "@/components/ui/button";
-import { SpeakButton } from "@/components/speech/SpeakButton";
 import { watchReadAloud } from "@/lib/speech/say";
-import { hintSpeech } from "@/lib/speech/tutorWords";
+import { whenIdle } from "@/lib/whenIdle";
 import type { LiveController, OpenHint } from "@/lib/live/contracts";
 import { clearLiveError, liveStore, retryLiveError, type LiveError } from "@/lib/live/liveStore";
 import { LIVE_COPY } from "./copy";
@@ -68,6 +67,36 @@ function useChromeInsets(editor: Editor): Atom<ChromeInsets> {
   return insets;
 }
 
+type HintSpeaker = typeof import("@/components/speech/HintSpeakButton").HintSpeakButton;
+/** The hint card's speaker, once loaded: kept for the session, so a later layer has it at once. */
+let hintSpeaker: HintSpeaker | null = null;
+
+/**
+ * The hint card's speaker button (`HintSpeakButton`), loaded in idle time once the layer is up: long
+ * before the first hint, which waits for a line to be read and checked (docs/BUNDLE.md). null until
+ * then, and if its chunk will not load (offline): the card keeps the button's room.
+ */
+function useHintSpeaker(): HintSpeaker | null {
+  const [speaker, setSpeaker] = useState<HintSpeaker | null>(() => hintSpeaker);
+  useEffect(() => {
+    if (speaker) return;
+    let live = true;
+    const cancel = whenIdle(() => {
+      import("@/components/speech/HintSpeakButton")
+        .then((m) => {
+          hintSpeaker = m.HintSpeakButton;
+          if (live) setSpeaker(() => m.HintSpeakButton);
+        })
+        .catch(() => undefined);
+    });
+    return () => {
+      live = false;
+      cancel();
+    };
+  }, [speaker]);
+  return speaker;
+}
+
 /**
  * Absolutely positioned overlay child of BoardContent. Each open hint sits by its line (the ink
  * and its readback, page coords -> screen via editor.pageToScreen), between the top bar and the
@@ -79,6 +108,7 @@ export function LiveHintLayer({ editor, controller }: LiveHintLayerProps) {
   const insets = useChromeInsets(editor);
   // read aloud: the tutor's hints and notes said out loud (loaded in idle time, src/lib/speech/say.ts)
   useEffect(() => watchReadAloud(editor), [editor]);
+  const Speaker = useHintSpeaker();
   const placed = useValue(
     "live.hintPlacement",
     (): PlacedCard[] => {
@@ -123,7 +153,7 @@ export function LiveHintLayer({ editor, controller }: LiveHintLayerProps) {
             <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-amber-700">
               <span className="live-hint-card__dot" aria-hidden />
               {LIVE_COPY.hint.levelLabel(card.hint.level)}
-              <SpeakButton text={hintSpeech(card.hint)} className="-my-1 ml-auto size-6" />
+              {Speaker ? <Speaker hint={card.hint} className="-my-1 ml-auto size-6" /> : <span aria-hidden className="-my-1 ml-auto size-6 shrink-0" />}
             </div>
             <p className="leading-snug">{card.hint.message}</p>
             {card.hint.question && <p className="mt-1 leading-snug text-gray-600">{card.hint.question}</p>}
