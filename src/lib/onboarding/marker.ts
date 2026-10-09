@@ -44,6 +44,11 @@ export interface TourMarker {
   step: TourMarkerStep;
   /** the student's Auto setting before the tour turned it on, given back at its end (`tourAutoAtEnd`) */
   autoBefore?: boolean;
+  /**
+   * coach mark 1's answer got a tick: a reload on coach mark 2 still puts the next problem on the
+   * board for Help me (`helpProblemFor` needs the tick, and `step` alone cannot say it)
+   */
+  ticked?: true;
 }
 
 export const tourKey = (userId: string) => `agathon.onboarding.tour.${userId}`;
@@ -72,6 +77,7 @@ export function readTourMarker(storage: StorageLike | null | undefined, userId: 
       starter: typeof v.starter === "number" && Number.isFinite(v.starter) ? v.starter : 0,
       step: stepOf(v.step),
       ...(typeof v.autoBefore === "boolean" ? { autoBefore: v.autoBefore } : {}),
+      ...(v.ticked === true ? { ticked: true as const } : {}),
     };
   } catch {
     return null;
