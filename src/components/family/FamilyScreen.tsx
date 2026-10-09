@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, RefreshCw, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, CalendarCheck, RefreshCw, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
 import { AppHeader, APP_CONTENT_CLASS } from "@/components/app/AppHeader";
@@ -11,6 +11,7 @@ import { switchProfile } from "@/lib/family/client";
 import { MAX_KIDS, type FamilyMember } from "@/lib/family/contracts";
 import { FAMILY_COPY } from "@/lib/family/copy";
 import { openProfilePicker } from "@/lib/family/picker";
+import { REPORT_MENU } from "@/lib/report/menu";
 import { switchErrorView } from "@/lib/family/switchError";
 import { reportUserError } from "@/lib/reportAppError";
 import { Alert } from "@/registry/components/alert/alert";
@@ -121,6 +122,14 @@ export function FamilyScreen() {
                 />
               ))}
             </ul>
+          )}
+          {kids.length > 0 && (
+            <div className={styles.kidActions}>
+              <Button variant="secondary" onClick={() => router.push(REPORT_MENU.path)} data-testid="family-report">
+                <CalendarCheck size={16} strokeWidth={1.9} aria-hidden />
+                {REPORT_MENU.familyButton}
+              </Button>
+            </div>
           )}
         </section>
       </div>

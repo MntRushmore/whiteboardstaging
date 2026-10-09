@@ -4,9 +4,11 @@
  * no exclamation marks, no made-up claims, and nothing that scolds a quiet week. A kid who opens it
  * on their own profile reads the same words about themselves. Pure data.
  */
+import { REPORT_MENU } from "./menu";
+
 export const REPORT_COPY = {
   pageTitle: "Weekly report",
-  menuLabel: "Weekly report",
+  menuLabel: REPORT_MENU.label,
   back: "Back to boards",
   subtitle: (range: string) => `Monday to Sunday · ${range}`,
   loading: "Loading the week",
@@ -31,6 +33,7 @@ export const REPORT_COPY = {
   },
   ofProblems: (independent: number, problems: number) => (problems > 0 ? `${Math.round((independent / problems) * 100)}% of problems` : "No problems yet"),
   daysOf: "of 7",
+  streakChip: (days: number) => `${days}-day streak`,
   streakHint: (sets: number) => (sets === 0 ? "No Today's practice sets" : `${sets} Today's practice ${sets === 1 ? "set" : "sets"}`),
   weekStripLabel: (name: string) => `${name}'s days this week`,
   dayProblems: (day: string, n: number) => `${day}: ${n === 0 ? "no problems" : `${n} ${n === 1 ? "problem" : "problems"}`}`,
