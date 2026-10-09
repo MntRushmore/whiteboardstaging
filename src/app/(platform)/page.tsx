@@ -50,6 +50,9 @@ const EXIT_WRITE_WAIT_MS = 3000;
 const Welcome = lazy(() => import('@/components/onboarding/Welcome'));
 // The confetti that welcomes a student back from starting their free trial (useHomeArrival).
 const ConfettiBurst = lazy(() => import('@/components/onboarding/ConfettiBurst').then((m) => ({ default: m.ConfettiBurst })));
+// Up next, "What do you want to work on?" and Pick a topic: loaded after the page (it reads the
+// learning record anyway), so the home's first load carries none of it.
+const TopicStart = lazy(() => import('@/components/topics/TopicStart'));
 
 const SORT_OPTIONS = BOARD_SORTS.map((s) => ({ value: s.value, label: s.label }));
 const VIEW_OPTIONS = [
@@ -382,6 +385,13 @@ export default function Dashboard() {
         <div className={styles.banners}>
           <AuthErrorBanner />
         </div>
+
+        {/* Pick a topic: at the top, whatever the boards list is doing (its own loading and errors) */}
+        {user && (
+          <Suspense fallback={<div aria-hidden className={`${styles.topicFallback} ${styles.pulse}`} />}>
+            <TopicStart userId={user.id} />
+          </Suspense>
+        )}
 
         <div className={styles.pageHeader}>
           <div>

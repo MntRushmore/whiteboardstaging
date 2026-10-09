@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hasPracticeMarker, writePracticeMarker, type StorageLike } from "@/lib/learning/practiceMarker";
 import type { ChatRunReport, ChatScreen } from "@/lib/live/chat/contracts";
-import { PRACTICE_COPY, resetPracticeBoards, runPracticeMarker, type PracticeRunDeps } from "../usePracticeBoard";
+import { PRACTICE_COPY, resetPracticeBoards, runPracticeMarker, TOPIC_PAUSE_MS, writePracticeSet, type PracticeRunDeps } from "../usePracticeBoard";
 
 function memory(): StorageLike & { map: Map<string, string> } {
   const map = new Map<string, string>();
@@ -127,5 +127,89 @@ describe("practice board: the Progress page's marker", () => {
   it("the toast without a known skill name", () => {
     expect(PRACTICE_COPY.start(null)).toBe("Let's practise!");
     expect(PRACTICE_COPY.start("Fractions")).toBe("Let's practise Fractions!");
+  });
+});
+
+describe("topic board: a worked example, then the problems", () => {
+  beforeEach(() => resetPracticeBoards());
+
+  const EXAMPLES = [["3x + 1 = 7"], ["4x + 2 = 10"]];
+  const topicSetup = (over: Partial<PracticeRunDeps> = {}) => {
+    const s = setup(over);
+    writePracticeMarker({ boardId: "b1", skill: "two_step_equations", problems: PROBLEMS, examples: EXAMPLES, createdAt: NOW - 1000 }, s.storage);
+    return s;
+  };
+
+  it("works the example the engine answers (taught, not practice), waits, then writes the problems (tagged practice)", async () => {
+    const waits: number[] = [];
+    const named = vi.fn();
+    const pickExample = vi.fn(async (c: readonly string[][]) => [...c[0]]);
+    const { deps, run, toast } = topicSetup({ pickExample, nameScreen: named, wait: async (ms) => void waits.push(ms) });
+    await expect(runPracticeMarker(deps)).resolves.toBe("written");
+    expect(pickExample).toHaveBeenCalledWith(EXAMPLES);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenNthCalledWith(
+      1,
+      [
+        { type: "write_problems", problems: [["3x + 1 = 7"]] },
+        { type: "help_problem", problem: 1, depth: "solve" },
+      ],
+      { origin: "teach" },
+    );
+    expect(run).toHaveBeenNthCalledWith(2, [{ type: "write_problems", problems: PROBLEMS }], { origin: "practice" });
+    expect(waits).toEqual([TOPIC_PAUSE_MS]);
+    expect(toast.mock.calls.map((c) => c[0])).toEqual([PRACTICE_COPY.watch("Two-step equations"), PRACTICE_COPY.yourTurn]);
+    // each screen written on is named for the topic
+    expect(named).toHaveBeenCalledTimes(2);
+    expect(named).toHaveBeenCalledWith("two_step_equations");
+  });
+
+  it("no example the engine answers on the device: the problems alone, as a practice board (never a model)", async () => {
+    const { deps, run, toast } = topicSetup({ pickExample: async () => null });
+    await expect(runPracticeMarker(deps)).resolves.toBe("written");
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledWith([{ type: "write_problems", problems: PROBLEMS }], { origin: "practice" });
+    expect(toast).toHaveBeenCalledWith(PRACTICE_COPY.start("Two-step equations"));
+  });
+
+  it("an example that did not go on the board: no pause, the problems still go on", async () => {
+    const waits: number[] = [];
+    let n = 0;
+    const run = vi.fn(async () => report(n++ === 0 ? 0 : PROBLEMS.length));
+    const { deps } = topicSetup({ run, pickExample: async (c) => [...c[0]], wait: async (ms) => void waits.push(ms) });
+    await expect(runPracticeMarker(deps)).resolves.toBe("written");
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(waits).toEqual([]);
+  });
+
+  it("a board with work on it already (a marker that could not be cleared): no second example", async () => {
+    const pickExample = vi.fn(async (c: readonly string[][]) => [...c[0]]);
+    const { deps, run } = topicSetup({ pickExample, screen: () => ({ ...EMPTY_SCREEN, empty: false, problems: ["3x + 1 = 7"] }) });
+    await runPracticeMarker(deps);
+    expect(pickExample).not.toHaveBeenCalled();
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("nothing written: the topic's own quiet toast", async () => {
+    const { deps, toast } = topicSetup({ run: vi.fn(async () => report(0)), pickExample: async () => null });
+    await expect(runPracticeMarker(deps)).resolves.toBe("failed");
+    expect(toast).toHaveBeenLastCalledWith(PRACTICE_COPY.topicFailed);
+  });
+});
+
+describe("New topic on a board (writePracticeSet over a screen with work)", () => {
+  it("starts on a new screen: the chat's own new_screen leads the first run", async () => {
+    const run = vi.fn(async (actions: readonly unknown[]) => report(actions.length > 0 ? 1 : 0));
+    const set = { skill: "fractions", problems: [["\\frac{1}{5} + \\frac{2}{5}"]], examples: [["\\frac{1}{4} + \\frac{2}{4}"]] };
+    const base = { run, skillName: () => "Fractions", toast: vi.fn(), wait: async () => undefined };
+    await writePracticeSet(set, { ...base, pickExample: async (c) => [...c[0]] }, { newScreen: true });
+    expect(run.mock.calls[0][0][0]).toEqual({ type: "new_screen" });
+    // the problems go on the screen after the example's (the executor's rule): no second new_screen
+    expect(run.mock.calls[1][0]).toEqual([{ type: "write_problems", problems: set.problems }]);
+
+    run.mockClear();
+    await writePracticeSet(set, { ...base, pickExample: async () => null }, { newScreen: true });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0][0]).toEqual([{ type: "new_screen" }, { type: "write_problems", problems: set.problems }]);
   });
 });
