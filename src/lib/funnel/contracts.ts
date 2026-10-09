@@ -72,4 +72,10 @@ export interface FunnelReport {
   bySource: FunnelRow[];
   /** monthly recurring revenue now, in dollars: active subscriptions × the plan's price */
   mrrUsd: number;
+  /** subscriptions whose status is `active` right now (what mrrUsd counts) */
+  activeSubscriptions: number;
+  /** kid profiles (`family_members`): left out of every count above, reported on their own */
+  kidProfiles: number;
+  /** the IANA zone the sign-up weeks and "another day" were read in */
+  timeZone: string;
 }
