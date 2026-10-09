@@ -12,6 +12,7 @@ import { Button } from "@/registry/components/button/button";
 import { Input } from "@/registry/components/input/input";
 import { PasswordField } from "@/registry/components/password-field/password-field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/registry/components/tabs/tabs";
+import { LANDING_PATH, wantsSignUp } from "@/lib/landing/links";
 import { loginErrorField, loginErrorMessage, loginFailureReport } from "@/lib/loginErrorMessage";
 import { reportUserError } from "@/lib/reportAppError";
 import {
@@ -116,7 +117,11 @@ export function LoginForm() {
   // Enter (implicit submission does nothing while the default button is disabled); the form
   // posts (AUTH_FORM_METHOD) in case anything submits it anyway.
   const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
-  const [mode, setMode] = useState<LoginMode>("signin");
+  // The landing page's "Start your free week" opens the form on Sign up (/login?mode=signup); a
+  // tab the user picks wins from then on.
+  const askedSignUp = useSyncExternalStore(subscribeNever, () => wantsSignUp(window.location.search), () => false);
+  const [chosenMode, setMode] = useState<LoginMode | null>(null);
+  const mode: LoginMode = chosenMode ?? (askedSignUp ? "signup" : "signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -358,6 +363,14 @@ export function LoginForm() {
             {form}
           </TabsContent>
         </Tabs>
+      )}
+      {mode !== "forgot" && (
+        <p className={styles.newHere}>
+          New to Agathon?{" "}
+          <Link href={LANDING_PATH} className={styles.newHereLink}>
+            See how it works
+          </Link>
+        </p>
       )}
     </div>
   );
