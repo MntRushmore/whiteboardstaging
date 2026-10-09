@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChartColumn, CreditCard, FlaskConical, InfinityIcon, ShieldCheck, UserRound } from "lucide-react";
@@ -22,6 +22,9 @@ import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { Badge, type BadgeTone } from "@/registry/components/badge/badge";
 import { UserMenu } from "@/registry/components/user-menu/user-menu";
 import styles from "./appShell.module.css";
+
+// Who's practising (the family's profiles): after the page, and nothing for an account with no kids.
+const ProfileSwitcher = lazy(() => import("@/components/family/ProfileSwitcher"));
 
 /** Content width shared by the header and the pages under it (a CSS module class). */
 export const APP_CONTENT_CLASS = styles.content;
@@ -113,6 +116,9 @@ export function AppHeader({ className }: { className?: string }) {
         {user && (
           <div className={styles.end}>
             <BugReportButton variant="header" />
+            <Suspense fallback={null}>
+              <ProfileSwitcher />
+            </Suspense>
             {/* no meter without a plan: the paywall says what there is to say (usePlanGate) */}
             {summary && (unlimited ? <UnlimitedLink /> : hasPlan(plan) ? <InkLink balance={summary.balance} /> : null)}
             <UserMenu

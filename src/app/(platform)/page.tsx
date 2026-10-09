@@ -53,6 +53,10 @@ const ConfettiBurst = lazy(() => import('@/components/onboarding/ConfettiBurst')
 // Up next, "What do you want to work on?" and Pick a topic: loaded after the page (it reads the
 // learning record anyway), so the home's first load carries none of it.
 const TopicStart = lazy(() => import('@/components/topics/TopicStart'));
+// Today's practice (the big button, the streak) and the skill path: also after the page, in that
+// order above the topics (docs/KIDS-COME-BACK.md).
+const TodayCard = lazy(() => import('@/components/daily/TodayCard'));
+const SkillPathCard = lazy(() => import('@/components/path/SkillPathCard'));
 
 const SORT_OPTIONS = BOARD_SORTS.map((s) => ({ value: s.value, label: s.label }));
 const VIEW_OPTIONS = [
@@ -385,6 +389,18 @@ export default function Dashboard() {
         <div className={styles.banners}>
           <AuthErrorBanner />
         </div>
+
+        {/* Today's practice, then the skill path: first, whatever the boards list is doing */}
+        {user && (
+          <Suspense fallback={null}>
+            <TodayCard userId={user.id} />
+          </Suspense>
+        )}
+        {user && (
+          <Suspense fallback={null}>
+            <SkillPathCard userId={user.id} />
+          </Suspense>
+        )}
 
         {/* Pick a topic: at the top, whatever the boards list is doing (its own loading and errors) */}
         {user && (

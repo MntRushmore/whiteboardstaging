@@ -86,6 +86,7 @@ import { useLecture } from "@/components/lecture/useLecture";
 import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
 import { hasPracticeMarker } from "@/lib/learning/practiceMarker";
+import { hasDailyMarker } from "@/lib/daily/dailyMarker";
 import { clearAskKickoff, readAskKickoff } from "@/lib/boards/askKickoff";
 import { topicSheetOpen } from "@/components/topics/topicSheetState";
 import type { ChatKickoff } from "@/components/chat/BoardChatPanel";
@@ -113,6 +114,8 @@ const ProblemHighlight = React.lazy(() => import("@/components/live/ProblemHighl
 // (the Progress page's marker): both load after the board, the second only on a practice board.
 const NowYouTry = React.lazy(() => import("@/components/learning/NowYouTry"));
 const PracticeBoard = React.lazy(() => import("@/components/learning/PracticeBoard"));
+// Today's practice: the stars, and the celebration at the day's goal (only on the day's board)
+const DailyBoard = React.lazy(() => import("@/components/daily/DailyBoard"));
 // "Replay my board" (Board options): the board drawn again, full screen; fetched on the first open.
 const KidReplay = React.lazy(() => import("@/components/replay/KidReplay"));
 // New topic (the screen strip's button): the topic picker as a sheet, loaded on the first tap.
@@ -233,6 +236,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   const [tourHelpAsk, setTourHelpAsk] = useState<{ n: number; ok: boolean } | null>(null);
   // a practice board opened from the Progress page: its problems are written once (PracticeBoard)
   const [practiceBoard] = useState(() => hasPracticeMarker(id));
+  // the day's Today's practice board: its stars and celebration (DailyBoard), after a reload too
+  const [dailyBoard] = useState(() => hasDailyMarker(id));
   // words from the topic picker ("What do you want to work on?"): Ask opens and sends them once
   const [kickoff, setKickoff] = useState<ChatKickoff | null>(() => {
     const k = readAskKickoff(id);
@@ -549,6 +554,13 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
             <PracticeBoard boardId={id} controller={controller} onModeChange={setAssistanceMode} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
+      {dailyBoard && user && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <DailyBoard boardId={id} userId={user.id} controller={controller} />
           </React.Suspense>
         </LiveErrorBoundary>
       )}
