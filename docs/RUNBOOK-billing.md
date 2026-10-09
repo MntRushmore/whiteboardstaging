@@ -770,3 +770,73 @@ Refund Policy say exactly this (`LEGAL.statementDescriptors`, pinned to the scri
 8. After the first real Unlimited signup: `select kind, ref, sent_at from public.email_log where kind
    = 'unlimited_started';`, the Resend dashboard shows it delivered to the payer's address, and
    `select payer_email is not null from public.unlimited_subscriptions order by id desc limit 1;`.
+
+## 13. A friend's free first month (the referral link)
+
+"Give a month, get a month" (2026-10-09, `docs/KIDS-COME-BACK.md` Phase 2). A family a friend
+invited gets its **first month free** instead of the 7-day trial, on the same monthly plan at the
+same price (`UNLIMITED_PLAN.monthlyUsd`). It is a second Payment Link, nothing more: the app, the
+webhook and the database treat its subscriptions like any other Agathon Unlimited subscription.
+
+- **The link.** The monthly price, `subscription_data.trial_period_days = 30`, the card up front,
+  the same `/?unlimited=started` redirect and the same `plan_id = unlimited` tags, plus `metadata.offer
+  = referral` (on the link, its sessions and its subscriptions, so the Dashboard can tell them
+  apart). `scripts/stripe-setup.mjs` makes it next to the monthly link (`REFERRAL` at the top of the
+  script; its trial must equal `REFERRAL_TRIAL_DAYS` in `src/lib/billing/planChoice.ts`,
+  `stripeSetupReferral.test.ts` pins them) and prints `NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK`. The
+  monthly link's lookup and clean-up skip any link with an `offer`, so the live monthly link is never
+  replaced by it.
+- **Who gets it** (`planLink`, `src/lib/billing/planChoice.ts`): an account whose OWN
+  `profiles.attribution.ref` is a valid referral code (saved once after sign-up from the visitor's
+  `?ref=`), on a deployment with `NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK` set. The plan screen then says
+  "First month free" and "Your first month is free (a friend invited you)" and dates the first charge
+  30 days out; the account page's Billing card opens the same link and says why. Everyone else, a
+  plan started again (the free trial is for a first plan only) and a deployment without the variable
+  get the monthly link and the usual 7 days. Kids never see billing.
+- **The friend who invited them** gets their free month by hand: a credit you apply in Stripe once
+  the new family's first payment succeeds (the admin console lists the referrals due one).
+- **Trade-off.** Like every `NEXT_PUBLIC_*` link, its URL is in the page's code once set, so someone
+  who reads the code could check out with it without being referred. The cost is at most 23 more
+  free days on a first plan (one free trial per account). If it is abused: deactivate the link in the
+  Dashboard (*Payment Links → the `offer: referral` link*), unset the variable and redeploy; a
+  referred family then gets the usual 7 days, which the app says correctly.
+- **When the monthly price changes**, change `UNLIMITED` in the script and `UNLIMITED_PLAN` in
+  `src/lib/billing/unlimited.ts` together (section 10): the script makes the new monthly price and a
+  new monthly link AND a new referral link, deactivates the old two, and prints both variables to
+  update.
+
+**Turning it on** (after the referral program's own code is live):
+
+```bash
+node scripts/stripe-setup.mjs --mode live --site https://whiteboard.rushilchopra.com --dry-run   # "would create referral Payment Link (30-day trial …)", nothing else
+node scripts/stripe-setup.mjs --mode live --site https://whiteboard.rushilchopra.com
+vercel env add NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK production    # the printed https://buy.stripe.com/… link
+vercel --prod
+```
+
+On 2026-10-09 only the test-mode dry run was made: it reads the existing test objects and says it
+would create the referral link, and nothing else. Check it once live: sign up in a private window
+through `https://whiteboard.rushilchopra.com/?ref=<a real code>`, finish the guided board, and the plan
+screen says "First month free"; Checkout says 30 days free. Signed up without `?ref=`: 7 days.
+
+## 14. Billing follow-ups (2026-10-09)
+
+`supabase/migrations/20261009130000_billing_followups.sql` replaces `admin_funnel()` with one fix:
+its `active_subscriptions`, which the admin Funnel's MRR is computed from (active ×
+`UNLIMITED_PLAN.monthlyUsd`, `src/lib/funnel/report.ts`), counted every `active` subscription row,
+so the owner's own test plan and paid rows linked to no account (section 11) were revenue. It now
+leaves out admins' plans and rows with no user, like the per-account part already left admins out.
+Same answer keys and grants; idempotent. Apply it to production before or after the deploy (the
+code is the same either way):
+
+```bash
+psql "$DB" -v ON_ERROR_STOP=1 --single-transaction -f supabase/migrations/20261009130000_billing_followups.sql
+npx supabase migration repair --db-url "$DB" --status applied 20261009130000
+```
+
+Locally, `src/lib/billing/__tests__/billing_followups.test.sql` checks it (it fails on the old
+definition). The yearly plan once planned for this timestamp was dropped: the owner will raise the
+monthly price instead, so `unlimited_subscriptions.billing_interval` (from
+`20261009100000_parents_recommend.sql`) stays, unused. The admin Overview's money tiles
+(`moneyOverview`, `src/lib/server/adminOverview.ts`) leave admins out but still count paid rows
+linked to nobody.
