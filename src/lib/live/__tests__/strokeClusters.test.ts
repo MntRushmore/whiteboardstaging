@@ -18,6 +18,8 @@ import {
   clusterLines,
   inflateRect,
   inflationFor,
+  isDotStroke,
+  isEqualsPair,
   isFractionBar,
   isSuperscriptOf,
   medianStrokeHeight,
@@ -25,6 +27,8 @@ import {
   unionRects,
 } from "../strokeClusters";
 import type { InkLine, InkStroke, Rect } from "../contracts";
+import { splitInk } from "../diagrams";
+import { youngGlyphs, youngInk, youngLine } from "../__fixtures__/youngInk";
 import { writeAt } from "@/__eval__/drawings";
 import { VARIANTS } from "@/__eval__/handwriting";
 
@@ -515,5 +519,81 @@ describe("splitAtGutters: rows of two problems side by side are cut apart, and n
     ];
     const lines = clusterLines(cols.flat(2));
     expect(placed(lines, cols.flat()).map((p) => p?.[0])).toEqual([0, 0, 0, 1, 1, 1, 2, 2, 2]);
+  });
+});
+
+describe("a young hand: its dots and the bars of its `=` do not set the size of its glyphs", () => {
+  // `= 7`, `= 9`, `= 11`, `= 9` beside four sums, a tap of the pen and a row of taps: digits ~100 page
+  // px tall (an iPad), the bars of each `=` 6–16 px tall and 40 px apart, the taps 9 px dots
+  const answers = () => [youngLine("=7", 230, 80), youngLine("=9", 980, 80), youngLine("=11", 230, 460), youngLine("=9", 980, 480)];
+  const taps = () => [...youngGlyphs.dot(1460, 748), ...[0, 8, 24, 33, 45].flatMap((dx) => youngGlyphs.dot(1472 + dx, 405))];
+  const board = () => youngInk([...answers().flat(), ...taps()]);
+
+  it("a dot is a tap of the pen — a pen-wide circle it hardly moved in — and no stroke of a glyph is one", () => {
+    const [tap, two] = youngInk([...youngGlyphs.dot(100, 100), [{ x: 100, y: 100 }, { x: 103, y: 102 }]]);
+    expect(tap.bounds).toMatchObject({ w: 9, h: 9 });
+    expect(isDotStroke(tap)).toBe(true);
+    expect(isDotStroke(two)).toBe(true);
+    const [top, bottom, seven] = youngInk(youngLine("=7", 0, 0));
+    for (const s of [top, bottom, seven]) expect(isDotStroke(s)).toBe(false);
+    expect(isDotStroke({ id: "shape:z" as never, bounds: { x: 0, y: 0, w: 0, h: 0 }, segments: [[{ x: 0, y: 0 }]] })).toBe(true);
+    // a `1` has no width, and is no dot
+    expect(isDotStroke(toInkStrokes(writeLine("1", 0, 0, 40))[0])).toBe(false);
+  });
+
+  it("the glyph size is the digits', not the taps' or the bars' (it was 12 px on a board of 100 px digits)", () => {
+    expect(medianStrokeHeight(board())).toBeGreaterThan(70);
+    // the bars alone: there is nothing else to go by
+    expect(medianStrokeHeight(youngInk(youngGlyphs.equals(0, 0)))).toBeLessThan(20);
+  });
+
+  it("each `= N` is one line, its bars together and its digits writing, not drawings", () => {
+    const ink = board();
+    const split = splitInk(ink, [], { zoom: 0.49 });
+    expect(split.writing).toHaveLength(ink.length);
+    const lines = clusterLines(split.writing, [], [], { zoom: 0.49 });
+    let at = 0;
+    for (const n of answers().map((a) => a.length)) {
+      const ids = ink.slice(at, at + n).map((s) => s.id);
+      at += n;
+      expect(lines.filter((l) => l.strokeIds.some((id) => ids.includes(id))).map((l) => l.strokeIds.length)).toEqual([n]);
+    }
+  });
+
+  it("the two bars of an `=` are one sign however far apart, even with nothing else on the screen to size the hand by", () => {
+    // the first thing written beside the problem: a wobbly `=`, its bars 40 or 48 px apart
+    for (const gap of [40, 48]) {
+      const ink = youngInk(youngGlyphs.equals(230, 110, { gap, bowTop: 8, bowBottom: -6 }));
+      expect(clusterLines(ink), `gap ${gap}`).toHaveLength(1);
+      expect(isEqualsPair(ink[0].bounds, ink[1].bounds, ink.map((s) => s.bounds))).toBe(true);
+    }
+    // ...with a tap of the pen before it, as she wrote it
+    const tapped = youngInk([...youngGlyphs.dot(222, 114), ...youngGlyphs.equals(230, 110)]);
+    expect(clusterLines(tapped).map((l) => l.strokeIds.length)).toEqual([3]);
+  });
+
+  it("…but not two bars a row apart, bars of very different lengths, or bars with writing between them", () => {
+    const bar = (x: number, y: number, w: number): Rect => ({ x, y, w, h: 3 });
+    // a minus on each of two rows (`x - 3`, then `x - 5` under it): a row apart, further than they are long
+    expect(isEqualsPair(bar(100, 100, 18), bar(100, 150, 18), [])).toBe(false);
+    // a stacked sum's rule under a `-`: lengths 4x apart
+    expect(isEqualsPair(bar(100, 100, 30), bar(90, 130, 120), [])).toBe(false);
+    // two fraction bars with a number between them
+    const two: Rect = { x: 120, y: 112, w: 20, h: 30 };
+    expect(isEqualsPair(bar(100, 100, 60), bar(100, 150, 60), [two])).toBe(false);
+    // side by side, not one over the other
+    expect(isEqualsPair(bar(100, 100, 40), bar(160, 120, 40), [])).toBe(false);
+    // an adult's `=` is a pair too (it was joined anyway)
+    expect(isEqualsPair(bar(100, 100, 20), bar(100, 108, 20), [])).toBe(true);
+    // rows of `x - 3 = 5` written under each other stay rows
+    expect(clusterLines(toInkStrokes([...writeLine("x=4", 100, 100, 40), ...writeLine("x=4", 100, 160, 40)]))).toHaveLength(2);
+  });
+
+  it("…written one stroke at a time: the answer joins the `=` before it", () => {
+    const ink = board();
+    // the first `=` on the screen, after the taps, then its 7
+    const taps = ink.slice(-6);
+    const lines = clusterLines([...taps, ...ink.slice(0, 3)]);
+    expect(lines.find((l) => l.strokeIds.includes(ink[0].id))?.strokeIds).toHaveLength(3);
   });
 });

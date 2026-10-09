@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { InkLine, LiveEngine, Rect } from "../../contracts";
 import { getEngine } from "../../engine";
 import { planHandwriting } from "../../handwriting";
-import { cellOf, readProblemCells, splitColumnsAtProblems, CHAT_PROBLEM_META, type ProblemCell } from "../cells";
+import { cellOf, readProblemCells, splitAcrossProblems, splitColumnsAtProblems, CHAT_PROBLEM_META, type ProblemCell } from "../cells";
 import { ChatActionSchema, ChatRequestSchema, ChatResponseSchema } from "../contracts";
 import { figureProblems, PROBE_FIGURE } from "../figure";
 import { chunkProblems, findFreeArea, gridCells, gridShape, joinPlans, planGrid, PROBLEM_GRID } from "../layout";
@@ -230,6 +230,33 @@ describe("the columns under the chat's problems", () => {
     expect(cellOf({ x: 560, y: 200, w: 100, h: 40 }, cells)?.n).toBe(2);
     expect(cellOf({ x: 30, y: -30, w: 100, h: 20 }, cells)).toBeNull();
     expect(cellOf({ x: 30, y: 600, w: 100, h: 40 }, cells)).toBeNull();
+  });
+
+  it("ink beside one problem and ink under another are never one line (`splitAcrossProblems`)", () => {
+    // problems 1 and 2 side by side, heads at y 14..44; problem 1's answer runs on its row up to
+    // problem 2's number, and a minus was started under problem 2, level with the answer's tall digits
+    const cells = [cell(1, 0, 0, ["-3 - 7"]), cell(2, 500, 0, ["(-4)(-3)"])];
+    const s = (x: number, y: number, w: number, h: number) => ({ bounds: { x, y, w, h } });
+    const answer = [s(230, 15, 90, 4), s(230, 40, 60, 6), s(330, 48, 66, 4), s(420, 0, 12, 115), s(450, 30, 40, 70)];
+    const minus2 = s(560, 70, 48, 5);
+    expect(splitAcrossProblems([...answer, minus2], cells)).toEqual([answer, [minus2]]);
+    // a long line under problem 1 (nothing of it on a problem's row) running on under problem 2: one line
+    const long = [s(30, 120, 200, 60), s(260, 120, 200, 60), s(520, 120, 80, 60)];
+    expect(splitAcrossProblems(long, cells)).toEqual([long]);
+    // an answer on problem 2's own row, past the cell's edge: one line
+    const row = [s(560, 10, 60, 40), s(640, 10, 60, 40)];
+    expect(splitAcrossProblems(row, cells)).toEqual([row]);
+    // one problem on the screen: nothing to tell apart
+    expect(splitAcrossProblems([...answer, minus2], cells.slice(0, 1))).toEqual([[...answer, minus2]]);
+  });
+
+  it("an answer written beside its problem, taller than it, is in its cell", () => {
+    // the head is at y 14..44; a young hand's `= 7` after it, 100 px tall, its middle above the head's top
+    const cells = [cell(1, 0, 0, ["4+3"]), cell(2, 500, 0, ["7+2"])];
+    expect(cellOf({ x: 240, y: -50, w: 120, h: 100 }, cells)?.n).toBe(1);
+    // ...but not one level with the problem's number, before it, nor one wholly above the row
+    expect(cellOf({ x: 0, y: -50, w: 60, h: 100 }, cells)).toBeNull();
+    expect(cellOf({ x: 240, y: -80, w: 120, h: 90 }, cells)).toBeNull();
   });
 
   it("work in two cells is never one column, and each column under a problem knows its head", () => {

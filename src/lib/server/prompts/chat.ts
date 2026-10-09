@@ -270,6 +270,7 @@ export const CHAT_SYSTEM_PROMPT = [
   `1. The board gets maths: ${BOARD_LATEX_RULE}. Words go in the reply — and on the board only as a teach step's "say" sentence or a proof's statements.`,
   "2. Problems are what a student at the level asked for can solve by hand. Unless asked otherwise, choose numbers so every answer is clean (whole numbers or simple fractions) and each problem is different. Match the count asked for; \"a few\" or no count is 4.",
   "3. Write each problem so its form says what to do: an equation or inequality to solve (2x + 3 = 11, x^{2} - 5x + 6 = 0, 3 - 2x > 7, |x - 3| = 5, \\sqrt{x + 3} = 5, 2^{x + 1} = 16, \\log_{2}(x) = 5); an expression to simplify, factor or expand (x^{2} + 5x + 6, (x + 3)^{2}, 4(2x - 1) - 3x, \\frac{12x^{5}}{3x^{2}}, (3 + 2i)(1 - i)); arithmetic to work out (\\frac{3}{4} + \\frac{1}{6}); a derivative, integral or limit (\\frac{d}{dx}(x^{3} + 2x), \\int (3x^{2} + 1) \\, dx, \\int_{0}^{2} x^{2} \\, dx, \\lim_{x \\to 2} \\frac{x^{2} - 4}{x - 2}); a trig equation with its interval (2\\cos x - 1 = 0, \\ 0 \\le x < 2\\pi); geometry as the equation a student writes (3^{2} + 4^{2} = c^{2}, x + 40 + 65 = 180). Never an instruction word.",
+  "3b. The board's maths engine checks and works out every problem before it is written, and leaves out one it cannot. So only the forms of rule 3, and never: words or units in words (\\text{...}, \"Solve:\", 5 \\text{ cm}); \\binom or {}_{n}C_{r} (write \\frac{5!}{2! \\cdot 3!}); a matrix; an equation in two letters on its own (y = 2x + 3, x^{2} + y^{2} = 25: a system of two equations is fine); a system of inequalities; a sequence term (a_{n} = 3n + 2, a_{10}: write 3(10) + 2); a function or formula with its value given apart (f(x) = x^{2}, f(3): write (3)^{2}; A = \\pi r^{2}, r = 3: write \\pi (3)^{2}).",
   "4. You never put answers or working in the REPLY: the panel gets one or two short plain sentences, never the steps, never the numbers worked out. Working goes on the BOARD, and only three ways: help_problem for a problem listed on this screen (rule 8), write_proof for a proof asked for — the tutor writes every row, \"worked\": true, unless the student asks for one to do (or write_lines for an algebra proof, PROOFS below) — and teach for a worked solution (rule 10). write_problems and write_lines never carry a solution or an answer.",
   "5. \"More like these\", \"harder\", \"another one\": the same kind as the problems (or the student's lines) on this screen, with new numbers; harder means one more step or less friendly numbers, still clean answers.",
   "6. A graph or figure the student asks for is drawn, not solved: no answers written beside it.",
@@ -683,6 +684,48 @@ export const ProofRepairReplySchema = z.object({
   given: z.union([ProofStatementSchema.transform((s) => [s]), z.array(ProofStatementSchema).min(1).max(CHAT_LIMITS.proofGivens)]),
   prove: ProofStatementSchema,
 });
+
+// ------------------------------------------------------------------ one repair round-trip for a problem set
+
+export const PROBLEMS_REPAIR_PROMPT = [
+  "You replace practice problems the board's maths engine could not check. You are given the request and each problem the engine refused, with why.",
+  'OUTPUT: one JSON object and nothing else: {"problems": [<one replacement for each refused problem, in the same order: a LaTeX string, or an array of its equations for a system>]}',
+  "Each replacement practises the same skill at the same level as the problem it replaces, with a clean answer, in a form the engine can work out: an equation or inequality in ONE letter to solve; a system of two or three equations; an expression to simplify, factor or expand; arithmetic to work out; a derivative, integral or limit; a trig equation with its interval; geometry as the equation a student writes.",
+  `Maths only: ${BOARD_LATEX_RULE}. Never \\binom, a matrix, a sequence term, or a function or formula with its values given apart: write the arithmetic instead.`,
+].join("\n");
+
+export function buildProblemsRepairMessages(request: string, refused: ReadonlyArray<{ problem: readonly string[]; why: string }>): ChatMessage[] {
+  return [
+    { role: "system", content: PROBLEMS_REPAIR_PROMPT },
+    {
+      role: "user",
+      content: [
+        `REQUEST: ${request.trim()}`,
+        "",
+        "REFUSED:",
+        ...refused.map((r, i) => `${i + 1}. ${JSON.stringify(r.problem.length === 1 ? r.problem[0] : r.problem)}: ${r.why}`),
+        "",
+        "JSON only.",
+      ].join("\n"),
+    },
+  ];
+}
+
+/** The repair's reply, read leniently: any JSON object (its `problems` taken apart below). */
+export const ProblemsRepairReplySchema = z.record(z.unknown());
+
+/**
+ * The repair's replacements, one per refused problem and IN ORDER: a replacement that is not valid
+ * LaTeX for the board is `[]` (no replacement), never dropped, so the next one keeps its place.
+ */
+export function problemsFromRepair(raw: unknown): string[][] | null {
+  const list = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>).problems : null;
+  if (!Array.isArray(list)) return null;
+  return list.slice(0, CHAT_LIMITS.problems).map((p) => {
+    const parsed = ChatProblemSchema.safeParse(Array.isArray(p) ? p.map(unwrapLatex) : unwrapLatex(p));
+    return parsed.success ? parsed.data : [];
+  });
+}
 
 // ------------------------------------------------------------------ one repair round-trip for a worked solution
 

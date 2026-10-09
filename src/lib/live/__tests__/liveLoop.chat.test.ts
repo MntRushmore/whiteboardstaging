@@ -177,6 +177,8 @@ describe("live loop — the board chat", () => {
       const report = await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["y = 2x - 5"], ["2 + 2 = 5"], ["3x = 12"]] }]);
       expect(report).toMatchObject({ problemsWritten: 2, problemsDropped: 2 });
       expect(report.outcomes[0].note).toBe("2 of 4 problems couldn't be checked, so I left them out.");
+      // why, for the report: the engine's commonest reason (`y = 2x - 5` cannot be solved, `2 + 2 = 5` is false: the first)
+      expect(report.outcomes[0].why).toBe("unsolved");
       expect(problems().map((p) => p.written)).toEqual([
         ["1.", "2x + 3 = 11"],
         ["2.", "3x = 12"],
@@ -186,7 +188,7 @@ describe("live loop — the board chat", () => {
     it("none checks out: nothing is written", async () => {
       start();
       const report = await run([{ type: "write_problems", problems: [["y = 2x - 5"]] }]);
-      expect(report.outcomes).toEqual([{ type: "write_problems", ok: false, note: "I couldn't check that problem, so I didn't write it." }]);
+      expect(report.outcomes).toEqual([{ type: "write_problems", ok: false, note: "I couldn't check that problem, so I didn't write it.", why: "unsolved" }]);
       expect(tutor()).toEqual([]);
     });
 
@@ -335,7 +337,7 @@ describe("live loop — the board chat", () => {
       ]);
       expect(report.outcomes).toEqual([
         { type: "write_lines", ok: true },
-        { type: "write_lines", ok: false, note: "I left out lines that didn't check out." },
+        { type: "write_lines", ok: false, note: "I left out lines that didn't check out.", why: "false" },
       ]);
       expect(handLinesOf(tutor())).toEqual(["x = \\frac{-b \\pm \\sqrt{b^{2} - 4ac}}{2a}"]);
       expect(tutor().every((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === "lines")).toBe(true);

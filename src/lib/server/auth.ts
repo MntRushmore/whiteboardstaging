@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getServerEnv } from "@/lib/env";
+import { recordEvent } from "@/lib/server/events";
 
 export type ApiErrorCode =
   | "unauthorized"
@@ -55,6 +56,38 @@ const UNAUTHORIZED = () =>
   });
 
 /**
+ * Supabase Auth itself failing to answer (unreachable, a 5xx, a timeout) — not a token it refused.
+ * The student is told "Please sign in again" either way (a 401, as before), and signing in again
+ * cannot help while Auth is down: an app event (`auth`, code `unavailable`), so the admin page sees
+ * an outage instead of a crowd of students who all seem signed out. Never for a token that is simply
+ * expired or invalid (Auth's own 4xx): that is a normal 401.
+ */
+function authUnavailable(req: Request, error: unknown, thrown: boolean): boolean {
+  const e = (error ?? {}) as { status?: unknown; name?: unknown; message?: unknown };
+  const status = typeof e.status === "number" ? e.status : undefined;
+  const name = typeof e.name === "string" ? e.name : "";
+  // supabase-js: `AuthRetryableFetchError` (status 0, or a 5xx) when Auth could not be reached or failed
+  const down = thrown || status === 0 || (status !== undefined && status >= 500) || /Retryable|Fetch/i.test(name);
+  if (!down) return false;
+  let route: string | undefined;
+  try {
+    route = new URL(req.url).pathname.slice(0, 200);
+  } catch {
+    route = undefined;
+  }
+  recordEvent({
+    source: "server",
+    level: "error",
+    kind: "auth",
+    code: "unavailable",
+    message: "Supabase Auth did not verify a token: the student was told to sign in again",
+    route,
+    meta: { ...(status !== undefined ? { status } : {}), ...(name ? { error: name.slice(0, 60) } : {}), detail: String(e.message ?? "").slice(0, 160) },
+  });
+  return true;
+}
+
+/**
  * Require a signed-in Supabase user. Reads `Authorization: Bearer <access token>`
  * and verifies it against Supabase Auth (`auth.getUser(token)`).
  *
@@ -84,9 +117,11 @@ export async function requireUser(
 
   try {
     const { data, error } = await client.auth.getUser(token);
+    if (error) authUnavailable(req, error, false);
     if (error || !data?.user) return { response: UNAUTHORIZED() };
     return { user: { id: data.user.id, email: data.user.email ?? null }, token };
-  } catch {
+  } catch (err) {
+    authUnavailable(req, err, true);
     return { response: UNAUTHORIZED() };
   }
 }

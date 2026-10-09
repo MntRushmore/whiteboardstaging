@@ -9,7 +9,7 @@ import { RELEASE } from "@/lib/release";
  * hydration on every page) and by the error boundaries that catch what never reaches the window:
  * error.tsx, global-error.tsx and LiveErrorBoundary. They all go through `reportAppError`
  * (src/lib/reportAppError.ts), which loads this module lazily. Per page load each distinct error is
- * sent once, at most MAX_REPORTS in all, and noise is dropped (NOISE, extension scripts).
+ * sent once, at most MAX_REPORTS in all, and noise is dropped (`isNoise`: NOISE, extension and injected scripts).
  *
  * What it sends is a ClientErrorReport and nothing else: the page's path without its query string
  * or hash (a query string once carried a login form's credentials), the board id on a board, the
@@ -74,6 +74,10 @@ export type ClientErrorReport = {
   code?: string;
   /** an error a student saw (`reportUserError`): how bad (`userErrorLevel`); a crash has none (an error) */
   level?: UserErrorLevel;
+  /** the failed request's `X-Request-Id`, to join the report to the server's own event and logs */
+  requestId?: string;
+  /** Vercel's `x-vercel-error` on the failed response: the platform answered, not our route */
+  vercelError?: string;
 };
 
 /**
@@ -82,7 +86,7 @@ export type ClientErrorReport = {
  *  - `live.chat`      the Ask panel's failed request (and its weak-spots chip); what it could not write (warn)
  *  - `live.lecture`   lecture mode's error, or its notice that a drawing failed or the tutor is unreachable
  *  - `live.save`      the save pill's "Couldn't save", a board too large to save, images kept on the device
- *  - `live.load`      the board's "Couldn't load / restore this board" screen, a board not there (warn)
+ *  - `live.load`      the board's "Couldn't load / restore this board" screen, a board not there (info)
  *  - `live.practice`  a practice set or a "Now you try" problem that could not be written or made
  *  - `live.progress`  the Progress page's record that would not load
  *  - `live.ink`       the ink balance, packs or purchases that would not load; ink that never arrived after checkout
@@ -93,6 +97,8 @@ export type ClientErrorReport = {
  *  - `live.auth`      a sign-in, sign-up, reset that failed on our side (never a wrong password), the
  *                     sign-in service unreachable, a sign out that failed
  *  - `live.settings`  a Labs setting that could not be saved
+ *  - `live.app`       the app itself: a page reloaded for a new release (`chunk_reload`, info), a
+ *                     part of it that could not load one (`chunk_failed`, warn; src/lib/chunkReload.ts)
  */
 export type UserErrorKind =
   | "live.recognize"
@@ -112,7 +118,8 @@ export type UserErrorKind =
   | "live.pdf"
   | "live.report"
   | "live.auth"
-  | "live.settings";
+  | "live.settings"
+  | "live.app";
 
 /** The contract's EVENT_LEVELS (src/lib/admin/contracts.ts; not imported: it brings zod). */
 export type UserErrorLevel = "error" | "warn" | "info";
@@ -128,6 +135,10 @@ export interface UserErrorInput {
   boardId?: string;
   /** only to override `userErrorLevel(code)` (a warning about images kept on the device, a missing board) */
   level?: UserErrorLevel;
+  /** the failed request's `X-Request-Id` (`errorTrace` in src/lib/api-client.ts); anything else is dropped */
+  requestId?: string;
+  /** the failed response's `x-vercel-error` (`errorTrace`); anything else is dropped */
+  vercelError?: string;
 }
 
 /**
@@ -144,7 +155,10 @@ export function userErrorLevel(code: string | undefined): UserErrorLevel {
 /**
  * Not worth a report: the ResizeObserver loop warning, a cross-origin "Script error." with nothing
  * in it, aborted fetches (navigating away, a cancelled request), and a pen lifted before tldraw's
- * setPointerCapture ran ("No active pointer with the given id").
+ * setPointerCapture ran ("No active pointer with the given id"). Besides these messages: scripts
+ * from browser extensions (EXTENSION), scripts the browser injects into the page (INJECTED_NAMES,
+ * INLINE_ONLY_FRAME), and WebKit errors known by message and stack together
+ * (SAFARI_POINTER_CAPTURE, TLDRAW_ICON_PRELOAD).
  */
 const NOISE = /ResizeObserver loop|^Script error\.?$|\babort(ed|error)\b|No active pointer with the given id/i;
 /** Thrown from a browser extension's script, not ours (Safari masks extension URLs). */
@@ -154,9 +168,46 @@ const EXTENSION = /-extension:\/\/|webkit-masked-url:/;
  * (its message for every NotFoundError, so only when the stack's top frame is setPointerCapture).
  */
 const SAFARI_POINTER_CAPTURE = { message: /^NotFoundError\b/, stack: /^setPointerCapture@\[native code\]/ };
+/**
+ * tldraw's icon preload: its AssetUrlsProvider calls `image.decode()` on every UI icon and embed
+ * icon from cdn.tldraw.com (178 URLs) and never catches it, so a device that cannot load them (no
+ * connection, a network filter) gets an unhandled "EncodingError: Loading error." from WebKit, its
+ * stack starting at `decode@[native code]`. The app has no `decode()` of its own. Whether the icons
+ * then show is the icons' business (CSS masks of the same sprite), not a crash.
+ */
+const TLDRAW_ICON_PRELOAD = { message: /^EncodingError\b/, stack: /^decode@\[native code\]/ };
+/**
+ * A script the browser or app put into the page, by the names it uses: Brave and Firefox on iOS
+ * (`window.__firefox__`, Brave's `refresh_youtube_quality_…`), Chrome on iOS (`__gCrWeb`), a crypto
+ * wallet probing `window.ethereum`, an app's WebView bridge (`webkit.messageHandlers`). The app
+ * uses none of them.
+ */
+const INJECTED_NAMES = /__firefox__|window\.ethereum|__gCrWeb|webkit\.messageHandlers|refresh_youtube_quality_/;
+/**
+ * WebKit's whole stack for a script injected into the page (Brave on iOS/iPadOS): one
+ * `global code@` or `eval code@` frame at the page's own URL, no script file
+ * (`global code@https://www.agathon.app/login:1:12`).
+ */
+const INLINE_ONLY_FRAME = /^(?:global|eval) code@(https?:\/\/\S+):\d+:\d+$/;
 
+/**
+ * Thrown by a script that is not ours but runs inline in our page. The app has no inline scripts of
+ * its own (its code is in /_next/static/….js files): a stack with a frame in one of those, or with
+ * a second frame anywhere, is ours and is reported.
+ */
+function isInjectedInlineScript(stack: string): boolean {
+  const url = INLINE_ONLY_FRAME.exec(stack.trim())?.[1];
+  return url !== undefined && !url.includes("/_next/") && !/\.m?js$/i.test(url);
+}
+
+/**
+ * Whether a crash is not worth a report. Also used by POST /api/client-errors (tabs still running
+ * an older release send what it would drop) and by the admin console to hide old noisy rows.
+ */
 export function isNoise(message: string, stack = ""): boolean {
   if (SAFARI_POINTER_CAPTURE.message.test(message) && SAFARI_POINTER_CAPTURE.stack.test(stack)) return true;
+  if (TLDRAW_ICON_PRELOAD.message.test(message) && TLDRAW_ICON_PRELOAD.stack.test(stack)) return true;
+  if (INJECTED_NAMES.test(message) || isInjectedInlineScript(stack)) return true;
   return !message || NOISE.test(message) || EXTENSION.test(stack);
 }
 
@@ -243,6 +294,9 @@ export const reportClientError = createReporter(deliver);
 /** `live.` and a name: EVENT_KIND (src/lib/admin/contracts.ts; pinned equal in the tests) for a `live.` kind. */
 const USER_KIND = /^live\.[a-z0-9_.:-]{1,59}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The shapes the route accepts for a request id and a Vercel error (the same as api-client's). */
+const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const VERCEL_ERROR = /^[A-Z0-9_]{1,64}$/;
 
 /** A code the route accepts: lower case, `[a-z0-9_.:-]`, at most 40 chars; "unknown" when empty. */
 export function userErrorCode(code: unknown): string {
@@ -269,8 +323,8 @@ export function userErrorMessage(message: unknown): string {
 
 /**
  * One page load's reporter of errors a student saw: builds the report from scratch (only the kind,
- * code, level, our words, the path, the board id, the browser and the release — nothing else the
- * caller passed), sends the same kind + code + message at most once per `windowMs`, and stops after
+ * code, level, our words, the path, the board id, the browser, the release, and the failed
+ * request's id and Vercel error when they have their shape — nothing else the caller passed), sends the same kind + code + message at most once per `windowMs`, and stops after
  * `max`. Never throws. Exported for tests.
  */
 export function createUserReporter(
@@ -307,6 +361,8 @@ export function createUserReporter(
         ...(boardId ? { boardId } : {}),
         userAgent: userAgent.slice(0, 512),
         release: RELEASE,
+        ...(typeof input.requestId === "string" && REQUEST_ID.test(input.requestId) ? { requestId: input.requestId } : {}),
+        ...(typeof input.vercelError === "string" && VERCEL_ERROR.test(input.vercelError) ? { vercelError: input.vercelError } : {}),
       });
     } catch {
       // Reporting must never become the next error.
