@@ -94,11 +94,15 @@ describe("the week picker", () => {
 
 describe("the report's words", () => {
   it("says the streak's practice days in plain English", () => {
-    expect(REPORT_COPY.streakHint(4)).toBe("4 practice days this week");
-    expect(REPORT_COPY.streakHint(1)).toBe("1 practice day this week");
-    expect(REPORT_COPY.streakHint(0)).toBe("No practice days yet");
-    expect(REPORT_COPY.streakHint(3, false)).toBe("3 practice days that week");
-    expect(REPORT_COPY.streakHint(0, false)).toBe("No practice days");
+    // Today's practice sets, named so they never contradict "days active" (a day with problems but no set)
+    expect(REPORT_COPY.streakHint(4)).toBe("4 daily practice days this week");
+    expect(REPORT_COPY.streakHint(1)).toBe("1 daily practice day this week");
+    expect(REPORT_COPY.streakHint(0)).toBe("No daily practice yet");
+    expect(REPORT_COPY.streakHint(3, false)).toBe("3 daily practice days that week");
+    expect(REPORT_COPY.streakHint(0, false)).toBe("No daily practice");
+    expect(REPORT_COPY.statLabel("problems", 1)).toBe("Problem");
+    expect(REPORT_COPY.statLabel("problems", 12)).toBe("Problems");
+    expect(REPORT_COPY.statLabel("minutes", 1)).toBe("Minute");
   });
 
   it("is US English", () => {

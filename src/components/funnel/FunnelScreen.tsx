@@ -51,7 +51,7 @@ function Bars({ bars }: { bars: readonly FunnelBarView[] }) {
               {b.count}
             </span>
             <p className={f.barShare} aria-hidden>
-              {b.ofBefore ? FUNNEL_COPY.ofBefore(b.ofBefore) : " "}
+              {b.ofText ?? " "}
             </p>
           </li>
         ))}

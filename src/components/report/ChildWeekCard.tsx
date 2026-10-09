@@ -99,7 +99,8 @@ export function ChildWeekCard({ week, self, current, recent = true, focused = fa
             className={styles.share}
             userId={shareAs}
             card={{
-              name: week.displayName,
+              // their own week: "This week" on the card, never "You's week" (the report's stand-in name)
+              name: self ? null : week.displayName,
               avatar: week.avatar,
               grade: week.grade,
               problems: week.problems,
@@ -139,9 +140,9 @@ export function ChildWeekCard({ week, self, current, recent = true, focused = fa
           )}
 
           <ul className={styles.stats} aria-label={`${week.displayName}'s numbers`}>
-            <Stat id="problems" value={week.problems} label={REPORT_COPY.stats.problems} />
+            <Stat id="problems" value={week.problems} label={REPORT_COPY.statLabel("problems", week.problems)} />
             <Stat id="independent" value={week.independent} label={words.stats.independent} hint={REPORT_COPY.ofProblems(week.independent, week.problems)} />
-            <Stat id="minutes" value={week.minutes} label={REPORT_COPY.stats.minutes} />
+            <Stat id="minutes" value={week.minutes} label={REPORT_COPY.statLabel("minutes", week.minutes)} />
             <Stat id="streak" value={week.streak} label={REPORT_COPY.stats.streak} hint={REPORT_COPY.streakHint(week.dailySets, current)} />
           </ul>
 

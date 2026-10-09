@@ -118,8 +118,9 @@ describe("the page view", () => {
       ["3", "100%"],
       ["2", "67%"],
       ["0", "0%"],
-      ["1", null], // nobody came back in week 2: no share of nothing
+      ["1", "33%"], // paying is a share of the free trials (3), not of week 2 (nobody yet)
     ]);
+    expect(bars[6].ofText).toBe(FUNNEL_COPY.ofTrials("33%"));
     expect(bars[1].ratio).toBeCloseTo(0.8);
     expect(bars[2].summary).toBe(`Tried a problem: 3, ${FUNNEL_COPY.ofBefore("75%")}`);
     expect(funnelBars(buildFunnelReport(rpc([]), { monthlyUsd: 25 }).totals).every((b) => b.ratio === 0)).toBe(true);

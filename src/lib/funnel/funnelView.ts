@@ -31,6 +31,8 @@ export const FUNNEL_COPY = {
   weeksCaption: "Funnel by sign-up week",
   sourcesCaption: "Funnel by source",
   ofBefore: (pct: string) => `${pct} of the step before`,
+  /** the paying bar: paying is measured against free trials, since not every payer came back in week 2 */
+  ofTrials: (pct: string) => `${pct} of free trials`,
   ofSignups: (pct: string) => `${pct} of sign-ups`,
 } as const;
 
@@ -103,8 +105,10 @@ export interface FunnelBarView {
   count: string;
   /** of sign-ups, 0..1: the bar's length */
   ratio: number;
-  /** "62%" of the stage before; null for the first stage or when the stage before had none */
+  /** "62%" of the stage before (of free trials for the paying bar); null for the first stage or when that stage had none */
   ofBefore: string | null;
+  /** that share in words: "62% of the step before", "40% of free trials" */
+  ofText: string | null;
   /** the whole bar for a screen reader: "Tried a problem: 12, 62% of the step before" */
   summary: string;
 }
@@ -114,8 +118,10 @@ export function funnelBars(row: FunnelRow): FunnelBarView[] {
   const total = row.counts.signed_up;
   return FUNNEL_STAGES.map((stage, i) => {
     const n = row.counts[stage];
-    const before = i === 0 ? null : row.counts[FUNNEL_STAGES[i - 1]];
-    const ofBefore = before === null ? null : percentOf(n, before);
+    // paying is a share of the free trials: a payer need not have come back in week 2 (the stage before)
+    const base: FunnelStage | null = stage === "paid" ? "trial_started" : i === 0 ? null : FUNNEL_STAGES[i - 1];
+    const ofBefore = base === null ? null : percentOf(n, row.counts[base]);
+    const ofText = ofBefore === null ? null : stage === "paid" ? FUNNEL_COPY.ofTrials(ofBefore) : FUNNEL_COPY.ofBefore(ofBefore);
     const label = STAGE_LABELS[stage];
     return {
       stage,
@@ -123,7 +129,8 @@ export function funnelBars(row: FunnelRow): FunnelBarView[] {
       count: formatCount(n),
       ratio: total > 0 ? Math.min(1, n / total) : 0,
       ofBefore,
-      summary: `${label}: ${formatCount(n)}${ofBefore ? `, ${FUNNEL_COPY.ofBefore(ofBefore)}` : ""}`,
+      ofText,
+      summary: `${label}: ${formatCount(n)}${ofText ? `, ${ofText}` : ""}`,
     };
   });
 }

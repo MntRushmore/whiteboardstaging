@@ -32,12 +32,15 @@ export const REPORT_COPY = {
     activeDays: "Days active",
     streak: "Day streak",
   },
+  /** a stat's label agreeing with its number: "1 Problem", "12 Problems" */
+  statLabel: (stat: "problems" | "minutes", n: number) => (stat === "problems" ? (n === 1 ? "Problem" : "Problems") : n === 1 ? "Minute" : "Minutes"),
   ofProblems: (independent: number, problems: number) => (problems > 0 ? `${Math.round((independent / problems) * 100)}% of problems` : "No problems yet"),
   daysOf: "of 7",
   streakChip: (days: number) => `${days}-day streak`,
   /** the Day streak's line: days Today's practice was finished in the shown week (`current`: this week) */
+  // Today's practice sets, said apart from "days active" (any problem): a day with problems but no set is not one
   streakHint: (days: number, current = true) =>
-    days === 0 ? (current ? "No practice days yet" : "No practice days") : `${days} practice ${days === 1 ? "day" : "days"} ${current ? "this week" : "that week"}`,
+    days === 0 ? (current ? "No daily practice yet" : "No daily practice") : `${days} daily practice ${days === 1 ? "day" : "days"} ${current ? "this week" : "that week"}`,
   weekStripLabel: (name: string) => `${name}'s days this week`,
   dayProblems: (day: string, n: number) => `${day}: ${n === 0 ? "no problems" : `${n} ${n === 1 ? "problem" : "problems"}`}`,
   newThisWeek: "New this week",

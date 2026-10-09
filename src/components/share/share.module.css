@@ -1,6 +1,7 @@
 /* The share sheet: the card's preview beside its controls (stacked on a phone). Arc's tokens. */
 
-.dialog {
+/* doubled class: Arc's dialog sets 440px with one class, and the build's sheet order is not ours to rely on */
+.dialog.dialog {
   width: min(calc(100vw - var(--space-8)), 720px);
 }
 
