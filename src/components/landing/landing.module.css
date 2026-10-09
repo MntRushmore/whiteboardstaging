@@ -342,12 +342,14 @@
   height: auto;
 }
 /* ---- For grown-ups --------------------------------------------------------------------------- */
+/* The Progress page on its own background (#f8f8f8), with room round it like the page has. */
 .progressShot {
   overflow: hidden;
   margin: clamp(3rem, 2rem + 4vw, 5rem) auto 0;
   border: 1px solid var(--lp-hair);
   border-radius: 1.75rem;
-  background: #f7f7f7;
+  padding: clamp(0.75rem, 0.25rem + 2.5vw, 2.5rem);
+  background: #f8f8f8;
 }
 .progressShot img {
   display: block;
