@@ -16,7 +16,7 @@ import styles from "./familyPage.module.css";
  * The grown-up's PIN on the Family page: set it (required before the first kid) or change it. Typed
  * twice, digits only, never shown back. Saving needs nothing but the grown-up's own session.
  */
-export function PinCard({ hasPin, onSaved }: { hasPin: boolean; onSaved: () => void }) {
+export function PinCard({ hasPin }: { hasPin: boolean }) {
   const [editing, setEditing] = useState(!hasPin);
   const [pin, setPin] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -37,8 +37,8 @@ export function PinCard({ hasPin, onSaved }: { hasPin: boolean; onSaved: () => v
       setPin("");
       setConfirm("");
       setTried(false);
+      // the family re-reads itself (savePin -> FAMILY_CHANGED_EVENT), and hasPin turns true
       setEditing(false);
-      onSaved();
     } catch (err) {
       const message = describeError(err, FAMILY_COPY.pinSaveFailed);
       setError(message);

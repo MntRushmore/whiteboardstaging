@@ -85,7 +85,7 @@ export function FamilyScreen() {
   } else {
     body = (
       <div className={styles.stack}>
-        <PinCard hasPin={state.hasPin} onSaved={() => reload()} />
+        <PinCard hasPin={state.hasPin} />
 
         <section className={styles.section} aria-labelledby="family-kids-title">
           <div className={styles.sectionHead}>
@@ -149,19 +149,12 @@ export function FamilyScreen() {
         open={dialog !== null}
         kid={dialog?.kid ?? null}
         onOpenChange={(open) => !open && setDialog(null)}
+        // the write itself makes every reader re-read (FAMILY_CHANGED_EVENT)
         onSaved={(name) => {
           if (!dialog?.kid) toast.success(FAMILY_COPY.addKidAdded(name));
-          reload();
         }}
       />
-      <RemoveKidDialog
-        kid={removing}
-        onOpenChange={(open) => !open && setRemoving(null)}
-        onRemoved={(name) => {
-          toast.success(FAMILY_COPY.removed(name));
-          reload();
-        }}
-      />
+      <RemoveKidDialog kid={removing} onOpenChange={(open) => !open && setRemoving(null)} onRemoved={(name) => toast.success(FAMILY_COPY.removed(name))} />
     </div>
   );
 }

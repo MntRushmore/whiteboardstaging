@@ -45,13 +45,15 @@ function KidPlanOffer({ soon, onContinue }: { soon: boolean; onContinue: () => v
             <p className={styles.grownUpHint}>{FAMILY_COPY.kidPlanBody}</p>
           </div>
         </div>
-        {soon && (
-          <div className={`${styles.actions} ${styles.rise}`}>
+        <div className={`${styles.actions} ${styles.rise}`}>
+          {soon ? (
             <Button size="lg" variant="secondary" className={styles.later} onClick={onContinue}>
               {PLAN_COPY.continue}
             </Button>
-          </div>
-        )}
+          ) : (
+            <p className={styles.disclosure}>{FAMILY_COPY.kidPlanSwitch}</p>
+          )}
+        </div>
       </div>
     </section>
   );

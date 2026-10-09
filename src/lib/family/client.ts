@@ -8,7 +8,8 @@
  *
  * The family is kept for the tab (memory, and sessionStorage for reloads) for FAMILY_CACHE_MS, keyed
  * by the signed-in user: the app bar's switcher reads it on every page, and a family rarely changes.
- * The Family page's writes and every switch drop it.
+ * The Family page's writes drop it and say so (FAMILY_CHANGED_EVENT), so the app bar's switcher
+ * appears with the first kid; every switch drops it too.
  *
  * Switching: the server mints the other profile's session (POST /api/family/switch), the browser
  * takes it with `supabase.auth.setSession`, and the page reloads at `to` (the home by default): every
@@ -59,14 +60,28 @@ export function cachedFamily(userId: string, now = Date.now()): FamilyState | nu
   }
 }
 
-/** Forget the kept family (after a write, before a switch). */
-export function forgetFamily(): void {
+/** Window event after the family changed (a kid added, edited or removed, the PIN set): readers re-read. */
+export const FAMILY_CHANGED_EVENT = "agathon:family-changed";
+
+function clearKept(): void {
   memory = null;
   inFlight = null;
   try {
     session()?.removeItem(CACHE_KEY);
   } catch {
     /* private mode */
+  }
+}
+
+/** Forget the kept family after a write, and tell every reader on the page to read it again. */
+export function forgetFamily(): void {
+  clearKept();
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(new Event(FAMILY_CHANGED_EVENT));
+    } catch {
+      /* no Event(): the next page load reads it */
+    }
   }
 }
 
@@ -160,7 +175,8 @@ export async function switchProfile(to: string, opts: { pin?: string; dest?: str
   });
   if (!res.ok) throw await apiErrorFromResponse(res);
   const tokens = (await res.json()) as SwitchResult;
-  forgetFamily();
+  // the page reloads as `to`: nothing on it should read the family again as the old profile
+  clearKept();
   const { error } = await supabase.auth.setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token });
   if (error) throw error;
   window.location.assign(safeDest(opts.dest));

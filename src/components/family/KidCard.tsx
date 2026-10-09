@@ -28,7 +28,7 @@ export function KidCard({ kid, busy, locked, onSwitch, onProgress, onEdit, onRem
           <button type="button" className={styles.iconButton} onClick={onEdit} aria-label={FAMILY_COPY.editTitle(kid.displayName)} title={FAMILY_COPY.edit}>
             <Pencil size={16} strokeWidth={1.9} aria-hidden />
           </button>
-          <button type="button" className={`${styles.iconButton} ${styles.iconDanger}`} onClick={onRemove} aria-label={FAMILY_COPY.removeTitle(kid.displayName)} title={FAMILY_COPY.remove} data-testid="kid-remove">
+          <button type="button" className={`${styles.iconButton} ${styles.iconDanger}`} onClick={onRemove} aria-label={FAMILY_COPY.removeLabel(kid.displayName)} title={FAMILY_COPY.remove} data-testid="kid-remove">
             <Trash2 size={16} strokeWidth={1.9} aria-hidden />
           </button>
         </div>

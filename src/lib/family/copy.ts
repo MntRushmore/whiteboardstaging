@@ -78,7 +78,7 @@ export const FAMILY_COPY = {
   tooMany: `A family can have up to ${MAX_KIDS} kids.`,
   consent: "By adding a kid you agree to the Terms and Privacy Policy for them.",
 
-  streak: (n: number) => `${n}-day streak`,
+  streak: (n: number) => (n > 0 ? `${n}-day streak` : "No streak yet"),
   problemsThisWeek: (n: number) => `${n} ${n === 1 ? "problem" : "problems"} this week`,
   mastered: (n: number) => `${n} ${n === 1 ? "skill" : "skills"} mastered`,
   noStats: "Numbers not available right now.",
@@ -89,6 +89,7 @@ export const FAMILY_COPY = {
   editSave: "Save",
   editFailed: "Couldn't save. Try again.",
   remove: "Remove",
+  removeLabel: (name: string) => `Remove ${name}`,
   removeTitle: (name: string) => `Remove ${name}?`,
   removeBody: (name: string) =>
     `This deletes ${name}'s profile for good: their boards, their progress and everything they made. This can't be undone.`,
@@ -106,7 +107,8 @@ export const FAMILY_COPY = {
   kidBilling: "Your grown-up looks after this.",
   kidBillingHint: "Ask them if you have a question about Agathon Unlimited.",
   kidPlanTitle: "Almost there!",
-  kidPlanBody: "Your grown-up looks after this. Ask them to start Agathon Unlimited from their profile, then you can practise.",
+  kidPlanBody: "Ask them to start Agathon Unlimited from their profile, then you can practise.",
+  kidPlanSwitch: "Tap your picture at the top to switch to your grown-up.",
   deleteAlsoKids: (names: string) => `It also deletes your kids' profiles (${names}), with their boards and progress.`,
   kidDeleteTitle: "Your profile",
   kidDelete: "Only your grown-up can remove this profile, from their Family page.",
