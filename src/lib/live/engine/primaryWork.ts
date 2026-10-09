@@ -12,19 +12,29 @@
  *  - A RELATION (`A = B`, `A = B = C`) that is TRUE is never ringed. It is a step of this problem —
  *    a tick — when it is made of the problem's numbers (`knowns`: the problem's own, their place-value
  *    parts and digits, the round tens near them, common denominators, the quotient's parts …) and of
- *    results written above it (`earlier`); with `+`/`-` and `×`/`÷` together, its result must also be a
- *    step of the problem's own order (`3 + 4 = 7` under `3 + 4 \times 2` is true and no step). A true
- *    line that is no step is left unmarked, and never solves it (`6 \times 21 = 126` under `18 \times
- *    7`). It SOLVES the problem when it is a step and ends in the answer, written in its simplest form.
- *    A false relation is ringed. A running chain (`20 + 10 = 30 + 12 = 42`, `=` used as "then") is
- *    read link by link, as the child meant it.
+ *    results written above it (`earlier`), and ends in something the working makes: one of those
+ *    numbers, a result on the way, a number counted up (`18 + 18 = 36`, `24 - 6 = 18` under `24 \div
+ *    6`), the answer. With `+`/`-` and `×`/`÷` together, its result must be a step of the problem's own
+ *    order (`3 + 4 = 7` under `3 + 4 \times 2` is true and no step). A true line that is no step is left
+ *    unmarked, and never solves it: `6 \times 21 = 126`, `70 + 8 = 78` (the 8 never multiplied) or
+ *    `18 + 7 = 25` (the problem's own numbers under another operation) under `18 \times 7`. It SOLVES
+ *    the problem when it is a step and ends in the answer, written in its simplest form. A false
+ *    relation is ringed. A running chain (`20 + 10 = 30 + 12 = 42`, `=` used as "then") is read link
+ *    by link, as the child meant it. A line STARTING WITH `=` goes on from the problem, or from the
+ *    line right above it: its first side must be worth the answer, be a result on the way, or go on
+ *    from what that line ends in — else it is ringed (`= 70 + 8 = 78` under `18 \times 7`).
  *  - A NUMBER ALONE (`126`, `= 126`, `7.` with a stray dot) is the answer when it is the answer: a
  *    tick, and solved in its simplest form (`\frac{3}{6}` is right, not finished). Otherwise it is a
- *    result the working makes on the way (`partials`: a partial product, a partial sum, a step of
- *    long division, a numerator over the common denominator) or one written above — no mark — or a
- *    wrong answer, ringed. A minus before the answer to a problem with no negative numbers in it is a
- *    young hand's wobbly `=` (`-11` under `5 + 6`). The quotient alone of a division that leaves a
- *    remainder is right so far: no mark.
+ *    result the problem's working makes on the way (`partials`: a partial product, a partial sum, a
+ *    step of long division, a numerator over the common denominator) — no mark — or a wrong answer,
+ *    ringed. A result of a line above is no excuse (`78` after `70 + 8 = 78` is ringed), nor is a
+ *    decimal product's digits multiplied (`6` or `0.6` under `0.3 \times 0.2`: the point lost or
+ *    moved), nor a whole number written as a fraction, or a fraction over a denominator the problem
+ *    is not worked over (`\frac{2}{2}` under `\frac{3}{4} - \frac{1}{2}`: tops and bottoms taken
+ *    across). A minus before the answer to a problem with no negative numbers in it is a young hand's
+ *    wobbly `=` (`-11` under `5 + 6`); where negative numbers are the work, the answer with its sign
+ *    turned is wrong (`-12` under `-3 \times -4`). The quotient alone of a division that leaves a
+ *    remainder is right so far: no mark. A fraction written with a slash (`5/6`) is a fraction.
  *  - An EXPRESSION (`70 + 56`, `\frac{3}{6} + \frac{2}{6}`) worth the answer is a right rewrite: a
  *    tick, never solved. Claimed with `=` and worth something else, it is ringed.
  *  - A REMAINDER, `3 R 2` (`R`, `r`, `\text{R}`, `\mathrm{R}`; alone or after `17 \div 5 =`): right
@@ -33,9 +43,10 @@
  *    why. A mixed number (`3\frac{2}{5}`) or a decimal (`3.4`) is the same answer.
  *  - A LONG-DIVISION BRACKET (`9 \longdiv{144}`, `\enclose{longdiv}`, `9)\overline{144}`), with its
  *    quotient over it (the row above, in an array; a fraction's top): the right quotient (and
- *    remainder) is a tick and solves it; the start of the right quotient, or none yet, is unmarked; a
- *    wrong quotient is ringed. The working under the bracket is never ringed: its products and
- *    differences are steps of the division.
+ *    remainder) is a tick, and solves it when the bracket is the problem's own division (a side
+ *    division of a bigger problem, `144 \div 9 + 3`, is a step of it); the start of the right
+ *    quotient, or none yet, is unmarked; a wrong quotient is ringed. The working under the bracket is
+ *    never ringed: its products and differences are steps of the division.
  *  - A line built on a ringed line's numbers (`70 + 54 = 124` under a ringed `8 \times 7 = 54`) was
  *    carried on from that slip: no mark of its own.
  *
@@ -96,12 +107,26 @@ interface Problem {
   knowns: Set<string>;
   /** results the working makes on the way: a number alone that is one of them is no wrong answer */
   partials: Set<string>;
+  /**
+   * more results a step may end in, besides knowns and the answer (a multiple counted up, the
+   * divisor taken away again): a true line ending in one is a step; a number alone that is one is not
+   */
+  results: Set<string>;
+  /** the denominators its fractions are worked over (their own, common ones, a flipped divisor's) */
+  denominators: Set<number>;
+  /** a problem of two numbers and one operation (`18 \times 7`): what a line of the same two numbers is checked against */
+  top: { op: string; a: Q; b: Q } | null;
 }
 
-/** What the lines above say: results written right (`earlier`), and those of a ringed line (`carried`). */
+/**
+ * What the lines above say: results written right (`earlier`: what a line under them may be made
+ * of — never a reason to leave a number alone unmarked), those of a ringed line (`carried`), and the
+ * value the line right above ends in (`last`: what a line starting with `=` may go on from).
+ */
 interface History {
   earlier: Set<string>;
   carried: Set<string>;
+  last: Q | null;
 }
 
 const NOTE_WRONG = "Re-check the arithmetic here";
@@ -198,9 +223,19 @@ function lcm(a: number, b: number): number {
  * The steps one operation of two values is worked in, as a primary class works it: `k` takes the
  * numbers such a step is made of, `p` the results it makes on the way. `p` is held back on purpose
  * (a lone number that is one of them is never ringed): none for two small numbers (`4 + 3`, `6 \times
- * 7`), whose only result is the answer.
+ * 7`), whose only result is the answer. `r` takes more results a step may end in (`Problem.results`),
+ * `den` the denominators fractions are worked over.
  */
-function strategies(op: string, a: Q, b: Q, writing: Writing, k: (v: Q | null) => void, p: (v: Q | null) => void): void {
+function strategies(
+  op: string,
+  a: Q,
+  b: Q,
+  writing: Writing,
+  k: (v: Q | null) => void,
+  p: (v: Q | null) => void,
+  r: (v: Q | null) => void = () => undefined,
+  den: (d: number) => void = () => undefined,
+): void {
   const both = (v: Q | null) => {
     k(v);
     p(v);
@@ -225,10 +260,13 @@ function strategies(op: string, a: Q, b: Q, writing: Writing, k: (v: Q | null) =
     // over a common denominator: the least, and the two multiplied
     const da = a.d;
     const db = b.d;
-    for (const den of new Set([lcm(da, db), da * db])) {
-      k(q(den));
-      const na = (a.n * den) / da;
-      const nb = (b.n * den) / db;
+    den(da);
+    den(db);
+    for (const common of new Set([lcm(da, db), da * db])) {
+      k(q(common));
+      den(common);
+      const na = (a.n * common) / da;
+      const nb = (b.n * common) / db;
       both(q(na));
       both(q(nb));
       both(q(op === "-" ? na - nb : na + nb));
@@ -255,11 +293,13 @@ function strategies(op: string, a: Q, b: Q, writing: Writing, k: (v: Q | null) =
     if (op === "×") {
       both(q(a.n * b.n));
       both(q(a.d * b.d));
+      den(a.d * b.d);
     }
     if (op === "÷" && b.n !== 0) {
       const flip = q(b.d, b.n);
       both(flip);
       if (flip) {
+        den(flip.d);
         both(q(a.n * flip.n));
         both(q(a.d * flip.d));
       }
@@ -331,6 +371,17 @@ function strategies(op: string, a: Q, b: Q, writing: Writing, k: (v: Q | null) =
   }
 
   if (op === "×") {
+    // counted up a number at a time (`18 + 18 = 36`, `6 \times 6 = 36` for 6 × 7), one more than
+    // the other number at most, and times ten (`10 \times 8 = 80`, then take one 8 away)
+    if (isWhole(a) && isWhole(b)) {
+      for (const [x, y] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        r(mul(x, q(10)!));
+        if (y.n >= 1 && y.n <= 12) for (let m = 1; m <= y.n + 1; m++) r(mul(x, q(m)!));
+      }
+    }
     const A = withoutPoint(a);
     const B = withoutPoint(b);
     if (decimals && A && B) {
@@ -355,13 +406,16 @@ function strategies(op: string, a: Q, b: Q, writing: Writing, k: (v: Q | null) =
     const pb = placeParts(b);
     // the grid: every place of one by every place of the other
     for (const x of [...pa, a]) for (const y of [...pb, b]) both(mul(x, y));
-    for (const x of digitsOf(a)) for (const y of digitsOf(b)) both(mul(x, y));
+    // a digit by a digit, a number by a digit of the other: with decimals, a step's numbers only —
+    // written alone, it is the answer with its point lost or moved (`6`, `0.6` under 0.3 × 0.2)
+    const digitStep = decimals ? k : both;
+    for (const x of digitsOf(a)) for (const y of digitsOf(b)) digitStep(mul(x, y));
     // long multiplication's rows, with and without the zero that holds the place
     for (const [x, y] of [
       [a, b],
       [b, a],
     ] as const) {
-      for (const d of digitsOf(y)) both(mul(x, d));
+      for (const d of digitsOf(y)) digitStep(mul(x, d));
       const rows = placeParts(y).map((part) => mul(x, part));
       for (const order of [rows, [...rows].reverse()]) {
         let acc: Q | null = q(0);
@@ -421,28 +475,42 @@ function strategies(op: string, a: Q, b: Q, writing: Writing, k: (v: Q | null) =
     for (let m = 1; m <= 12; m++) k(q(b.n * m));
     k(q(b.n * 10));
     k(q(b.n * 100));
+    // the divisor taken away again and again (`24 - 6 = 18`, `18 - 6 = 12`), or added up to it
+    for (let m = 1; m <= Math.min(quotient, 20); m++) {
+      r(q(a.n - m * b.n));
+      r(q(m * b.n));
+    }
     return;
   }
 
-  if (op === "÷") {
-    // a decimal divided: by a power of ten, or the digits divided and the point put back
+  if (op === "÷" && !isWhole(a)) {
+    // a decimal divided: by a power of ten, or the digits divided and the point put back — the
+    // digits divided alone is the answer with its point lost (`2` under `0.6 \div 3`)
     const A = withoutPoint(a);
-    if (A) both(div(A, b));
+    if (A) k(div(A, b));
   }
 }
 
+/** Where `strategies` puts what it finds (see there). */
+interface Sinks {
+  k: (v: Q | null) => void;
+  p: (v: Q | null) => void;
+  r: (v: Q | null) => void;
+  den: (d: number) => void;
+}
+
 /** The tree's operations of two values each, worked as `strategies` says (outermost last). */
-function walkStrategies(n: Node, writing: Writing, k: (v: Q | null) => void, p: (v: Q | null) => void): void {
+function walkStrategies(n: Node, writing: Writing, s: Sinks): void {
   if (n.t === "num") return;
-  if (n.t === "neg") return walkStrategies(n.arg, writing, k, p);
+  if (n.t === "neg") return walkStrategies(n.arg, writing, s);
   if (n.t === "over") {
-    walkStrategies(n.top, writing, k, p);
-    walkStrategies(n.bottom, writing, k, p);
-    return strategies("÷", valueOf(n.top), valueOf(n.bottom), writing, k, p);
+    walkStrategies(n.top, writing, s);
+    walkStrategies(n.bottom, writing, s);
+    return strategies("÷", valueOf(n.top), valueOf(n.bottom), writing, s.k, s.p, s.r, s.den);
   }
-  walkStrategies(n.left, writing, k, p);
-  walkStrategies(n.right, writing, k, p);
-  if (n.op !== "^") strategies(n.op, valueOf(n.left), valueOf(n.right), writing, k, p);
+  walkStrategies(n.left, writing, s);
+  walkStrategies(n.right, writing, s);
+  if (n.op !== "^") strategies(n.op, valueOf(n.left), valueOf(n.right), writing, s.k, s.p, s.r, s.den);
 }
 
 /** How a problem's numbers are written (`Writing`). */
@@ -480,16 +548,27 @@ function readProblemLine(line: string): Problem | null {
   const answer = valueOf(tree);
   const knowns = new Set<string>();
   const partials = new Set<string>();
+  const results = new Set<string>();
+  const denominators = new Set<number>();
   const k = (v: Q | null) => {
     if (v) knowns.add(key(v));
   };
   const p = (v: Q | null) => {
     if (v) partials.add(key(v));
   };
+  const r = (v: Q | null) => {
+    if (v) results.add(key(v));
+  };
+  const den = (d: number) => {
+    if (Number.isInteger(d) && d > 0) denominators.add(d);
+  };
   for (const w of numbersIn(tree)) {
     k(w.value);
     if (w.top !== undefined) k(q(w.top));
-    if (w.bottom !== undefined) k(q(w.bottom));
+    if (w.bottom !== undefined) {
+      k(q(w.bottom));
+      den(w.bottom);
+    }
     if (w.whole !== undefined) k(q(w.whole));
   }
   k(answer);
@@ -498,9 +577,9 @@ function readProblemLine(line: string): Problem | null {
     p(v);
   }
   const writing = writingOf(tree);
-  walkStrategies(tree, writing, k, p);
+  walkStrategies(tree, writing, { k, p, r, den });
   // a lone number to simplify or convert (`\frac{6}{8}`, `2\frac{1}{3}`): its own pieces
-  if (tree.t === "num") strategies("+", answer, q(0)!, writing, k, () => undefined);
+  if (tree.t === "num") strategies("+", answer, q(0)!, writing, k, () => undefined, r, den);
   for (const v of partials) knowns.add(v);
   const ops = opsIn(tree);
   const division = tree.t === "op" && tree.op === "÷" && isWhole(valueOf(tree.left)) && isWhole(valueOf(tree.right)) && valueOf(tree.right).n > 0 ? { a: valueOf(tree.left).n, b: valueOf(tree.right).n } : null;
@@ -513,6 +592,9 @@ function readProblemLine(line: string): Problem | null {
     decimals: /\d\.\d|(?<!\d)\.\d/.test(side),
     knowns,
     partials,
+    results,
+    denominators,
+    top: tree.t === "op" && tree.left.t === "num" && tree.right.t === "num" ? { op: tree.op, a: valueOf(tree.left), b: valueOf(tree.right) } : null,
   };
 }
 
@@ -521,7 +603,15 @@ function readProblemLine(line: string): Problem | null {
 /** A stray mark around a lone number: a dot, a comma, a tick-like prime, a dot read as a times sign. */
 const STRAY_AFTER = /(?:\s*(?:\.|,|'|`|\\prime|\^\s*\{\s*(?:\\prime|\\circ|\\cdot|\.|,)\s*\}|\^\s*(?:\\prime|\\circ)|_\s*\{\s*[.,]\s*\}|\\cdot|\\bullet|\\cdots|\\ldots|\\dots))+\s*$/;
 const STRAY_BEFORE = /^\s*(?:\\cdot|\\bullet|'|,)\s*/;
-const LONE = /^\s*(=\s*)?(-\s*)?(\d+(?:\.\d+)?|\.\d+|\d*\s*\\[dt]?frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\})\s*$/;
+const LONE = /^\s*(=\s*)?(-\s*)?(\d+(?:\.\d+)?|\.\d+|\d*\s*\\[dt]?frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}|\d+\s*\/\s*\d+)\s*$/;
+
+/** `5/6`, `-3/4`: a side that is a fraction written with a slash — a fraction, not a division. */
+const SLASH_FRACTION = /^\s*(-\s*)?(\d+)\s*\/\s*(\d+)\s*$/;
+
+/** A side that is a fraction written with a slash, as `\frac` (`5/6` → `\frac{5}{6}`); else as it was. */
+function asFraction(side: string): string {
+  return side.replace(SLASH_FRACTION, (_m, minus: string | undefined, top: string, bottom: string) => `${minus ? "-" : ""}\\frac{${top}}{${bottom}}`);
+}
 
 /** A lone number with the strays a young hand leaves round it taken off (`7.` → `7`, `= 9^{\prime}` → `= 9`); else as it was. */
 function withoutStrays(latex: string): string {
@@ -589,6 +679,8 @@ interface Judged extends PrimaryVerdict {
   /** a step of this problem (a relation): what the lines under it may build on */
   step: boolean;
   values: Q[];
+  /** the value it ends in (its last side), for a line under it starting with `=` (`History.last`) */
+  last?: Q;
 }
 
 function verdictOf(v: Partial<Judged> & Pick<Judged, "verdict">): Judged {
@@ -650,7 +742,10 @@ function judgeBracket(p: Problem | null, br: Bracket): Judged {
   const written = Number(m[1]);
   const rest = m[2] === undefined ? null : Number(m[2]);
   values.push(q(written)!);
-  if (written === quotient && (rest === remainder || (rest === null && remainder === 0))) return verdictOf({ verdict: "ok", solved: true, bare: true, step: true, values, math });
+  // it answers the problem when it is the problem (a blank board, the same division) or its quotient
+  // is the problem's whole answer — not a side division of a bigger one (`144 \div 9 + 3`)
+  const solves = !p || p.division !== null || (remainder === 0 && eq(q(quotient)!, p.answer));
+  if (written === quotient && (rest === remainder || (rest === null && remainder === 0))) return verdictOf({ verdict: "ok", solved: solves, bare: true, step: true, values, math });
   // the quotient started right (its first digits), or right with its remainder still to come
   if ((written === quotient && rest === null) || (String(quotient).startsWith(m[1]) && m[1].length < String(quotient).length && rest === null)) {
     return verdictOf({ verdict: "none", bare: true, values, math });
@@ -663,6 +758,51 @@ const knownIn = (p: Problem, h: History, v: Q) => p.knowns.has(key(v)) || h.earl
 /** A result the working makes on the way, or one written right above. */
 const partialIn = (p: Problem, h: History, v: Q) => p.partials.has(key(v)) || h.earlier.has(key(v));
 
+/**
+ * A number alone that is a result this problem's working makes on the way (`partials` — never one
+ * of the lines above: a true line that was no step must not shield the wrong answer under it). A
+ * fraction is that by how it is written too: over a denominator the problem is worked over, and
+ * never a whole number written as a fraction (`\frac{2}{2}` under `\frac{3}{4} - \frac{1}{2}` is
+ * the tops and bottoms taken across, though 3 - 2 is a numerator on the way).
+ */
+function onTheWay(p: Problem, w: Written, v: Q): boolean {
+  if (!p.partials.has(key(v))) return false;
+  if (w.form !== "frac" && w.form !== "mixed") return true;
+  const bottom = w.bottom ?? v.d;
+  if (isWhole(v) && bottom !== 1) return false;
+  return p.denominators.has(bottom);
+}
+
+/** `n` is an operation whose first number is `v` (`70 + 8` leads with 70): a running chain's next link. */
+function leadsWith(n: Node, v: Q): boolean {
+  let m: Node = n;
+  while (m.t === "op" && m.op !== "^") m = m.left;
+  return n.t === "op" && m.t === "num" && eq(m.w.value, v);
+}
+
+/**
+ * A line starting with `=` goes on from the problem, or from the line right above it (`=` as
+ * "then"): its first side `n` (worth `v`) must be worth the answer, be a result on the way, or go on
+ * from what the line above ends in. `= 70 + 8` under `18 \times 7` does none of them: a wrong claim.
+ */
+function goesOn(p: Problem, h: History, n: Node, v: Q): boolean {
+  if (eq(v, p.answer) || p.partials.has(key(v))) return true;
+  return h.last !== null && (eq(v, h.last) || leadsWith(n, h.last));
+}
+
+/**
+ * The problem's own two numbers under another operation (`18 + 7` under `18 \times 7`, `9 - 5` under
+ * `9 + 5`): the wrong operation, no step of it. The divisor taken away is a step of a division
+ * (repeated subtraction).
+ */
+function otherOperation(p: Problem, n: Node): boolean {
+  const top = p.top;
+  if (!top || n.t !== "op" || n.op === top.op || (top.op === "÷" && n.op === "-") || n.left.t !== "num" || n.right.t !== "num") return false;
+  const x = n.left.w.value;
+  const y = n.right.w.value;
+  return (eq(x, top.a) && eq(y, top.b)) || (eq(x, top.b) && eq(y, top.a));
+}
+
 /** One line of the working judged against the problem, with what the lines above it said. */
 function judgeOne(p: Problem, h: History, latex: string): Judged | null {
   const tidy = withoutStrays(latex);
@@ -671,7 +811,7 @@ function judgeOne(p: Problem, h: History, latex: string): Judged | null {
   if (remainder) return judgeRemainder(p, remainder);
   const claim = /^\s*=/.test(tidy);
   const sides = tidy.replace(/^\s*=\s*/, "").split("=");
-  const trees = sides.map((s) => parseArithmetic(s));
+  const trees = sides.map((s) => parseArithmetic(asFraction(s)));
   if (trees.some((t) => t === null)) return null;
   const nodes = trees as Node[];
 
@@ -689,15 +829,19 @@ function judgeOne(p: Problem, h: History, latex: string): Judged | null {
       if (lone.negative && isTheAnswer(p, { ...w, value: v })) return verdictOf({ verdict: "ok", solved: inSimplestForm(w), bare: true, step: true, values, math });
       // the quotient of a division that leaves a remainder: right so far
       if (!lone.negative && p.division && p.division.a % p.division.b !== 0 && eq(v, q(Math.floor(p.division.a / p.division.b))!)) {
-        return verdictOf({ verdict: "none", bare: true, step: true, values, math });
+        return verdictOf({ verdict: "none", bare: true, step: true, values, math, last: v });
       }
-      if (partialIn(p, h, w.value) || partialIn(p, h, v)) return verdictOf({ verdict: "none", bare: true, step: true, values, math });
-      if (h.carried.has(key(w.value)) || h.carried.has(key(v))) return verdictOf({ verdict: "none", bare: true, carried: true, values, math });
+      // the answer with its sign turned where negative numbers are the work (`-12` under `-3 \times -4`)
+      if (p.negative && p.answer.n !== 0 && eq(v, mul(p.answer, q(-1)!)!)) return verdictOf({ verdict: "mismatch", bare: true, values, math });
+      // a result on the way; without its minus only where that minus may be a wobbly `=` (no negative numbers in the problem)
+      const unsigned = !p.negative && lone.negative;
+      if (onTheWay(p, w, v) || (unsigned && onTheWay(p, w, w.value))) return verdictOf({ verdict: "none", bare: true, step: true, values, math, last: v });
+      if (h.carried.has(key(v)) || (unsigned && h.carried.has(key(w.value)))) return verdictOf({ verdict: "none", bare: true, carried: true, values, math });
       return verdictOf({ verdict: "mismatch", bare: true, values, math });
     }
     // an expression: a rewrite of the problem when it is worth the answer
-    if (eq(v, p.answer)) return verdictOf({ verdict: "ok", step: true, values, math: mathOf(v) });
-    if (claim && !partialIn(p, h, v)) return verdictOf({ verdict: "mismatch", note: NOTE_WRONG, values, math: mathOf(v) });
+    if (eq(v, p.answer)) return verdictOf({ verdict: "ok", step: true, values, math: mathOf(v), last: v });
+    if (claim && !goesOn(p, h, n, v)) return verdictOf({ verdict: "mismatch", note: NOTE_WRONG, values, math: mathOf(v) });
     return verdictOf({ verdict: "none", values, math: mathOf(v) });
   }
 
@@ -705,11 +849,6 @@ function judgeOne(p: Problem, h: History, latex: string): Judged | null {
   const vals = nodes.map(valueOf);
   const values = valuesIn(nodes);
   const math = vals.map(mathOf).join(" == ");
-  const leadsWith = (n: Node, v: Q): boolean => {
-    let m: Node = n;
-    while (m.t === "op" && m.op !== "^") m = m.left;
-    return n.t === "op" && m.t === "num" && eq(m.w.value, v);
-  };
   const linked = vals.every((v, i) => i === 0 || eq(v, vals[i - 1]) || leadsWith(nodes[i], vals[i - 1]));
   const strict = vals.every((v) => eq(v, vals[0]));
   if (!strict && !linked) return verdictOf({ verdict: "mismatch", relation: true, note: NOTE_WRONG, values, math });
@@ -717,27 +856,41 @@ function judgeOne(p: Problem, h: History, latex: string): Judged | null {
   const value = vals[vals.length - 1];
   // what it is made of: every number before its last side
   const used = nodes.slice(0, -1).flatMap((n) => numbersIn(n).map((w) => w.value));
-  if (claim) used.push(p.answer);
   const fromProblem = used.every((v) => knownIn(p, h, v));
   const fromSlip = !fromProblem && used.every((v) => knownIn(p, h, v) || h.carried.has(key(v)));
-  // with the order of operations in play, a step is one of the problem's own (or its answer)
-  const inOrder = !p.mixed || partialIn(p, h, value) || eq(value, p.answer);
   if (fromSlip) return verdictOf({ verdict: "none", relation: true, carried: true, values, math });
-  if (!fromProblem || !inOrder) return verdictOf({ verdict: "none", relation: true, values, math });
+  // `= A = B` says the problem (or the line above) is A: `= 70 + 8 = 78` under `18 \times 7` is true and wrong
+  if (claim && !goesOn(p, h, nodes[0], vals[0])) return verdictOf({ verdict: "mismatch", relation: true, note: NOTE_WRONG, values, math });
+  if (!fromProblem || otherOperation(p, nodes[0])) return verdictOf({ verdict: "none", relation: true, values, math });
+  // a step ends in something this problem's working makes: with the order of operations in play,
+  // one of the problem's own steps (`3 + 4 = 7` under `3 + 4 \times 2` is none); else one of its
+  // numbers or results. True and ending elsewhere (`7 + 56 = 63`, `70 + 8 = 78` under `18 \times 7`):
+  // no tick — the lines under it may build on it, but it never leaves a wrong answer unringed
+  if (p.mixed && !partialIn(p, h, value) && !eq(value, p.answer)) return verdictOf({ verdict: "none", relation: true, values, math });
+  if (!p.mixed && !eq(value, p.answer) && !p.knowns.has(key(value)) && !p.results.has(key(value))) {
+    return verdictOf({ verdict: "none", relation: true, step: true, values, math, last: value });
+  }
   const lone = loneNumber(last);
   const solved = lone !== null && !lone.negative && isTheAnswer(p, lone.w) && inSimplestForm(lone.w);
-  return verdictOf({ verdict: "ok", solved, relation: true, step: true, values, math });
+  return verdictOf({ verdict: "ok", solved, relation: true, step: true, values, math, last: value });
 }
 
-/** The lines above, folded in order: results written right, and results of a ringed (or carried) line. */
+/**
+ * The lines above, folded in order: results written right, results of a ringed (or carried) line,
+ * and what the line right above ends in.
+ */
 function historyOf(p: Problem, above: readonly string[]): History {
-  const h: History = { earlier: new Set(), carried: new Set() };
+  const h: History = { earlier: new Set(), carried: new Set(), last: null };
   for (const line of above) {
-    if (!line || squash(line) === p.squashed) continue;
+    if (!line || squash(line) === p.squashed) {
+      h.last = null;
+      continue;
+    }
     const j = judgeOne(p, h, line) ?? judgeBracketLine(p, line);
-    if (!j) continue;
-    const into = j.verdict === "mismatch" || j.carried ? h.carried : j.verdict === "ok" || j.step ? h.earlier : null;
-    if (into) for (const v of j.values) into.add(key(v));
+    const slip = j !== null && (j.verdict === "mismatch" || j.carried);
+    const into = !j ? null : slip ? h.carried : j.verdict === "ok" || j.step ? h.earlier : null;
+    if (j && into) for (const v of j.values) into.add(key(v));
+    h.last = j && !slip && (j.verdict === "ok" || j.step) ? (j.last ?? null) : null;
   }
   return h;
 }

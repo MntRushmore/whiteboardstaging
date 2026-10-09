@@ -266,6 +266,124 @@ describe("fractions and decimals, grades 4–6", () => {
   });
 });
 
+describe("a wrong step gets no tick, and never shields the wrong answer after it (review, 2026-10-09)", () => {
+  it("a line starting with = goes on from the problem: a chain worth something else is ringed", () => {
+    expect(column("18 \\times 7", ["= 70 + 8 = 78", "78"])).toEqual([RING, NONE]);
+    expect(column("18 \\times 7", ["= 10 \\times 7 + 8 = 78"])).toEqual([RING]);
+    expect(column("6 \\times 7", ["= 6 \\times 6 = 36"])).toEqual([RING]);
+    expect(column("4+3", ["= 4 + 4 = 8"])).toEqual([RING]);
+    expect(column("5+6", ["= 5 + 5 = 10"])).toEqual([RING]);
+    // `=` as "then": a step of the problem, or the line above carried on
+    expect(column("18 \\times 7", ["= 10 \\times 7 = 70", "= 8 \\times 7 = 56", "= 70 + 56 = 126"])).toEqual([TICK, TICK, SOLVED]);
+    expect(column("52 - 17", ["= 50 - 10 = 40"])).toEqual([TICK]);
+    expect(column("24 \\div 6", ["24 - 6 = 18", "= 18 - 6 = 12"])).toEqual([TICK, TICK]);
+  });
+
+  it("a true line that is no step of this problem gets no tick, and the wrong answer after it is still ringed", () => {
+    // 1 × 7 for 10 × 7, then added as if it were 70: the answer is what is ringed
+    expect(column("18 \\times 7", ["1 \\times 7 = 7", "8 \\times 7 = 56", "7 + 56 = 63", "63"])).toEqual([TICK, TICK, NONE, RING]);
+    // the 8 never multiplied
+    expect(column("18 \\times 7", ["10 \\times 7 = 70", "70 + 8 = 78", "78"])).toEqual([TICK, NONE, RING]);
+    expect(column("18 \\times 7", ["10 \\times 7 = 70 + 8 = 78", "78"])).toEqual([NONE, RING]);
+    // the smaller digit taken from the bigger
+    expect(column("52 - 17", ["7 - 2 = 5", "50 - 10 = 40", "40 + 5 = 45", "45"])).toEqual([TICK, TICK, NONE, RING]);
+    // the zero holding the place left out
+    expect(column("23 \\times 14", ["92 + 23 = 115", "115"])).toEqual([NONE, RING]);
+  });
+
+  it("the problem's own numbers under another operation: no step, and its result alone is ringed", () => {
+    expect(column("18 \\times 7", ["18 + 7 = 25", "25"])).toEqual([NONE, RING]);
+    expect(column("52 - 17", ["52 + 17 = 69", "69"])).toEqual([NONE, RING]);
+    expect(column("9 + 5", ["9 - 5 = 4", "= 4"])).toEqual([NONE, RING]);
+    expect(column("3 + 4", ["3 \\times 4 = 12", "12"])).toEqual([NONE, RING]);
+  });
+
+  it("the ways young kids really work are still steps: repeated subtraction, repeated addition, a near fact", () => {
+    expect(column("24 \\div 6", ["24 - 6 = 18", "18 - 6 = 12", "12 - 6 = 6", "6 - 6 = 0", "4"])).toEqual([TICK, TICK, TICK, TICK, SOLVED]);
+    expect(column("18 \\times 7", ["18 + 18 = 36"])).toEqual([TICK]);
+    expect(column("9 \\times 8", ["10 \\times 8 = 80", "80 - 8 = 72"])).toEqual([TICK, SOLVED]);
+    expect(column("6 \\times 7", ["6 \\times 6 = 36", "36 + 6 = 42"])).toEqual([TICK, SOLVED]);
+  });
+
+  it("the answer with its sign turned is ringed where negative numbers are the work", () => {
+    expect(column("-3 \\times -4", ["-12"])).toEqual([RING]);
+    expect(column("-3 \\times -4", ["12"])).toEqual([SOLVED]);
+    expect(column("(-3)^{2}", ["-9"])).toEqual([RING]);
+    expect(column("-7 + 10", ["-3"])).toEqual([RING]);
+    expect(column("-7 + 10", ["= -3"])).toEqual([RING]);
+    expect(column("-24 \\div -6", ["-4"])).toEqual([RING]);
+    expect(column("-24 \\div -6", ["4"])).toEqual([SOLVED]);
+    expect(column("-3 + 8", ["-5"])).toEqual([RING]);
+    expect(column("-12 \\times 4", ["48"])).toEqual([RING]);
+    expect(column("-24 \\div 6", ["4"])).toEqual([RING]);
+    // a number of the problem copied is no wrong answer; a wobbly = is still one where no negatives are
+    expect(column("-7 + 10", ["-7"])).toEqual([NONE]);
+    expect(column("5+6", ["-11"])).toEqual([SOLVED]);
+    expect(column("18 \\times 7", ["-70"])).toEqual([NONE]);
+  });
+
+  it("a decimal product's point lost or moved is a wrong answer, not a step", () => {
+    const wrong: Array<[string, string]> = [
+      ["0.3 \\times 0.2", "0.6"],
+      ["0.3 \\times 0.2", "= 0.6"],
+      ["0.3 \\times 0.2", "6"],
+      ["0.5 \\times 0.5", "2.5"],
+      ["0.5 \\times 0.5", "25"],
+      ["1.5 \\times 0.3", "4.5"],
+      ["0.4 \\times 0.3", "1.2"],
+      ["0.4 \\times 0.3", "12"],
+      ["2.4 \\times 0.3", "7.2"],
+      ["0.6 \\times 0.4", "2.4"],
+      ["5.4 \\times 0.1", "5.4"],
+      ["0.6 \\div 3", "2"],
+    ];
+    for (const [problem, line] of wrong) expect(column(problem, [line]), `${problem}: ${line}`).toEqual([RING]);
+    // the true partial products are still steps; the digits multiplied, the point put back, still solve it
+    expect(column("2.4 \\times 0.3", ["0.6", "0.12", "0.72"])).toEqual([NONE, NONE, SOLVED]);
+    expect(column("0.3 \\times 0.2", ["0.3 \\times 2 = 0.6", "0.6 \\div 10 = 0.06"])).toEqual([TICK, SOLVED]);
+  });
+
+  it("a fraction written with a slash is a fraction: the right one solves it, a wrong one is ringed", () => {
+    expect(column("\\frac{1}{2} + \\frac{1}{3}", ["5/6"])).toEqual([SOLVED]);
+    expect(column("\\frac{1}{2} + \\frac{1}{3}", ["= 5/6"])).toEqual([SOLVED]);
+    expect(column("\\frac{1}{2} + \\frac{1}{3}", ["5/6."])).toEqual([SOLVED]);
+    expect(column("\\frac{1}{2} + \\frac{1}{3}", ["2/5"])).toEqual([RING]);
+    expect(judgePrimaryLine(["\\frac{1}{2} + \\frac{1}{3}"], [], "2/5")).toMatchObject({ verdict: "mismatch", bare: true });
+    expect(column("\\frac{1}{2} + \\frac{1}{3}", ["\\frac{3}{6} + \\frac{2}{6} = 5/6"])).toEqual([SOLVED]);
+    expect(column("1/2 + 1/3", ["5/6"])).toEqual([SOLVED]);
+    expect(column("1/2 + 1/3", ["2/5"])).toEqual([RING]);
+    expect(column("6 \\div 4", ["3/2"])).toEqual([SOLVED]);
+    // right, not in its simplest form
+    expect(column("\\frac{5}{6} - \\frac{1}{3}", ["3/6"])).toEqual([TICK]);
+  });
+
+  it("a long-division bracket inside a bigger problem is a step of it, never its answer", () => {
+    const bracket = "\\begin{array}{r} 16 \\\\ 9 \\longdiv { 144 } \\end{array}";
+    expect(column("144 \\div 9 + 3", ["\\frac{16}{9 \\longdiv { 144 }}"])).toEqual([TICK]);
+    expect(column("144 \\div 9 + 3", [bracket, "16 + 3 = 19"])).toEqual([TICK, SOLVED]);
+    expect(column("144 \\div 9 \\times 2", [bracket])).toEqual([TICK]);
+    expect(column("14.4 \\div 9", [bracket])).toEqual([TICK]);
+    expect(column("146 \\div 9 + 3", ["\\begin{array}{r} 16 R 2 \\\\ 9 \\longdiv { 146 } \\end{array}"])).toEqual([TICK]);
+    // its own problem, or a blank board, is still solved by it
+    expect(column("144 \\div 9", [bracket])).toEqual([SOLVED]);
+    expect(column("\\frac{144}{9}", [bracket])).toEqual([SOLVED]);
+    expect(judgePrimaryLine([], [], bracket)).toMatchObject({ verdict: "ok", solved: true });
+  });
+
+  it("a whole number written as a fraction, or a fraction over another denominator, is no step: tops and bottoms taken across are ringed", () => {
+    expect(column("\\frac{3}{4} - \\frac{1}{2}", ["\\frac{2}{2}"])).toEqual([RING]);
+    expect(column("\\frac{7}{8} - \\frac{3}{4}", ["\\frac{4}{4}"])).toEqual([RING]);
+    expect(column("\\frac{3}{4} - \\frac{1}{2}", ["\\frac{6}{2}"])).toEqual([RING]);
+    expect(column("\\frac{1}{4} + \\frac{1}{4}", ["\\frac{2}{8}"])).toEqual([RING]);
+    // the steps are still let be: a numerator over the common denominator, an equivalent fraction
+    expect(column("\\frac{3}{4} - \\frac{1}{2}", ["1"])).toEqual([NONE]);
+    expect(column("\\frac{3}{4} - \\frac{1}{2}", ["\\frac{2}{4}"])).toEqual([NONE]);
+    expect(column("\\frac{1}{2} + \\frac{1}{3}", ["\\frac{3}{6}", "\\frac{2}{6}", "\\frac{5}{6}"])).toEqual([NONE, NONE, SOLVED]);
+    expect(column("2\\frac{1}{3} + 1\\frac{1}{2}", ["2\\frac{2}{6}"])).toEqual([NONE]);
+    expect(column("\\frac{1}{2} \\div \\frac{1}{4}", ["\\frac{4}{1}"])).toEqual([NONE]);
+  });
+});
+
 describe("what it leaves to the column's own rules (null)", () => {
   it.each<[string[], string, string]>([
     [["2x + 3 = 11"], "2x = 8", "a problem with letters"],

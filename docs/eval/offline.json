@@ -39530,10 +39530,10 @@
   ],
   "young": {
     "summary": {
-      "total": 172,
-      "passed": 172,
-      "lines": 266,
-      "linesRight": 266,
+      "total": 217,
+      "passed": 217,
+      "lines": 339,
+      "linesRight": 339,
       "wrongRings": 0,
       "missedRings": 0,
       "questions": 0,
@@ -39542,10 +39542,10 @@
       "byGrade": [
         {
           "grade": "K-2",
-          "total": 37,
-          "passed": 37,
-          "lines": 51,
-          "linesRight": 51,
+          "total": 40,
+          "passed": 40,
+          "lines": 59,
+          "linesRight": 59,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -39554,10 +39554,10 @@
         },
         {
           "grade": "3-4",
-          "total": 75,
-          "passed": 75,
-          "lines": 131,
-          "linesRight": 131,
+          "total": 94,
+          "passed": 94,
+          "lines": 167,
+          "linesRight": 167,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -39566,10 +39566,10 @@
         },
         {
           "grade": "5-6",
-          "total": 60,
-          "passed": 60,
-          "lines": 84,
-          "linesRight": 84,
+          "total": 83,
+          "passed": 83,
+          "lines": 113,
+          "linesRight": 113,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -39580,10 +39580,10 @@
       "byTopic": [
         {
           "topic": "add",
-          "total": 30,
-          "passed": 30,
-          "lines": 41,
-          "linesRight": 41,
+          "total": 32,
+          "passed": 32,
+          "lines": 44,
+          "linesRight": 44,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -39592,10 +39592,10 @@
         },
         {
           "topic": "sub",
-          "total": 7,
-          "passed": 7,
-          "lines": 10,
-          "linesRight": 10,
+          "total": 9,
+          "passed": 9,
+          "lines": 16,
+          "linesRight": 16,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -39604,10 +39604,10 @@
         },
         {
           "topic": "mul",
-          "total": 41,
-          "passed": 41,
-          "lines": 84,
-          "linesRight": 84,
+          "total": 61,
+          "passed": 61,
+          "lines": 117,
+          "linesRight": 117,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -39616,10 +39616,10 @@
         },
         {
           "topic": "div",
-          "total": 34,
-          "passed": 34,
-          "lines": 47,
-          "linesRight": 47,
+          "total": 36,
+          "passed": 36,
+          "lines": 53,
+          "linesRight": 53,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -39628,10 +39628,10 @@
         },
         {
           "topic": "frac",
-          "total": 23,
-          "passed": 23,
-          "lines": 36,
-          "linesRight": 36,
+          "total": 31,
+          "passed": 31,
+          "lines": 45,
+          "linesRight": 45,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -39640,10 +39640,10 @@
         },
         {
           "topic": "dec",
-          "total": 30,
-          "passed": 30,
-          "lines": 34,
-          "linesRight": 34,
+          "total": 38,
+          "passed": 38,
+          "lines": 46,
+          "linesRight": 46,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -39652,10 +39652,10 @@
         },
         {
           "topic": "order",
-          "total": 4,
-          "passed": 4,
-          "lines": 8,
-          "linesRight": 8,
+          "total": 7,
+          "passed": 7,
+          "lines": 12,
+          "linesRight": 12,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -41131,6 +41131,183 @@
         "solved": {
           "expected": true,
           "got": true
+        },
+        "pass": true
+      },
+      {
+        "id": "mul-long-46x23-partials",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": null,
+        "lines": [
+          {
+            "latex": "\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 18 \\\\ 120 \\\\ 120 \\\\ +800 \\\\ \\hline 1058 \\end{array}",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "partial products: 6 × 3, 40 × 3, 6 × 20, 40 × 20"
+      },
+      {
+        "id": "mul-long-46x23-reversed",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": null,
+        "lines": [
+          {
+            "latex": "\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 920 \\\\ +138 \\\\ \\hline 1058 \\end{array}",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "the tens row first"
+      },
+      {
+        "id": "mul-long-46x105-zeros",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": null,
+        "lines": [
+          {
+            "latex": "\\begin{array}{r} 46 \\\\ \\times 105 \\\\ \\hline 230 \\\\ 000 \\\\ +4600 \\\\ \\hline 4830 \\end{array}",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "a row of zeros for the 0 tens"
+      },
+      {
+        "id": "mul-long-46x205-zeros",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": null,
+        "lines": [
+          {
+            "latex": "\\begin{array}{r} 46 \\\\ \\times 205 \\\\ \\hline 230 \\\\ 000 \\\\ 9200 \\\\ \\hline 9430 \\end{array}",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true
+      },
+      {
+        "id": "mul-long-46x20-zeros",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": null,
+        "lines": [
+          {
+            "latex": "\\begin{array}{r} 46 \\\\ \\times 20 \\\\ \\hline 00 \\\\ 920 \\\\ \\hline 920 \\end{array}",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "a row of zeros for the 0 ones"
+      },
+      {
+        "id": "mul-long-46x23-partials-total-wrong",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": null,
+        "lines": [
+          {
+            "latex": "\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 18 \\\\ 120 \\\\ 120 \\\\ 800 \\\\ \\hline 1048 \\end{array}",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "mul-long-46x23-partials-row-wrong",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": null,
+        "lines": [
+          {
+            "latex": "\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 18 \\\\ 120 \\\\ 120 \\\\ 700 \\\\ \\hline 958 \\end{array}",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "40 × 20 written 700, the rows added right"
+      },
+      {
+        "id": "mul-long-46x23-partials-so-far",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": null,
+        "lines": [
+          {
+            "latex": "\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 18 \\\\ 120 \\end{array}",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "two partial products, the rest still to come"
+      },
+      {
+        "id": "mul-long-46x23-reversed-row-wrong",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": null,
+        "lines": [
+          {
+            "latex": "\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 920 \\\\ 128 \\\\ \\hline 1048 \\end{array}",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
         },
         "pass": true
       },
@@ -43505,6 +43682,874 @@
         },
         "pass": true,
         "note": "the problem copied, then answered"
+      },
+      {
+        "id": "claim-18x7-chain",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": "18 \\times 7",
+        "lines": [
+          {
+            "latex": "= 70 + 8 = 78",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          },
+          {
+            "latex": "78",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "the 8 never multiplied; ringed where it is made"
+      },
+      {
+        "id": "claim-18x7-own",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": null,
+        "lines": [
+          {
+            "latex": "18 \\times 7",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "= 10 \\times 7 + 8 = 78",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "the child's own problem"
+      },
+      {
+        "id": "claim-6x7-doubles",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": "6 \\times 7",
+        "lines": [
+          {
+            "latex": "= 6 \\times 6 = 36",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "claim-18x7-then",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": "18 \\times 7",
+        "lines": [
+          {
+            "latex": "= 10 \\times 7 = 70",
+            "expected": "calm",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "= 8 \\times 7 = 56",
+            "expected": "calm",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "= 70 + 56 = 126",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "= used as 'then'"
+      },
+      {
+        "id": "mul-18x7-tens-as-ones",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": "18 \\times 7",
+        "lines": [
+          {
+            "latex": "1 \\times 7 = 7",
+            "expected": "calm",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "8 \\times 7 = 56",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "7 + 56 = 63",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "63",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "the 1 ten taken as 1"
+      },
+      {
+        "id": "mul-18x7-unmultiplied",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": "18 \\times 7",
+        "lines": [
+          {
+            "latex": "10 \\times 7 = 70",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "70 + 8 = 78",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "78",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "mul-18x7-running-slip",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": "18 \\times 7",
+        "lines": [
+          {
+            "latex": "10 \\times 7 = 70 + 8 = 78",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "78",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "sub-52m17-flip-steps",
+        "grade": "K-2",
+        "topic": "sub",
+        "problem": "52 - 17",
+        "lines": [
+          {
+            "latex": "7 - 2 = 5",
+            "expected": "calm",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "50 - 10 = 40",
+            "expected": "calm",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "40 + 5 = 45",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "45",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "the smaller digit from the bigger, worked in steps"
+      },
+      {
+        "id": "mul-23x14-placeholder",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": "23 \\times 14",
+        "lines": [
+          {
+            "latex": "23 \\times 4 = 92",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "92 + 23 = 115",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "115",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "the zero holding the place left out"
+      },
+      {
+        "id": "mul-18x7-wrong-op",
+        "grade": "3-4",
+        "topic": "mul",
+        "problem": "18 \\times 7",
+        "lines": [
+          {
+            "latex": "18 + 7 = 25",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "25",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "added, not multiplied"
+      },
+      {
+        "id": "sub-52m17-wrong-op",
+        "grade": "K-2",
+        "topic": "sub",
+        "problem": "52 - 17",
+        "lines": [
+          {
+            "latex": "52 + 17 = 69",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "69",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "add-9p5-wrong-op",
+        "grade": "K-2",
+        "topic": "add",
+        "problem": "9 + 5",
+        "lines": [
+          {
+            "latex": "9 - 5 = 4",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "= 4",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "div-24d6-repeated",
+        "grade": "3-4",
+        "topic": "div",
+        "problem": "24 \\div 6",
+        "lines": [
+          {
+            "latex": "24 - 6 = 18",
+            "expected": "calm",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "18 - 6 = 12",
+            "expected": "calm",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "12 - 6 = 6",
+            "expected": "calm",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "6 - 6 = 0",
+            "expected": "calm",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "4",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "repeated subtraction: still steps"
+      },
+      {
+        "id": "sign-m3xm4",
+        "grade": "5-6",
+        "topic": "mul",
+        "problem": "-3 \\times -4",
+        "lines": [
+          {
+            "latex": "-12",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "sign-m3xm4-right",
+        "grade": "5-6",
+        "topic": "mul",
+        "problem": "-3 \\times -4",
+        "lines": [
+          {
+            "latex": "12",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true
+      },
+      {
+        "id": "sign-m7p10",
+        "grade": "5-6",
+        "topic": "add",
+        "problem": "-7 + 10",
+        "lines": [
+          {
+            "latex": "= -3",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "sign-m24dm6",
+        "grade": "5-6",
+        "topic": "div",
+        "problem": "-24 \\div -6",
+        "lines": [
+          {
+            "latex": "-4",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "sign-m3-squared",
+        "grade": "5-6",
+        "topic": "order",
+        "problem": "(-3)^{2}",
+        "lines": [
+          {
+            "latex": "-9",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-mul-0.3x0.2-point",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "0.3 \\times 0.2",
+        "lines": [
+          {
+            "latex": "0.6",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "decimals_multiply: one point counted, not two"
+      },
+      {
+        "id": "dec-mul-0.3x0.2-eq",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "0.3 \\times 0.2",
+        "lines": [
+          {
+            "latex": "= 0.6",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-mul-0.3x0.2-lost",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "0.3 \\times 0.2",
+        "lines": [
+          {
+            "latex": "6",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-mul-0.5x0.5",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "0.5 \\times 0.5",
+        "lines": [
+          {
+            "latex": "2.5",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-mul-5.4x0.1-same",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "5.4 \\times 0.1",
+        "lines": [
+          {
+            "latex": "5.4",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "the × 0.1 left out"
+      },
+      {
+        "id": "dec-mul-0.3x0.2-steps",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "0.3 \\times 0.2",
+        "lines": [
+          {
+            "latex": "3 \\times 2 = 6",
+            "expected": "calm",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "0.06",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-mul-2.4x0.3-partials",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "2.4 \\times 0.3",
+        "lines": [
+          {
+            "latex": "0.6",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "0.12",
+            "expected": "none",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "0.72",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "2 × 0.3 and 0.4 × 0.3 alone are steps"
+      },
+      {
+        "id": "frac-half-third-slash",
+        "grade": "5-6",
+        "topic": "frac",
+        "problem": "\\frac{1}{2} + \\frac{1}{3}",
+        "lines": [
+          {
+            "latex": "5/6",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true
+      },
+      {
+        "id": "frac-half-third-slash-wrong",
+        "grade": "5-6",
+        "topic": "frac",
+        "problem": "\\frac{1}{2} + \\frac{1}{3}",
+        "lines": [
+          {
+            "latex": "2/5",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "tops and bottoms added"
+      },
+      {
+        "id": "frac-half-third-slash-end",
+        "grade": "5-6",
+        "topic": "frac",
+        "problem": "\\frac{1}{2} + \\frac{1}{3}",
+        "lines": [
+          {
+            "latex": "\\frac{3}{6} + \\frac{2}{6} = 5/6",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true
+      },
+      {
+        "id": "div-6d4-slash",
+        "grade": "5-6",
+        "topic": "frac",
+        "problem": "6 \\div 4",
+        "lines": [
+          {
+            "latex": "3/2",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true
+      },
+      {
+        "id": "order-144d9p3-bracket",
+        "grade": "5-6",
+        "topic": "order",
+        "problem": "144 \\div 9 + 3",
+        "lines": [
+          {
+            "latex": "\\frac{16}{9 \\longdiv { 144 }}",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "16 + 3 = 19",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "the bracket is the first step, not the answer"
+      },
+      {
+        "id": "order-144d9p3-bracket-only",
+        "grade": "5-6",
+        "topic": "order",
+        "problem": "144 \\div 9 + 3",
+        "lines": [
+          {
+            "latex": "\\begin{array}{r} 16 \\\\ 9 \\longdiv { 144 } \\end{array}",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-14.4d9-bracket",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "14.4 \\div 9",
+        "lines": [
+          {
+            "latex": "\\begin{array}{r} 16 \\\\ 9 \\longdiv { 144 } \\end{array}",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "1.6",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "the digits divided, then the point put back"
+      },
+      {
+        "id": "frac-3q-m-half-across",
+        "grade": "5-6",
+        "topic": "frac",
+        "problem": "\\frac{3}{4} - \\frac{1}{2}",
+        "lines": [
+          {
+            "latex": "\\frac{2}{2}",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "tops and bottoms taken away"
+      },
+      {
+        "id": "frac-7e-m-3q-across",
+        "grade": "5-6",
+        "topic": "frac",
+        "problem": "\\frac{7}{8} - \\frac{3}{4}",
+        "lines": [
+          {
+            "latex": "\\frac{4}{4}",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "frac-quarters-across",
+        "grade": "5-6",
+        "topic": "frac",
+        "problem": "\\frac{1}{4} + \\frac{1}{4}",
+        "lines": [
+          {
+            "latex": "\\frac{2}{8}",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "tops and bottoms added"
+      },
+      {
+        "id": "frac-3q-m-half-steps",
+        "grade": "5-6",
+        "topic": "frac",
+        "problem": "\\frac{3}{4} - \\frac{1}{2}",
+        "lines": [
+          {
+            "latex": "\\frac{2}{4}",
+            "expected": "calm",
+            "got": "none",
+            "pass": true
+          },
+          {
+            "latex": "\\frac{1}{4}",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true
       },
       {
         "id": "alg-2x+3",
