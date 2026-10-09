@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Ellipsis, X } from "lucide-react";
 import { KID_COPY } from "./copy";
+import { GROWN_UP_MORE_ATTR } from "./tourAnchors";
 
 /** More's words: for the grown-up beside the kid. */
 const MORE_COPY = {
@@ -21,7 +22,7 @@ const MORE_COPY = {
  * The card is always mounted and only hidden while closed: the status pill in it keeps "Hide AI
  * shapes" applied and the ink meter keeps Live told the balance, open or not. It closes on the ×, a
  * tap outside it or Escape — not on a tap inside a menu or dialog it opened (Board options), which
- * React portals outside it.
+ * React portals outside it, nor on an Escape such a layer is there to take (`layerOverMore`).
  */
 export default function GrownUpMore({
   open,
@@ -39,15 +40,13 @@ export default function GrownUpMore({
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
-    const inLayer = (target: EventTarget | null) =>
-      target instanceof Element && target.closest("[data-radix-popper-content-wrapper],[role=menu],[role=dialog],[role=alertdialog]") !== null;
     const onPointerDown = (e: PointerEvent) => {
-      if (ref.current?.contains(e.target as Node) || inLayer(e.target)) return;
+      if (ref.current?.contains(e.target as Node) || inLayerOverMore(e.target instanceof Element ? e.target : null)) return;
       onOpenChange(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      // a menu or dialog on top closes first, on its own Escape
-      if (e.key !== "Escape" || document.querySelector("[role=menu],[role=dialog]")) return;
+      // a menu or modal dialog on top closes first, on its own Escape
+      if (e.key !== "Escape" || [...document.querySelectorAll(LAYER_ROLES)].some(layerOverMore)) return;
       onOpenChange(false);
       // not also tldraw's Escape, which puts the pen down for the selection arrow
       e.stopPropagation();
@@ -67,6 +66,7 @@ export default function GrownUpMore({
         type="button"
         aria-expanded={open}
         aria-controls="grown-up-more"
+        {...{ [GROWN_UP_MORE_ATTR]: "" }}
         title={MORE_COPY.hint}
         onClick={() => onOpenChange(!open)}
         className="flex h-12 cursor-pointer select-none items-center gap-1.5 rounded-full border border-slate-200 bg-white/95 pl-3.5 pr-4 text-sm font-medium text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-slate-100 aria-expanded:text-slate-800 motion-reduce:transition-none"
@@ -111,4 +111,35 @@ export default function GrownUpMore({
       </section>
     </div>
   );
+}
+
+/** The roles of what can open over More: a menu, a dialog. */
+const LAYER_ROLES = "[role=menu],[role=dialog],[role=alertdialog]";
+
+/** An element as far as More's checks read it: the DOM's, or a stand-in in the tests. */
+export interface LayerNode {
+  getAttribute(name: string): string | null;
+  hasAttribute(name: string): boolean;
+  readonly parentElement: LayerNode | null;
+}
+
+/**
+ * A layer over More, which takes Escape first and whose taps are not taps outside More: a menu
+ * (Board options) or a modal dialog (the ink dialog, the help-mode explainer, the tour's finish
+ * card). Not a non-modal dialog beside the board (`aria-modal="false"`): the guided board's coach
+ * mark, up through most of a K–3 kid's first board, or the daily board's cheer. More neither waits
+ * for one of those on Escape nor counts a tap on it as a tap inside.
+ */
+export function layerOverMore(el: Pick<LayerNode, "getAttribute">): boolean {
+  const role = el.getAttribute("role");
+  if (role === "menu" || role === "alertdialog") return true;
+  return role === "dialog" && el.getAttribute("aria-modal") !== "false";
+}
+
+/** The tap landed in a layer over More (`layerOverMore`), or in a Radix popover's portal (a menu's, a select's). */
+export function inLayerOverMore(target: LayerNode | null): boolean {
+  for (let el = target; el; el = el.parentElement) {
+    if (el.hasAttribute("data-radix-popper-content-wrapper") || layerOverMore(el)) return true;
+  }
+  return false;
 }
