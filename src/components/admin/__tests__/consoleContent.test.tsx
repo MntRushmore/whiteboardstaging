@@ -40,9 +40,9 @@ const noop = () => {};
 describe("the console's nav", () => {
   const html = render(<ConsoleNav items={consoleNav("issues", { newBugs: 4, openIssues: 6, regressed: 1 })} />);
 
-  it("is a labelled nav of five links, the current one marked", () => {
+  it("is a labelled nav of six links, the current one marked", () => {
     expect(html).toMatch(/<nav aria-label="Admin sections"/);
-    expect([...html.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/admin", "/admin/users", "/admin/boards", "/admin/bugs", "/admin/issues"]);
+    expect([...html.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/admin", "/admin/users", "/admin/funnel", "/admin/boards", "/admin/bugs", "/admin/issues"]);
     const current = [...html.matchAll(/<a [^>]*>/g)].map((m) => m[0]).filter((a) => a.includes('aria-current="page"'));
     expect(current).toHaveLength(1);
     expect(current[0]).toContain('href="/admin/issues"');

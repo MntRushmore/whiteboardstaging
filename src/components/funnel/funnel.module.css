@@ -1,0 +1,120 @@
+/* The admin Funnel page (src/components/funnel/FunnelScreen.tsx). Builds on the console's own
+   styles (admin.module.css, console.module.css): this file only adds the stage bars and the two
+   tables' sticky first column. Arc tokens only. Desktop first, readable on a phone. */
+
+/* ---- The stage bars ----------------------------------------------------------------------------- */
+.bars {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-variant-numeric: tabular-nums;
+}
+.bar {
+  display: grid;
+  grid-template-areas:
+    "label count"
+    "track track"
+    "share share";
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+}
+@media (min-width: 720px) {
+  .bars {
+    gap: var(--space-3);
+  }
+  .bar {
+    grid-template-areas: "label track count share";
+    grid-template-columns: minmax(10rem, 13rem) minmax(0, 1fr) 3.5rem minmax(9rem, 11rem);
+    gap: var(--space-4);
+  }
+}
+.barLabel {
+  grid-area: label;
+  min-width: 0;
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.track {
+  grid-area: track;
+  height: 0.75rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--border) 70%, var(--surface));
+}
+.fill {
+  height: 100%;
+  min-width: 2px;
+  border-radius: 999px;
+  background: var(--series-1);
+  transition: width var(--duration-standard) var(--ease-standard);
+}
+.fill[data-stage="paid"] {
+  background: var(--success);
+}
+.fill[data-zero] {
+  min-width: 0;
+}
+.barCount {
+  grid-area: count;
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: right;
+}
+.barShare {
+  grid-area: share;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+@media (min-width: 720px) {
+  .barShare {
+    font-size: var(--text-sm);
+  }
+}
+.note {
+  margin: var(--space-4) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+/* ---- The tables ---------------------------------------------------------------------------------- */
+/* on a narrow screen the table scrolls sideways under its first column */
+.stickyFirst thead th:first-child,
+.stickyFirst tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+.stickyFirst thead th:first-child {
+  z-index: 2;
+}
+.rowName {
+  display: block;
+  color: var(--foreground);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.cell {
+  display: grid;
+  justify-items: end;
+}
+.cell[data-zero] .cellCount {
+  color: var(--text-muted);
+}
+.cellCount {
+  color: var(--foreground);
+}
+.paidCell .cellCount {
+  color: var(--success);
+  font-weight: 600;
+}
+.paidCell[data-zero] .cellCount {
+  color: var(--text-muted);
+  font-weight: 400;
+}

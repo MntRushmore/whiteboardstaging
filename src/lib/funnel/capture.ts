@@ -63,7 +63,6 @@ const UTM_FIELDS = [
 /** A value worth keeping: trimmed, no control characters, not an email address, cut to the cap. */
 function clean(value: string | null | undefined): string | undefined {
   if (typeof value !== "string") return undefined;
-  // eslint-disable-next-line no-control-regex
   const v = value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
   if (!v || v.includes("@")) return undefined;
   return v.slice(0, ATTRIBUTION_FIELD_MAX);
