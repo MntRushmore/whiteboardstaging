@@ -76,6 +76,10 @@ const envSchema = z.object({
   // Storage GC cron (GET|POST /api/admin/gc): Vercel sends `Authorization: Bearer <CRON_SECRET>`.
   // Also the trial-reminder cron (GET /api/cron/trial-reminders).
   CRON_SECRET: optionalString,
+  // Signs the weekly report email's unsubscribe link (src/lib/report/unsubscribe.ts); unset: CRON_SECRET.
+  // A link signed with the _PREVIOUS value still works, so a rotation keeps it there for 30 days.
+  REPORT_LINK_SECRET: optionalString,
+  REPORT_LINK_SECRET_PREVIOUS: optionalString,
 
   // Transactional email through Resend (src/lib/email). Unset: nothing is sent, nothing breaks.
   RESEND_API_KEY: optionalString,

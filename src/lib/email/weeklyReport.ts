@@ -41,7 +41,7 @@ export type WeeklyReportEmailInput = {
   report: WeeklyReport;
   /** the site's origin (NEXT_PUBLIC_SITE_URL); the button opens /report on this week */
   siteUrl: string;
-  /** the signed one-tap unsubscribe link (src/lib/report/unsubscribe.ts) */
+  /** the signed unsubscribe link (src/lib/report/unsubscribe.ts): it asks, then turns the email off */
   unsubscribeUrl: string;
 };
 

@@ -31,6 +31,8 @@ describe("getEmailEnv", () => {
     "OPENROUTER_API_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
     "CRON_SECRET",
+    "REPORT_LINK_SECRET",
+    "REPORT_LINK_SECRET_PREVIOUS",
     "RESEND_API_KEY",
     "EMAIL_FROM",
     "NEXT_PUBLIC_SITE_URL",
@@ -58,6 +60,7 @@ describe("getEmailEnv", () => {
   it("is safe and empty when nothing is configured", () => {
     expect(getEmailEnv()).toEqual({
       cronSecret: undefined,
+      reportLinkSecret: undefined,
       hasServiceRole: false,
       resend: { apiKey: null, from: DEFAULT_EMAIL_FROM },
       siteUrl: PRODUCTION_SITE_URL,
@@ -78,11 +81,19 @@ describe("getEmailEnv", () => {
     resetServerEnvCache();
     expect(getEmailEnv()).toEqual({
       cronSecret: "cron-secret",
+      // no REPORT_LINK_SECRET: the cron's secret signs the unsubscribe link
+      reportLinkSecret: "cron-secret",
       hasServiceRole: true,
       resend: { apiKey: "re_live_key", from: "Agathon <team@mail.agathon.app>" },
       siteUrl: "https://whiteboard.example.com",
       manageUrl: "https://billing.stripe.com/p/login/xyz",
       manageIsPortal: true,
     });
+  });
+
+  it("signs the unsubscribe link with REPORT_LINK_SECRET when it is set", () => {
+    Object.assign(process.env, { CRON_SECRET: "cron-secret", REPORT_LINK_SECRET: " link-secret ", REPORT_LINK_SECRET_PREVIOUS: "old-link-secret" });
+    resetServerEnvCache();
+    expect(getEmailEnv()).toMatchObject({ cronSecret: "cron-secret", reportLinkSecret: "link-secret" });
   });
 });

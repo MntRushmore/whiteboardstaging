@@ -105,6 +105,24 @@ describe("sendEmail", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("carries extra email headers (List-Unsubscribe, RFC 8058), and none when there are none", async () => {
+    reply(200, { id: "re_1" });
+    const headers = { "List-Unsubscribe": "<https://x.example/api/report/unsubscribe?u=a&t=b>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" };
+    expect(await sendEmail({ ...message, headers }, config())).toEqual({ ok: true, id: "re_1" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).headers).toEqual(headers);
+    reply(200, { id: "re_2" });
+    await sendEmail({ ...message, headers: {} }, config());
+    expect("headers" in JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toBe(false);
+  });
+
+  it("refuses a header that could break the email open (a newline, a bad name) before calling Resend", async () => {
+    const bad: Record<string, string>[] = [{ "List-Unsubscribe": "<https://x.example>\r\nBcc: a@b.c" }, { "Bad Name": "x" }, { "X:Y": "x" }, { "": "x" }];
+    for (const headers of bad) {
+      expect(await sendEmail({ ...message, headers }, config()), JSON.stringify(headers)).toMatchObject({ ok: false, error: expect.stringMatching(/header/) });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("returns Resend's error, with the status, instead of throwing", async () => {
     reply(422, { statusCode: 422, name: "validation_error", message: "Invalid `to` field." });
     expect(await sendEmail(message, config())).toEqual({ ok: false, error: "validation_error: Invalid `to` field.", status: 422 });

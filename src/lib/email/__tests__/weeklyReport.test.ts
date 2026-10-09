@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { weeklyReportEmail, childLines } from "@/lib/email/weeklyReport";
-import { runWeeklyReports, weeklyEmailWeek, WEEKLY_REPORT_KIND, type PlanHolder, type WeeklyReportDeps } from "@/lib/email/weeklyReportSend";
+import { fairOrder, runWeeklyReports, weeklyEmailDue, weeklyEmailWeek, WEEKLY_REPORT_KIND, type PlanHolder, type WeeklyReportDeps } from "@/lib/email/weeklyReportSend";
 import type { ChildWeek, WeeklyReport } from "@/lib/report/contracts";
 import { verifyUnsubscribe } from "@/lib/report/unsubscribe";
 import { fakeDeps, silentLog, SITE, testEnv } from "./fakes";
@@ -104,24 +104,50 @@ describe("weeklyReportEmail", () => {
 });
 
 describe("weeklyEmailWeek", () => {
-  it("is this week on Sunday and last week on Monday morning, in New York", () => {
+  it("is this week on Sunday, and last week on Monday and Tuesday (the catch-up), in New York", () => {
     expect(weeklyEmailWeek(new Date("2026-10-11T15:00:00Z"))).toBe("2026-10-05"); // Sunday 11:00 EDT
     expect(weeklyEmailWeek(new Date("2026-10-12T15:00:00Z"))).toBe("2026-10-05"); // Monday 11:00 EDT
-    expect(weeklyEmailWeek(new Date("2026-10-12T17:00:00Z"))).toBeNull(); // Monday 13:00
+    expect(weeklyEmailWeek(new Date("2026-10-12T17:00:00Z"))).toBe("2026-10-05"); // Monday 13:00
+    expect(weeklyEmailWeek(new Date("2026-10-13T15:00:00Z"))).toBe("2026-10-05"); // Tuesday 11:00
+    expect(weeklyEmailWeek(new Date("2026-10-14T15:00:00Z"))).toBeNull(); // Wednesday
     expect(weeklyEmailWeek(new Date("2026-10-08T15:00:00Z"))).toBeNull(); // Thursday
+    expect(weeklyEmailWeek(new Date("2026-10-10T15:00:00Z"))).toBeNull(); // Saturday
     // 01:00 UTC Monday is still Sunday evening in New York
     expect(weeklyEmailWeek(new Date("2026-10-12T01:00:00Z"))).toBe("2026-10-05");
+    // 02:00 UTC Wednesday is still Tuesday evening
+    expect(weeklyEmailWeek(new Date("2026-10-14T02:00:00Z"))).toBe("2026-10-05");
+  });
+
+  it("knows Tuesday is the week's last day", () => {
+    expect(weeklyEmailDue(new Date("2026-10-11T15:00:00Z"))).toEqual({ weekStart: "2026-10-05", lastDay: false });
+    expect(weeklyEmailDue(new Date("2026-10-12T15:00:00Z"))).toEqual({ weekStart: "2026-10-05", lastDay: false });
+    expect(weeklyEmailDue(new Date("2026-10-13T15:00:00Z"))).toEqual({ weekStart: "2026-10-05", lastDay: true });
+  });
+});
+
+describe("fairOrder", () => {
+  it("puts the families whose last weekly email is oldest first, never sent first of all, then by id", () => {
+    const h = (userId: string): PlanHolder => ({ userId, payerEmail: null });
+    const last = new Map([
+      ["a", "2026-09-28"],
+      ["b", "2026-09-21"],
+      ["d", "2026-09-28"],
+    ]);
+    expect(fairOrder([h("d"), h("a"), h("b"), h("c"), h("e")], last).map((x) => x.userId)).toEqual(["c", "e", "b", "a", "d"]);
   });
 });
 
 describe("runWeeklyReports", () => {
   const SUNDAY = new Date("2026-10-11T15:00:00Z");
 
-  function reportDeps(over: { holders?: PlanHolder[]; weeks?: Record<string, WeeklyReport | { kid: true } | { error: string }>; optedOut?: string[]; enabled?: boolean; sentTo?: () => Set<string> } = {}): WeeklyReportDeps {
+  function reportDeps(
+    over: { holders?: PlanHolder[]; weeks?: Record<string, WeeklyReport | { kid: true } | { error: string }>; optedOut?: string[]; enabled?: boolean; sentTo?: () => Set<string>; lastSent?: Map<string, string> } = {},
+  ): WeeklyReportDeps {
     return {
       enabled: () => over.enabled ?? true,
       planHolders: vi.fn(async () => over.holders ?? [{ userId: PARENT, payerEmail: "payer@example.com" }]),
       sentTo: vi.fn(async () => over.sentTo?.() ?? new Set<string>()),
+      lastSent: vi.fn(async () => over.lastSent ?? new Map<string, string>()),
       optedOut: vi.fn(async () => new Set(over.optedOut ?? [])),
       familyWeek: vi.fn(async (userId: string) => {
         const w = over.weeks?.[userId] ?? report([child()], userId);
@@ -147,7 +173,7 @@ describe("runWeeklyReports", () => {
     expect(r.planHolders).not.toHaveBeenCalled();
   });
 
-  it("sends each active family's week once, to the payer, with a signed unsubscribe link", async () => {
+  it("sends each active family's week once, to the payer, with a signed unsubscribe link and one-click headers", async () => {
     const d = fakeDeps({ now: SUNDAY });
     const r = reportDeps({ sentTo: () => new Set(d.log.rows.filter((x) => x.kind === WEEKLY_REPORT_KIND && x.ref === "2026-10-05").map((x) => x.user_id)) });
     const s = await runWeeklyReports(d, testEnv(), { dryRun: false }, silentLog(), r);
@@ -158,8 +184,13 @@ describe("runWeeklyReports", () => {
     expect(msg.subject).toBe("Maya's week on Agathon");
     expect(msg.tags).toEqual({ kind: "weekly_report" });
     expect(msg.idempotencyKey).toBe(`weekly-report/${PARENT}/2026-10-05`);
-    const stop = new URL(hrefs(msg.html).find((h) => h.includes("unsubscribe"))!);
-    expect(verifyUnsubscribe(stop.searchParams.get("u"), stop.searchParams.get("t"), testEnv().cronSecret)).toBe(PARENT);
+    const link = hrefs(msg.html).find((h) => h.includes("unsubscribe"))!;
+    const stop = new URL(link);
+    // signed with the link's own secret, not the cron's
+    expect(verifyUnsubscribe(stop.searchParams.get("u"), stop.searchParams.get("t"), testEnv().reportLinkSecret)).toBe(PARENT);
+    expect(verifyUnsubscribe(stop.searchParams.get("u"), stop.searchParams.get("t"), testEnv().cronSecret)).toBeNull();
+    // the mail app's own Unsubscribe: RFC 8058 one-click, a POST to the same signed link
+    expect(msg.headers).toEqual({ "List-Unsubscribe": `<${link}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
     expect(d.log.rows).toMatchObject([{ user_id: PARENT, kind: "weekly_report", ref: "2026-10-05" }]);
 
     // Monday morning's run finds it sent
@@ -182,7 +213,7 @@ describe("runWeeklyReports", () => {
     expect(r.familyWeek).not.toHaveBeenCalledWith("u-optout", expect.anything(), expect.anything(), expect.anything());
   });
 
-  it("lists without sending on a dry run, keeps to the per-run cap, and counts a failed read", async () => {
+  it("lists without sending on a dry run, keeps to a manual cap, and counts a failed read", async () => {
     const holders: PlanHolder[] = [
       { userId: "a", payerEmail: null },
       { userId: "b", payerEmail: null },
@@ -200,9 +231,68 @@ describe("runWeeklyReports", () => {
     expect(await runWeeklyReports(broken, testEnv(), { dryRun: false }, silentLog(), reportDeps({ holders, weeks: { b: { error: "down" } } }))).toMatchObject({ sent: 2, failed: 1 });
   });
 
-  it("throws when the plans cannot be read", async () => {
+  it("has no fixed count: every due family goes in one run while there is time", async () => {
+    const holders: PlanHolder[] = Array.from({ length: 70 }, (_, i) => ({ userId: `u-${String(i).padStart(2, "0")}`, payerEmail: null }));
+    const d = fakeDeps({ now: SUNDAY });
+    const s = await runWeeklyReports(d, testEnv(), { dryRun: false, deadline: SUNDAY.getTime() + 40_000 }, silentLog(), reportDeps({ holders }));
+    expect(s).toMatchObject({ found: 70, sent: 70, deferred: 0, failed: 0 });
+  });
+
+  it("stops starting families when the run's time is up; the oldest last email goes first, and the next run picks up the rest", async () => {
+    const holders: PlanHolder[] = ["a", "b", "c", "d", "e"].map((userId) => ({ userId, payerEmail: null }));
+    // a and b got last week's email, c two weeks ago, d and e never (or not lately)
+    const lastSent = new Map([
+      ["a", "2026-09-28"],
+      ["b", "2026-09-28"],
+      ["c", "2026-09-21"],
+    ]);
+    // each send takes 15 s on this clock: the run has 40 s
+    const clocked = (start: Date) => {
+      let t = start.getTime();
+      const d = fakeDeps({ now: start });
+      d.now = () => new Date(t);
+      const send = d.send;
+      d.send = vi.fn(async (...args: Parameters<typeof send>) => {
+        t += 15_000;
+        return send(...args);
+      });
+      return d;
+    };
+    const sunday = clocked(SUNDAY);
+    const log = silentLog();
+    const r = reportDeps({ holders, lastSent, sentTo: () => new Set(sunday.log.rows.filter((x) => x.ref === "2026-10-05").map((x) => x.user_id)) });
+    const first = await runWeeklyReports(sunday, testEnv(), { dryRun: false, deadline: SUNDAY.getTime() + 40_000 }, log, r);
+    expect(first).toMatchObject({ sent: 3, deferred: 2 });
+    expect(sunday.sent.map((m) => m.to)).toEqual(["d@example.com", "e@example.com", "c@example.com"]);
+    // not the week's last day: no warning yet
+    expect(log.warn).not.toHaveBeenCalled();
+
+    // Tuesday, the last day: a and b get theirs, and nobody twice
+    const tuesday = clocked(new Date("2026-10-13T15:00:00Z"));
+    tuesday.log.rows.push(...sunday.log.rows);
+    const tlog = silentLog();
+    const second = await runWeeklyReports(tuesday, testEnv(), { dryRun: false, deadline: Date.parse("2026-10-13T15:00:40Z") }, tlog, r);
+    expect(second).toMatchObject({ weekStart: "2026-10-05", sent: 2, alreadySent: 3, deferred: 0 });
+    expect(tuesday.sent.map((m) => m.to)).toEqual(["a@example.com", "b@example.com"]);
+    expect(tlog.warn).not.toHaveBeenCalled();
+  });
+
+  it("warns when families are left on the week's last day", async () => {
+    const holders: PlanHolder[] = ["a", "b"].map((userId) => ({ userId, payerEmail: null }));
+    const tuesday = new Date("2026-10-13T15:00:00Z");
+    const log = silentLog();
+    // the deadline has already passed: nobody is started
+    const s = await runWeeklyReports(fakeDeps({ now: tuesday }), testEnv(), { dryRun: false, deadline: tuesday.getTime() }, log, reportDeps({ holders }));
+    expect(s).toMatchObject({ sent: 0, deferred: 2 });
+    expect(log.warn).toHaveBeenCalledWith(expect.objectContaining({ weekStart: "2026-10-05", deferred: 2 }), expect.stringMatching(/without this week's email/));
+  });
+
+  it("throws when the plans cannot be read, or nothing can sign the unsubscribe link", async () => {
     const r = reportDeps();
     r.planHolders = async () => ({ error: "down" });
     await expect(runWeeklyReports(fakeDeps({ now: SUNDAY }), testEnv(), { dryRun: false }, silentLog(), r)).rejects.toThrow(/could not read the plans/);
+    const d = fakeDeps({ now: SUNDAY });
+    await expect(runWeeklyReports(d, testEnv({ reportLinkSecret: undefined }), { dryRun: false }, silentLog(), reportDeps())).rejects.toThrow(/cannot be signed/);
+    expect(d.send).not.toHaveBeenCalled();
   });
 });
