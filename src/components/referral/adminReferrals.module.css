@@ -1,0 +1,104 @@
+/* The admin console's Referrals page (AdminReferralsScreen): what the console's own styles
+   (src/components/admin/admin.module.css, console.module.css) do not already have. Arc tokens only. */
+
+.urgentValue {
+  color: var(--warning, oklch(52% 0.14 70));
+}
+
+/* min-width 0: on a phone the choices scroll sideways instead of widening the page */
+.filters {
+  min-width: 0;
+}
+
+/* one account in a cell: the address, the checkout's address when it differs, then a note */
+.party {
+  display: grid;
+  min-width: 0;
+  justify-items: start;
+  gap: 4px;
+}
+.email {
+  max-width: 22rem;
+  overflow: hidden;
+  color: var(--foreground);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flag {
+  display: inline-flex;
+}
+
+.actionsCell {
+  width: 1%;
+  white-space: nowrap;
+}
+.actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+/* in the table the cell is as narrow as its buttons, side by side */
+.actionsCell .actions {
+  flex-wrap: nowrap;
+}
+
+/* a phone: one card per referral */
+.card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+/* the status (and who rewarded it) beside the day it joined; the day wraps below when both don't fit */
+.cardTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+.cardFacts {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+.cardFacts > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.cardFacts dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.cardFacts dd {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.card .actions {
+  justify-content: flex-start;
+}
+
+/* the confirm dialog */
+.dialogCustomer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.dialogError {
+  margin: 0 0 var(--space-4);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

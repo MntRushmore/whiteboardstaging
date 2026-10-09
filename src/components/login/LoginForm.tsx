@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, MailCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
+import { readInvite } from "@/components/referral/ReferralInvite";
 import { Alert } from "@/registry/components/alert/alert";
 import { Button } from "@/registry/components/button/button";
 import { Input } from "@/registry/components/input/input";
@@ -140,6 +141,11 @@ export function LoginForm() {
       router.replace(afterSignInPath(window.location.search));
     }
   }, [user, authLoading, router]);
+
+  // A friend's invite link (src/lib/referral): they came to join, so the form opens on Sign up.
+  useEffect(() => {
+    if (readInvite()) setMode("signup");
+  }, []);
 
   useEffect(() => {
     const target = pendingFocus.current;

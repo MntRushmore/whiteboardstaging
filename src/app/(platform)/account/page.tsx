@@ -12,6 +12,7 @@ import { DangerZone } from "@/components/account/DangerZone";
 import { BillingCard } from "@/components/account/BillingCard";
 import { GradeSection } from "@/components/account/GradeSection";
 import { FamilySection } from "@/components/account/FamilySection";
+import { ReferralCard } from "@/components/referral/ReferralCard";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { ACCOUNT_COPY, accountPageStateFor } from "@/lib/billing/accountState";
 import { isKidEmail } from "@/lib/family/contracts";
@@ -128,6 +129,7 @@ export default function AccountPage() {
             <ProfileCard userId={user.id} email={email} />
             <GradeSection userId={user.id} kid={isKidEmail(email)} />
             <FamilySection email={email} />
+            <ReferralCard />
             <DangerZone email={email} />
           </div>
         )}

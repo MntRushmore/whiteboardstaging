@@ -843,7 +843,117 @@ npx supabase migration repair --db-url "$DB" --status applied 20261009130000
 
 Locally, `src/lib/billing/__tests__/billing_followups.test.sql` checks it (it fails on the old
 definition). The yearly plan once planned for this timestamp was dropped: the owner will raise the
-monthly price instead, so `unlimited_subscriptions.billing_interval` (from
-`20261009100000_parents_recommend.sql`) stays, unused. The admin Overview's money tiles
+monthly price instead, and `unlimited_subscriptions.billing_interval` was taken out of
+`20261009100000_parents_recommend.sql` before it reached prod. The admin Overview's money tiles
 (`moneyOverview`, `src/lib/server/adminOverview.ts`) leave admins out but still count paid rows
 linked to nobody.
+
+## 15. Referrals: give a month, get a month
+
+"Share Agathon with another family. When they join, they get their first month free, and you get a
+free month too." (2026-10-09, Phase 2; `docs/KIDS-COME-BACK.md`.) Schema and rules:
+`supabase/migrations/20261009110000_referrals.sql`; code: `src/lib/referral`.
+
+**How it works.**
+
+- Every grown-up has a code (8 characters, no vowels or look-alikes), made the first time their
+  card is shown. The card is on `/family` and `/account` (never for a kid profile): their link
+  `https://agathon.app/?ref=<code>` with Copy and Share, and "2 friends joined · 1 free month
+  earned".
+- A visitor who opens the link keeps the code in their attribution (the funnel's capture). On
+  `/login` they see "A friend invited you to Agathon" (plus "Your first month is free." only when
+  the referral Payment Link below is set). It never says whose code it is.
+- When the new account's attribution is saved, the database records a referral, but only if the
+  code is another grown-up's, and the account was made after the code and is not a kid. That rules
+  out self-referral and a grown-up's own kids. Otherwise the `ref` is dropped from the attribution,
+  so `profiles.attribution.ref` present means "referred". The plan screen uses that to send the
+  friend to the referral Payment Link (`planLink({ referred })`, `src/lib/billing/planChoice.ts`).
+- The friend's subscription moves the referral forward and never back: `signed_up` → `trialing`
+  (checkout done, free trial running) → `paid` (subscription `active`: the first charge succeeded).
+  The admin then sets it to `rewarded`; or to `void` for abuse. Both are final.
+- **Admin → Referrals** (`/admin/referrals`) lists every referral: the referrer's and the friend's
+  account emails, the emails the checkouts were paid with (known only after a checkout), the
+  referrer's Stripe customer id (copyable), the status and its dates. It opens on **Reward due**
+  (the `paid` ones). A friend whose address matches the referrer's (ignoring case, `+tags` and
+  Gmail's dots) is flagged "Looks like the same person". Marks are written to `admin_audit`
+  (`referral.reward`, `referral.void`).
+
+### The friend's free first month: the referral Payment Link (optional)
+
+Without it, a referred friend gets the usual 7-day trial, and no page promises them a free month.
+It is the monthly plan's price with a **30-day** trial, tagged like the Unlimited link so the webhook
+links it (`metadata.plan_id = unlimited` on the link and on its subscriptions):
+
+1. Find the Unlimited monthly price id. `scripts/stripe-setup.mjs` prints it, or open *Product
+   catalog → Agathon Unlimited* → the $25/month price → copy `price_…`.
+2. Create the link with the Stripe CLI (drop `--live` to try it in test mode first). Use your site
+   in the redirect:
+
+   ```bash
+   PRICE=price_…    # step 1
+   stripe post /v1/payment_links --live \
+     -d "line_items[0][price]=$PRICE" -d "line_items[0][quantity]=1" \
+     -d "subscription_data[trial_period_days]=30" \
+     -d "subscription_data[metadata][app]=agathon-classroom" \
+     -d "subscription_data[metadata][plan_id]=unlimited" \
+     -d "metadata[app]=agathon-classroom" -d "metadata[plan_id]=unlimited" \
+     -d "metadata[price_id]=$PRICE" -d "metadata[trial_days]=30" -d "metadata[offer]=referral" \
+     -d "payment_method_collection=always" -d "allow_promotion_codes=false" \
+     -d "after_completion[type]=redirect" \
+     -d "after_completion[redirect][url]=https://agathon.app/?unlimited=started" \
+     -d "custom_text[submit][message]=Free for 30 days, then \$25.00 a month until you cancel. Cancel before the free trial ends and you won't be charged."
+   ```
+
+   (In the Dashboard instead: *Payment Links → New* → the $25/month price, *Include a free trial*
+   30 days, *Require a payment method*, after payment redirect to `<site>/?unlimited=started`, and
+   the same metadata under *Advanced*. Stripe's form does not set `subscription_data.metadata`, so
+   prefer the CLI.)
+3. Set the variable and redeploy (`NEXT_PUBLIC_*` values are built into the bundle):
+
+   ```bash
+   vercel env add NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK production   # the printed https://buy.stripe.com/… URL
+   vercel --prod
+   ```
+
+4. Check it: open an invite link in a private window. `/login` says "Your first month is free.",
+   and after sign-up the plan screen's checkout shows "30 days free".
+
+**Warning:** `scripts/stripe-setup.mjs` deactivates every *other* active link tagged
+`plan_id = unlimited` each time it runs ("deactivate old Payment Link …"). Until the script spares
+links tagged `offer = referral`, run it with `--dry-run` first. If it lists the referral link,
+reactivate the link afterwards (*Payment Links → the link → Activate*). Its URL stays the same, so
+the variable does not change.
+
+### Rewarding the referrer (their free month)
+
+The app has no Stripe secret key, so you give the month by hand when a referral shows **Paid:
+reward due**:
+
+1. *Admin → Referrals*, filter **Reward due**. Check the row: the friend is a different family
+   (no "Looks like the same person" flag, different payer emails). If it is abuse, press **Void**.
+   That is final, and nothing is owed.
+2. In Stripe: *Customers* → search the referrer's **Stripe customer** id from the row (or their
+   payer email) → *Adjust balance* (*Balance* → *Adjust*) → **credit $25.00** with the description
+   "Referral: free month (Agathon)". The credit comes off their next invoice. A referrer with no
+   Stripe customer yet has no plan to credit: wait until they subscribe, then credit them.
+3. Back on the row, press **Mark rewarded**, then confirm "I applied the credit". This stamps
+   `rewarded_at` and `rewarded_by`, writes `referral.reward` to `admin_audit`, and their card now
+   counts the month as earned.
+
+**By hand (SQL editor, as `postgres`)**, when the console is down:
+
+```sql
+-- rewards due
+select r.id, ru.email as referrer, fu.email as friend, r.paid_at
+from public.referrals r
+join auth.users ru on ru.id = r.referrer_id
+join auth.users fu on fu.id = r.referred_id
+where r.status = 'paid' order by r.paid_at;
+
+-- after the Stripe credit: the same as the console's button (audited); p_admin is your user id
+select public.admin_referral_mark(<id>, 'rewarded', (select id from auth.users where email = 'you@…'));
+```
+
+**Deploy order:** apply `20261009110000_referrals.sql` (after `20261009100000_parents_recommend.sql`)
+before the code. It is idempotent. Then `node scripts/verify-rls.mjs` runs the "referrals" checks.
+Nothing needs the referral link: without it the friend gets the usual trial.
