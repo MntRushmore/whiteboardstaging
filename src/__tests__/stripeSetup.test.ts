@@ -530,12 +530,12 @@ describe("setup()", () => {
 
     const first = await setup(live, deps);
     const packPrices = stripe.db.prices.filter((p) => (p.metadata as Record<string, string>).pack_id);
-    // three packs and Unlimited
+    // three packs and Unlimited; Unlimited's monthly price sells through two links (the usual one and the referral one)
     expect(stripe.db.products).toHaveLength(4);
     expect(stripe.db.prices).toHaveLength(4);
     expect(packPrices).toHaveLength(3);
     expect(packPrices.every((p) => !("recurring" in p))).toBe(true);
-    expect(stripe.db.links).toHaveLength(4);
+    expect(stripe.db.links).toHaveLength(5);
     expect(stripe.db.configs).toHaveLength(1);
     expect(stripe.db.hooks).toHaveLength(1);
     expect(stripe.db.hooks[0].enabled_events).toEqual([...WEBHOOK_EVENTS]);
@@ -548,13 +548,16 @@ describe("setup()", () => {
       "https://a.example.com/account?ink=medium",
       "https://a.example.com/account?ink=large",
       "https://a.example.com/?unlimited=started",
+      "https://a.example.com/?unlimited=started",
     ]);
     expect(first.unlimitedLink).toBe(stripe.db.links[3].url);
+    expect(first.referralLink).toBe(stripe.db.links[4].url);
     expect(first.portalUrl).toMatch(/^https:\/\/billing\.stripe\.com\/p\/login\//);
     expect(first.env).toEqual([
       expect.stringMatching(/^NEXT_PUBLIC_BILLING_LINKS=/),
       expect.stringMatching(/^INK_PRICE_MAP=/),
       `NEXT_PUBLIC_UNLIMITED_LINK=${first.unlimitedLink}`,
+      `NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK=${first.referralLink}`,
       `NEXT_PUBLIC_BILLING_PORTAL_URL=${first.portalUrl}`,
     ]);
 
@@ -567,8 +570,11 @@ describe("setup()", () => {
     expect(second.links).toEqual(first.links);
     expect(second.priceMap).toEqual(first.priceMap);
     expect(second.unlimitedLink).toBe(first.unlimitedLink);
+    expect(second.referralLink).toBe(first.referralLink);
     expect(second.portalUrl).toBe(first.portalUrl);
     expect(secrets).toHaveLength(1);
+    // and nothing of ours was archived or deactivated
+    expect(stripe.posts.filter((p) => p.body.active === false)).toEqual([]);
   });
 
   it("a changed price makes a new price + link and retires the old ones; a new site only moves the redirect", async () => {
@@ -611,9 +617,13 @@ describe("setup()", () => {
     const second = await setup(live, deps);
     expect(second.unlimitedLink).not.toBe(first.unlimitedLink);
     expect(oldPrice.active).toBe(false);
+    const offer = (l: Obj) => (l.metadata as Record<string, string>).offer;
     const ours = stripe.db.links.filter((l) => (l.metadata as Record<string, string>).plan_id === "unlimited");
-    expect(ours.map((l) => l.active)).toEqual([false, true]);
+    expect(ours.filter((l) => !offer(l)).map((l) => l.active)).toEqual([false, true]);
     expect(log.join("\n")).toMatch(/update NEXT_PUBLIC_UNLIMITED_LINK/);
+    // the referral link sells the monthly price, so it follows it to the new one
+    expect(second.referralLink).not.toBe(first.referralLink);
+    expect(ours.filter((l) => offer(l) === "referral").map((l) => l.active)).toEqual([false, true]);
   });
 
   it("an Unlimited product made before the statement descriptor gets AGATHON, in place (same product, price and link)", async () => {

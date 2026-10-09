@@ -25,6 +25,10 @@
  *     taken up front (`payment_method_collection: always`), `metadata.plan_id = unlimited` on the
  *     link (so on its Checkout Sessions) and on every subscription it starts
  *     (`subscription_data.metadata`), and a redirect to `<site>/?unlimited=started`
+ *   - the referral link (REFERRAL below, 2026-10-09): a second Payment Link for the monthly price
+ *     with a 30-day trial, `offer = referral` (NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK, optional). The
+ *     monthly link's lookup and clean-up skip any link with an `offer`, so it is never taken for a
+ *     stale monthly link.
  *   - a customer portal configuration for Unlimited (cancel at the period end, update the card,
  *     invoices) with its no-code login page, whose URL is NEXT_PUBLIC_BILLING_PORTAL_URL
  *   - a webhook endpoint for exactly the events src/app/api/billing/webhook handles (not for a
@@ -87,6 +91,24 @@ export const WEBHOOK_EVENTS = Object.freeze([
  * @type {Readonly<{ id: string, name: string, priceCents: number, currency: string, interval: "month", trialDays: number }>}
  */
 export const UNLIMITED = Object.freeze({ id: "unlimited", name: "Agathon Unlimited", priceCents: 2500, currency: "usd", interval: "month", trialDays: 7 });
+
+/**
+ * A referred family's free first month (2026-10-09, "give a month, get a month"): a second Payment
+ * Link for the MONTHLY price with a 30-day trial, tagged `offer = referral`. Keep the trial equal to
+ * REFERRAL_TRIAL_DAYS in src/lib/billing/planChoice.ts. Its link is
+ * NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK (optional: the app offers it only to referred accounts, and
+ * only when it is set).
+ * @type {Readonly<{ offer: "referral", trialDays: number }>}
+ */
+export const REFERRAL = Object.freeze({ offer: "referral", trialDays: 30 });
+
+/**
+ * Which way an Unlimited object sells the plan (`metadata.offer`): "referral", or none, the monthly
+ * plan (its objects were made before the key existed, so the absence IS monthly).
+ */
+export function offerOf(obj) {
+  return metaOf(obj).offer ?? "monthly";
+}
 
 /** The subscription plans this script sold before ink; their objects are retired on every run. */
 export const RETIRED_PLAN_IDS = Object.freeze(["plus", "pro"]);
@@ -358,6 +380,30 @@ export function unlimitedLinkBody(priceId, site) {
   };
 }
 
+/** Above the referral Checkout's button: the free month, then the monthly price, in plain words. */
+export const REFERRAL_CHECKOUT_NOTE = `Your first month is free, then ${dollars(UNLIMITED.priceCents)} a ${UNLIMITED.interval} until you cancel. Cancel before the ${REFERRAL.trialDays} days are up and you won't be charged.`;
+
+/**
+ * The referral Payment Link: the MONTHLY price with a 30-day trial (`offer = referral`), otherwise
+ * the monthly link's shape. A Payment Link's URL is public once it is in the app's bundle, so anyone
+ * who reads the page's code could use it: the cost is 23 more free days on a first plan (one free
+ * trial per account, has_unlimited()). docs/RUNBOOK-billing.md section 13.
+ */
+export function referralLinkBody(priceId, site) {
+  return {
+    line_items: [{ price: priceId, quantity: 1 }],
+    after_completion: { type: "redirect", redirect: { url: unlimitedReturnUrl(site) } },
+    metadata: { app: APP_TAG, plan_id: UNLIMITED.id, price_id: priceId, trial_days: String(REFERRAL.trialDays), offer: REFERRAL.offer },
+    subscription_data: {
+      trial_period_days: REFERRAL.trialDays,
+      metadata: { app: APP_TAG, plan_id: UNLIMITED.id, offer: REFERRAL.offer },
+    },
+    payment_method_collection: "always",
+    allow_promotion_codes: false,
+    custom_text: { submit: { message: REFERRAL_CHECKOUT_NOTE } },
+  };
+}
+
 /**
  * The customer portal for Unlimited: cancel (at the end of the free trial or the paid month, so the
  * time paid for is kept and nothing more is charged), update the card, see invoices. No plan
@@ -451,6 +497,13 @@ export function findUnlimitedProduct(products) {
   return oldest(products.filter((p) => p.active !== false && isOurs(p, { plan_id: UNLIMITED.id })));
 }
 
+/** Our active referral Payment Link selling exactly this (monthly) price with exactly the referral trial. */
+export function findReferralLink(links, priceId) {
+  return oldest(
+    links.filter((l) => l.active !== false && isOurs(l, { plan_id: UNLIMITED.id, price_id: priceId, trial_days: String(REFERRAL.trialDays), offer: REFERRAL.offer })),
+  );
+}
+
 /** Our active MONTHLY Unlimited price on the product with exactly the plan's amount and currency. */
 export function findUnlimitedPrice(prices, productId) {
   return oldest(
@@ -467,9 +520,13 @@ export function findUnlimitedPrice(prices, productId) {
   );
 }
 
-/** Our active Unlimited Payment Link selling exactly this price with exactly this trial. */
+/** Our active (monthly) Unlimited Payment Link selling exactly this price with exactly this trial; never the referral one. */
 export function findUnlimitedLink(links, priceId) {
-  return oldest(links.filter((l) => l.active !== false && isOurs(l, { plan_id: UNLIMITED.id, price_id: priceId, trial_days: String(UNLIMITED.trialDays) })));
+  return oldest(
+    links.filter(
+      (l) => l.active !== false && isOurs(l, { plan_id: UNLIMITED.id, price_id: priceId, trial_days: String(UNLIMITED.trialDays) }) && offerOf(l) === "monthly",
+    ),
+  );
 }
 
 /** Our active Unlimited portal configuration. */
@@ -532,13 +589,16 @@ export function webhookEventsMatch(endpoint) {
  * The env values to set, one per line, ready for `vercel env add` / .env.local.
  * Only public URLs and price ids: nothing here is a secret. The Unlimited link and the portal's
  * login page are printed when known (a dry run that would create them does not know them yet).
- * @param {{ links: Record<string, string>, priceMap: Record<string, string>, unlimitedLink?: string | null, portalUrl?: string | null }} v
+ * The referral link is optional for the app (the friend's month is offered only when it is set), so
+ * it is printed like the others and the owner decides whether to set it.
+ * @param {{ links: Record<string, string>, priceMap: Record<string, string>, unlimitedLink?: string | null, referralLink?: string | null, portalUrl?: string | null }} v
  */
-export function envLines({ links, priceMap, unlimitedLink = null, portalUrl = null }) {
+export function envLines({ links, priceMap, unlimitedLink = null, referralLink = null, portalUrl = null }) {
   return [
     `NEXT_PUBLIC_BILLING_LINKS=${JSON.stringify(links)}`,
     `INK_PRICE_MAP=${JSON.stringify(priceMap)}`,
     ...(unlimitedLink ? [`NEXT_PUBLIC_UNLIMITED_LINK=${unlimitedLink}`] : []),
+    ...(referralLink ? [`NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK=${referralLink}`] : []),
     ...(portalUrl ? [`NEXT_PUBLIC_BILLING_PORTAL_URL=${portalUrl}`] : []),
   ];
 }
@@ -787,10 +847,28 @@ export async function setup(opts, deps = {}) {
     if (!dry) uLink = await api.post(`/v1/payment_links/${uLink.id}`, { after_completion: { type: "redirect", redirect: { url: wantUnlimitedRedirect } } });
   }
   log(`  payment link ${uLink.id} ${uLink.url ?? "(made on the real run)"}`);
-  for (const stale of links.filter((l) => l.id !== uLink.id && isOurs(l, { plan_id: UNLIMITED.id }))) {
+  // Only the monthly links: the referral link is kept (or replaced) by its own section below.
+  for (const stale of links.filter((l) => l.id !== uLink.id && isOurs(l, { plan_id: UNLIMITED.id }) && offerOf(l) === "monthly")) {
     would(`deactivate old Payment Link ${stale.id} (${stale.url})`);
     if (!dry) await api.post(`/v1/payment_links/${stale.id}`, { active: false });
     notes.push("The Unlimited Payment Link changed: update NEXT_PUBLIC_UNLIMITED_LINK and redeploy (the old link no longer sells).");
+  }
+
+  // A referred family's free first month: the monthly price, a 30-day trial, its own link.
+  log(`\n${UNLIMITED.name}, referral: the monthly price after ${REFERRAL.trialDays} days free`);
+  let rLink = findReferralLink(links, uPrice.id);
+  if (!rLink) {
+    would(`create referral Payment Link (${REFERRAL.trialDays}-day trial, card up front) redirecting to ${wantUnlimitedRedirect}`);
+    rLink = dry ? { id: "(new referral link)", url: null } : await api.post("/v1/payment_links", referralLinkBody(uPrice.id, opts.site));
+  } else if (linkRedirect(rLink) !== wantUnlimitedRedirect) {
+    would(`point Payment Link ${rLink.id} at ${wantUnlimitedRedirect}`);
+    if (!dry) rLink = await api.post(`/v1/payment_links/${rLink.id}`, { after_completion: { type: "redirect", redirect: { url: wantUnlimitedRedirect } } });
+  }
+  log(`  payment link ${rLink.id} ${rLink.url ?? "(made on the real run)"}`);
+  for (const stale of links.filter((l) => l.id !== rLink.id && isOurs(l, { plan_id: UNLIMITED.id, offer: REFERRAL.offer }))) {
+    would(`deactivate old referral Payment Link ${stale.id} (${stale.url})`);
+    if (!dry) await api.post(`/v1/payment_links/${stale.id}`, { active: false });
+    notes.push("The referral Payment Link changed: update NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK (if set) and redeploy (the old link no longer sells).");
   }
 
   // The customer portal: where a grown-up cancels or changes the card (the app has no Stripe key).
@@ -872,15 +950,18 @@ export async function setup(opts, deps = {}) {
   }
 
   const unlimitedLink = uLink.url ?? null;
-  const lines = envLines({ links: linkUrls, priceMap, unlimitedLink, portalUrl });
+  const referralLink = rLink.url ?? null;
+  const lines = envLines({ links: linkUrls, priceMap, unlimitedLink, referralLink, portalUrl });
   log("\nSet these (Vercel: Production; locally: the dev server's env):");
   for (const line of lines) log(`  ${line}`);
   if (!unlimitedLink) log("  NEXT_PUBLIC_UNLIMITED_LINK: (printed by the real run)");
+  if (!referralLink) log("  NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK: (printed by the real run)");
+  log("  (The referral link is optional: a referred family's free month is offered only when it is set.)");
   if (!portalUrl) log("  NEXT_PUBLIC_BILLING_PORTAL_URL: (printed by the real run, or see the note below)");
   log(`  STRIPE_WEBHOOK_SECRET: ${secretNote}`);
   log("  (BILLING_PRICE_MAP from the subscription days is no longer read: remove it.)");
   for (const note of new Set(notes)) log(`\nNote: ${note}`);
-  return { links: linkUrls, priceMap, unlimitedLink, portalUrl, env: lines };
+  return { links: linkUrls, priceMap, unlimitedLink, referralLink, portalUrl, env: lines };
 }
 
 /** Write the webhook signing secret for the operator, readable only by them. */
