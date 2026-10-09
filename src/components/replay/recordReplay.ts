@@ -130,13 +130,10 @@ function paperOf(image: ImageBitmap): string {
   }
 }
 
-/** The end card: Arc's wash, the tutor's tick drawing itself in, the name and the site. */
+/** The end card: Arc's flat grey, the tutor's tick drawing itself in, the name and the site. */
 function paintEndCard(ctx: CanvasRenderingContext2D, layout: Layout, t: number, families: Record<"display" | "body", string>): void {
   const { width, height } = layout.size;
-  const g = ctx.createLinearGradient(0, 0, width, height);
-  g.addColorStop(0, CARD_COLORS.washFrom);
-  g.addColorStop(1, CARD_COLORS.washTo);
-  ctx.fillStyle = g;
+  ctx.fillStyle = CARD_COLORS.ground;
   ctx.fillRect(0, 0, width, height);
   const cx = width / 2;
   const cy = height / 2;

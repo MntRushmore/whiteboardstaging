@@ -8,8 +8,7 @@
   /* the path's colours: done, next up, stars, the trail */
   --p-done: oklch(62% 0.17 150);
   --p-done-lip: oklch(49% 0.15 150);
-  --p-current: linear-gradient(160deg, oklch(67% 0.19 300), oklch(54% 0.22 280));
-  --p-current-solid: oklch(55% 0.21 285);
+  --p-current: oklch(55% 0.21 285);
   --p-current-lip: oklch(43% 0.19 282);
   --p-glow: oklch(60% 0.2 290 / 0.24);
   --p-glow-far: oklch(60% 0.2 290 / 0);
@@ -380,9 +379,9 @@
    showing — not locked, and not grey like the ones not tried yet */
 .stop[data-started] .circle {
   --c-bg: var(--card-bg);
-  --c-ink: var(--p-current-solid);
-  --c-lip: color-mix(in oklab, var(--p-current-solid) 45%, var(--card-bg));
-  border: 3px solid var(--p-current-solid);
+  --c-ink: var(--p-current);
+  --c-lip: color-mix(in oklab, var(--p-current) 45%, var(--card-bg));
+  border: 3px solid var(--p-current);
 }
 .stop[data-started] .name {
   color: var(--foreground, #1c1c1c);
@@ -396,7 +395,7 @@
   left: 50%;
   padding: 0.1875rem 0.625rem;
   border-radius: var(--radius-pill, 9999px);
-  background: var(--p-current-solid);
+  background: var(--p-current);
   box-shadow: 0 2px 6px oklch(0% 0 0 / 0.14);
   color: #fff;
   font-size: var(--text-xs, 0.75rem);
@@ -512,7 +511,6 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-4, 1rem);
-  background: var(--arc-gradient-soft, var(--card-bg));
 }
 .pickIcon {
   display: grid;

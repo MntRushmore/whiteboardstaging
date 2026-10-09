@@ -130,7 +130,6 @@ export function TodayView({ state, actions, preview = null }: { state: Extract<T
   const mix = phase !== "done" && preview && preview.length > 0 ? preview : null;
   return (
     <section className={styles.card} data-phase={phase} data-mix={mix ? "" : undefined} data-awaiting-mix={phase !== "done" && preview === null ? "" : undefined} aria-labelledby={titleId} data-today-card="">
-      <span className={styles.glow} aria-hidden />
       {phase === "done" && state.justFinished && <ConfettiBurst count={48} spread={200} className={styles.confetti} />}
       <div className={styles.main}>
         <p className={styles.eyebrow}>

@@ -7,14 +7,13 @@
   --d-fg: var(--foreground, #1c1c1c);
   --d-secondary: var(--text-secondary, #5e5e5e);
   --d-muted: var(--text-muted, #737373);
-  --d-bg: linear-gradient(135deg, oklch(97.6% 0.035 92) 0%, oklch(95.6% 0.05 64) 55%, oklch(95.2% 0.045 22) 100%);
-  --d-border: oklch(89% 0.05 65);
+  --d-bg: oklch(97.6% 0.03 85);
+  --d-border: oklch(89% 0.05 70);
   /* the eyebrow, today's ring, the started days */
   --d-accent: oklch(52% 0.16 42);
-  /* Start, the flame, the done days: sunrise orange to coral */
-  --d-hot-from: oklch(70% 0.19 55);
-  --d-hot-to: oklch(60% 0.215 27);
-  --d-hot-shadow: oklch(60% 0.2 35 / 0.45);
+  /* Start, the flame, the done days: one sunrise orange, deep enough for white text (4.6:1) */
+  --d-hot: oklch(58% 0.19 45);
+  --d-hot-strong: oklch(53% 0.18 43);
   --d-gold: oklch(83% 0.16 85);
   --d-gold-edge: oklch(68% 0.16 68);
   --d-gold-soft: oklch(92% 0.07 88);
@@ -35,10 +34,10 @@
   border-radius: var(--radius-panel, 1.625rem);
   background: var(--d-bg);
   color: var(--d-fg);
-  box-shadow: 0 18px 40px -28px oklch(55% 0.12 50 / 0.45);
+  box-shadow: var(--shadow-resting, 0 1px 2px oklch(0% 0 0 / 0.035));
 }
 :global(:root[data-theme="dark"]) .card {
-  --d-bg: linear-gradient(135deg, oklch(29% 0.04 78) 0%, oklch(27% 0.05 48) 55%, oklch(26% 0.05 18) 100%);
+  --d-bg: oklch(27% 0.035 60);
   --d-border: oklch(38% 0.05 52);
   --d-accent: oklch(82% 0.12 62);
   --d-gold-soft: oklch(46% 0.07 80);
@@ -46,7 +45,6 @@
   --d-panel: oklch(100% 0 0 / 0.06);
   --d-panel-border: oklch(100% 0 0 / 0.1);
   --d-dot: oklch(40% 0.02 60);
-  --d-hot-shadow: oklch(20% 0.05 40 / 0.6);
   box-shadow: none;
 }
 @media (min-width: 640px) {
@@ -82,23 +80,6 @@
     grid-template-areas: "main mix streak";
     grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) minmax(17rem, 21rem);
   }
-}
-
-/* a sun in the corner and a soft glow under the title */
-.glow {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    radial-gradient(circle at 92% -8%, oklch(93% 0.12 88 / 0.85), transparent 38%),
-    radial-gradient(ellipse at 8% 110%, oklch(93% 0.06 25 / 0.7), transparent 50%);
-  pointer-events: none;
-}
-:global(:root[data-theme="dark"]) .glow {
-  background:
-    radial-gradient(circle at 92% -8%, oklch(55% 0.12 75 / 0.35), transparent 40%),
-    radial-gradient(ellipse at 8% 110%, oklch(45% 0.08 20 / 0.35), transparent 50%);
 }
 
 .main {
@@ -205,15 +186,11 @@
   padding-inline: var(--space-8, 2rem);
   border: 0;
   border-radius: 999px;
-  background: linear-gradient(135deg, var(--d-hot-from), var(--d-hot-to));
+  background: var(--d-hot);
   color: #fff;
   font-size: 1.1875rem;
   font-weight: 700;
   letter-spacing: 0.01em;
-  box-shadow:
-    0 12px 24px -12px var(--d-hot-shadow),
-    0 2px 4px oklch(45% 0.1 35 / 0.18),
-    inset 0 1px 0 oklch(100% 0 0 / 0.28);
 }
 .go.go:focus-visible {
   outline: 3px solid oklch(62% 0.2 35 / 0.55);
@@ -222,16 +199,12 @@
 @media (hover: hover) and (pointer: fine) {
   .go.go:hover:not(:disabled) {
     opacity: 1;
-    filter: brightness(1.06) saturate(1.05);
-    box-shadow:
-      0 16px 28px -12px var(--d-hot-shadow),
-      0 2px 4px oklch(45% 0.1 35 / 0.18),
-      inset 0 1px 0 oklch(100% 0 0 / 0.28);
+    background: var(--d-hot-strong);
   }
 }
 .go.go:active:not(:disabled) {
   opacity: 1;
-  filter: brightness(0.96);
+  background: var(--d-hot-strong);
 }
 @media (max-width: 639px) {
   .go.go {
@@ -400,9 +373,8 @@
   fill-opacity: 0.25;
 }
 .streak[data-lit] .flame {
-  background: linear-gradient(160deg, oklch(82% 0.16 80), var(--d-hot-from) 45%, var(--d-hot-to));
+  background: var(--d-hot);
   color: #fff;
-  box-shadow: 0 8px 18px -8px var(--d-hot-shadow);
 }
 .streak[data-lit] .flame svg {
   fill-opacity: 0.45;
@@ -497,12 +469,11 @@
   background: transparent;
 }
 .weekDay[data-state="done"] .weekDot {
-  background: linear-gradient(160deg, var(--d-hot-from), var(--d-hot-to));
-  box-shadow: 0 4px 10px -6px var(--d-hot-shadow);
+  background: var(--d-hot);
 }
 .weekDay[data-state="started"] .weekDot {
-  border: 2.5px solid var(--d-hot-from);
-  background: color-mix(in oklab, var(--d-hot-from) 14%, transparent);
+  border: 2.5px solid var(--d-hot);
+  background: color-mix(in oklab, var(--d-hot) 14%, transparent);
 }
 .weekDay[data-state="today"] .weekDot {
   border: 2px dashed var(--d-accent);

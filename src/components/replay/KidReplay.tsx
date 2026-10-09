@@ -259,7 +259,7 @@ export default function KidReplay({ editor, boardId, onClose }: { editor: Editor
       aria-modal="true"
       aria-label={KID_REPLAY_COPY.title}
       data-testid="kid-replay"
-      className="fixed inset-0 z-1300 flex flex-col bg-linear-to-b from-sky-50 via-violet-50 to-fuchsia-50 pb-[env(safe-area-inset-bottom)]"
+      className="fixed inset-0 z-1300 flex flex-col bg-violet-50 pb-[env(safe-area-inset-bottom)]"
     >
       <header className="flex items-center justify-between gap-3 px-4 pt-3 pb-2">
         <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-violet-950 sm:text-xl">

@@ -613,7 +613,7 @@
   padding: 0 1rem;
   border: 1px solid var(--t-border-strong);
   border-radius: 999px;
-  background: var(--arc-gradient-soft, var(--t-muted));
+  background: var(--t-muted);
   color: var(--t-fg);
   font: inherit;
   font-size: 0.95rem;

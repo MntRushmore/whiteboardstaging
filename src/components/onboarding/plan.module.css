@@ -35,10 +35,10 @@
   box-shadow: var(--shadow-raised);
 }
 
-/* ---- the price, on the brand's soft gradient ------------------------------------------------- */
+/* ---- the price, on a muted band ---------------------------------------------------------------- */
 .hero {
   padding: var(--space-8) var(--space-6) var(--space-6);
-  background: var(--arc-gradient-soft);
+  background: var(--surface-muted);
   text-align: center;
 }
 @media (min-width: 640px) {
@@ -85,10 +85,7 @@
   text-decoration-thickness: 2px;
 }
 .free {
-  background: var(--arc-gradient-ink);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--foreground);
   font-family: var(--font-display);
   font-size: clamp(var(--text-2xl), 5.5vw, var(--text-3xl));
   font-weight: 650;

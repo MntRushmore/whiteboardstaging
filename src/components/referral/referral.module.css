@@ -1,5 +1,5 @@
 /* "Give a month, get a month" (ReferralCard on /family and /account) and the friend's invitation on
-   the sign-up page (ReferralInvite). Arc tokens only. A soft brand gradient sets the card apart from
+   the sign-up page (ReferralInvite). Arc tokens only. The gift in the accent sets the card apart from
    the plain settings around it without shouting like a coupon: one quiet surface, one clear link,
    two buttons. */
 
@@ -21,7 +21,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
   padding: var(--space-5);
-  background: var(--arc-gradient-soft), var(--surface);
+  background: var(--surface);
   box-shadow: var(--shadow-resting);
   color: var(--foreground);
 }
@@ -30,15 +30,6 @@
     padding: var(--space-6);
   }
 }
-/* the gradient's line along the top edge, like a ribbon on a present */
-.card::before {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  background: var(--arc-gradient-line);
-  content: "";
-}
-
 .head {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -51,9 +42,8 @@
   height: 2.75rem;
   place-items: center;
   border-radius: 999px;
-  background: var(--arc-gradient);
-  color: var(--arc-gradient-foreground);
-  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / .4), 0 1px 2px oklch(0% 0 0 / .06);
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 .headText {
   display: grid;
@@ -170,7 +160,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   padding: var(--space-3) var(--space-4);
-  background: var(--arc-gradient-soft), var(--surface);
+  background: var(--surface);
 }
 .inviteBadge {
   display: grid;
@@ -178,8 +168,8 @@
   height: 2.25rem;
   place-items: center;
   border-radius: 999px;
-  background: var(--arc-gradient);
-  color: var(--arc-gradient-foreground);
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 .inviteText {
   display: grid;

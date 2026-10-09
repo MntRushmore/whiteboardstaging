@@ -9,7 +9,7 @@
  * a long name wraps or shrinks, a long skill is cut with an ellipsis, and nothing ever runs off the
  * card (`__tests__/card.test.ts` checks every op stays inside it).
  *
- * The look is the app's: Arc's lavender-to-peach wash round a white board, Geist for the numbers and
+ * The look is the app's: a white board on Arc's flat grey, Geist for the numbers and
  * headings, Inter for the small words, and the tutor's own blue tick (`markStrokes`, the very mark
  * the board draws after a right line) beside the big number and each skill mastered.
  *
@@ -72,19 +72,17 @@ const DESCENT = 0.22;
 
 /** Arc's tokens as sRGB (src/registry/foundation.css), and the tutor's ink (palette blue, `TUTOR_INK_COLOR`). */
 export const CARD_COLORS = {
-  /** --arc-gradient-from / --arc-gradient-to */
-  washFrom: "#e2d8f8",
-  washTo: "#fadfc6",
+  /** the frame round the board: --neutral-3 */
+  ground: "#f1f1f1",
   board: "#ffffff",
   /** --foreground, --text-secondary, --text-muted */
   ink: "#0b0b0b",
   secondary: "#585858",
   muted: "#7d7d7d",
-  /** a hairline with the wash's lavender in it */
-  rule: "#ece7f5",
-  /** the avatar's disc: --arc-gradient-soft, a little deeper */
-  discFrom: "#f1eaff",
-  discTo: "#ffeddc",
+  /** a hairline: --border */
+  rule: "#e9e9e9",
+  /** the avatar's disc: --neutral-3 */
+  disc: "#f1f1f1",
   /** the tutor's writing on the board (#4465e9) */
   tutor: "#4465e9",
 } as const;
@@ -100,9 +98,9 @@ export interface Point {
 
 /** One thing to draw, in order. Text `y` is the baseline. */
 export type CardOp =
-  | { kind: "wash"; from: string; to: string }
+  | { kind: "ground"; color: string }
   | { kind: "board"; x: number; y: number; w: number; h: number; radius: number; fill: string }
-  | { kind: "disc"; cx: number; cy: number; r: number; from: string; to: string }
+  | { kind: "disc"; cx: number; cy: number; r: number; color: string }
   | { kind: "emoji"; text: string; cx: number; cy: number; size: number }
   | { kind: "text"; text: string; x: number; y: number; font: CardFont; color: string; align: "left" | "right" | "center"; width: number }
   | { kind: "tick"; points: Point[]; lineWidth: number; color: string; x: number; y: number; w: number; h: number }
@@ -280,7 +278,7 @@ export function cardSentence(data: ShareCardData, opts: CardOptions = {}): strin
 
 // ------------------------------------------------------------------ the layout
 
-/** The frame of wash round the board, the band under it for the brand, and the board's padding. */
+/** The frame round the board, the band under it for the brand, and the board's padding. */
 const FRAME = 48;
 const FOOT = 132;
 const PAD = 80;
@@ -329,14 +327,14 @@ export function layoutShareCard(data: ShareCardData, measure: MeasureText, opts:
   const bottom = board.y + board.h - PAD;
 
   const ops: CardOp[] = [
-    { kind: "wash", from: C.washFrom, to: C.washTo },
+    { kind: "ground", color: C.ground },
     { kind: "board", x: board.x, y: board.y, w: board.w, h: board.h, radius: 56, fill: C.board },
   ];
 
   // ---- header: the avatar's disc, the title and the grade beside it
   const discCx = left + DISC_R;
   const discCy = top + DISC_R;
-  ops.push({ kind: "disc", cx: discCx, cy: discCy, r: DISC_R, from: C.discFrom, to: C.discTo });
+  ops.push({ kind: "disc", cx: discCx, cy: discCy, r: DISC_R, color: C.disc });
   const avatar = data.avatar?.trim() || null;
   if (avatar) ops.push({ kind: "emoji", text: avatar, cx: discCx, cy: discCy + 2, size: 66 });
   else if (name) {

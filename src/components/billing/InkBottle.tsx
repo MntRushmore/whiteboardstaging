@@ -61,11 +61,10 @@ function SmallBottle({ id, level, tone, className }: { id: string; level: number
 
 /**
  * 120 x 150: a squat bottle with shoulders, a neck and a cork. The liquid's surface is a gentle
- * wave; a soft highlight on the glass keeps it from reading as a flat icon.
+ * wave; a white highlight on the glass keeps it from reading as a flat icon.
  */
 function LargeBottle({ id, level, tone, className }: { id: string; level: number; tone: InkTone; className?: string }) {
   const clip = `ink-lg-${id}`;
-  const shade = `ink-lg-shade-${id}`;
   // The body's inside runs from y 140 (floor) up to y 52 (where the shoulders meet the neck).
   const surface = 140 - 88 * level;
   const body = "M38 40 L38 50 C22 56 14 68 14 84 L14 126 C14 135 21 142 30 142 L90 142 C99 142 106 135 106 126 L106 84 C106 68 98 56 82 50 L82 40 Z";
@@ -75,15 +74,11 @@ function LargeBottle({ id, level, tone, className }: { id: string; level: number
         <clipPath id={clip}>
           <path d={body} />
         </clipPath>
-        <linearGradient id={shade} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={LIQUID[tone]} stopOpacity="0.85" />
-          <stop offset="1" stopColor={LIQUID[tone]} stopOpacity="1" />
-        </linearGradient>
       </defs>
       {level > 0 && (
         <path
           d={`M0 ${surface} Q 20 ${surface - 4} 40 ${surface} T 80 ${surface} T 120 ${surface} L120 150 L0 150 Z`}
-          fill={`url(#${shade})`}
+          fill={LIQUID[tone]}
           clipPath={`url(#${clip})`}
         />
       )}

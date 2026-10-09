@@ -82,23 +82,13 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 function drawOp(ctx: CanvasRenderingContext2D, op: CardOp, families: Record<CardFace, string>): void {
   const { width, height } = CARD_SIZE;
   switch (op.kind) {
-    case "wash": {
-      const g = ctx.createLinearGradient(0, 0, width, height);
-      g.addColorStop(0, op.from);
-      g.addColorStop(1, op.to);
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, width, height);
-      // a soft light from the top left, so the wash is not flat
-      const glow = ctx.createRadialGradient(width * 0.2, height * 0.08, 0, width * 0.2, height * 0.08, width * 0.9);
-      glow.addColorStop(0, "rgba(255,255,255,0.55)");
-      glow.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = glow;
+    case "ground":
+      ctx.fillStyle = op.color;
       ctx.fillRect(0, 0, width, height);
       return;
-    }
     case "board": {
       ctx.save();
-      ctx.shadowColor = "rgba(60, 40, 110, 0.14)";
+      ctx.shadowColor = "rgba(0, 0, 0, 0.08)";
       ctx.shadowBlur = 64;
       ctx.shadowOffsetY = 22;
       roundRect(ctx, op.x, op.y, op.w, op.h, op.radius);
@@ -107,22 +97,18 @@ function drawOp(ctx: CanvasRenderingContext2D, op: CardOp, families: Record<Card
       ctx.restore();
       ctx.save();
       roundRect(ctx, op.x + 0.5, op.y + 0.5, op.w - 1, op.h - 1, op.radius);
-      ctx.strokeStyle = "rgba(60, 40, 110, 0.08)";
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.06)";
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.restore();
       return;
     }
-    case "disc": {
-      const g = ctx.createLinearGradient(op.cx - op.r, op.cy - op.r, op.cx + op.r, op.cy + op.r);
-      g.addColorStop(0, op.from);
-      g.addColorStop(1, op.to);
+    case "disc":
       ctx.beginPath();
       ctx.arc(op.cx, op.cy, op.r, 0, Math.PI * 2);
-      ctx.fillStyle = g;
+      ctx.fillStyle = op.color;
       ctx.fill();
       return;
-    }
     case "emoji": {
       ctx.save();
       ctx.font = `${op.size}px ${EMOJI}`;
