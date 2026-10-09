@@ -9,6 +9,7 @@ import { clientMetric } from "@/lib/logger";
 import { reportUserError } from "@/lib/reportAppError";
 import { writeAskKickoff } from "@/lib/boards/askKickoff";
 import { skillDef } from "@/lib/learning/contracts";
+import type { Grade } from "@/lib/learning/grades";
 import { writePracticeMarker } from "@/lib/learning/practiceMarker";
 import { loadTopicData, type TopicData } from "@/lib/learning/topicData";
 import { matchTopic, TOPIC_COPY, TOPIC_PROBLEMS, topicBoardTitle, type TopicId } from "@/lib/learning/topics";
@@ -18,7 +19,7 @@ const client = asOnboardingClient(supabase);
 
 export type TopicDataState = { status: "loading" } | ({ status: "ready" } & TopicData);
 
-/** The student's course and levels for the picker, read once the section mounts. Never fails: see `loadTopicData`. */
+/** The student's grade, course and levels for the picker, read once the section mounts. Never fails: see `loadTopicData`. */
 export function useTopicData(userId: string | undefined): TopicDataState {
   const [state, setState] = useState<TopicDataState>({ status: "loading" });
   useEffect(() => {
@@ -26,7 +27,7 @@ export function useTopicData(userId: string | undefined): TopicDataState {
     let live = true;
     void loadTopicData(userId).then(
       (data) => live && setState({ status: "ready", ...data }),
-      () => live && setState({ status: "ready", course: null, levels: new Map(), weakSkills: [], recordFailed: true }),
+      () => live && setState({ status: "ready", course: null, grade: null, levels: new Map(), weakSkills: [], recordFailed: true }),
     );
     return () => {
       live = false;
@@ -55,7 +56,7 @@ export interface TopicActions {
  * for Ask), then the board opens and does the rest. A failure says so in a toast and leaves the
  * buttons ready to try again.
  */
-export function useTopicActions(userId: string | undefined): TopicActions {
+export function useTopicActions(userId: string | undefined, grade: Grade | null = null): TopicActions {
   const router = useRouter();
   const [busy, setBusyState] = useState<TopicId | "ask" | null>(null);
   // read synchronously: two quick taps open one board
@@ -112,7 +113,7 @@ export function useTopicActions(userId: string | undefined): TopicActions {
   const ask = useCallback(
     (text: string) => {
       if (busyRef.current) return;
-      const topic = matchTopic(text);
+      const topic = matchTopic(text, grade);
       if (topic) {
         clientMetric("topics.ask", { routed: true });
         startTopic(topic);
@@ -121,7 +122,7 @@ export function useTopicActions(userId: string | undefined): TopicActions {
       clientMetric("topics.ask", { routed: false });
       void open("ask", topicBoardTitle(text), (boardId) => writeAskKickoff({ boardId, message: text, createdAt: Date.now() }));
     },
-    [open, startTopic],
+    [open, startTopic, grade],
   );
 
   return { busy, startTopic, ask };

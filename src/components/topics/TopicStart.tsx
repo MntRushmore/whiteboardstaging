@@ -4,14 +4,15 @@ import { useMemo, useState } from "react";
 import { LibraryBig, Play, Target } from "lucide-react";
 import { Button } from "@/registry/components/button/button";
 import { Dialog, DialogContent } from "@/registry/components/dialog/dialog";
+import { gradeLabel } from "@/lib/learning/grades";
 import { courseName, TOPIC_COPY, topicGroups, upNext, type TopicId, type TopicView } from "@/lib/learning/topics";
 import { AreaIcon, AskBox, LevelMark, TopicList } from "./TopicPicker";
 import { useTopicActions, useTopicData } from "./useTopicStart";
 import styles from "./topics.module.css";
 
 /**
- * The top of the boards home (2026-10-08): Up next — the next topic of the student's course not
- * mastered yet, one tap to a topic board — with their weakest spot beside it, the "What do you want
+ * The top of the boards home (2026-10-08): Up next — the next topic of the student's grade path (or
+ * course) not mastered yet, one tap to a topic board — with their weakest spot beside it, the "What do you want
  * to work on?" box, and Pick a topic (every topic, by area, in a dialog). Loaded with a dynamic
  * import, so the home's first load carries none of it (docs/BUNDLE.md).
  */
@@ -55,12 +56,18 @@ function UpNextCard({ topic, kind, busy, onStart }: { topic: TopicView; kind: "n
 
 export default function TopicStart({ userId }: TopicStartProps) {
   const data = useTopicData(userId);
-  const actions = useTopicActions(userId);
+  const grade = data.status === "ready" ? data.grade : null;
+  const actions = useTopicActions(userId, grade);
   const [browsing, setBrowsing] = useState(false);
 
   const view = useMemo(() => {
     if (data.status !== "ready") return null;
-    return { choice: upNext(data.course, data.levels, data.weakSkills), groups: topicGroups(data.course, data.levels), course: courseName(data.course) };
+    return {
+      choice: upNext(data.course, data.levels, data.weakSkills, data.grade),
+      groups: topicGroups(data.course, data.levels, data.grade),
+      course: courseName(data.course),
+      grade: gradeLabel(data.grade),
+    };
   }, [data]);
 
   const busyTopic = actions.busy && actions.busy !== "ask" ? actions.busy : null;
@@ -83,7 +90,7 @@ export default function TopicStart({ userId }: TopicStartProps) {
       {data.status === "ready" && data.recordFailed && <p className={styles.inlineError}>{TOPIC_COPY.loadFailed}</p>}
 
       <div className={styles.askRowWrap}>
-        <AskBox busy={actions.busy === "ask"} onSubmit={actions.ask} />
+        <AskBox busy={actions.busy === "ask"} onSubmit={actions.ask} grade={grade} />
         <button type="button" className={styles.browse} aria-haspopup="dialog" onClick={() => setBrowsing(true)}>
           <LibraryBig size={18} strokeWidth={1.8} aria-hidden />
           {TOPIC_COPY.browse}
@@ -93,7 +100,7 @@ export default function TopicStart({ userId }: TopicStartProps) {
       <Dialog open={browsing} onOpenChange={setBrowsing}>
         <DialogContent title={TOPIC_COPY.browse} description={TOPIC_COPY.browseHint} className={`${styles.root} ${styles.dialog}`}>
           {view ? (
-            <TopicList mine={view.groups.mine} others={view.groups.others} course={view.course} busy={busyTopic} onPick={actions.startTopic} />
+            <TopicList mine={view.groups.mine} others={view.groups.others} course={view.course} grade={view.grade} busy={busyTopic} onPick={actions.startTopic} />
           ) : (
             <div className={styles.cardSkeleton} aria-hidden />
           )}

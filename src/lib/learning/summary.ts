@@ -30,14 +30,24 @@
  * offset for the whole range, so a daylight-saving change within it moves the hour of an attempt,
  * never more than one day's edge. The skill "Other maths" is never a weak or strong skill (nothing
  * can be practised or praised under it).
+ *
+ * OLD ROWS, RE-FILED (2026-10-09). Rows stored before the K–8 skills existed sit under the coarse
+ * arithmetic skills (`COARSE_SKILL_IDS`: `7 + 5` under Adding and subtracting). Each is read under
+ * the skill its problem shows today (`classifyProblem`) when that is a K–8 skill, so a student's
+ * old work counts on their new path (Adding to 20); a row whose problem fits no finer skill stays
+ * where it was. The rows themselves are never rewritten.
  */
 import type { CourseId } from "@/lib/onboarding/courseIds";
-import { INDEPENDENT_OUTCOMES, LEARNING_LIMITS, MISTAKE_KINDS, SKILLS, skillDef, type AttemptRecord, type DayActivity, type LearningSummary, type MasteryLevel, type MistakeKind, type Outcome, type SkillId, type SkillProgress } from "./contracts";
+import { INDEPENDENT_OUTCOMES, isCoarseSkillId, LEARNING_LIMITS, MISTAKE_KINDS, SKILLS, skillDef, type AttemptRecord, type DayActivity, type LearningSummary, type MasteryLevel, type MistakeKind, type Outcome, type SkillId, type SkillProgress } from "./contracts";
+import { gradePath, isGrade, isK8SkillId, type Grade } from "./grades";
 import type { LearnerHint } from "./hint";
+import { classifyProblem } from "./skills";
 
 export interface SummarizeOptions {
   /** the student's course: its skills are listed (level `new`) before they are practised */
   course?: CourseId | null;
+  /** the student's grade (0..8): its path's skills (`gradePath`) are listed (level `new`) before they are practised */
+  grade?: Grade | null;
   /** the student's time zone offset in minutes (Date#getTimezoneOffset), for local days; default 0 */
   tzOffsetMinutes?: number;
 }
@@ -108,7 +118,23 @@ function num(n: unknown): number {
   return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/** The attempts newest first, one per id (its latest state), with readable start times. */
+/**
+ * An attempt under the skill it is read under: a row stored under a coarse arithmetic skill moves to
+ * the K–8 skill its problem shows (`classifyProblem`), when there is one; anything else is as
+ * stored. `seen` remembers each problem's skill, since a student repeats problems.
+ */
+export function refiled(a: AttemptRecord, seen: Map<string, SkillId> = new Map()): AttemptRecord {
+  if (!isCoarseSkillId(a.skill) || typeof a.problemLatex !== "string") return a;
+  const key = `${a.course ?? ""}|${a.problemLatex}`;
+  let skill = seen.get(key);
+  if (skill === undefined) {
+    skill = classifyProblem([a.problemLatex], a.course);
+    seen.set(key, skill);
+  }
+  return isK8SkillId(skill) ? { ...a, skill } : a;
+}
+
+/** The attempts newest first, one per id (its latest state), with readable start times, old rows re-filed. */
 function cleanAttempts(attempts: readonly AttemptRecord[]): AttemptRecord[] {
   const byId = new Map<string, AttemptRecord>();
   for (const a of attempts) {
@@ -116,7 +142,8 @@ function cleanAttempts(attempts: readonly AttemptRecord[]): AttemptRecord[] {
     const seen = byId.get(a.id);
     if (!seen || Date.parse(a.updatedAt) > Date.parse(seen.updatedAt)) byId.set(a.id, a);
   }
-  return [...byId.values()].sort((a, b) => startMs(b) - startMs(a) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  const skills = new Map<string, SkillId>();
+  return [...byId.values()].map((a) => refiled(a, skills)).sort((a, b) => startMs(b) - startMs(a) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
 
 /** A skill's mastery from its attempts (newest first). */
@@ -186,7 +213,7 @@ export function summarize(attempts: readonly AttemptRecord[], now: number, opts:
     cursor = dayBefore(cursor);
   }
 
-  // skills: worked on, plus the course's not yet practised
+  // skills: worked on, plus the grade's path and the course's not yet practised
   const bySkill = new Map<SkillId, AttemptRecord[]>();
   for (const a of work) {
     const id = (skillDef(a.skill)?.id ?? "other") as SkillId;
@@ -195,11 +222,12 @@ export function summarize(attempts: readonly AttemptRecord[], now: number, opts:
     bySkill.set(id, list);
   }
   const course = opts.course ?? null;
+  const path: ReadonlySet<string> = new Set(isGrade(opts.grade) ? gradePath(opts.grade) : []);
   const skills: SkillProgress[] = [];
   for (const def of SKILLS) {
     const list = bySkill.get(def.id);
-    const inCourse = course !== null && (def.courses as readonly string[]).includes(course);
-    if (!list && !inCourse) continue;
+    const listed = (course !== null && (def.courses as readonly string[]).includes(course)) || path.has(def.id);
+    if (!list && !listed) continue;
     const mastery = list ? masteryOf(list, now) : { level: "new" as const, score: 0 };
     skills.push({
       skill: def.id,

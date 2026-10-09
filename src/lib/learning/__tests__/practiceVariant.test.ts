@@ -137,6 +137,19 @@ describe.each([
   });
 });
 
+/** The K–8 path's problems, as a young student writes them (2026-10-09). */
+const K8_PROBLEMS: PracticeProblem[] = [["7 + 5"], ["15 - 8"], ["47 + 38"], ["386 + 247"], ["6 \\times 7"], ["42 \\div 6"], ["864 \\div 4"], ["4 \\times 60"], ["\\frac{2}{7} + \\frac{3}{7}"], ["\\frac{3}{4} \\div \\frac{1}{2}"], ["3.45 + 2.8"], ["25\\% \\times 80"], ["\\frac{x}{4} = \\frac{9}{12}"]];
+
+describe("a variant of a K–8 problem", () => {
+  it.each(K8_PROBLEMS.map((p) => [p.join("; "), p] as const))("%s: the same form, on the same step of the path", (_label, problem) => {
+    for (const seed of [1, 2, 3]) {
+      const v = findVariant(engine, problem, seed, { fallback: () => [], now: still });
+      expectVariant(problem, v);
+      if (v) expect(classifyProblem(v), `${problem.join("; ")} → ${v.join("; ")}`).toBe(classifyProblem(problem));
+    }
+  });
+});
+
 describe("variantOf", () => {
   it("is the same for the same seed, and usually different for another", () => {
     let differ = 0;
