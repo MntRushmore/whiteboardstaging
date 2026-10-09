@@ -11,6 +11,7 @@ import { PROGRESS_COPY, buildProgressView, progressStateFor, type ProgressState,
 import { Button } from "@/registry/components/button/button";
 import { EmptyState } from "@/registry/components/empty-state/empty-state";
 import { ProgressPath } from "@/components/path/ProgressPath";
+import { ShareProgressButton } from "@/components/share/ShareProgressButton";
 import { ActivityChart } from "./ActivityChart";
 import { GrownUps, LevelLadder, MistakeList, ProgressSkeleton, Section, SkillMap, WeekTiles } from "./ProgressSections";
 import { RecentProblems } from "./RecentProblems";
@@ -25,6 +26,8 @@ export interface ProgressContentProps {
   actions: BoardActions;
   /** the skill path (`ProgressPath`), first under the title once the record is read */
   path?: ReactNode;
+  /** "Share progress" (`ShareProgressButton`), at the end of the title row once there is work to show */
+  share?: ReactNode;
 }
 
 /**
@@ -34,7 +37,7 @@ export interface ProgressContentProps {
  * a paragraph for grown-ups. Takes a finished view model (`buildProgressView`) and the path as an
  * element, so it renders from fixtures too.
  */
-export function ProgressContent({ state, view, error, onRetry, actions, path }: ProgressContentProps) {
+export function ProgressContent({ state, view, error, onRetry, actions, path, share }: ProgressContentProps) {
   const newBoardButton = (
     <Button onClick={actions.newBoard} disabled={actions.busy !== null} aria-busy={actions.busy === "new" || undefined}>
       <Plus size={16} strokeWidth={2} aria-hidden />
@@ -58,6 +61,7 @@ export function ProgressContent({ state, view, error, onRetry, actions, path }: 
               {view.course}
             </span>
           )}
+          {state === "ready" && share}
         </div>
       </header>
 
@@ -189,6 +193,23 @@ export function ProgressScreen() {
           onRetry={reload}
           actions={actions}
           path={data.status === "ready" && user ? <ProgressPath userId={user.id} skills={data.summary.skills} /> : null}
+          share={
+            data.status === "ready" && view && user ? (
+              <ShareProgressButton
+                placement="end"
+                userId={user.id}
+                card={{
+                  name: data.profile.displayName,
+                  grade: data.profile.grade,
+                  course: view.course,
+                  problems: view.week.problems,
+                  independent: view.week.independent,
+                  streak: data.summary.streakDays,
+                  mastered: data.summary.strongSkills,
+                }}
+              />
+            ) : null
+          }
         />
       </main>
     </div>

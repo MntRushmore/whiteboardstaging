@@ -1,0 +1,4 @@
+/* The share button's place in a page's row; the sheet's own styles load with the sheet (share.module.css). */
+.end {
+  margin-left: auto;
+}
