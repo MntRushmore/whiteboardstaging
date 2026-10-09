@@ -9,13 +9,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { NO_UNLIMITED, UNLIMITED_PLAN, type UnlimitedState } from "@/lib/billing/unlimited";
 import { PLAN_REFERRAL_COPY } from "@/lib/billing/planChoice";
 
-const plan = vi.hoisted(() => ({ state: null as UnlimitedState | null, referred: false, readFor: [] as Array<string | null | undefined> }));
+const plan = vi.hoisted(() => ({ state: null as UnlimitedState | null, referred: false, known: true, readFor: [] as Array<string | null | undefined> }));
 vi.mock("@/lib/billing/useUnlimited", () => ({
   useUnlimited: () => ({ state: plan.state, loading: false, known: true, refresh: () => undefined }),
 }));
 vi.mock("@/lib/billing/useReferred", () => ({
   useReferred: (userId: string | null | undefined) => {
     plan.readFor.push(userId);
+    // as the hook answers while its read is out: not referred, not known
+    if (!plan.known) return { referred: false, known: false };
     return { referred: Boolean(userId) && plan.referred, known: true };
   },
 }));
@@ -39,6 +41,7 @@ const startHref = (html: string) => html.match(/href="([^"]+)"[^>]*data-testid="
 afterEach(() => {
   vi.unstubAllEnvs();
   plan.referred = false;
+  plan.known = true;
   plan.readFor = [];
 });
 
@@ -66,6 +69,34 @@ describe("the Billing card for a family a friend invited", () => {
     const noLink = render({});
     expect(startHref(noLink)).toBe(`${MONTHLY}?client_reference_id=${REF}`);
     expect(noLink).not.toContain(PLAN_REFERRAL_COPY.friend);
+  });
+
+  it("while the referral read is out, the first plan's start waits: no checkout link at all, no offer, no 'Coming soon'", () => {
+    vi.stubEnv("NEXT_PUBLIC_UNLIMITED_LINK", MONTHLY);
+    vi.stubEnv("NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK", REFERRAL);
+    plan.known = false;
+    const html = render({});
+    expect(startHref(html)).toBeNull();
+    expect(html).not.toContain(MONTHLY);
+    expect(html).not.toContain(REFERRAL);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-testid="plan-start-waiting"/);
+    expect(html).not.toContain("Coming soon");
+    // the usual trial's words are not shown only to be swapped for the free month
+    expect(html).not.toContain('data-testid="plan-headline"');
+    expect(html).not.toContain("billing-friend");
+    // once it lands, the referral link
+    plan.known = true;
+    plan.referred = true;
+    expect(startHref(render({}))).toBe(`${REFERRAL}?client_reference_id=${REF}`);
+  });
+
+  it("a plan started again does not wait for the referral read (it never gets the free month)", () => {
+    vi.stubEnv("NEXT_PUBLIC_UNLIMITED_LINK", MONTHLY);
+    vi.stubEnv("NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK", REFERRAL);
+    plan.known = false;
+    const html = render({ status: "canceled", currentPeriodEnd: "2026-10-10T15:00:00Z" });
+    expect(startHref(html)).toBe(`${MONTHLY}?client_reference_id=${REF}`);
+    expect(html).toContain('data-testid="plan-headline"');
   });
 
   it("a plan started again gets no free month", () => {
