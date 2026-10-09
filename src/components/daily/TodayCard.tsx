@@ -106,7 +106,7 @@ export function TodayView({ state, actions }: { state: Extract<TodayState, { sta
         <h2 id={titleId} className={styles.title}>
           {phase === "done" ? TODAY_COPY.doneTitle : phase === "continue" ? TODAY_COPY.progress(Math.min(done, goal), goal) : TODAY_COPY.title(goal)}
         </h2>
-        <p className={styles.sub}>{phase === "done" ? TODAY_COPY.doneLine : TODAY_COPY.minutes(goal)}</p>
+        <p className={styles.sub}>{phase === "done" ? TODAY_COPY.doneLine : phase === "continue" ? TODAY_COPY.minutesLeft(goal - done) : TODAY_COPY.minutes(goal)}</p>
         <StarRow goal={goal} done={done} stars={stars} />
         <div className={styles.actions}>
           {phase === "start" && (

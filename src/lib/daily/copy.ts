@@ -9,6 +9,8 @@ export const TODAY_COPY = {
   /** the card's big line */
   title: (goal: number) => `${goal} problems`,
   minutes: (goal: number) => `About ${goal * 2} minutes`,
+  /** started: what is left */
+  minutesLeft: (left: number) => (left <= 1 ? "Just one more!" : `About ${left * 2} minutes to go`),
   start: "Start",
   startLabel: (goal: number) => `Start today's practice: ${goal} problems`,
   continue: "Continue",

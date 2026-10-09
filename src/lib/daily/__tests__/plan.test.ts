@@ -43,6 +43,13 @@ describe("planDailySet", () => {
     expect(keys(planDailySet(input({ userId: "u-2" })))).not.toEqual(keys(planDailySet(input())));
   });
 
+  it("a salt (Practise more) gives another set the same day, the same each time for the same salt", () => {
+    const more = planDailySet(input({ salt: "more-1" }));
+    expect(keys(more)).not.toEqual(keys(planDailySet(input())));
+    expect(planDailySet(input({ salt: "more-1" }))).toEqual(more);
+    expect(more.problems).toHaveLength(5);
+  });
+
   it("the mix: about 2 next, 2 weak and 1 review", () => {
     const plan = planDailySet(
       input({

@@ -216,6 +216,9 @@
     width: 100%;
   }
 }
+.card[data-phase="done"] .actions {
+  margin-top: var(--space-3, 0.75rem);
+}
 .more.more {
   min-height: 2.75rem;
   margin-left: calc(var(--space-3, 0.75rem) * -1);

@@ -24,6 +24,8 @@ import { dailyStreak, withProgress } from "@/lib/daily/streak";
 
 /** Waits this long after the last change before saving (a burst of attempts is one save). */
 export const SAVE_DEBOUNCE_MS = 1_200;
+/** The goal's last tick has its own cheer on the board (about 2 s): the celebration comes right after. */
+export const CELEBRATION_DELAY_MS = 1_900;
 
 export interface DailyBoardState {
   marker: DailyMarker | null;
@@ -136,13 +138,23 @@ export function useDailyBoard(boardId: string, controller: LiveController): Dail
     };
   }, [save]);
 
-  // the goal reached on this visit: the celebration, once
+  // the goal reached on this visit: the celebration, once — just after the last tick's own cheer
+  // (`Celebrations`, about 2 s), so the two never cover each other
+  const [reached, setReached] = useState(false);
   useEffect(() => {
     if (!progress.reachedNow || !marker) return;
     dispatch({ type: "celebrated" });
-    setCelebrating(true);
     clientMetric("daily.complete", { goal: marker.goal, stars: starsOf(progress) });
+    setReached(true);
   }, [progress, marker]);
+  useEffect(() => {
+    if (!reached) return;
+    const t = setTimeout(() => {
+      setReached(false);
+      setCelebrating(true);
+    }, CELEBRATION_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [reached]);
 
   const streak = marker && rows ? Math.max(1, dailyStreak(withProgress(rows, marker.day, { done, stars, goal: marker.goal, boardId }), localDay()).current) : 1;
 
