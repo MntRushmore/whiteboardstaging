@@ -24,6 +24,7 @@ import { planHandwriting } from "@/lib/live/handwriting";
 import { localSolve } from "@/lib/live/localSolve";
 import { localAnswerStep } from "@/lib/live/solveSteps";
 import type { PracticeProblem, SkillId } from "../contracts";
+import { classifyProblem } from "../skills";
 import type { Form } from "./form";
 import { GENERATORS } from "./index";
 import { makeRng, seedFrom, type Rng } from "./rng";
@@ -143,13 +144,16 @@ function distance(a: readonly string[], b: readonly string[]): number {
 
 /**
  * Generator problems with the original's skeleton, new numbers, nearest the original's first; then,
- * when there are too few, ones with its loose skeleton (the signs may differ).
+ * when there are too few, ones with its loose skeleton (the signs may differ). Forms of the
+ * original's own skill come first (`7 + 5` gets another sum to 20, not one to 10 that is also
+ * `# + #`), so Now you try stays on the student's step of the K–8 path.
  */
 function sameFormCandidates(tidied: readonly string[], seed: number): PracticeProblem[] {
   const key = skeletonOf(tidied);
   const index = formIndex();
   const original = tidied.join("; ");
   const numbers = freeNumbers(tidied);
+  const skill = classifyProblem(tidied);
   const r = makeRng(seedFrom(seed, `variant:${original}`));
   const seen = new Set([original]);
   const out: PracticeProblem[] = [];
@@ -158,8 +162,8 @@ function sameFormCandidates(tidied: readonly string[], seed: number): PracticePr
     const entries = (loose ? index.loose : index.exact).get(want) ?? [];
     // each form's nearest first, then each one's second nearest…: one form's answers may all be
     // the wrong shape (`4^{x} = 8` is a fraction where `2^{x} = 32` is whole)
-    const found: { p: PracticeProblem; d: number; rank: number }[] = [];
-    for (const { form } of r.shuffle(entries)) {
+    const found: { p: PracticeProblem; d: number; rank: number; other: number }[] = [];
+    for (const { form, skill: formSkill } of r.shuffle(entries)) {
       const mine: { p: PracticeProblem; d: number }[] = [];
       for (let k = 0; k < VARIANT_LIMITS.formDraws && mine.length < VARIANT_LIMITS.sameForm; k++) {
         const p = draw(form, r);
@@ -172,9 +176,10 @@ function sameFormCandidates(tidied: readonly string[], seed: number): PracticePr
         seen.add(text);
         mine.push({ p, d: distance(numbers, freeNumbers(p)) });
       }
-      mine.sort((a, b) => a.d - b.d).forEach((m, rank) => found.push({ ...m, rank }));
+      const other = formSkill === skill ? 0 : 1;
+      mine.sort((a, b) => a.d - b.d).forEach((m, rank) => found.push({ ...m, rank, other }));
     }
-    found.sort((a, b) => a.rank - b.rank || a.d - b.d);
+    found.sort((a, b) => a.other - b.other || a.rank - b.rank || a.d - b.d);
     for (const f of found) if (out.length < VARIANT_LIMITS.sameForm) out.push(f.p);
     if (out.length >= VARIANT_LIMITS.sameForm) break;
   }

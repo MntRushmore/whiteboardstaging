@@ -46,9 +46,9 @@ function friendly(n: number, d: number): boolean {
   return d / g <= 24 && n / g <= 60;
 }
 
-/** A mixed number, `2\frac{1}{3}`, as the board writes one. */
+/** A mixed number, `2\frac{1}{3}`, as the chat writes one (no space: `tidy` keeps it so). */
 function mixed(whole: number, n: number, d: number): string {
-  return `${whole} ${frac(n, d)}`;
+  return `${whole}${frac(n, d)}`;
 }
 
 /** Tenths that are not whole (so the number is written with a point). */
@@ -544,12 +544,12 @@ export const PRIMARY: FormTable = {
   // ---------------------------------------------------------------- 7th grade
 
   proportions: [
-    // a ratio first: x : 4 = 9 : 12
+    // a ratio first: x:4 = 9:12
     (r) => {
       const [n, d] = proper(r, [2, 3, 4, 5]);
       const m = r.int(1, 3);
       const k = r.intExcept(2, 5, [m]);
-      return [`x : ${d * m} = ${n * k} : ${d * k}`];
+      return [`x:${d * m} = ${n * k}:${d * k}`];
     },
     // x/4 = 9/12
     (r) => {
