@@ -363,6 +363,16 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
+    path: "/api/live/speak",
+    file: "src/app/api/live/speak/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveSpeak",
+    body: "zod",
+    purpose: "Read aloud: the tutor's words -> ElevenLabs speech (audio/mpeg, streamed; uncharged, a day's cap too); 503 feature_unavailable without ELEVENLABS_API_KEY",
+    status: "active",
+  },
+  {
     path: "/api/live/reread",
     file: "src/app/api/live/reread/route.ts",
     methods: ["POST"],

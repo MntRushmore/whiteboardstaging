@@ -19,6 +19,7 @@
  */
 
 import { LIVE_RATE_LIMITS } from "@/lib/live/contracts";
+import { SPEAK_RATE_LIMITS } from "@/lib/speech/contracts";
 import { getRateLimitBackend, type RateLimitBackend } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { userClient, type RpcClient } from "@/lib/server/billing";
@@ -56,6 +57,9 @@ export const LIMITS = {
   liveListen: LIVE_RATE_LIMITS.liveListen,
   liveSketch: LIVE_RATE_LIMITS.liveSketch,
   liveTitle: LIVE_RATE_LIMITS.liveTitle,
+  // Read aloud (POST /api/live/speak): a minute's budget and a day's cap (src/lib/speech/contracts.ts).
+  liveSpeak: SPEAK_RATE_LIMITS.perMinute,
+  liveSpeakDay: SPEAK_RATE_LIMITS.perDay,
 } as const satisfies Record<string, RateLimitOptions>;
 
 export type RateLimitBucket = keyof typeof LIMITS;
