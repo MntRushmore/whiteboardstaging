@@ -7,6 +7,7 @@ import { AppHeader } from "@/components/app/AppHeader";
 import { clientMetric } from "@/lib/logger";
 import { trialEndsOn, unlimitedCheckoutUrl } from "@/lib/billing/unlimited";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
+import { isKidEmail } from "@/lib/family/contracts";
 import { browserStorage } from "@/lib/onboarding/marker";
 import { HOME_PATH, writePlanMarker } from "@/lib/onboarding/planMarker";
 import { chargeDateText, planView } from "@/lib/onboarding/plan";
@@ -69,6 +70,8 @@ export function PlanScreen() {
         {view === "offer" || view === "restart" || view === "soon" ? (
           <PlanOffer
             view={view}
+            // a kid profile shares the grown-up's plan and never sees billing (src/lib/family)
+            kid={isKidEmail(user?.email)}
             chargeDate={chargeDateText(trialEndsOn(now))}
             starting={starting}
             onStart={() => {
