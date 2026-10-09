@@ -15,7 +15,7 @@
  * Server-only in use (the route), but it holds no secret: the key is the route's to add.
  */
 import { z } from "zod";
-import { SPEAK_MAX_CHARS } from "./contracts";
+import { SPEAK_MAX_CHARS, type SpeakRequest } from "./contracts";
 
 export const TTS = {
   baseUrl: "https://api.elevenlabs.io/v1/text-to-speech",
@@ -30,7 +30,7 @@ export const TTS = {
 } as const;
 
 /** POST /api/live/speak's body (the `SpeakRequest` contract): words to say, at most SPEAK_MAX_CHARS. */
-export const SpeakRequestSchema = z
+export const SpeakRequestSchema: z.ZodType<SpeakRequest> = z
   .object({
     text: z
       .string()

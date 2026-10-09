@@ -106,7 +106,7 @@ export interface SpeakerDeps {
 }
 
 /** How often a waiting phrase looks at the pen. */
-export const PAUSE_POLL_MS = 250;
+const PAUSE_POLL_MS = 250;
 /** A phrase still waiting for the pen after this long is stale: dropped. */
 export const MAX_WAIT_MS = 20_000;
 /** A phrase the browser blocked (no tap yet) is said at the unlock if it is at most this old. */
@@ -116,7 +116,7 @@ export const ROUTE_DOWN_MS = 10 * 60_000;
 /** Phrases kept as audio. */
 export const CACHE_PHRASES = 24;
 /** The browser's voice: a little slower than its default, for young listeners. */
-export const BROWSER_RATE = 0.95;
+const BROWSER_RATE = 0.95;
 
 /**
  * Voices that are jokes or robots (macOS's novelty voices, eSpeak's): never a tutor's voice,

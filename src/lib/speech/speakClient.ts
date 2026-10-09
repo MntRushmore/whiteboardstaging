@@ -7,6 +7,7 @@
  * the balance), and speech spends none.
  */
 import { supabase } from "@/lib/supabase";
+import type { SpeakRequest } from "./contracts";
 import { SpeechFetchError } from "./speaker";
 
 export const SPEAK_PATH = "/api/live/speak";
@@ -28,7 +29,7 @@ export async function fetchSpeech(text: string, signal: AbortSignal, fetchImpl: 
     res = await fetchImpl(SPEAK_PATH, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text } satisfies SpeakRequest),
       signal,
     });
   } catch (err) {
