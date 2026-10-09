@@ -4,10 +4,10 @@ import { SNAKE_MIN_WIDTH, snakeLayout, trailShape } from "../pathLayout";
 describe("the snake", () => {
   it("one row when every stop fits: left to right, each linked to the next", () => {
     expect(snakeLayout(4, 4)).toEqual([
-      { row: 0, col: 0, link: "right" },
-      { row: 0, col: 1, link: "right" },
-      { row: 0, col: 2, link: "right" },
-      { row: 0, col: 3, link: null },
+      { row: 0, col: 0, forward: true, link: "right" },
+      { row: 0, col: 1, forward: true, link: "right" },
+      { row: 0, col: 2, forward: true, link: "right" },
+      { row: 0, col: 3, forward: true, link: null },
     ]);
   });
 
@@ -22,6 +22,8 @@ describe("the snake", () => {
       [1, 0, "down"],
       [2, 0, null],
     ]);
+    // a turn is on the side its row runs to: the first on the right, the second on the left
+    expect(cells.filter((c) => c.link === "down").map((c) => c.forward)).toEqual([true, false]);
     for (let i = 0; i < cells.length - 1; i++) {
       const [a, b] = [cells[i], cells[i + 1]];
       if (a.link === "down") expect([b.row - a.row, b.col - a.col]).toEqual([1, 0]);

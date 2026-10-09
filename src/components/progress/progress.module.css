@@ -698,6 +698,14 @@
   height: 1.25rem;
   border-radius: var(--radius-pill);
 }
+/* the skill path's place at the top: its longer header and the trail's panel */
+.skeletonPathHeading {
+  width: min(20rem, 80%);
+}
+.skeletonPath {
+  height: 12rem;
+  border-radius: var(--radius-panel);
+}
 @keyframes progress-pulse {
   0%,
   100% {

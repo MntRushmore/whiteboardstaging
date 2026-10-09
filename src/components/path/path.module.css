@@ -1,0 +1,542 @@
+/* The skill path: the home's card and the top of the Progress page. Arc tokens (light and dark),
+   and the path's own playful colours on top: green for done, violet for next up, gold stars. Stops
+   are 44 px and up to tap; nothing moves for a student who asks for reduced motion. */
+
+/* ---- The card ---------------------------------------------------------------------------------- */
+.card {
+  --card-pad: var(--space-4, 1rem);
+  /* the path's colours: done, next up, stars, the trail */
+  --p-done: oklch(62% 0.17 150);
+  --p-done-lip: oklch(49% 0.15 150);
+  --p-current: linear-gradient(160deg, oklch(67% 0.19 300), oklch(54% 0.22 280));
+  --p-current-solid: oklch(55% 0.21 285);
+  --p-current-lip: oklch(43% 0.19 282);
+  --p-glow: oklch(60% 0.2 290 / 0.24);
+  --p-glow-far: oklch(60% 0.2 290 / 0);
+  --p-star: oklch(83% 0.16 85);
+  --p-star-edge: oklch(68% 0.16 70);
+  --p-focus: var(--foreground, #1c1c1c);
+  --road-walked: var(--p-done);
+  --road-ahead: var(--border-strong, #cfcfcf);
+  --card-bg: var(--surface, #fff);
+
+  position: relative;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3, 0.75rem);
+  margin: 0;
+  padding: var(--card-pad);
+  border: 1px solid var(--border, #ececec);
+  border-radius: var(--radius-panel, 1.625rem);
+  background: var(--card-bg);
+  color: var(--foreground, #1c1c1c);
+}
+@media (min-width: 640px) {
+  .card {
+    --card-pad: var(--space-6, 1.5rem);
+  }
+}
+/* on the home, apart from the topics under it */
+.card[data-place="home"] {
+  margin-bottom: var(--space-6, 1.5rem);
+}
+:global(:root[data-theme="dark"]) .card {
+  --p-done: oklch(64% 0.16 150);
+  --p-done-lip: oklch(45% 0.13 150);
+  --p-current-lip: oklch(38% 0.17 282);
+  --p-glow: oklch(68% 0.18 290 / 0.32);
+  --p-glow-far: oklch(68% 0.18 290 / 0);
+  --p-star: oklch(84% 0.15 85);
+  --p-star-edge: oklch(74% 0.15 75);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 0.5rem) var(--space-4, 1rem);
+}
+.title {
+  margin: 0;
+  font-family: var(--font-display, inherit);
+  font-size: var(--text-xl, 1.375rem);
+  font-weight: 500;
+  letter-spacing: var(--tracking-display, -0.03em);
+  line-height: 1.2;
+}
+.hint {
+  margin: var(--space-1, 0.25rem) 0 0;
+  color: var(--text-secondary, #5e5e5e);
+  font-size: var(--text-base, 1rem);
+  line-height: var(--leading-body, 1.4);
+}
+
+/* "2 of 4 done" and its bar */
+.count {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+}
+.countText {
+  color: var(--text-secondary, #5e5e5e);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.countBar {
+  position: relative;
+  display: block;
+  width: 6rem;
+  height: 0.625rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill, 9999px);
+  background: var(--surface-muted, #f6f6f6);
+  box-shadow: inset 0 0 0 1px var(--border, #ececec);
+}
+.countFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--p-done);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .countFill {
+    transition: width var(--duration-considered, 480ms) var(--ease-standard, ease);
+  }
+}
+
+.allDone {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  margin: 0;
+  color: var(--success, oklch(49% 0.19 150));
+  font-size: var(--text-base, 1rem);
+  font-weight: 600;
+}
+
+/* ---- The trail --------------------------------------------------------------------------------- */
+.trailFrame {
+  /* a stop: its column, the room above it for "Next up", its circle's square, the turns' room */
+  --cell: 6.75rem;
+  --cell-max: 10.5rem;
+  --bubble: 2rem;
+  --slot: 4.75rem;
+  --circle: 3.5rem;
+  --circle-current: 4.25rem;
+  --lip: 4px;
+  --road: 6px;
+  --row-gap: var(--space-5, 1.25rem);
+  --turn: 1.5rem;
+  --turn-radius: 2.75rem;
+  min-width: 0;
+}
+@media (min-width: 640px) {
+  .trailFrame {
+    --cell: 8rem;
+    --circle: 3.75rem;
+    --circle-current: 4.5rem;
+    --slot: 5rem;
+  }
+}
+/* a phone: one row that scrolls sideways, from edge to edge of the card, fading at its ends */
+.trailFrame[data-mode="scroll"] {
+  margin-inline: calc(-1 * var(--card-pad));
+  padding-inline: var(--card-pad);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--card-pad), #000 calc(100% - var(--card-pad)), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 var(--card-pad), #000 calc(100% - var(--card-pad)), transparent);
+}
+.trailFrame[data-mode="scroll"]::-webkit-scrollbar {
+  display: none;
+}
+
+.trail {
+  display: grid;
+  grid-auto-rows: 1fr;
+  row-gap: var(--row-gap);
+  column-gap: 0;
+  margin: 0;
+  padding: 0 0 var(--space-1, 0.25rem);
+  list-style: none;
+}
+.trail[data-mode="scroll"] {
+  width: max-content;
+  grid-template-columns: repeat(var(--cols), var(--cell));
+  /* a short path sits in the middle; a long one starts at the left */
+  margin-inline: auto;
+}
+.trail[data-mode="snake"] {
+  max-width: calc(var(--cols) * var(--cell-max) + 2 * var(--turn));
+  grid-template-columns: repeat(var(--cols), minmax(var(--cell), 1fr));
+  margin-inline: auto;
+  padding-inline: var(--turn);
+}
+
+/* a stop, and the trail from it to the next one (drawn behind the circles) */
+.stop {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  justify-content: center;
+  padding-top: var(--bubble);
+  scroll-snap-align: center;
+}
+.stop[data-link]::before {
+  position: absolute;
+  z-index: 0;
+  top: calc(var(--bubble) + var(--slot) / 2 - var(--road) / 2);
+  box-sizing: border-box;
+  border: 0 dotted var(--road-ahead);
+  content: "";
+  pointer-events: none;
+}
+.stop[data-walked]::before {
+  border-style: solid;
+  border-color: var(--road-walked);
+}
+.stop[data-link="right"]::before,
+.stop[data-link="left"]::before {
+  width: 100%;
+  height: 0;
+  border-top-width: var(--road);
+}
+.stop[data-link="right"]::before {
+  left: 50%;
+}
+.stop[data-link="left"]::before {
+  right: 50%;
+}
+/* the end of a row: the trail turns down, round the outside, into the stop below */
+.stop[data-link="down"]::before {
+  height: calc(100% + var(--row-gap) + var(--road));
+  border-width: var(--road);
+}
+.stop[data-link="down"][data-dir="forward"]::before {
+  left: 50%;
+  right: calc(-1 * var(--turn));
+  border-left-width: 0;
+  border-radius: 0 var(--turn-radius) var(--turn-radius) 0;
+}
+.stop[data-link="down"][data-dir="back"]::before {
+  left: calc(-1 * var(--turn));
+  right: 50%;
+  border-right-width: 0;
+  border-radius: var(--turn-radius) 0 0 var(--turn-radius);
+}
+
+.node {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
+  padding: 0 var(--space-1, 0.25rem) var(--space-1, 0.25rem);
+  border: 0;
+  border-radius: 1rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.node:focus-visible {
+  outline: none;
+}
+.node:focus-visible .circle {
+  outline: 3px solid var(--p-focus);
+  outline-offset: 4px;
+}
+.node:disabled {
+  cursor: progress;
+}
+.node:disabled:not([aria-busy="true"]) .circle {
+  opacity: 0.6;
+}
+
+.slot {
+  display: grid;
+  width: var(--slot);
+  height: var(--slot);
+  place-items: center;
+}
+.circle {
+  --c-bg: var(--surface-muted, #f6f6f6);
+  --c-ink: var(--text-muted, #737373);
+  --c-lip: var(--border-strong, #cfcfcf);
+  position: relative;
+  display: grid;
+  width: var(--circle);
+  height: var(--circle);
+  place-items: center;
+  border-radius: 50%;
+  background: var(--c-bg);
+  box-shadow: 0 var(--lip) 0 var(--c-lip);
+  color: var(--c-ink);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .circle {
+    transition:
+      transform var(--duration-fast, 160ms) var(--ease-standard, ease),
+      box-shadow var(--duration-fast, 160ms) var(--ease-standard, ease);
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .node:not(:disabled):hover .circle {
+    transform: translateY(-2px);
+  }
+}
+/* pressed: the circle sinks onto its lip */
+.node:not(:disabled):active .circle {
+  box-shadow: 0 0 0 var(--c-lip);
+  transform: translateY(var(--lip));
+}
+
+.stop[data-state="done"] .circle {
+  --c-bg: var(--p-done);
+  --c-ink: #fff;
+  --c-lip: var(--p-done-lip);
+}
+.stop[data-state="current"] .circle {
+  --c-bg: var(--p-current);
+  --c-ink: #fff;
+  --c-lip: var(--p-current-lip);
+  width: var(--circle-current);
+  height: var(--circle-current);
+  box-shadow:
+    0 var(--lip) 0 var(--c-lip),
+    0 0 0 7px var(--p-glow);
+}
+.stop[data-state="current"] .node:not(:disabled):active .circle {
+  box-shadow:
+    0 0 0 var(--c-lip),
+    0 0 0 7px var(--p-glow);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .stop[data-state="current"] .circle {
+    animation: path-glow 2.4s var(--ease-in-out, ease-in-out) infinite;
+  }
+}
+@keyframes path-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 var(--lip) 0 var(--c-lip),
+      0 0 0 6px var(--p-glow);
+  }
+  50% {
+    box-shadow:
+      0 var(--lip) 0 var(--c-lip),
+      0 0 0 13px var(--p-glow-far);
+  }
+}
+
+/* a small mark on the circle's edge: a tick when done, a lock while still to come */
+.badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  width: 1.375rem;
+  height: 1.375rem;
+  place-items: center;
+  border: 2px solid var(--card-bg);
+  border-radius: 50%;
+}
+.badge[data-badge="done"] {
+  background: var(--p-star);
+  color: oklch(35% 0.08 70);
+}
+.badge[data-badge="locked"] {
+  background: var(--border-strong, #cfcfcf);
+  color: var(--card-bg);
+}
+
+/* "Next up" over the next stop */
+.nextUp {
+  position: absolute;
+  top: calc(-1 * var(--bubble) + 0.125rem);
+  left: 50%;
+  padding: 0.1875rem 0.625rem;
+  border-radius: var(--radius-pill, 9999px);
+  background: var(--p-current-solid);
+  box-shadow: 0 2px 6px oklch(0% 0 0 / 0.14);
+  color: #fff;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  white-space: nowrap;
+  translate: -50% 0;
+}
+.nextUp::after {
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: inherit;
+  content: "";
+  rotate: 45deg;
+  translate: -50% 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nextUp {
+    animation: path-bob 2.4s var(--ease-in-out, ease-in-out) infinite;
+  }
+}
+@keyframes path-bob {
+  50% {
+    translate: -50% -3px;
+  }
+}
+
+.stars {
+  display: inline-flex;
+  gap: 1px;
+  margin-top: var(--space-1, 0.25rem);
+}
+.starOn {
+  color: var(--p-star-edge);
+  fill: var(--p-star);
+}
+.starOff {
+  color: var(--border-strong, #cfcfcf);
+  fill: none;
+}
+
+.name {
+  display: -webkit-box;
+  min-height: calc(2 * 1.25em);
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  color: var(--foreground, #1c1c1c);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+}
+.stop[data-state="upcoming"] .name {
+  color: var(--text-secondary, #5e5e5e);
+  font-weight: 500;
+}
+@media (max-width: 639px) {
+  .name {
+    font-size: 0.8125rem;
+  }
+}
+
+.spin {
+  color: inherit;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .spin {
+    animation: path-spin 0.8s linear infinite;
+  }
+}
+@keyframes path-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* ---- What the stars mean (Progress) ------------------------------------------------------------ */
+.key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem) var(--space-4, 1rem);
+  margin: var(--space-1, 0.25rem) 0 0;
+  padding: 0;
+  color: var(--text-secondary, #5e5e5e);
+  font-size: var(--text-sm, 0.875rem);
+  list-style: none;
+}
+.key li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+.keyStars.keyStars {
+  --p-star: oklch(83% 0.16 85);
+  --p-star-edge: oklch(68% 0.16 70);
+  margin: 0;
+}
+:global(:root[data-theme="dark"]) .keyStars.keyStars {
+  --p-star: oklch(84% 0.15 85);
+  --p-star-edge: oklch(74% 0.15 75);
+}
+
+/* ---- Pick your grade --------------------------------------------------------------------------- */
+.card[data-kind="pick"] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4, 1rem);
+  background: var(--arc-gradient-soft, var(--card-bg));
+}
+.pickIcon {
+  display: grid;
+  width: 3.25rem;
+  height: 3.25rem;
+  place-items: center;
+  border: 1px solid var(--border, #ececec);
+  border-radius: 1.125rem;
+  background: var(--surface-raised, #fff);
+}
+.pickText {
+  min-width: 0;
+}
+@media (max-width: 639px) {
+  .card[data-kind="pick"] {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .pickAction.pickAction {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+/* ---- Loading ----------------------------------------------------------------------------------- */
+.skeletonTitle {
+  width: min(16rem, 70%);
+  height: 1.625rem;
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, var(--border, #ececec) 70%, transparent);
+}
+.skeletonRow {
+  display: flex;
+  gap: var(--space-10, 2.5rem);
+  padding: var(--space-6, 1.5rem) 0 var(--space-10, 2.5rem) var(--space-4, 1rem);
+  overflow: hidden;
+}
+.skeletonDot {
+  flex: none;
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--border, #ececec) 70%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pulse {
+    animation: path-pulse 1.6s var(--ease-in-out, ease-in-out) infinite;
+  }
+}
+@keyframes path-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}

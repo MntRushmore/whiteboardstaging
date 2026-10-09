@@ -16,6 +16,8 @@ export interface PathCell {
   row: number;
   /** 0-based grid column */
   col: number;
+  /** its row runs left to right (a row's "down" turns on the right), else right to left */
+  forward: boolean;
   link: PathLink;
 }
 
@@ -32,7 +34,7 @@ export function snakeLayout(count: number, cols: number): PathCell[] {
     const forward = row % 2 === 0;
     const col = forward ? k : c - 1 - k;
     const link: PathLink = i === n - 1 ? null : k === c - 1 ? "down" : forward ? "right" : "left";
-    return { row, col, link };
+    return { row, col, forward, link };
   });
 }
 

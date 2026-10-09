@@ -214,10 +214,14 @@ export function GrownUps({ text }: { text: string }) {
 
 // ------------------------------------------------------------------ loading
 
-/** Shaped like the tiles, the chart and the skills, so nothing jumps when they arrive. */
+/** Shaped like the path, the tiles, the chart and the skills, so nothing jumps when they arrive. */
 export function ProgressSkeleton() {
   return (
     <div className={styles.stack} data-state="loading" aria-busy role="status" aria-label="Loading your progress">
+      <div className={styles.section}>
+        <div className={`${styles.skeletonHeading} ${styles.skeletonPathHeading} ${styles.pulse}`} />
+        <div className={`${styles.skeletonPath} ${styles.pulse}`} />
+      </div>
       <div className={styles.section}>
         <div className={`${styles.skeletonHeading} ${styles.pulse}`} />
         <div className={styles.tiles}>
