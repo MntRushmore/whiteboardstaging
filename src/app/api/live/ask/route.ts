@@ -4,7 +4,7 @@ import { ASK_BOARD_OPEN, ASK_EVENTS, AskBoardBlockSchema, AskRequestSchema, type
 import { AskStreamSplitter } from "@/lib/live/ask/splitter";
 import type { ChatAction } from "@/lib/live/chat/contracts";
 import { EMPTY_ASK_CONTEXT, loadAskContext, rememberFromTurn, saveAskTurns, type AskStoreCaller } from "@/lib/server/ask/store";
-import { keepExplanation } from "@/lib/server/askReply";
+import { explains, keepExplanation } from "@/lib/server/askReply";
 import { enforceInk } from "@/lib/server/billing";
 import { chatGate } from "@/lib/server/chatGate";
 import { livePreamble, runChargedStream, withRequestId } from "@/lib/server/live-route";
@@ -16,7 +16,12 @@ import { repairJsonEscapes, sseResponse } from "@/lib/server/sse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+/**
+ * Room past ASK_BUDGET_MS for what runs after the response: `after()` (the memory model, up to two
+ * MEMORY_ATTEMPT_MS attempts, then its write) shares the function's time, and at 60 s a long
+ * answer's 50 s plus saving left it too little. The stream's own budget is unchanged.
+ */
+export const maxDuration = 90;
 
 /**
  * The primary's first words. Haiku 5.5 streamed its first in 0.75 s on 2026-10-11 (GPT-5.4 mini in
@@ -31,9 +36,10 @@ const ASK_FALLBACK_WATCHDOG_MS = 10_000;
  */
 const ASK_STREAM_MS = 40_000;
 /**
- * Everything the route does ends this long after it started (maxDuration 60): the stream, then the
- * gates' repairs (`chatGate` starts none without enough left), then saving the turn. A model that
- * never finishes fails with an event and a refund, not a silent kill by the platform.
+ * Everything the response does ends this long after the route started: the stream, then the gates'
+ * repairs (`chatGate` starts none without enough left), then saving the turn. A model that never
+ * finishes fails with an event and a refund, not a silent kill by the platform. The rest of
+ * maxDuration (90) is the memory update's, in `after()`.
  */
 const ASK_BUDGET_MS = 50_000;
 /** An answer that was only a board block (the panel still says something). */
@@ -104,9 +110,11 @@ const kinds = (actions: readonly ChatAction[]) => [...new Set(actions.map((a) =>
  *
  * Charged `live/chat` (3 ink) up front, as the old chat. Out of ink, rate limited, signed out or a
  * bad body are the usual JSON errors, before any stream. Once streaming, a failure is an `error`
- * event and the ink comes back in full (the reply was cut short and nothing is saved); a reply
- * whose every proposed action was dropped is refunded too (`done.refunded`). A student who leaves
- * aborts the model call; nothing is saved, and the ink comes back unless the reply had begun.
+ * event and the ink comes back in full (the reply was cut short and nothing is saved). A reply whose
+ * every proposed action was dropped is refunded (`done.refunded`) only when the gate's failure line
+ * is all that is left of it; an explanation kept above the line keeps the charge, as any answer
+ * does. A student who leaves aborts the model call; nothing is saved, and the ink comes back unless
+ * the reply had begun.
  */
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "ask", "liveChat", AskRequestSchema);
@@ -221,6 +229,10 @@ export async function POST(req: Request) {
             log,
             startedAt,
             deadline: startedAt + ASK_BUDGET_MS,
+            // The ink comes back only when the failure line is all the student sees: a real
+            // explanation kept above it was the answer they paid for ("explain X in detail, then
+            // put problem 99 on my board" is not a free answer when problem 99 fails).
+            refundWhen: () => !explains(reply),
           },
           unread,
         );

@@ -58,7 +58,7 @@ import { resetServerEnvCache } from "@/lib/env";
 import { ASK_LIMITS, type AskRequestParsed } from "@/lib/live/ask/contracts";
 import { LIVE_MODELS } from "@/lib/live/contracts";
 import { logger } from "@/lib/logger";
-import { loadAskContext, rememberFromTurn, saveAskTurns, type AskLearnerContext } from "@/lib/server/ask/store";
+import { loadAskContext, MEMORY_ATTEMPT_MS, rememberFromTurn, saveAskTurns, STORE_TIMEOUT_MS, type AskLearnerContext } from "@/lib/server/ask/store";
 import { resetBillingWarnings } from "@/lib/server/billing";
 import { recordEvent } from "@/lib/server/events";
 import {
@@ -74,7 +74,7 @@ import {
 import { buildAskMessages } from "@/lib/server/prompts/ask";
 import { PROVIDER_UNAVAILABLE_MESSAGE } from "@/lib/server/request";
 import { resetRateLimits } from "@/lib/server/rate-limit";
-import { POST as ask } from "@/app/api/live/ask/route";
+import { POST as ask, maxDuration } from "@/app/api/live/ask/route";
 
 const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_ASK"] as const;
 const saved: Record<string, string | undefined> = {};
@@ -330,7 +330,9 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     expect(vi.mocked(saveAskTurns).mock.calls[0][2][1]).toEqual({ role: "tutor", text: "There's no problem 7 on this screen.", notes: [], wrote: [] });
   });
 
-  it("every action dropped after a real explanation: the explanation stays, its board claim goes, the gate's line follows; the ink back", async () => {
+  it("every action dropped after a real explanation: the explanation stays, its board claim goes, the gate's line follows; the charge is kept", async () => {
+    // "explain X in detail, then put problems on my board" with problems that fail: the student still
+    // got the explanation they asked for, so it is not a free answer
     const explanation = "To add fractions, make the bottoms the same first: $\\frac{1}{2} = \\frac{2}{4}$, so $\\frac{2}{4} + \\frac{1}{4} = \\frac{3}{4}$.";
     scripts = [{ chunks: [explanation, " I put 2 problems on your board.", block([{ type: "write_problems", problems: ["y = 2x + 3", "x^{2} + y^{2} = 25"] }])] }];
     vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { problems: ["y = 3x", "2x + y = 7"] }, model: LIVE_MODELS.ask } as never);
@@ -338,9 +340,21 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     const failure = "Sorry, I couldn't check those problems, so I didn't write them. Try asking for them another way.";
     expect(only(out, "reply")).toEqual({ text: `${explanation}\n\n${failure}` });
     expect(only(out, "actions")).toEqual({ actions: [], notes: [] });
+    expect(only(out, "done")).not.toHaveProperty("refunded");
+    expect(calls("refund_ink_for")).toEqual([]);
+    expect(vi.mocked(saveAskTurns).mock.calls[0][2][1]).toMatchObject({ text: `${explanation}\n\n${failure}`, wrote: [] });
+  });
+
+  it("every action dropped after a few words that are no explanation: the failure line alone, and the ink back", async () => {
+    // "Sure thing! Two coming up." is under MIN_EXPLANATION_CHARS: what the student sees is only the failure line
+    scripts = [{ chunks: ["Sure thing! Two coming up.", block([{ type: "write_problems", problems: ["y = 2x + 3", "x^{2} + y^{2} = 25"] }])] }];
+    vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { problems: ["y = 3x", "2x + y = 7"] }, model: LIVE_MODELS.ask } as never);
+    const out = await frames(await ask(request({ ...BODY, message: "give me 2 to try" })));
+    const failure = "Sorry, I couldn't check those problems, so I didn't write them. Try asking for them another way.";
+    expect(only(out, "reply")).toEqual({ text: failure });
     expect(only(out, "done")).toMatchObject({ refunded: true });
     expect(calls("refund_ink_for")).toHaveLength(1);
-    expect(vi.mocked(saveAskTurns).mock.calls[0][2][1]).toMatchObject({ text: `${explanation}\n\n${failure}`, wrote: [] });
+    expect(calls("refund_ink_for")[0].args?.p_request_id).toBe(calls("consume_credits")[0].args?.p_request_id);
   });
 
   it("a problem set the engine refuses gets ONE repair on Ask's models; none left: dropped, an event, the ink back", async () => {
@@ -502,6 +516,20 @@ describe("live/ask: the models", () => {
     await runAfterTasks();
     expect(rememberFromTurn).not.toHaveBeenCalled();
     expect(events()).toEqual([]);
+  });
+});
+
+describe("live/ask: the function's time", () => {
+  it("maxDuration leaves the memory update room after the longest response: the 50 s budget, saving, two model attempts and the write", async () => {
+    scripts = [{ chunks: ["Hi!"] }];
+    await frames(await ask(request()));
+    const [, , , , limits] = vi.mocked(streamWithFallback).mock.calls[0];
+    // the stream's own end is unchanged (40 s), well inside the response's 50 s budget
+    expect(limits!.deadline! - Date.now()).toBeLessThanOrEqual(40_000);
+    const responseMs = 50_000 + STORE_TIMEOUT_MS;
+    const memoryMs = 2 * MEMORY_ATTEMPT_MS + STORE_TIMEOUT_MS;
+    expect(maxDuration).toBe(90);
+    expect(maxDuration * 1_000).toBeGreaterThan(responseMs + memoryMs + 10_000);
   });
 });
 

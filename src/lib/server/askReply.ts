@@ -95,10 +95,9 @@ const withoutMaths = (s: string) => s.replace(/\$\$[\s\S]*?\$\$|\$[^$\n]*\$/g, "
 
 /**
  * The reply with every sentence that claims board work taken out (BOARD_TALK, read outside its
- * maths), then `failureLine` as its own paragraph. With less than MIN_EXPLANATION_CHARS left ("Here
- * you go — check your board!"), the failure line alone. Pure.
+ * maths), trimmed: what is left of the explanation when the board part failed. Pure.
  */
-export function keepExplanation(reply: string, failureLine: string): string {
+export function explanationOf(reply: string): string {
   let kept = "";
   for (const s of replySentences(reply)) {
     if (BOARD_TALK.test(withoutMaths(s.text))) {
@@ -109,7 +108,25 @@ export function keepExplanation(reply: string, failureLine: string): string {
     }
     kept += s.text + s.gap;
   }
-  const explanation = kept.replace(/\n{3,}/g, "\n\n").trim();
+  return kept.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Whether a real explanation stays once the board talk is gone (at least MIN_EXPLANATION_CHARS):
+ * the student got an answer for the ink even with nothing on the board, so Ask keeps the charge
+ * (`chatGate`'s `refundWhen`). Without one they see only the failure line, and the ink comes back.
+ */
+export function explains(reply: string): boolean {
+  return explanationOf(reply).length >= MIN_EXPLANATION_CHARS;
+}
+
+/**
+ * The reply with every sentence that claims board work taken out (`explanationOf`), then
+ * `failureLine` as its own paragraph. With less than MIN_EXPLANATION_CHARS left ("Here you go —
+ * check your board!"), the failure line alone. Pure.
+ */
+export function keepExplanation(reply: string, failureLine: string): string {
+  const explanation = explanationOf(reply);
   if (explanation.length < MIN_EXPLANATION_CHARS) return failureLine;
   return `${explanation}\n\n${failureLine}`;
 }

@@ -47,8 +47,8 @@ import {
  *
  * Every repair fits the route's time (`deadline`): one is not started with less than REPAIR_MIN_MS
  * left, and the platform never kills a request mid-way. When the model proposed something and
- * nothing survived, the student got nothing for the ink: the reply is replaced with why, and the
- * ink is given back. Problems the engine refused and repairs the time did not allow are app events
+ * nothing survived, the reply is replaced with why, and the ink is given back unless the route says
+ * the student still got an answer (`refundWhen`: Ask's kept explanation). Problems the engine refused and repairs the time did not allow are app events
  * (`route.live.<route>`), since the student reads a note about them.
  */
 
@@ -98,6 +98,13 @@ export interface ChatGateContext {
   startedAt: number;
   /** the route's own end (epoch ms): every repair ends by then */
   deadline: number;
+  /**
+   * Nothing the model proposed survived: whether the ink comes back, given the line the panel shows
+   * instead (`replacement`). Unset: always, as the old chat, whose reply was only about the board.
+   * Ask keeps its explanation above that line, so it refunds only when the line is all the student
+   * sees (`explains`, askReply.ts): a real answer with a failed board part is still an answer.
+   */
+  refundWhen?: (replacement: string) => boolean;
 }
 
 /** What the gate did, for the route's log line. */
@@ -124,7 +131,7 @@ export interface ChatGateResult {
    * reply ("Sorry, I couldn't draw that figure."). Null otherwise: the reply stands.
    */
   replacement: string | null;
-  /** the ink was given back (nothing survived) */
+  /** the ink was given back (nothing survived, and `refundWhen` agreed) */
   refunded: boolean;
   /** how many actions the model proposed (an unreadable board block counts as one) */
   proposed: number;
@@ -338,7 +345,8 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
   dropped.push(...present.dropped);
   notes.push(...present.notes);
 
-  // Nothing the model proposed survived: say so plainly, and give the ink back.
+  // Nothing the model proposed survived: say so plainly, and give the ink back (when the route
+  // agrees: `refundWhen`).
   let replacement: string | null = null;
   let refunded = false;
   if (proposed > 0 && actions.length === 0) {
@@ -355,8 +363,10 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
                 ? present.notes[0]
                 : "Sorry, I couldn't do that on the board. Try asking another way.";
     notes.length = 0;
-    const r = await refundInk({ userId, requestId }, log);
-    refunded = r.refunded > 0;
+    if (ctx.refundWhen?.(replacement) ?? true) {
+      const r = await refundInk({ userId, requestId }, log);
+      refunded = r.refunded > 0;
+    }
   }
 
   // Problems the engine refused (left out, or a whole set dropped): the student reads a note
