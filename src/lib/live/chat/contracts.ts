@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { FigureSpecSchema } from "../figureDraw/contracts";
 import { LearnerHintSchema } from "@/lib/learning/hint";
+import { CHAT_LIMITS } from "./limits";
 
 /**
  * The board chat (POST /api/live/chat): a student or teacher types a request — "5 two-step
@@ -16,38 +17,7 @@ import { LearnerHintSchema } from "@/lib/learning/hint";
  * a time (`LiveController.runChatActions`).
  */
 
-export const CHAT_LIMITS = {
-  /** the typed request */
-  message: 500,
-  /** recent turns sent with it (both sides) */
-  turns: 6,
-  turnText: 400,
-  /** lines of the screen picture, each side */
-  screenLines: 24,
-  lineLatex: 300,
-  /** actions per reply (more are dropped) */
-  actions: 6,
-  /** problems in one `write_problems` */
-  problems: 12,
-  /** lines of one problem (a system of equations is one problem of 2–3 lines) */
-  problemLines: 3,
-  /** lines of one `write_lines` */
-  lines: 8,
-  /** relations of one `graph` (a system is two or three) */
-  relations: 3,
-  reply: 280,
-  /** a `write_proof`'s Given statements, and one statement's length */
-  proofGivens: 4,
-  proofStatement: 200,
-  /** the end of a screen's lecture transcript sent with a request */
-  lecture: 3000,
-  /** a worked solution (`teach`): its steps, a step's sentence (asked for in ~90), a step's maths lines */
-  teachSteps: 8,
-  teachSay: 140,
-  teachLines: 6,
-  /** the problem the student typed earlier, sent when it has left the recent turns */
-  problem: 600,
-} as const;
+export { CHAT_LIMITS, noProblemNote } from "./limits";
 
 /**
  * Plain words as the hand writes them: letters, digits, spaces and everyday punctuation (the maths
@@ -351,10 +321,6 @@ export type ChatAction = z.infer<typeof ChatActionSchema>;
 export type ChatActionType = ChatAction["type"];
 export const CHAT_ACTION_TYPES = ["write_problems", "write_lines", "graph", "draw_figure", "draw_model", "new_screen", "clear_tutor", "help_problem", "help_board", "write_proof", "teach"] as const satisfies readonly ChatActionType[];
 
-/** The note for help asked about a problem that is not on this screen (the route's, and the board's). */
-export function noProblemNote(n: number): string {
-  return `There's no problem ${n} on this screen.`;
-}
 
 // ------------------------------------------------------------------ response
 

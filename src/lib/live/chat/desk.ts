@@ -5,11 +5,11 @@ import { GRAPH, graphPaceFor, planGraph, type GraphWindowHint } from "../graphin
 import { HAND_LINE_META, planHandwriting, placeHandPlan, placeHandPlanOnBaseline, type HandPlan } from "../handwriting";
 import { CHAT_PROBLEM_META, problemMetaOf } from "./cells";
 import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow, DrawModelAction } from "./contracts";
-import { CHAT_LIMITS, noProblemNote } from "./contracts";
+import { CHAT_LIMITS, noProblemNote } from "./limits";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
-import { legibleBoxes, placeDrawingRect } from "./place";
 import type * as Verify from "./verify";
 import type * as Models from "./models";
+import type * as Place from "./place";
 import type { LecturePageMeta } from "../lecture/contracts";
 import { LECTURE_BLOCK_META } from "../lecture/meta";
 
@@ -464,6 +464,8 @@ export class ChatDesk {
     opts: { near?: number; boxes: readonly { w: number; h: number }[] },
     report: Report,
   ): Promise<HandPlan | null> {
+    // the placement geometry loads with the first drawing, never with the board (docs/BUNDLE.md)
+    const { legibleBoxes, placeDrawingRect } = await this.placer();
     const plans = legibleBoxes(opts.boxes).map((box) => {
       try {
         return plan(box);
@@ -492,6 +494,12 @@ export class ChatDesk {
     const slot = findFreeArea({ w: largest.bounds.w, h: largest.bounds.h }, this.host.screen(), this.obstacles());
     metric(slot ? "new_screen" : "none", slot ? plans.indexOf(largest) : -1);
     return slot ? placeHandPlan(largest, { x: slot.x, y: slot.y }) : null;
+  }
+
+  private place: Promise<typeof Place> | null = null;
+  private placer(): Promise<typeof Place> {
+    this.place ??= import("./place");
+    return this.place;
   }
 
   /** Problem `n` on this screen: its cell and where its ink is (its number and lines); null when it is not here. */
