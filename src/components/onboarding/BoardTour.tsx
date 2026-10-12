@@ -9,6 +9,7 @@ import type { LiveController } from "@/lib/live/contracts";
 import { problemMetaOf } from "@/lib/live/chat/cells";
 import { getLiveSettings, updateLiveSettings } from "@/lib/live/liveSettings";
 import { clientMetric } from "@/lib/logger";
+import { recordFunnelStep } from "@/lib/funnel/record";
 import { supabase } from "@/lib/supabase";
 import { ASK_BUTTON_ATTR } from "@/components/live/AskButton";
 import { CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
@@ -229,6 +230,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
         if (report.problemsWritten > 0) {
           setStarter(s);
           clientMetric("onboarding.tour.problem", { course: marker?.course ?? null, grade: marker?.grade ?? null, problem: s.lines.join("; "), ms: Date.now() - startedAt });
+          void recordFunnelStep("tour_problem");
           return;
         }
       }
@@ -283,6 +285,8 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
           if (timer) clearTimeout(timer);
           timer = setTimeout(() => {
             clientMetric("onboarding.tour.mark", { mark, why: why ?? null });
+            if (mark === "question") void recordFunnelStep("tour_unread", { why });
+            else void recordFunnelStep("tour_checked", { mark: mark === "check" ? "check" : "ring" });
             lastMark.current = new Set([rec.id]);
             dispatch({ type: "mark", mark, why });
           }, MARK_SETTLE_MS);
@@ -354,6 +358,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   const progress = state.step === "asking" ? askProgress(messages, state.askFrom) : "waiting";
   useEffect(() => {
     if (progress !== "answered") return;
+    void recordFunnelStep("tour_asked");
     const timer = setTimeout(() => dispatch({ type: "askAnswered" }), ANSWER_SETTLE_MS);
     return () => clearTimeout(timer);
   }, [progress]);
@@ -364,6 +369,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   const left = useRef(false);
   useEffect(() => {
     clientMetric("onboarding.tour.step", { step: state.step, outcome: state.outcome });
+    if (state.step === "helped") void recordFunnelStep("tour_helped");
     const step = markerStepOf(state.step);
     if (step && marker) {
       writeTourMarker(browserStorage(), userId, {
@@ -385,6 +391,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
       writeLocalDone(storage, userId);
       if (!state.skipped) writePlanMarker(storage, userId, "pending");
       clientMetric(state.skipped ? "onboarding.tour.skip" : "onboarding.tour.done", { course: marker?.course ?? null });
+      if (!state.skipped) void recordFunnelStep("tour_done");
       void saveOnboarding(asOnboardingClient(supabase), { complete: true }).then((res) => {
         if (!res.ok) clientMetric("onboarding.save.failed", { error: res.error });
         // after the save: the route sends only once profiles.onboarded_at is stamped (and only once)
@@ -397,7 +404,12 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
     onFinished();
   }, [state.step, state.outcome, state.skipped, marker, boardId, userId, router, onFinished]);
 
-  const skip = useCallback(() => dispatch({ type: "skip" }), []);
+  // Skip or Esc on a coach mark: recorded with the step it was on, which `done` forgets (the
+  // finish card has no Skip: there, Esc is its button, and the tour is done, not skipped)
+  const skip = useCallback(() => {
+    if (state.step !== "finish" && state.step !== "done") void recordFunnelStep("tour_skipped", { at: state.step });
+    dispatch({ type: "skip" });
+  }, [state.step]);
   const next = useCallback(() => dispatch({ type: "next" }), []);
   const avoidWork = useCallback((): Box[] => {
     const work = workRect(editor);

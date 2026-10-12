@@ -30,12 +30,14 @@ const ADMIN = { id: "00000000-0000-4000-8000-000000000099", email: "owner@exampl
 
 const ANSWER = {
   time_zone: "America/Chicago",
-  generated_at: "2026-10-09T15:00:00Z",
+  generated_at: "2026-10-12T15:00:00Z",
+  tracking_since: "2026-10-12T14:00:00Z",
   active_subscriptions: 2,
   kid_profiles: 1,
   accounts: [
-    { week: "2026-10-05", source: "tiktok", stages: ["signed_up", "onboarded", "trial_started", "paid"], canceled: false },
-    { week: "2026-10-05", source: "unknown", stages: ["signed_up"], canceled: false },
+    { week: "2026-09-28", signed_up_at: "2026-10-01T12:00Z", source: "x", stages: ["signed_up"], steps: [], trial_ended: false, canceled: false },
+    { week: "2026-10-05", signed_up_at: "2026-10-06T12:00Z", source: "tiktok", stages: ["signed_up", "onboarded", "trial_started", "paid"], steps: [], trial_ended: true, canceled: false },
+    { week: "2026-10-12", signed_up_at: "2026-10-12T14:30Z", source: "unknown", stages: ["signed_up", "onboarded", "plan_shown"], steps: ["welcome_shown", "welcome_skipped", "plan_shown"], trial_ended: false, canceled: false },
   ],
 };
 
@@ -81,8 +83,9 @@ describe("GET /api/admin/funnel", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     const body = await res.json();
     expect(FunnelReportSchema.safeParse(body).success).toBe(true);
-    expect(body).toMatchObject({ mrrUsd: 50, activeSubscriptions: 2, kidProfiles: 1, timeZone: "America/Chicago" });
-    expect(body.totals.counts).toMatchObject({ signed_up: 2, paid: 1 });
+    expect(body).toMatchObject({ mrrUsd: 50, activeSubscriptions: 2, kidProfiles: 1, timeZone: "America/Chicago", cohort: "paywall", untracked: 1 });
+    expect(body.totals.counts).toMatchObject({ signed_up: 2, checkout_opened: 1, paid: 1 });
+    expect(body.allTime.counts.signed_up).toBe(3);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://proj.supabase.co/rest/v1/rpc/admin_funnel");
@@ -98,6 +101,17 @@ describe("GET /api/admin/funnel", () => {
     expect(bad.status).toBe(400);
     expect(await bad.json()).toMatchObject({ error: "invalid_request" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts the cohort asked for, and refuses one that is not a cohort", async () => {
+    const tracked = await (await GET(req("?cohort=tracked"))).json();
+    expect([tracked.cohort, tracked.totals.counts.signed_up, tracked.untracked]).toEqual(["tracked", 1, 0]);
+    expect(tracked.paths.find((p: { path: string }) => p.path === "skipped_welcome")).toMatchObject({ accounts: 1, planShown: 1 });
+    const all = await (await GET(req("?cohort=all&tz=UTC"))).json();
+    expect([all.cohort, all.totals.counts.signed_up, all.cohortSince]).toEqual(["all", 3, null]);
+    const bad = await GET(req("?cohort=forever"));
+    expect(bad.status).toBe(400);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("503 without the service role key", async () => {

@@ -53,7 +53,7 @@ export const CONSOLE_PAGE_LABELS: Record<ConsolePage, string> = {
 export const CONSOLE_PAGE_HREFS: Record<ConsolePage, string> = {
   overview: ADMIN_PAGES.overview,
   users: ADMIN_PAGES.users,
-  // the growth funnel (src/lib/funnel/report.ts FUNNEL_PATHS.page)
+  // the growth funnel (src/lib/funnel/report.ts FUNNEL_ROUTES.page)
   funnel: "/admin/funnel",
   // "Give a month, get a month" (src/lib/referral/admin.ts REFERRAL_PATHS.page)
   referrals: "/admin/referrals",

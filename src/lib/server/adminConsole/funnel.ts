@@ -1,12 +1,12 @@
 /**
  * The admin Funnel's read (GET /api/admin/funnel): one call to admin_funnel()
- * (supabase/migrations/20261009020000_funnel.sql) with the service role, added up into a
+ * (supabase/migrations/20261012020000_funnel_steps.sql) with the service role, added up into a
  * FunnelReport (src/lib/funnel/report.ts). Like the console's other reads it is a plain fetch to
  * PostgREST, so the tests replace `deps.fetch`; a failure is a ConsoleQueryError naming the
  * function, which the route answers 502 with.
  */
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
-import type { FunnelReport } from "@/lib/funnel/contracts";
+import type { FunnelCohort, FunnelReport } from "@/lib/funnel/contracts";
 import { FunnelRpcSchema, buildFunnelReport } from "@/lib/funnel/report";
 import { ConsoleQueryError, QUERY_TIMEOUT_MS, failureOf, type ConsoleDeps } from "./rest";
 
@@ -15,8 +15,8 @@ export const FUNNEL_FUNCTION = "admin_funnel";
 /** PostgREST's "no such function" and Postgres's undefined_function. */
 const MISSING = new Set(["PGRST202", "42883"]);
 
-/** The report for the viewer's zone. Throws ConsoleQueryError when the call or its answer fails. */
-export async function buildFunnel(deps: ConsoleDeps, timeZone: string): Promise<FunnelReport> {
+/** The report for the viewer's zone and a cohort of sign-ups. Throws ConsoleQueryError when the call or its answer fails. */
+export async function buildFunnel(deps: ConsoleDeps, timeZone: string, cohort?: FunnelCohort): Promise<FunnelReport> {
   const f = deps.fetch ?? fetch;
   let res: Response;
   try {
@@ -43,5 +43,5 @@ export async function buildFunnel(deps: ConsoleDeps, timeZone: string): Promise<
   }
   const parsed = FunnelRpcSchema.safeParse(await res.json().catch(() => null));
   if (!parsed.success) throw new ConsoleQueryError(FUNNEL_FUNCTION, res.status, "the answer was not a funnel");
-  return buildFunnelReport(parsed.data, { monthlyUsd: UNLIMITED_PLAN.monthlyUsd });
+  return buildFunnelReport(parsed.data, { monthlyUsd: UNLIMITED_PLAN.monthlyUsd, cohort });
 }

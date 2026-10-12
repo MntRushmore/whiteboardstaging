@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { UsersRound } from "lucide-react";
 import { AdminFrame, PageHeader, useAdminAccess } from "@/components/admin/AdminFrame";
 import { Section } from "@/components/admin/AdminSections";
@@ -9,9 +9,22 @@ import { useAdminResource } from "@/components/admin/useAdminResource";
 import { useNow } from "@/components/admin/useNow";
 import { CONSOLE_COPY } from "@/lib/admin/consoleView";
 import { ADMIN_COPY, formatWhen, relativeTime } from "@/lib/admin/view";
-import { FUNNEL_STAGES } from "@/lib/funnel/contracts";
-import { FUNNEL_COPY, STAGE_LABELS, STAGE_SHORT, buildFunnelView, type FunnelBarView, type FunnelTableRowView, type FunnelTile, type FunnelView } from "@/lib/funnel/funnelView";
+import { DEFAULT_FUNNEL_COHORT, FUNNEL_STAGES, isFunnelCohort, type FunnelCohort } from "@/lib/funnel/contracts";
+import {
+  FUNNEL_COPY,
+  STAGE_LABELS,
+  STAGE_SHORT,
+  buildFunnelView,
+  cohortOptions,
+  type FunnelBarView,
+  type FunnelPathCellView,
+  type FunnelPathRowView,
+  type FunnelTableRowView,
+  type FunnelTile,
+  type FunnelView,
+} from "@/lib/funnel/funnelView";
 import { FunnelReportSchema, funnelUrl } from "@/lib/funnel/report";
+import SegmentedControl from "@/registry/components/segmented-control/segmented-control";
 import styles from "@/components/admin/admin.module.css";
 import c from "@/components/admin/console.module.css";
 import f from "./funnel.module.css";
@@ -35,7 +48,7 @@ function Tiles({ tiles }: { tiles: readonly FunnelTile[] }) {
   );
 }
 
-function Bars({ bars }: { bars: readonly FunnelBarView[] }) {
+function Bars({ bars, notes }: { bars: readonly FunnelBarView[]; notes: readonly string[] }) {
   return (
     <div className={styles.panel}>
       <ol className={f.bars}>
@@ -56,7 +69,67 @@ function Bars({ bars }: { bars: readonly FunnelBarView[] }) {
           </li>
         ))}
       </ol>
-      <p className={f.note}>{FUNNEL_COPY.week2Note}</p>
+      {notes.map((note) => (
+        <p key={note} className={f.note}>
+          {note}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function PathCell({ cell }: { cell: FunnelPathCellView }) {
+  return (
+    <td data-num>
+      <span className={f.cell} data-zero={cell.zero || undefined}>
+        <span className={f.cellCount}>{cell.count}</span>
+        {cell.pct && <span className={c.cellNote}>{cell.pct}</span>}
+      </span>
+    </td>
+  );
+}
+
+/** How the cohort's tracked accounts left the welcome and the guided board, and how many went on. */
+function PathTable({ rows }: { rows: readonly FunnelPathRowView[] }) {
+  if (rows.length === 0) return <p className={f.empty}>{FUNNEL_COPY.pathsEmpty}</p>;
+  const cols = FUNNEL_COPY.pathColumns;
+  return (
+    <div className={c.tableWrap}>
+      <table className={`${c.table} ${f.stickyFirst}`}>
+        <caption className={styles.srOnly}>{FUNNEL_COPY.pathsCaption}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{FUNNEL_COPY.pathColumn}</th>
+            <th scope="col" data-num>
+              {cols.accounts}
+            </th>
+            <th scope="col" data-num>
+              {cols.planShown}
+            </th>
+            <th scope="col" data-num>
+              {cols.checkoutOpened}
+            </th>
+            <th scope="col" data-num>
+              {cols.trialStarted}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.path}>
+              <th scope="row">
+                <span className={f.rowName}>{r.label}</span>
+              </th>
+              <td data-num>
+                <span className={f.cellCount}>{r.accounts}</span>
+              </td>
+              <PathCell cell={r.planShown} />
+              <PathCell cell={r.checkoutOpened} />
+              <PathCell cell={r.trialStarted} />
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -110,34 +183,47 @@ export interface FunnelContentProps {
   /** "Updated 2 min ago"; null before the first answer */
   updated: string | null;
   onRefresh: () => void;
+  /** the sign-ups counted, and its switch */
+  cohort: FunnelCohort;
+  onCohort: (cohort: FunnelCohort) => void;
 }
 
+const COHORT_OPTIONS = cohortOptions();
+
 /**
- * The Funnel under its header: the money, the stage bars, then the same stages by sign-up week and
- * by source. Renders from a finished view (skeletons on the first read, what failed and Try again
- * when it could not be read, a calm empty state before anyone signs up).
+ * The Funnel under its header: which sign-ups it counts, the money, the stage bars, how sign-ups
+ * left the welcome and the guided board, then the same stages by sign-up week and by source.
+ * Renders from a finished view (skeletons on the first read, what failed and Try again when it
+ * could not be read, a calm empty state before anyone signs up or in a range nobody signed up in).
  */
-export function FunnelContent({ view, loading, error, updated, onRefresh }: FunnelContentProps) {
+export function FunnelContent({ view, loading, error, updated, onRefresh, cohort, onCohort }: FunnelContentProps) {
   let body: ReactNode;
   if (!view && loading) body = <SkeletonRows rows={8} />;
   else if (!view) body = <LoadFailed title={CONSOLE_COPY.loadFailed(FUNNEL_COPY.loadWhat)} error={error} onRetry={onRefresh} />;
-  else if (view.empty)
+  else if (view.empty || view.emptyCohort)
     body = (
       <>
-        <Section id="funnel-money" title={FUNNEL_COPY.moneyTitle}>
+        <Section id="funnel-money" title={FUNNEL_COPY.moneyTitle} hint={FUNNEL_COPY.moneyHint}>
           <Tiles tiles={view.tiles} />
         </Section>
-        <Empty icon={<UsersRound size={22} strokeWidth={1.6} />} title={FUNNEL_COPY.emptyTitle} hint={FUNNEL_COPY.emptyHint} />
+        <Empty
+          icon={<UsersRound size={22} strokeWidth={1.6} />}
+          title={view.empty ? FUNNEL_COPY.emptyTitle : FUNNEL_COPY.emptyCohortTitle}
+          hint={view.empty ? FUNNEL_COPY.emptyHint : FUNNEL_COPY.emptyCohortHint}
+        />
       </>
     );
   else
     body = (
       <div className={styles.sections}>
-        <Section id="funnel-money" title={FUNNEL_COPY.moneyTitle}>
+        <Section id="funnel-money" title={FUNNEL_COPY.moneyTitle} hint={FUNNEL_COPY.moneyHint}>
           <Tiles tiles={view.tiles} />
         </Section>
         <Section id="funnel-stages" title={FUNNEL_COPY.stagesTitle} hint={FUNNEL_COPY.stagesHint}>
-          <Bars bars={view.bars} />
+          <Bars bars={view.bars} notes={view.notes} />
+        </Section>
+        <Section id="funnel-paths" title={FUNNEL_COPY.pathsTitle} hint={view.pathsHint}>
+          <PathTable rows={view.paths} />
         </Section>
         <Section id="funnel-weeks" title={FUNNEL_COPY.weeksTitle} hint={view.weeksHint}>
           <FunnelTable rows={view.weeks} caption={FUNNEL_COPY.weeksCaption} firstColumn={FUNNEL_COPY.weekColumn} />
@@ -150,7 +236,12 @@ export function FunnelContent({ view, loading, error, updated, onRefresh }: Funn
 
   return (
     <div className={styles.inner}>
-      <PageHeader title={FUNNEL_COPY.title} hint={FUNNEL_COPY.hint} updated={view ? updated : null} refreshing={loading} stale={error ? CONSOLE_COPY.staleNote : null} onRefresh={onRefresh} />
+      <PageHeader title={FUNNEL_COPY.title} hint={FUNNEL_COPY.hint} updated={view ? updated : null} refreshing={loading} stale={error ? CONSOLE_COPY.staleNote : null} onRefresh={onRefresh}>
+        <div className={f.cohort}>
+          <SegmentedControl options={COHORT_OPTIONS} value={cohort} onValueChange={(v) => isFunnelCohort(v) && onCohort(v)} label={FUNNEL_COPY.cohortLabel} />
+          {view && <p className={f.cohortHint}>{view.cohortHint}</p>}
+        </div>
+      </PageHeader>
       <div className={c.pageBody} data-refreshing={(loading && Boolean(view)) || undefined}>
         {body}
       </div>
@@ -173,7 +264,8 @@ function browserTimeZone(): string | null {
 export function FunnelScreen({ notFound }: { notFound: ReactNode }) {
   const access = useAdminAccess();
   const timeZone = useSyncExternalStore(noSubscribe, browserTimeZone, () => null);
-  const funnel = useAdminResource(access.canRead ? funnelUrl(timeZone) : null, FunnelReportSchema, { pollMs: 300_000 });
+  const [cohort, setCohort] = useState<FunnelCohort>(DEFAULT_FUNNEL_COHORT);
+  const funnel = useAdminResource(access.canRead ? funnelUrl(timeZone, cohort) : null, FunnelReportSchema, { pollMs: 300_000 });
   const now = useNow();
   const clock = useMemo(() => ({ now }), [now]);
   const view = useMemo(() => (funnel.data ? buildFunnelView(funnel.data, now) : null), [funnel.data, now]);
@@ -181,7 +273,7 @@ export function FunnelScreen({ notFound }: { notFound: ReactNode }) {
 
   return (
     <AdminFrame notFound={notFound} access={access} resource={funnel} page="funnel" documentTitle={CONSOLE_COPY.documentTitle(FUNNEL_COPY.title)}>
-      <FunnelContent view={view} loading={funnel.loading} error={funnel.error} updated={updated} onRefresh={funnel.refresh} />
+      <FunnelContent view={view} loading={funnel.loading} error={funnel.error} updated={updated} onRefresh={funnel.refresh} cohort={cohort} onCohort={setCohort} />
     </AdminFrame>
   );
 }
