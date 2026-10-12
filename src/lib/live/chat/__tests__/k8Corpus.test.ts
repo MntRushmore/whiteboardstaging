@@ -1,6 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import type { LiveEngine } from "../../contracts";
+import type { LineAnalysis, LiveEngine } from "../../contracts";
 import { getEngine } from "../../engine";
+import { isArithmetic, isSlip, judgeLine } from "../../engine/columnWork";
+import { givensFor, givensOf } from "../../givens";
+import { analyzeColumn } from "../../localSolve";
 import { planHandwriting } from "../../handwriting";
 import { PROBLEM_GRID } from "../layout";
 import { handCanWrite, verifyProblem, type ProblemVerdict } from "../verify";
@@ -30,7 +33,7 @@ import { BOARD_PROBLEM_FORMS } from "../problemForms";
 let engine: LiveEngine;
 beforeAll(async () => {
   engine = await getEngine();
-});
+}, 60_000);
 
 const board = (p: readonly string[]) => verifyProblem(engine, p, handCanWrite);
 const typesetBoard = (p: readonly string[]) => verifyProblem(engine, p);
@@ -99,6 +102,133 @@ describe("the forms a prompt should ask for (`problemForms.ts`)", () => {
       const p = lines(form.example);
       expect(verdictOf(route(p)), `${form.kind}: ${p.join("; ")}`).toBe("ok");
       expect(verdictOf(board(p)), `${form.kind}: ${p.join("; ")}`).toBe("ok");
+    }
+  });
+});
+
+/**
+ * A student's lines under a problem the board wrote, judged as `LiveLoop.judge` judges them: the
+ * problem analysed as the column's head (`LiveLoop.problemAnalyses` → `analyzeColumn`, its givens
+ * too), each line against the last right line above it (a slip is never that), the column's givens
+ * (`givens.ts`), and — a problem with no letters (`isArithmetic`) — the young-work judge against the
+ * problem (`judgeLine` → `LiveEngine.judgeWork`).
+ */
+function boardJudge(problem: readonly string[], lines: readonly string[]): LineAnalysis[] {
+  const heads = analyzeColumn(engine, problem, "feedback");
+  const arithmetic = problem.length > 0 && problem.every(isArithmetic) ? problem : null;
+  const out: LineAnalysis[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    let previous: LineAnalysis | undefined;
+    let original: LineAnalysis | undefined;
+    let last: LineAnalysis | undefined;
+    const take = (a: LineAnalysis | null | undefined) => {
+      if (!a || NOT_A_STEP.has(a.kind)) return;
+      previous = a;
+      if (!original && (a.kind === "equation" || a.kind === "inequality")) original = a;
+    };
+    heads.forEach(take);
+    for (const a of out) {
+      if (!NOT_A_STEP.has(a.kind)) last = a;
+      if (!isSlip(a)) take(a);
+    }
+    const columnGivens = givensOf(lines, [...out, ...lines.slice(i).map(() => null)]);
+    const givens = givensFor(columnGivens, i);
+    out.push(
+      judgeLine(engine, lines[i], {
+        ctx: { previous, original, mode: "feedback", ...(givens ? { givens } : {}) },
+        arithmetic,
+        above: arithmetic ? lines.slice(0, i) : [],
+        slip: last && isSlip(last) ? last : undefined,
+        given: !arithmetic && Boolean(previous?.substituted) && columnGivens.some((g) => g.lines.includes(i)),
+      }),
+    );
+  }
+  return out;
+}
+const NOT_A_STEP = new Set(["label", "incomplete", "unknown", "operation"]);
+
+/** What the board does with the last line: a tick, a tick that solves the problem, a ring — or nothing. */
+type Mark = "tick" | "solved" | "ring";
+const markOf = (a: LineAnalysis): Mark | "nothing" => (a.verdict === "mismatch" ? "ring" : a.verdict === "ok" ? (a.solved ? "solved" : "tick") : "nothing");
+
+/**
+ * A right answer and a wrong one for every form, as a student writes them under the problem: the
+ * answer alone where a teacher expects a number (solved), the working where the form asks for it.
+ * `tick`: right but not finished (the board ticks it; `solved` passes too).
+ */
+const FORM_ANSWERS: Record<string, ReadonlyArray<readonly [lines: readonly string[], mark: Mark]>> = {
+  "add, subtract, multiply, divide": [[["623"], "solved"], [["345 + 278 = 623"], "solved"], [["613"], "ring"], [["345 + 278 = 613"], "ring"]],
+  "fill in the blank, missing number (K–3)": [[["5"], "solved"], [["6"], "ring"]],
+  "the answer's box": [[["56"], "solved"], [["54"], "ring"]],
+  "missing number with a letter (grade 3 and up)": [[["n = 7"], "solved"], [["n = 8"], "ring"]],
+  "compare with <, >, =": [[[">"], "solved"], [["<"], "ring"]],
+  "fractions and mixed numbers": [[["4\\frac{1}{4}"], "solved"], [["\\frac{17}{4}"], "solved"], [["3\\frac{1}{4}"], "ring"]],
+  "equivalent fractions": [[["8"], "solved"], [["6"], "ring"]],
+  money: [[["4.75"], "solved"], [["\\$4.75"], "solved"], [["= \\$4.75"], "solved"], [["3 + 1 = 4", "4.75"], "solved"], [["4.85"], "ring"], [["\\$4.85"], "ring"], [["475"], "ring"]],
+  "big numbers": [[["1801"], "solved"], [["1{,}801"], "solved"], [["1,801"], "solved"], [["1791"], "ring"], [["1{,}791"], "ring"]],
+  "place value": [[["500"], "solved"], [["50"], "ring"]],
+  "division with a remainder": [[["9 R 2"], "solved"], [["9 R 3"], "ring"], [["8 R 7"], "ring"]],
+  "order of operations": [[["17"], "solved"], [["64"], "ring"]],
+  "word problem": [[["29"], "solved"], [["39"], "ring"]],
+  decimals: [[["1.26"], "solved"], [["12.6"], "ring"]],
+  percent: [[["20"], "solved"], [["= 20"], "solved"], [["0.25 \\times 80 = 20"], "solved"], [["80 \\div 4 = 20"], "solved"], [["25"], "ring"], [["2000"], "ring"], [["0.25 \\times 80 = 25"], "ring"]],
+  "ratio and proportion": [[["x = 9"], "solved"], [["x = 8"], "ring"]],
+  "negative numbers": [[["-3"], "solved"], [["-7"], "ring"]],
+  "exponents and roots": [[["13"], "solved"], [["9 + 4 = 13"], "solved"], [["9", "4", "13"], "solved"], [["10"], "ring"], [["9 + 4 = 14"], "ring"]],
+  "GCF and LCM": [[["6"], "solved"], [["\\gcd(12, 18) = 6"], "solved"], [["3"], "ring"], [["2"], "ring"]],
+  "evaluate an expression": [[["11"], "solved"], [["= 11"], "solved"], [["2(3) + 5 = 11"], "solved"], [["13"], "ring"], [["= 13"], "ring"], [["2(3) + 5 = 12"], "ring"]],
+  "area, perimeter, volume": [[["A = 40"], "tick"], [["A = 45"], "ring"]],
+  "equations and inequalities": [[["x = 4"], "solved"], [["2x = 8", "x = 4"], "solved"], [["x = 5"], "ring"]],
+  "a system of equations": [[["2x = 12", "x = 6"], "solved"], [["2x = 12", "x = 5"], "ring"]],
+};
+
+describe("every problem form the board writes: a right answer is ticked or solved, a wrong one ringed (as the loop judges)", () => {
+  it("each form, through the board's own check and the loop's judge", () => {
+    const missed: string[] = [];
+    for (const form of BOARD_PROBLEM_FORMS) {
+      const answers = FORM_ANSWERS[form.kind];
+      expect(answers, `answers for "${form.kind}"`).toBeDefined();
+      expect(answers.some(([, m]) => m !== "ring") && answers.some(([, m]) => m === "ring"), form.kind).toBe(true);
+      // the problem as the board wrote it: the column's head
+      const v = board(lines(form.example));
+      if (!v.ok) {
+        missed.push(`${form.kind}: refused (${v.reason})`);
+        continue;
+      }
+      for (const [work, want] of answers) {
+        const got = markOf(boardJudge(v.lines, work).at(-1)!);
+        const right = want === "ring" ? got === "ring" : want === "solved" ? got === "solved" : got === "tick" || got === "solved";
+        if (!right) missed.push(`${form.kind}: ${v.lines.join("; ")} | ${work.join(" | ")} → ${got}, want ${want}`);
+      }
+    }
+    expect(missed).toEqual([]);
+  }, 60_000);
+
+  it("money and percents reach the young-work judge (`\\$`, `\\%`, `{,}` are numbers), so a wrong answer is ringed, never a label", () => {
+    for (const [problem, wrong] of [
+      ["\\$3.25 + \\$1.50", "4.85"],
+      ["\\$10 - \\$3.45", "\\$7.65"],
+      // (`\$4` is 10% of it: a step on the way, unmarked)
+      ["15\\% \\times \\$40", "\\$5"],
+      ["25\\% \\times 80", "25"],
+      ["1{,}234 + 567", "1{,}791"],
+      ["3^{2} + \\sqrt{16}", "10"],
+    ] as const) {
+      expect(isArithmetic(problem), problem).toBe(true);
+      const judged = engine.judgeWork?.({ problem: [problem], above: [], latex: wrong, ctx: { mode: "feedback" } });
+      expect(judged, `${problem} | ${wrong}`).toMatchObject({ verdict: "mismatch", bareAnswer: true });
+    }
+    // and the rest of the K–8 corpus's money, percents, roots, GCF and LCM: the answer alone solves it
+    for (const [problem, answer] of [
+      ["\\$5.00 - \\$2.75", "2.25"],
+      ["4 \\times \\$1.25", "\\$5"],
+      ["15\\% \\times \\$40", "6"],
+      ["\\frac{30}{120} \\cdot 100\\%", "25\\%"],
+      ["\\sqrt{144} - \\sqrt{25}", "7"],
+      ["\\operatorname{lcm}(4, 6)", "12"],
+      ["\\gcd(24,36)", "12"],
+    ] as const) {
+      expect(markOf(boardJudge([problem], [answer]).at(-1)!), `${problem} | ${answer}`).toBe("solved");
     }
   });
 });

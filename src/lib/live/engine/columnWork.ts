@@ -12,6 +12,8 @@
  *    long-division bracket (`LiveEngine.judgeWork`, `engine/primaryWork.ts`, in the engine's lazy
  *    chunk). An engine without it (a double in a test) falls back to the older rule: a lone number
  *    is the answer, judged as `= 14`, and a right line ending in a plain number solves the problem;
+ *  - under a line asking for its value at the column's givens (`2x + 5 =` with `x = 3`), a lone
+ *    number is that value, judged as `= 11`, and a right line ending in a plain number solves it;
  *  - a step that does not follow from the last right line but does from the ringed step right above
  *    it was carried on from that slip: no mark of its own (`LineAnalysis.carried`).
  *
@@ -44,14 +46,23 @@ function withoutRelation(step: string): string {
   return step.replace(/^\s*=\s*/, "").trim() || step;
 }
 
+/** `\gcd(`, `\operatorname{lcm}(`, `\text{GCF}(`: a greatest common factor or least common multiple of numbers. */
+const GCF_LCM = /\\(?:gcd(?![a-zA-Z])|(?:operatorname|text|mathrm)\s*\{\s*(?:gcd|lcm|GCD|GCF|LCM|HCF|hcf)\s*\})(?=\s*\()/g;
+
 /**
  * Maths with digits and no letters: arithmetic (`18 + 15 - 19`, `6 \times 4 = 24`, `\frac{1}{2} +
  * \frac{1}{4}`, `8 x 7`) — and a young student's ways of writing it: a long-division bracket
- * (`9 \longdiv{144}`), a remainder (`3 R 2`), a block of rows.
+ * (`9 \longdiv{144}`), a remainder (`3 R 2`), a block of rows. The K–8 problems the chat writes
+ * (`chat/problemForms.ts`) are arithmetic too: money (`\$3.25 + \$1.50`), a percent (`25\% \times
+ * 80`), a square root that comes out whole (`3^{2} + \sqrt{16}`), a GCF or LCM (`\gcd(12, 18)`) —
+ * their answer is a number the student writes alone.
  */
 export function isArithmetic(latex: string): boolean {
   const bare = latex
     .replace(/\\begin\{(?:array|aligned|gathered)\}(?:\{[^{}]*\})?|\\end\{(?:array|aligned|gathered)\}|\\\\|\\enclose\s*\{\s*longdiv\s*\}/g, " ")
+    .replace(/\\sqrt\s*\{\s*(\d+)\s*\}/g, (m: string, n: string) => (Number.isInteger(Math.sqrt(Number(n))) ? ` ${n} ` : m))
+    .replace(GCF_LCM, " ")
+    .replace(/\\[$%]/g, " ")
     .replace(/\\(?:frac|dfrac|tfrac|times|div|cdot|left|right|quad|qquad|longdiv|overline|underline|hline|,|;|:|!)/g, " ")
     // a worksheet's blank is a place for a number, not a letter (`4 + \square = 9`, `engine/blanks.ts`)
     .replace(/\\(?:square|Box|bigcirc|boxed|phantom|_)(?![a-zA-Z])|[?□○]/g, " ")
@@ -85,6 +96,8 @@ export interface WorkInput {
   beside?: string | null;
   /** the step right above it when that step is a slip, ringed or carried (`LiveLoop.slipAbove`) */
   slip?: LineAnalysis;
+  /** the line is (part of) a value the column gives a letter (`givens.ts`: the `3` of `x =` read apart): never an answer */
+  given?: boolean;
 }
 
 /** The line judged in its column (see the file comment). Never throws past the engine's own guard. */
@@ -105,6 +118,15 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
       }
       if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(latex))) a = { ...a, solved: true };
     }
+  } else if (ctx.previous?.substituted && !input.given) {
+    // the line above asks for its value with the column's givens put in (`2x + 5 =` under `x = 3`,
+    // `LineAnalysis.substituted`): a lone number is that value (`11`, judged as `= 11`), and a right
+    // line ending in a plain number answers it
+    if (BARE_NUMBER.test(latex)) {
+      const answer = engine.analyzeLine(`= ${withoutRelation(latex)}`, ctx);
+      if (answer.verdict === "ok" || answer.verdict === "mismatch") a = { ...answer, bareAnswer: true };
+    }
+    if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(latex))) a = { ...a, solved: true };
   }
   if (a.verdict !== "mismatch" || a.solved) return a;
   // not right from the last right line: carried on from the slip right above it? Then the
