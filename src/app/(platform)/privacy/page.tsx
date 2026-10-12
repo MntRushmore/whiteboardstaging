@@ -25,6 +25,9 @@ const plan = UNLIMITED_PLAN.name;
  *    (src/lib/live/lecture/speech/browser.ts): lecture mode, hidden from the board for now
  *  - ElevenLabs text-to-speech (src/app/api/live/speak/route.ts) and the browser's speechSynthesis
  *    (src/lib/speech/speaker.ts): read aloud, the tutor's words only (src/lib/speech/tutorWords.ts)
+ *  - ElevenLabs speech-to-text (src/app/api/live/transcribe/route.ts, through our server, never
+ *    stored or logged) and the browser's recognizer (src/components/chat/voice/micEngines.ts): Ask's
+ *    mic, the recording of what the child says
  *  - tldraw's CDN (fonts, icons) and unpkg (the PDF.js worker, src/lib/pdf.ts)
  *  - Ask's saved chat and memory notes (ask_messages, learner_memory: 20261011000000_ask_v2.sql,
  *    src/lib/server/ask/store.ts): Supabase, and the memory model through OpenRouter
@@ -67,13 +70,13 @@ const PROVIDERS = [
   },
   {
     name: "ElevenLabs",
-    role: "Reads the tutor’s hints and questions aloud (read aloud: on for Kindergarten to 2nd grade unless it is switched off, and off for everyone else unless it is switched on). Also speech-to-text for lecture mode, which is switched off for now; only while it is listening.",
-    data: `For read aloud: the words the tutor is about to say (a hint, a question or a word of praise, at most ${SPEAK_MAX_CHARS} characters), sent from our server without your name or email address, and never your handwriting. For lecture mode: microphone audio, streamed straight from your browser.`,
+    role: "Reads the tutor’s hints and questions aloud (read aloud: on for Kindergarten to 2nd grade unless it is switched off, and off for everyone else unless it is switched on). Turns what you say to Ask’s microphone into words (speech-to-text). Also speech-to-text for lecture mode, which is switched off for now; only while it is listening.",
+    data: `For read aloud: the words the tutor is about to say (a hint, a question or a word of praise, at most ${SPEAK_MAX_CHARS} characters), sent from our server without your name or email address, and never your handwriting. For Ask’s microphone: the recording of what you said, sent through our server without your name or email address, to get the words back; we never store the recording. For lecture mode: microphone audio, streamed straight from your browser.`,
   },
   {
     name: "Your browser’s speech features",
-    role: "Read aloud’s voice when ElevenLabs is not available, and lecture mode’s fallback recognizer.",
-    data: "The tutor’s words to be said, or microphone audio. Some browsers send them to their maker: for example Chrome’s Google voices and its recognizer (Google), and Edge’s online voices (Microsoft).",
+    role: "Read aloud’s voice when ElevenLabs is not available, and the recognizer for Ask’s microphone and lecture mode when ElevenLabs is not available.",
+    data: "The tutor’s words to be said, or microphone audio (what you say to Ask’s microphone). Some browsers send them to their maker: for example Chrome’s Google voices and its recognizer (Google), and Edge’s online voices (Microsoft).",
   },
   {
     name: "tldraw and unpkg",
@@ -129,6 +132,13 @@ export default function PrivacyPage() {
             <strong>Your boards:</strong> your handwriting and drawings, typed text, images and PDFs you add, what the
             tutor writes back, and the messages you type to the tutor. In lecture mode (switched off for now), what is
             said near your microphone while it is listening, turned into text.
+          </li>
+          <li>
+            <strong>Your voice, when you use Ask’s microphone:</strong> while you hold the microphone button, your
+            browser records what you say. The recording goes through our server to ElevenLabs, which turns it into
+            words for your message. We never store the recording; only the words you send are kept, as a chat
+            message. When ElevenLabs is not available, your browser’s own speech recognizer may listen instead, and
+            some browsers send the audio to their maker (for example Google, for Chrome).
           </li>
           <li>
             <strong>Bug reports</strong>, when you send one: your message, a screenshot of your board, recent technical
@@ -263,6 +273,12 @@ export default function PrivacyPage() {
           <a href="#providers">below</a>).
         </p>
         <p>
+          <strong>Ask’s microphone:</strong> when you hold it and talk, the recording goes through our server to
+          ElevenLabs speech-to-text, without your name or email address, to get your words back. We never store the
+          recording. When ElevenLabs is not available, your browser’s own speech recognizer is used instead, and some
+          browsers send the audio to their maker (for example Google, for Chrome).
+        </p>
+        <p>
           We do not use your boards to train AI models. {LEGAL.aiProviderTraining} Mathpix keeps only a record that a
           request was made (when, and whether it worked), not your handwriting or what it read. Some of the AI
           providers may process what we send outside the United States.
@@ -338,7 +354,8 @@ export default function PrivacyPage() {
           <li>
             <strong>What we collect from a child:</strong> their handwriting and drawings, the maths on their boards,
             what they type to the tutor (their chat with Ask, saved with each board, and Ask’s notes about how they
-            learn), images and PDFs they add, a record of the problems they work and how they went
+            learn), what they say to Ask’s microphone (turned into words by ElevenLabs; the recording is never
+            stored), images and PDFs they add, a record of the problems they work and how they went
             (their learning record), and bug reports if they send one; the email address
             and password used to sign in, the course they pick and an optional display name; and how they use the
             tutor (see <a href="#collect">What we collect</a>). Only what the tutor needs. We do not ask a child for
