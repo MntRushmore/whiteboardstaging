@@ -17,6 +17,7 @@ import {
   strokeBounds,
   strokeDurationMs,
   totalDurationMs,
+  type InkPt,
   type Stroke,
 } from "@/lib/hand";
 import { TUTOR_INK_COLOR } from "./answer";
@@ -126,6 +127,43 @@ function densify(points: readonly { x: number; y: number; z: number }[], step: n
     }
   }
   return out;
+}
+
+/** A laid-out stroke's points as the hand saves them: resampled for tldraw's smoothing, at ink precision. */
+export function handInkPoints(points: readonly InkPt[]): InkPt[] {
+  return roundInkPoints(densify(points, HAND_WRITE.resampleStepPx), HAND_WRITE.inkPrecision);
+}
+
+/**
+ * One stroke of the hand as a tldraw draw shape at `at`, inked the way the tutor's writing is
+ * (`isPen`, `dash: "draw"`, the hand's pen size, the stroke's own weight), in any colour. The
+ * HandWriter's reveal makes its strokes here, and so does the kid's typed line (`LiveLoop.writeInk`):
+ * the same hand, in their colour.
+ */
+export function handStrokeShape(
+  id: TLShapeId,
+  at: { x: number; y: number },
+  points: InkPt[],
+  o: { color: TLDefaultColorStyle; weight?: number; meta: JsonObject; complete?: boolean; fill?: TLDefaultFillStyle; closed?: boolean },
+): TLShapePartial<TLDrawShape> {
+  return {
+    id,
+    type: "draw",
+    x: at.x,
+    y: at.y,
+    props: {
+      color: o.color,
+      fill: o.fill ?? "none",
+      dash: "draw",
+      size: HAND_WRITE.size,
+      segments: [{ type: "free", points }],
+      isComplete: o.complete ?? true,
+      isClosed: o.closed ?? false,
+      isPen: true,
+      scale: o.weight ?? 1,
+    },
+    meta: o.meta,
+  };
 }
 
 /**
@@ -554,6 +592,11 @@ export class HandWriter {
     return this.running;
   }
 
+  /** Where the block being written will be, whole, while it is (what is still to come takes room too). */
+  get bounds(): Rect | null {
+    return this.running ? (this.plan?.bounds ?? null) : null;
+  }
+
   /** Shape ids written so far. */
   get shapeIds(): TLShapeId[] {
     return this.ids.flat().filter((id): id is TLShapeId => id !== null);
@@ -657,25 +700,17 @@ export class HandWriter {
             // is the first stroke of the first line
             const lead = this.leadMeta;
             this.leadMeta = null;
-            creates.push({
-              id: fresh,
-              type: "draw",
-              x: line.x,
-              y: line.y,
-              props: {
+            creates.push(
+              handStrokeShape(fresh, line, points, {
                 color: line.style?.color ?? HAND_WRITE.color,
                 fill,
-                dash: "draw",
-                size: HAND_WRITE.size,
-                segments: [{ type: "free", points }],
-                isComplete,
-                isClosed: closed,
-                isPen: true,
-                scale: stroke.weight ?? 1,
-              },
-              // the line of maths this stroke belongs to, as LaTeX (debugging, tests, a future readback)
-              meta: { ...meta, [HAND_LINE_META]: line.latex, ...(line.part ? { [HAND_PART_META]: line.part } : {}), ...lead },
-            } satisfies TLShapePartial<TLDrawShape>);
+                complete: isComplete,
+                closed,
+                weight: stroke.weight,
+                // the line of maths this stroke belongs to, as LaTeX (debugging, tests, a future readback)
+                meta: { ...meta, [HAND_LINE_META]: line.latex, ...(line.part ? { [HAND_PART_META]: line.part } : {}), ...lead },
+              }),
+            );
             continue;
           }
           // The student erased this stroke of the tutor's writing: leave it erased.
