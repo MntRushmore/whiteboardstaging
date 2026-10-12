@@ -315,7 +315,8 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
         const spec = FigureSpecSchema.parse(fixed.figure);
         problems = figureProblems(spec);
         if (problems.length === 0) {
-          actions.push({ type: "draw_figure", figure: spec });
+          // mended, still beside the problem it was asked for (`near`)
+          actions.push({ ...action, figure: spec });
           continue;
         }
       } catch (err) {
