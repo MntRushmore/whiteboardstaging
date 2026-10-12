@@ -105,15 +105,20 @@ export async function startRecording(): Promise<Recording> {
     throw err;
   }
   const release = () => stream.getTracks().forEach((t) => t.stop());
+  // a start that fails anywhere after the mic is granted gives it back: iOS keeps its mic light on
+  // for as long as a track is live
+  function giveUp(err: unknown): never {
+    release();
+    void ctx?.close().catch(() => undefined);
+    throw err;
+  }
 
   let recorder: MediaRecorder;
   try {
     const type = pickRecorderType((t) => MediaRecorder.isTypeSupported(t), prefersMp4(navigator.userAgent)) ?? "";
     recorder = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), audioBitsPerSecond: MIC.bitsPerSecond });
   } catch (err) {
-    release();
-    void ctx?.close().catch(() => undefined);
-    throw err;
+    giveUp(err);
   }
 
   let analyser: AnalyserNode | null = null;
@@ -138,8 +143,12 @@ export async function startRecording(): Promise<Recording> {
     recorder.onerror = () => resolve();
   });
   const startedAt = performance.now();
-  // a chunk a second: a recorder that fails late still has most of it
-  recorder.start(1_000);
+  try {
+    // a chunk a second: a recorder that fails late still has most of it
+    recorder.start(1_000);
+  } catch (err) {
+    giveUp(err);
+  }
 
   let done = false;
   const close = () => {
