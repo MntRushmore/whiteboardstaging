@@ -7,7 +7,9 @@ import {
   MIN_AUDIO_SECONDS,
   SCRIBE_BATCH,
   TranscribeFieldsSchema,
+  audioByteCap,
   audioSeconds,
+  billedSeconds,
   parseScribeReply,
   scribeForm,
   scribeRefusal,
@@ -18,7 +20,7 @@ import { json, requireUser } from "@/lib/server/auth";
 import { userClient } from "@/lib/server/billing";
 import { liveLogger, withRequestId } from "@/lib/server/live-route";
 import { UpstreamError } from "@/lib/server/openrouter";
-import { checkRateLimitDistributed, rateLimitedResponse, spendGlobalBudget } from "@/lib/server/rate-limit";
+import { checkRateLimitDistributed, rateLimitedResponse, spendGlobalBudget, spendUserBudget } from "@/lib/server/rate-limit";
 import { errorResponse, recordRouteEvent } from "@/lib/server/request";
 import { speechEntitled } from "@/lib/server/speechAccess";
 
@@ -32,6 +34,7 @@ const FORM_OVERHEAD_BYTES = 16_384;
 const UNAVAILABLE_MESSAGE = "Speech to text is not set up on this deployment.";
 const NOT_ENTITLED_MESSAGE = "Ask's listening comes with Agathon Unlimited.";
 const BUDGET_MESSAGE = "Ask's listening is resting for today.";
+const TOO_LONG_MESSAGE = `Recordings can be up to ${ASK_LIMITS.audioSeconds} seconds long.`;
 
 /** 503 `speech_unavailable`: the mic uses the browser's own recognizer instead. */
 function unavailable(message: string = UNAVAILABLE_MESSAGE): Response {
@@ -52,12 +55,18 @@ function heard(text: string): Response {
  * and why).
  *
  * requireUser → the `liveTranscribe` budget → the size (ASK_LIMITS.audioBytes; 413 past it) → the
- * fields (zod) → the bytes must be a recording (415 otherwise) and at most ~ASK_LIMITS.audioSeconds
- * long (413) → a recording with nothing in it is `source: "none"` without any call → without
- * ELEVENLABS_API_KEY, for an account without Agathon Unlimited past its guided first board
- * (`speechEntitled`, the same rule as the voice), or once the day's seconds for everyone are spent
- * (`GLOBAL_BUDGETS.liveTranscribeSeconds`, recorded for /admin): a 503 `speech_unavailable`, and
- * the mic uses the browser's recognizer → Scribe.
+ * fields (zod) → the bytes must be a recording (415 otherwise), a compressed one at most
+ * ASK_LIMITS.compressedAudioBytes (413: its length cannot be read before Scribe hears it, so its
+ * size is what bounds it) and at most ~ASK_LIMITS.audioSeconds long by a WAV's header or the
+ * client's word (413) → a recording with nothing in it is `source: "none"` without any call →
+ * without ELEVENLABS_API_KEY, or for an account without Agathon Unlimited past its guided first
+ * board (`speechEntitled`, the same rule as the voice): a 503 `speech_unavailable`, and the mic uses
+ * the browser's recognizer → the account's seconds for the day (`USER_BUDGETS.liveTranscribeDaySeconds`,
+ * 20 minutes, like read aloud's `liveSpeakDay`) and everyone's (`GLOBAL_BUDGETS.liveTranscribeSeconds`,
+ * recorded for /admin), each spent with the recording's estimated length; either spent: the same
+ * 503 → Scribe → both budgets trued up with the length Scribe measured (`audio_duration_secs`), so a
+ * small low-bitrate file holding minutes is counted as what it is; past the mic's 60 s it is a 413
+ * and its words are not given back.
  *
  * Not charged: the ask it carries is (`live/chat`), and saying a question should cost no more than
  * typing it. The recording is never stored or logged, and nor are the words: the log line has their
@@ -116,9 +125,13 @@ export async function POST(req: Request) {
     log.warn({ bytes: bytes.length, declaredType: audio.type.slice(0, 60) }, "transcribe: not a recording");
     return withRequestId(json(415, "invalid_request", "That isn't a recording we can listen to."), requestId);
   }
+  if (bytes.length > audioByteCap(kind)) {
+    log.warn({ bytes: bytes.length, kind }, "transcribe: a compressed recording past its cap");
+    return tooBig();
+  }
   const length = audioSeconds(kind, bytes, fields.data.seconds);
   if (length.seconds > MAX_AUDIO_SECONDS && (length.exact || (fields.data.seconds ?? 0) > MAX_AUDIO_SECONDS)) {
-    return withRequestId(json(413, "invalid_request", `Recordings can be up to ${ASK_LIMITS.audioSeconds} seconds long.`), requestId);
+    return withRequestId(json(413, "invalid_request", TOO_LONG_MESSAGE), requestId);
   }
   if ((length.exact || fields.data.seconds !== undefined) && length.seconds < MIN_AUDIO_SECONDS) {
     log.info({ seconds: length.seconds }, "transcribe: too short to hold a word (nothing heard)");
@@ -135,7 +148,15 @@ export async function POST(req: Request) {
     return withRequestId(unavailable(NOT_ENTITLED_MESSAGE), requestId);
   }
 
-  const seconds = Math.min(MAX_AUDIO_SECONDS, Math.max(1, Math.ceil(length.seconds)));
+  // What the recording is thought to be before Scribe hears it: a WAV's header, else the longer of
+  // the client's word and what its size implies. Trued up with Scribe's own measure after the call.
+  const seconds = Math.min(MAX_AUDIO_SECONDS, billedSeconds(length.seconds));
+  const day = await spendUserBudget({ token, userId: user.id, bucket: "liveTranscribeDaySeconds", amount: seconds });
+  if (!day.ok) {
+    // the mic keeps working (the browser's recognizer); a 429 would leave the kid with no voice until tomorrow
+    log.warn({ seconds, backend: day.backend, retryAfterMs: day.retryAfterMs }, "transcribe: this account's seconds for the day are spent: the browser's recognizer");
+    return withRequestId(unavailable(BUDGET_MESSAGE), requestId);
+  }
   const budget = await spendGlobalBudget("liveTranscribeSeconds", seconds);
   if (!budget.ok) {
     log.warn({ seconds, backend: budget.backend, retryAfterMs: budget.retryAfterMs }, "transcribe: the day's seconds for everyone are spent: the browser's recognizer");
@@ -199,6 +220,29 @@ export async function POST(req: Request) {
 
     const reply = parseScribeReply(body);
     if (!reply) throw new UpstreamError(502, "ElevenLabs speech-to-text: no text in the reply");
+
+    // The true length, as Scribe measured (and bills) it: the budgets were spent with an estimate,
+    // and a compressed recording's size says little (a low bitrate fits minutes in a few hundred KB).
+    const measured = reply.heardSeconds !== null && Number.isFinite(reply.heardSeconds) ? billedSeconds(reply.heardSeconds) : null;
+    const owed = measured !== null ? measured - seconds : 0;
+    if (owed > 0) {
+      const [userTrueUp, globalTrueUp] = await Promise.all([
+        spendUserBudget({ token, userId: user.id, bucket: "liveTranscribeDaySeconds", amount: owed }),
+        spendGlobalBudget("liveTranscribeSeconds", owed),
+      ]);
+      log.info({ estimated: seconds, heard: measured, owed, userOk: userTrueUp.ok, globalOk: globalTrueUp.ok }, "transcribe: the budgets trued up with Scribe's length");
+    }
+    if (measured !== null && measured > MAX_AUDIO_SECONDS) {
+      // longer than the mic ever records: a long recording in a small file. Counted, but no words back.
+      log.warn({ kind, bytes: bytes.length, estimated: seconds, heard: measured }, "transcribe: Scribe heard more than the mic records: refused");
+      recordRouteEvent(log, {
+        level: "warn",
+        code: "too_long",
+        message: `A ${kind} recording of ${bytes.length} bytes held ${measured} s of audio (the mic records at most ${ASK_LIMITS.audioSeconds} s)`,
+        meta: { kind, bytes: bytes.length, estimated: seconds, heard: measured },
+      });
+      return withRequestId(json(413, "invalid_request", TOO_LONG_MESSAGE), requestId);
+    }
 
     // the words' length, never the words
     log.info(

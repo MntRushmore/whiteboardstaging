@@ -558,7 +558,7 @@ export const API_ROUTES = Object.freeze([
     auth: "user",
     limit: "liveTranscribe",
     body: "zod",
-    purpose: "Ask's mic: multipart `audio` (webm/mp4/wav, at most 4 MB and 60 s) -> the words said (ElevenLabs Scribe; uncharged, never stored); 503 speech_unavailable without a key or a plan (the browser's recognizer)",
+    purpose: "Ask's mic: multipart `audio` (wav at most 4 MB, webm/mp4/ogg/mp3 at most 1.2 MB; 60 s) -> the words said (ElevenLabs Scribe; uncharged, never stored); 20 min a day per user and a day's seconds for everyone, trued up with Scribe's measured length; 503 speech_unavailable without a key, a plan or budget (the browser's recognizer)",
     status: "active",
   },
   {

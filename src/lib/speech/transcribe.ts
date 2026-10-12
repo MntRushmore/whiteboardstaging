@@ -34,11 +34,22 @@ export const MIN_AUDIO_SECONDS = 0.25;
 /** A little over the 60 s the mic allows: its timer and the recorder's last chunk can disagree. */
 export const MAX_AUDIO_SECONDS = ASK_LIMITS.audioSeconds + 2;
 /**
- * The most bytes a second of speech takes in what the browsers record (16 kHz 16-bit WAV, and well
- * over the ~32–128 kbit/s of their Opus and AAC): a floor on a recording's length from its size,
- * so a client that says "1 second" about a long recording still counts against the day's budget.
+ * The most bytes a second of speech takes in a WAV the route accepts without a readable header
+ * (16 kHz 16-bit mono): a floor on its length from its size.
  */
 export const MAX_BYTES_PER_SECOND = 32_000;
+/**
+ * The most bytes a second takes in the compressed recordings the browsers make (128 kbit/s; the mic
+ * asks for 32): a floor on a compressed recording's length from its size, so a client that says
+ * "1 second" about a long recording still counts against the budgets before the call. Its real
+ * length is Scribe's (`audio_duration_secs`), and the route trues the budgets up with it after.
+ */
+export const MAX_COMPRESSED_BYTES_PER_SECOND = 16_000;
+
+/** The most bytes a recording of `kind` may have: a WAV's length is in its header; a compressed one's is not. */
+export function audioByteCap(kind: AudioKind): number {
+  return kind === "wav" ? ASK_LIMITS.audioBytes : ASK_LIMITS.compressedAudioBytes;
+}
 
 /** The multipart fields beside `audio`: the kid's language and the recording's length, both optional. */
 export const TranscribeFieldsSchema = z
@@ -111,16 +122,24 @@ export function wavSeconds(bytes: Uint8Array): number | null {
 }
 
 /**
- * How long the recording is, for the length cap and the day's budget: a WAV's own header; else the
- * longer of what the client timed and what the size implies (`MAX_BYTES_PER_SECOND`). `exact` is
- * true only for the header.
+ * How long the recording is, for the length cap and the budgets before the call: a WAV's own header
+ * (`wavSeconds`); else the longer of what the client timed and what the size implies
+ * (MAX_BYTES_PER_SECOND for a WAV whose header cannot say, MAX_COMPRESSED_BYTES_PER_SECOND for the
+ * rest). `exact` is true only for the header. A compressed recording's real length is only known
+ * once Scribe has heard it (`parseScribeReply`'s `heardSeconds`).
  */
 export function audioSeconds(kind: AudioKind, bytes: Uint8Array, claimed: number | undefined): { seconds: number; exact: boolean } {
   if (kind === "wav") {
     const s = wavSeconds(bytes);
     if (s !== null) return { seconds: s, exact: true };
   }
-  return { seconds: Math.max(claimed ?? 0, bytes.length / MAX_BYTES_PER_SECOND), exact: false };
+  const perSecond = kind === "wav" ? MAX_BYTES_PER_SECOND : MAX_COMPRESSED_BYTES_PER_SECOND;
+  return { seconds: Math.max(claimed ?? 0, bytes.length / perSecond), exact: false };
+}
+
+/** Whole seconds for a budget: at least 1, rounded up. */
+export function billedSeconds(seconds: number): number {
+  return Math.max(1, Math.ceil(seconds));
 }
 
 /** The multipart body for Scribe: the recording, the model, and the settings above. */

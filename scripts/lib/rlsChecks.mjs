@@ -3282,11 +3282,87 @@ export async function checkAsk({ anon, a, b, service, newUser }) {
 }
 
 /**
+ * rate_limit_spend() (migration 20261012000000_transcribe_user_budget.sql; `spendUserBudget`, Ask's
+ * seconds of speech a day): the caller's units add up in one window and are refused past p_limit
+ * (and stay refused: a refused call's units count), users do not share a budget, the spend never
+ * touches the same bucket's rate_limit_hit() counter, a bad amount (0, negative: no giving units
+ * back) is rejected, and anon cannot call it.
+ *
+ * Also the learner_memory compare-and-set rememberFromTurn relies on (with the service role): an
+ * update filtered on the updated_at that was read lands, one filtered on a stale updated_at (another
+ * turn wrote since) or on a row cleared since touches nothing.
+ * @param {CheckContext} ctx
+ */
+export async function checkAskBudgetAndMemoryCas({ a, b, anon, service }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const bucket = `rls-verify-spend-${uuid().slice(0, 8)}`;
+  const windowMs = 60_000;
+  const spend = (/** @type {RlsClient} */ c, /** @type {number} */ amount) => rpc(c, "rate_limit_spend", { p_bucket: bucket, p_amount: amount, p_limit: 100, p_window_ms: windowMs });
+
+  const first = await spend(a, 60);
+  const f = asObject(first.body);
+  out.push(result("rate_limit_spend: A spends 60 of 100 (remaining 40, backend 'db')", isOk(first) && f?.allowed === true && f.remaining === 40 && isRateLimitResult(f, windowMs), describe(first)));
+  const second = await spend(a, 40);
+  const s2 = asObject(second.body);
+  out.push(result("rate_limit_spend: units add up to the limit (40 more: remaining 0, allowed)", isOk(second) && s2?.allowed === true && s2.remaining === 0, describe(second)));
+  const over = await spend(a, 1);
+  const o = asObject(over.body);
+  out.push(result("rate_limit_spend: past the limit is refused with retry_after_ms in (0, window]", isOk(over) && o?.allowed === false && isRateLimitResult(o, windowMs), describe(over)));
+  const bSpend = await spend(b, 99);
+  const bs = asObject(bSpend.body);
+  out.push(result("rate_limit_spend: B has an independent budget for the same bucket", isOk(bSpend) && bs?.allowed === true && bs.remaining === 1, describe(bSpend)));
+  const hit = await rpc(a, "rate_limit_hit", { p_bucket: bucket, p_limit: 1, p_window_ms: windowMs });
+  out.push(result("rate_limit_spend: never the same counter as rate_limit_hit() on the bucket", isOk(hit) && asObject(hit.body)?.allowed === true, describe(hit)));
+  const zero = await spend(a, 0);
+  const negative = await spend(a, -50);
+  out.push(result("rate_limit_spend: p_amount 0 and a negative amount (giving units back) are rejected", !isOk(zero) && !isOk(negative), `${describe(zero)} / ${describe(negative)}`));
+  const anonSpend = await spend(anon, 1);
+  out.push(result("rate_limit_spend: anon cannot call it", isDenied(anonSpend) || !isOk(anonSpend), describe(anonSpend)));
+
+  if (!service) {
+    out.push(result("learner_memory compare-and-set (skipped: no service role client)", true));
+    return out;
+  }
+  try {
+    const write = await service.rest("POST", "learner_memory", { query: { on_conflict: "user_id" }, body: { user_id: a.userId, notes: ["rls-verify: cas one"] }, prefer: "resolution=merge-duplicates,return=representation" });
+    const stamp = String(rows(write)[0]?.updated_at ?? "");
+    const cas = (/** @type {string} */ at, /** @type {string} */ note) =>
+      service.rest("PATCH", "learner_memory", { query: { user_id: `eq.${a.userId}`, updated_at: `eq.${at}`, select: "user_id,updated_at" }, body: { notes: [note] }, prefer: "return=representation" });
+    const landed = await cas(stamp, "rls-verify: cas two");
+    out.push(result("learner_memory: an update on the updated_at that was read lands (and moves it)", isOk(landed) && rows(landed).length === 1 && rows(landed)[0]?.updated_at !== stamp, `${describe(write)} / ${describe(landed)}`));
+    const stale = await cas(stamp, "rls-verify: cas stale");
+    out.push(result("learner_memory: an update on a stale updated_at (another turn wrote first) touches nothing", isOk(stale) && rows(stale).length === 0, describe(stale)));
+    const fresh = String(rows(landed)[0]?.updated_at ?? "");
+    await a.rest("DELETE", "learner_memory", { query: { user_id: `eq.${a.userId}` } });
+    const afterClear = await cas(fresh, "rls-verify: cas after clear");
+    const left = await service.rest("GET", "learner_memory", { query: { user_id: `eq.${a.userId}`, select: "user_id" } });
+    out.push(result("learner_memory: an update after the owner cleared the notes touches nothing (the clear stands)", isOk(afterClear) && rows(afterClear).length === 0 && affectedNoRows(left), `${describe(afterClear)} / ${describe(left)}`));
+    const insertOnce = (/** @type {string} */ note) =>
+      service.rest("POST", "learner_memory", { query: { on_conflict: "user_id", select: "user_id" }, body: { user_id: a.userId, notes: [note] }, prefer: "resolution=ignore-duplicates,return=representation" });
+    const inserted = await insertOnce("rls-verify: cas first");
+    const ignored = await insertOnce("rls-verify: cas second");
+    const now = rows(await service.rest("GET", "learner_memory", { query: { user_id: `eq.${a.userId}`, select: "notes" } }));
+    out.push(
+      result(
+        "learner_memory: with no row read, an insert lands once; a second does nothing (never an overwrite)",
+        isOk(inserted) && rows(inserted).length === 1 && isOk(ignored) && rows(ignored).length === 0 && now[0]?.notes?.[0] === "rls-verify: cas first",
+        `${describe(inserted)} / ${describe(ignored)} / ${JSON.stringify(now)}`,
+      ),
+    );
+  } finally {
+    await service.rest("DELETE", "learner_memory", { query: { user_id: `eq.${a.userId}` } });
+  }
+  return out;
+}
+
+/**
  * Ask's checks, run after the rest by scripts/verify-rls.mjs and src/__tests__/db-rls.integration.test.ts.
  * @type {CheckDef[]}
  */
 export const ASK_CHECKS = [
   { name: "ask: ask_messages own rows on own boards, saved once, checked values, 400 a board; learner_memory the server's to write, the owner's to read and clear", run: checkAsk },
+  { name: "ask: rate_limit_spend() a user's units a day, as the user; learner_memory's compare-and-set write", run: checkAskBudgetAndMemoryCas },
 ];
 
 /**

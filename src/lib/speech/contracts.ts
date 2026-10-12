@@ -86,3 +86,15 @@ export const SPEECH_UNAVAILABLE = "speech_unavailable";
  * until the day turns. Raise it with the ElevenLabs plan.
  */
 export const TRANSCRIBE_GLOBAL_BUDGET = { limit: 10_800, windowMs: 86_400_000 } as const;
+
+// ------------------------------------------------------------------ additions (fix/ask2-review-server)
+
+/**
+ * Seconds of speech ONE account may send to ElevenLabs Scribe a day (UTC), counted per user in the
+ * database (`USER_BUDGETS.liveTranscribeDaySeconds` in src/lib/server/rate-limit.ts, migration
+ * 20261012000000_transcribe_user_budget.sql), like read aloud's `liveSpeakDay`. Twenty minutes is
+ * ~240 spoken asks of 5 s; past it that account's mic uses the browser's recognizer until the day
+ * turns. Charged with the recording's estimated length before the call and trued up with the
+ * length Scribe measured after it.
+ */
+export const TRANSCRIBE_USER_DAY_BUDGET = { limit: 1_200, windowMs: 86_400_000 } as const;

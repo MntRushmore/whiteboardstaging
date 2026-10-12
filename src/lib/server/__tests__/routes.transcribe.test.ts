@@ -2,10 +2,12 @@
  * POST /api/live/transcribe (Ask's mic), driven through its real handler with fakes for supabase-js
  * (auth, the rate-limit RPC, ink_summary, the global budget's RPC), app events and `fetch`
  * (ElevenLabs Scribe). The contract: 401 before anything, 429 from `liveTranscribe`, 400/413/415 on
- * a bad recording, `source: "none"` for an empty one without any call, 503 `speech_unavailable`
- * without a key, without a plan, and once the day's seconds are spent (recorded), the recording
- * sent to Scribe batch with the kid's language, the words back (never logged), never charged, and
- * Scribe's refusals and failures answered and recorded for /admin.
+ * a bad recording (a compressed one past 1.2 MB), `source: "none"` for an empty one without any
+ * call, 503 `speech_unavailable` without a key, without a plan, once the account's seconds for the
+ * day are spent, and once everyone's are (recorded), the recording sent to Scribe batch with the
+ * kid's language, the words back (never logged), never charged, both budgets trued up with the
+ * length Scribe measured (a long recording in a small file: a 413 and no words), and Scribe's
+ * refusals and failures answered and recorded for /admin.
  */
 import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +42,7 @@ import { resetServerEnvCache } from "@/lib/env";
 import { ASK_LIMITS } from "@/lib/live/ask/contracts";
 import { LIVE_RATE_LIMITS } from "@/lib/live/contracts";
 import { logger } from "@/lib/logger";
-import { TRANSCRIBE_GLOBAL_BUDGET } from "@/lib/speech/contracts";
+import { TRANSCRIBE_GLOBAL_BUDGET, TRANSCRIBE_USER_DAY_BUDGET } from "@/lib/speech/contracts";
 import { SCRIBE_BATCH } from "@/lib/speech/transcribe";
 import { recordEvent } from "@/lib/server/events";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
@@ -148,6 +150,7 @@ beforeEach(() => {
   fake.replies.rate_limit_hit = () => ({ data: { allowed: true, remaining: 5, retry_after_ms: 0, backend: "db" } });
   fake.replies.ink_summary = () => ({ data: inkSummary() });
   fake.replies.global_budget_spend = () => ({ data: { allowed: true, remaining: 1_000, retry_after_ms: 0, backend: "db" } });
+  fake.replies.rate_limit_spend = () => ({ data: { allowed: true, remaining: 1_000, retry_after_ms: 0, backend: "db" } });
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   vi.mocked(recordEvent).mockReset();
@@ -207,6 +210,19 @@ describe("POST /api/live/transcribe", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("413 for a compressed recording past 1.2 MB (its length is unknown before Scribe); a WAV that long by its header is fine", async () => {
+    const res = await transcribe(request({ audio: webm(ASK_LIMITS.compressedAudioBytes + 1), type: "audio/webm", seconds: "3" }));
+    expect(res.status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(callsTo("rate_limit_spend")).toEqual([]);
+    // a minute of 16 kHz WAV is ~1.9 MB: its header says 60 s, under the WAV cap
+    heardReply();
+    expect((await transcribe(request({ audio: wav(60) }))).status).toBe(200);
+    // a compressed recording just under the cap goes on
+    heardReply();
+    expect((await transcribe(request({ audio: webm(ASK_LIMITS.compressedAudioBytes), type: "audio/webm", seconds: "3" }))).status).toBe(200);
+  });
+
   it("413 for a recording longer than the mic allows (a WAV's own header, or what the client timed)", async () => {
     expect((await transcribe(request({ audio: wav(ASK_LIMITS.audioSeconds + 5) }))).status).toBe(413);
     expect((await transcribe(request({ audio: webm(), type: "audio/webm", seconds: "75" }))).status).toBe(413);
@@ -263,10 +279,13 @@ describe("POST /api/live/transcribe", () => {
     expect(file.type).toBe("audio/wav");
     expect(new Uint8Array(await file.arrayBuffer())).toEqual(audio);
 
-    // the day's seconds for everyone: the WAV's own length, rounded up
+    // the account's seconds for the day, then everyone's: the WAV's own length, rounded up
+    expect(callsTo("rate_limit_spend")[0].args).toEqual({ p_bucket: "liveTranscribeDaySeconds", p_amount: 2, p_limit: TRANSCRIBE_USER_DAY_BUDGET.limit, p_window_ms: 86_400_000 });
+    expect(TRANSCRIBE_USER_DAY_BUDGET.limit).toBe(20 * 60);
     expect(callsTo("global_budget_spend")[0].args).toEqual({ p_bucket: "liveTranscribeSeconds", p_amount: 2, p_limit: TRANSCRIBE_GLOBAL_BUDGET.limit, p_window_ms: 86_400_000 });
     expect(callsTo("consume_credits")).toEqual([]);
-    expect(fake.calls.map((c) => c.fn)).toEqual(["rate_limit_hit", "ink_summary", "global_budget_spend"]);
+    // Scribe's length (the last word ended at 1.6 s) is within the estimate: nothing to true up
+    expect(fake.calls.map((c) => c.fn)).toEqual(["rate_limit_hit", "ink_summary", "rate_limit_spend", "global_budget_spend"]);
   });
 
   it("a WebM from Chrome goes as audio/webm; no lang means Scribe detects it", async () => {
@@ -395,15 +414,77 @@ describe("POST /api/live/transcribe: who gets ElevenLabs Scribe", () => {
     expect(callsTo("ink_summary")).toEqual([]);
   });
 
+  it("this account's seconds for the day spent: 503 (the browser's recognizer), nothing sent, everyone's budget untouched", async () => {
+    fake.replies.rate_limit_spend = () => ({ data: { allowed: false, remaining: 0, retry_after_ms: 3_600_000, backend: "db" } });
+    await browserRecognizer(await transcribe(request()));
+    expect(callsTo("rate_limit_spend")).toHaveLength(1);
+    expect(callsTo("global_budget_spend")).toEqual([]);
+    expect(events()).toEqual([]);
+  });
+
   it("the day's seconds for everyone spent: 503, recorded for /admin, nothing sent", async () => {
     fake.replies.global_budget_spend = () => ({ data: { allowed: false, remaining: 0, retry_after_ms: 3_600_000, backend: "db" } });
     await browserRecognizer(await transcribe(request()));
     expect(events()[0]).toMatchObject({ kind: "route.live.transcribe", code: "budget", level: "error" });
   });
 
-  it("a recording with no header to time it counts at least its size's worth of seconds", async () => {
+  it("a recording with no header to time it counts at least its size's worth of seconds (128 kbit/s)", async () => {
     heardReply();
     await transcribe(request({ audio: webm(320_000), type: "audio/webm", seconds: "1" }));
-    expect(callsTo("global_budget_spend")[0].args).toMatchObject({ p_amount: 10 });
+    expect(callsTo("rate_limit_spend")[0].args).toMatchObject({ p_amount: 20 });
+    expect(callsTo("global_budget_spend")[0].args).toMatchObject({ p_amount: 20 });
+  });
+});
+
+describe("POST /api/live/transcribe: the budgets trued up with the length Scribe measured", () => {
+  const measured = (seconds: number, text = SAID) => scribeReply({ language_code: "eng", text, audio_duration_secs: seconds, words: [] });
+
+  it("a recording longer than its estimate: the difference is spent on both budgets after the call", async () => {
+    // a low-bitrate WebM: 40 KB and "2 seconds", but Scribe heard 30.4 s
+    measured(30.4);
+    const res = await transcribe(request({ audio: webm(40_000), type: "audio/webm", seconds: "2" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ text: SAID, source: "elevenlabs" });
+    expect(callsTo("rate_limit_spend").map((c) => c.args?.p_amount)).toEqual([3, 28]);
+    expect(callsTo("global_budget_spend").map((c) => c.args?.p_amount)).toEqual([3, 28]);
+    expect(callsTo("rate_limit_spend")[1].args).toMatchObject({ p_bucket: "liveTranscribeDaySeconds" });
+    expect(callsTo("global_budget_spend")[1].args).toMatchObject({ p_bucket: "liveTranscribeSeconds" });
+  });
+
+  it("no more than the estimate (or no length at all): nothing more is spent", async () => {
+    measured(1.5);
+    await transcribe(request({ audio: webm(40_000), type: "audio/webm", seconds: "2" }));
+    expect(callsTo("rate_limit_spend")).toHaveLength(1);
+    expect(callsTo("global_budget_spend")).toHaveLength(1);
+    scribeReply({ text: SAID });
+    await transcribe(request({ audio: webm(40_000), type: "audio/webm", seconds: "2" }));
+    expect(callsTo("rate_limit_spend")).toHaveLength(2);
+  });
+
+  it("minutes of audio in a small file: counted in full, then a 413 with no words, recorded for /admin", async () => {
+    // ~17 minutes of 8 kbit/s audio fits in 1 MB; it said 5 s
+    measured(1_020);
+    const res = await transcribe(request({ audio: webm(1_000_000), type: "audio/webm", seconds: "5" }));
+    expect(res.status).toBe(413);
+    const body = await res.json();
+    expect(body).toMatchObject({ error: "invalid_request" });
+    expect(JSON.stringify(body)).not.toContain("seven times eight");
+    // estimated 63 s by its size (capped at the mic's 62), then the rest of what Scribe heard
+    expect(callsTo("rate_limit_spend").map((c) => c.args?.p_amount)).toEqual([62, 958]);
+    expect(callsTo("global_budget_spend").map((c) => c.args?.p_amount)).toEqual([62, 958]);
+    expect(events()).toEqual([expect.objectContaining({ kind: "route.live.transcribe", level: "warn", code: "too_long", meta: expect.objectContaining({ heard: 1_020 }) })]);
+  });
+
+  it("the account's day spent by a true-up: this answer still comes back, the next request gets the browser's recognizer", async () => {
+    measured(55);
+    fake.replies.rate_limit_spend = (args) => ({ data: { allowed: Number(args?.p_amount) < 10, remaining: 0, retry_after_ms: 3_600_000, backend: "db" } });
+    const res = await transcribe(request({ audio: webm(40_000), type: "audio/webm", seconds: "2" }));
+    expect(res.status).toBe(200);
+    expect(callsTo("rate_limit_spend").map((c) => c.args?.p_amount)).toEqual([3, 52]);
+    fake.replies.rate_limit_spend = () => ({ data: { allowed: false, remaining: 0, retry_after_ms: 3_600_000, backend: "db" } });
+    fetchMock.mockReset();
+    const next = await transcribe(request({ audio: webm(40_000), type: "audio/webm", seconds: "2" }));
+    expect(next.status).toBe(503);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

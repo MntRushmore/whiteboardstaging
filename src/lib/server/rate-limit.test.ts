@@ -12,9 +12,11 @@ import {
   resetRateLimitFallbackWarning,
   resetRateLimits,
   spendGlobalBudget,
+  spendUserBudget,
   trackedKeyCount,
+  USER_BUDGETS,
 } from "@/lib/server/rate-limit";
-import { SPEAK_GLOBAL_BUDGET } from "@/lib/speech/contracts";
+import { SPEAK_GLOBAL_BUDGET, TRANSCRIBE_USER_DAY_BUDGET } from "@/lib/speech/contracts";
 
 const opts = { limit: 3, windowMs: 1_000 };
 
@@ -313,6 +315,70 @@ describe("spendGlobalBudget: one budget for everyone together", () => {
     resetServerEnvCache();
     const client = fakeRpc({ error: { message: "must not be called" } });
     await expect(spendGlobalBudget("liveSpeakChars", 10, client)).resolves.toMatchObject({ ok: true, backend: "memory" });
+    expect(client.calls).toEqual([]);
+  });
+});
+
+describe("spendUserBudget: one user's units a day (Ask's seconds of speech)", () => {
+  const DAY = 86_400_000;
+  const input = (userId: string, amount: number) => ({ token: "t", userId, bucket: "liveTranscribeDaySeconds" as const, amount });
+
+  beforeEach(() => {
+    for (const name of ENV_VARS) {
+      savedEnv[name] = process.env[name];
+      delete process.env[name];
+    }
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    resetServerEnvCache();
+    resetRateLimits();
+    resetRateLimitFallbackWarning();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-12T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    for (const name of ENV_VARS) {
+      if (savedEnv[name] === undefined) delete process.env[name];
+      else process.env[name] = savedEnv[name];
+    }
+    resetServerEnvCache();
+  });
+
+  it("twenty minutes of speech a day per account", () => {
+    expect(USER_BUDGETS.liveTranscribeDaySeconds).toEqual(TRANSCRIBE_USER_DAY_BUDGET);
+    expect(TRANSCRIBE_USER_DAY_BUDGET).toEqual({ limit: 1_200, windowMs: DAY });
+  });
+
+  it("spends the units through rate_limit_spend (as the user) and reports what the database says", async () => {
+    const client = fakeRpc({ data: { allowed: true, remaining: 1_170, retry_after_ms: 0, backend: "db" } });
+    await expect(spendUserBudget(input("u1", 29.6), client)).resolves.toEqual({ ok: true, remaining: 1_170, retryAfterMs: 0, backend: "db" });
+    expect(client.calls).toEqual([{ fn: "rate_limit_spend", args: { p_bucket: "liveTranscribeDaySeconds", p_amount: 30, p_limit: 1_200, p_window_ms: DAY } }]);
+    const spent = fakeRpc({ data: { allowed: false, remaining: 0, retry_after_ms: 43_200_000, backend: "db" } });
+    await expect(spendUserBudget(input("u1", 5), spent)).resolves.toMatchObject({ ok: false, retryAfterMs: 43_200_000, backend: "db" });
+  });
+
+  it.each([
+    ["a database without the migration", fakeRpc({ error: { message: "Could not find the function public.rate_limit_spend", code: "PGRST202" } })],
+    ["a thrown error", fakeRpc(new Error("fetch failed"))],
+    ["an unexpected shape", fakeRpc({ data: { nope: true } })],
+  ])("with %s, each instance keeps each user's budget itself: per user, units add up, the day's end resets it", async (_label, client) => {
+    expect(await spendUserBudget(input("u1", 1_150), client)).toMatchObject({ ok: true, remaining: 50, backend: "memory" });
+    expect(await spendUserBudget(input("u2", 10), client)).toMatchObject({ ok: true, remaining: 1_190 });
+    const over = await spendUserBudget(input("u1", 51), client);
+    expect(over).toMatchObject({ ok: false, remaining: 0, backend: "memory" });
+    expect(over.retryAfterMs).toBe(12 * 3_600_000);
+    vi.advanceTimersByTime(12 * 3_600_000);
+    expect(await spendUserBudget(input("u1", 1), client)).toMatchObject({ ok: true, remaining: 1_199 });
+  });
+
+  it("RATE_LIMIT_BACKEND=memory never calls the database", async () => {
+    process.env.RATE_LIMIT_BACKEND = "memory";
+    resetServerEnvCache();
+    const client = fakeRpc({ error: { message: "must not be called" } });
+    await expect(spendUserBudget(input("u1", 10), client)).resolves.toMatchObject({ ok: true, backend: "memory" });
     expect(client.calls).toEqual([]);
   });
 });

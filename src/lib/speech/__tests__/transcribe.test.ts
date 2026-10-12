@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import { ASK_LIMITS } from "@/lib/live/ask/contracts";
 import {
   MAX_BYTES_PER_SECOND,
+  MAX_COMPRESSED_BYTES_PER_SECOND,
   SCRIBE_BATCH,
   TranscribeFieldsSchema,
+  audioByteCap,
   audioFile,
   audioSeconds,
+  billedSeconds,
   cleanTranscript,
   parseScribeReply,
   scribeForm,
@@ -73,8 +76,25 @@ describe("Ask's speech-to-text request", () => {
 
   it("audioSeconds: a WAV's own length; else the longer of the client's and the size's", () => {
     expect(audioSeconds("wav", wavBytes(96_000), 1)).toEqual({ seconds: 3, exact: true });
-    expect(audioSeconds("webm", new Uint8Array(MAX_BYTES_PER_SECOND * 4), 1)).toEqual({ seconds: 4, exact: false });
+    // a compressed recording at 128 kbit/s (the most the browsers record speech at)
+    expect(audioSeconds("webm", new Uint8Array(MAX_COMPRESSED_BYTES_PER_SECOND * 4), 1)).toEqual({ seconds: 4, exact: false });
+    expect(audioSeconds("mp4", new Uint8Array(MAX_COMPRESSED_BYTES_PER_SECOND * 4), 1)).toEqual({ seconds: 4, exact: false });
     expect(audioSeconds("webm", new Uint8Array(1_000), 6.5)).toEqual({ seconds: 6.5, exact: false });
+    // a WAV whose header cannot say: 16 kHz 16-bit
+    expect(audioSeconds("wav", bytesOf("RIFF", [0, 0, 0, 0], "WAVE", new Array(MAX_BYTES_PER_SECOND * 2 - 12).fill(0)), 0)).toEqual({ seconds: 2, exact: false });
+  });
+
+  it("audioByteCap: a WAV (its header says its length) up to 4 MB; a compressed recording up to 1.2 MB, over 60 s at 128 kbit/s", () => {
+    expect(audioByteCap("wav")).toBe(ASK_LIMITS.audioBytes);
+    for (const kind of ["webm", "mp4", "ogg", "mpeg"] as const) expect(audioByteCap(kind)).toBe(ASK_LIMITS.compressedAudioBytes);
+    expect(ASK_LIMITS.compressedAudioBytes).toBeLessThan(ASK_LIMITS.audioBytes);
+    expect(ASK_LIMITS.compressedAudioBytes).toBeGreaterThan(MAX_COMPRESSED_BYTES_PER_SECOND * ASK_LIMITS.audioSeconds);
+  });
+
+  it("billedSeconds: whole seconds, at least one", () => {
+    expect(billedSeconds(0)).toBe(1);
+    expect(billedSeconds(2)).toBe(2);
+    expect(billedSeconds(2.01)).toBe(3);
   });
 
   it("scribeForm: the file, the model, no sound tags, one speaker, the language when known", () => {
