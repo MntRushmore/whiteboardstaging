@@ -8,3 +8,17 @@
  * (src/instrumentation.ts) and GET /api/health. See docs/RUNBOOK-ops.md.
  */
 export const RELEASE: string = process.env.NEXT_PUBLIC_RELEASE || "dev";
+
+/** A release that is a git commit: what next.config.ts's buildRelease names a Vercel or git build. */
+const COMMIT = /^[0-9a-f]{7,40}$/i;
+
+/**
+ * Whether `release` (a browser report's) names another build than `current` (this deployment's
+ * RELEASE): both git commits, compared as short shas (7 characters, as buildRelease cuts
+ * VERCEL_GIT_COMMIT_SHA). False when either is not a commit ("dev", a `build-…` stamp, a name set
+ * by hand in NEXT_PUBLIC_RELEASE): an unknown release is never "another" one.
+ */
+export function isOtherRelease(release: string | null | undefined, current: string): boolean {
+  if (!release || !COMMIT.test(release) || !COMMIT.test(current)) return false;
+  return release.slice(0, 7).toLowerCase() !== current.slice(0, 7).toLowerCase();
+}
