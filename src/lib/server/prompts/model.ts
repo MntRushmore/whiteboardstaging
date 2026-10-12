@@ -10,7 +10,7 @@ import type { ChatMessage } from "@/lib/server/openrouter";
 
 /** The action, as the prompt lists it (its format is `MODEL_FORMAT`). */
 export const DRAW_MODEL_ACTION =
-  '{"type": "draw_model", "model": {...}, "near": 2} — a K–8 picture of the maths (a number line, fraction bars or circles, an array, equal groups, an area model, base-ten blocks, a place-value chart, a bar model, a ten frame, a clock), drawn neatly and to scale; the board works out every number in it (format below).';
+  '{"type": "draw_model", "near": 2, "model": {...}} — a K–8 picture of the maths (a number line, fraction bars or circles, an array, equal groups, an area model, base-ten blocks, a place-value chart, a bar model, a ten frame, a clock), drawn neatly and to scale; the board works out every number in it (format below).';
 
 /** The models' format and when to use each kind: the ask prompt's section, and the repair's. */
 export const MODEL_FORMAT = [
@@ -27,7 +27,7 @@ export const MODEL_FORMAT = [
   '- ten_frame {"kind": "ten_frame", "filled": 13}: counting, making ten, numbers to 20.',
   '- clock {"kind": "clock", "hour": 3, "minute": 45}: telling time (the board puts the hour hand between the hours).',
   'Labels: a number, a fraction (3/4), "?", a letter, or a word or two ("Sam", "apples"); no $.',
-  '"near": the number of a problem on THIS screen the picture is for ("show #2 on a number line", "draw it" about the problem being helped with): it is drawn beside that problem on this screen. Leave it out when the picture is about no listed problem. "near" works the same on graph and draw_figure.',
+  '"near" (5a): the number of the problem on THIS screen the picture is for ("show #2 on a number line", "draw it" about the problem being helped with); left out when the picture is about no listed problem.',
 ].join("\n");
 
 /**

@@ -29,7 +29,7 @@ describe("draw_model's prompt and repair", () => {
       const parsed = VisualModelSchema.parse(e);
       expect(modelProblems(parsed), JSON.stringify(e)).toEqual([]);
     }
-    expect(MODEL_FORMAT).toMatch(/"near": the number of a problem on THIS screen/);
+    expect(MODEL_FORMAT).toMatch(/"near" \(5a\): the number of the problem on THIS screen/);
   });
 
   it("the repair gets the request, the spec and the board's problems, and answers a model", () => {
