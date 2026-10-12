@@ -226,6 +226,10 @@ export class Speaker {
   private unlocking = false;
   private synthUnlocked = false;
   private synthPrimes = 0;
+  /** spoken words -> their audio's request while it is in flight (a phrase being said, or a prefetch) */
+  private readonly inflight = new Map<string, Promise<string | null>>();
+  /** prefetches still in flight: `stop` drops them */
+  private readonly prefetches = new Set<AbortController>();
 
   private readonly now: () => number;
   private readonly setTimer: (fn: () => void, ms: number) => Timer;
@@ -267,7 +271,8 @@ export class Speaker {
     if (!words) return Promise.resolve("skipped");
     // `polite`: never over a phrase being said or about to be (a cheer, over the tutor's note)
     if (opts.polite && this.active) return Promise.resolve("skipped");
-    this.stop();
+    // the phrase before, not a prefetch: that is most likely this phrase's audio, on its way
+    this.cancelActive();
     const id = ++this.seq;
     const abort = new AbortController();
     return new Promise<SpeakOutcome>((resolve) => {
@@ -284,8 +289,28 @@ export class Speaker {
     });
   }
 
-  /** Stops the phrase being said (or fetched, or waiting for the pen). */
+  /** Stops the phrase being said (or fetched, or waiting for the pen), and drops any prefetch. */
   stop(): void {
+    this.cancelActive();
+    for (const abort of this.prefetches) abort.abort();
+    this.prefetches.clear();
+  }
+
+  /**
+   * Fetches a phrase's audio ahead of saying it (Ask's next sentences, while one is being said), so
+   * its `speak` starts without waiting for the route. Nothing is said, and saying it after costs no
+   * second fetch: the audio waits in the cache. Not when the browser's voice is in use (no element,
+   * the route resting); `stop` drops one still in flight.
+   */
+  prefetch(text: string): void {
+    const words = spokenText(text);
+    if (!words || this.cache.has(words) || this.inflight.has(words) || !this.deps.audio || this.now() < this.routeDownUntil) return;
+    const abort = new AbortController();
+    this.prefetches.add(abort);
+    void this.audioUrl(words, abort.signal).finally(() => this.prefetches.delete(abort));
+  }
+
+  private cancelActive(): void {
     const active = this.active;
     this.active = null;
     this.stopAudio?.();
@@ -384,15 +409,29 @@ export class Speaker {
     });
   }
 
-  /** The phrase's MP3 as an object URL (the cache first), or null to use the browser's voice. */
-  private async audioUrl(words: string, signal: AbortSignal): Promise<string | null> {
+  /**
+   * The phrase's MP3 as an object URL (the cache first, then a request already on its way: a
+   * prefetch), or null to use the browser's voice.
+   */
+  private audioUrl(words: string, signal: AbortSignal): Promise<string | null> {
     const hit = this.cache.get(words);
     if (hit) {
       this.cache.delete(words);
       this.cache.set(words, hit);
-      return hit;
+      return Promise.resolve(hit);
     }
-    if (!this.deps.audio || this.now() < this.routeDownUntil) return null;
+    const pending = this.inflight.get(words);
+    if (pending) return pending;
+    if (!this.deps.audio || this.now() < this.routeDownUntil) return Promise.resolve(null);
+    const request: Promise<string | null> = this.fetchUrl(words, signal).finally(() => {
+      if (this.inflight.get(words) === request) this.inflight.delete(words);
+    });
+    this.inflight.set(words, request);
+    return request;
+  }
+
+  /** One request for the phrase's MP3 (`audioUrl`'s), kept in the cache. */
+  private async fetchUrl(words: string, signal: AbortSignal): Promise<string | null> {
     // the request ends with the phrase (cancelled) or after FETCH_TIMEOUT_MS, whichever is first
     const request = new AbortController();
     const cancel = () => request.abort();

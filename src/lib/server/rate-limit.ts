@@ -22,7 +22,7 @@
  */
 
 import { LIVE_RATE_LIMITS } from "@/lib/live/contracts";
-import { SPEAK_GLOBAL_BUDGET, SPEAK_RATE_LIMITS } from "@/lib/speech/contracts";
+import { SPEAK_GLOBAL_BUDGET, SPEAK_RATE_LIMITS, TRANSCRIBE_GLOBAL_BUDGET } from "@/lib/speech/contracts";
 import { getRateLimitBackend, type RateLimitBackend } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { serviceClient, userClient, type RpcClient } from "@/lib/server/billing";
@@ -237,10 +237,12 @@ export function resetRateLimitFallbackWarning(): void {
 /**
  * Budgets for the whole app, in units each call spends: a ceiling on a shared account's bill
  * however many accounts call. `liveSpeakChars`: the characters read aloud sends to ElevenLabs in a
- * day (SPEAK_GLOBAL_BUDGET).
+ * day (SPEAK_GLOBAL_BUDGET). `liveTranscribeSeconds`: the seconds of speech Ask's mic sends to
+ * ElevenLabs Scribe in a day (TRANSCRIBE_GLOBAL_BUDGET).
  */
 export const GLOBAL_BUDGETS = {
   liveSpeakChars: SPEAK_GLOBAL_BUDGET,
+  liveTranscribeSeconds: TRANSCRIBE_GLOBAL_BUDGET,
 } as const satisfies Record<string, RateLimitOptions>;
 
 export type GlobalBudget = keyof typeof GLOBAL_BUDGETS;

@@ -9,6 +9,8 @@ export type ApiErrorCode =
   | "ink_empty"
   | "upstream_error"
   | "feature_unavailable"
+  // POST /api/live/transcribe will not use ElevenLabs for this request: the mic uses the browser's recognizer
+  | "speech_unavailable"
   // a row that does not exist (the admin console's users, boards, bug reports)
   | "not_found"
   | "internal_error"
