@@ -416,6 +416,36 @@ describe("live loop — the board chat", () => {
       expect(tutor().some((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === "graph")).toBe(true);
     });
 
+    it("a graph and a figure of problems on the screen (near): beside each problem in its cell, on the same screen", async () => {
+      start();
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"], ["x + 8 = 12"], ["4x = 20"]] }]);
+      const before = problems();
+      const report = await run([
+        { type: "graph", relations: ["y = 2x + 1"], near: 3 },
+        { type: "draw_figure", figure: PROBE_FIGURE, near: 2 },
+      ]);
+      expect(report).toMatchObject({ screensAdded: 0, outcomes: [{ type: "graph", ok: true }, { type: "draw_figure", ok: true }] });
+      expect(editor.getPages()).toHaveLength(1);
+      expect(problems()).toEqual(before);
+      const boxOf = (kind: string) => {
+        const b = tutor()
+          .filter((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === kind)
+          .map((s) => editor.getShapePageBounds(s)!);
+        return { x: Math.min(...b.map((r) => r.x)), y: Math.min(...b.map((r) => r.y)), r: Math.max(...b.map((r) => r.maxX)), b: Math.max(...b.map((r) => r.maxY)) };
+      };
+      const inCell = (box: ReturnType<typeof boxOf>, n: number) => {
+        const c = before[n - 1].cell;
+        return box.x >= c.x && box.y >= c.y && box.r <= c.x + c.w && box.b <= c.y + c.h;
+      };
+      expect(inCell(boxOf("graph"), 3)).toBe(true);
+      expect(inCell(boxOf("figure"), 2)).toBe(true);
+      // clear of every problem's own ink
+      for (const s of tutor().filter((t) => problemMetaOf(t.meta))) {
+        const p = editor.getShapePageBounds(s)!;
+        for (const box of [boxOf("graph"), boxOf("figure")]) expect(p.x < box.r && p.maxX > box.x && p.y < box.b && p.maxY > box.y).toBe(false);
+      }
+    });
+
     it("draw_figure: the drawer's figure, true to scale, in free space beside the work", async () => {
       start();
       await penLine("2x=8", 100, 200, "2x=8");
