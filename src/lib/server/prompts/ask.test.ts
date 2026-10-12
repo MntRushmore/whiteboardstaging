@@ -5,7 +5,8 @@ import { CHAT_ACTION_TYPES } from "@/lib/live/chat/contracts";
 import { figureProblems } from "@/lib/live/chat/figure";
 import { checkProofProposal } from "@/lib/live/chat/proof";
 import { checkTeach } from "@/lib/live/chat/teach";
-import { verifyProblem } from "@/lib/live/chat/verify";
+import { BOARD_PROBLEM_AVOID, BOARD_PROBLEM_FORMS } from "@/lib/live/chat/problemForms";
+import { verifyForBoard } from "@/lib/server/chatProblems";
 import { getEngine } from "@/lib/live/engine";
 import { EMPTY_ASK_CONTEXT, type AskLearnerContext } from "@/lib/server/ask/store";
 import { repairJsonEscapes } from "@/lib/server/sse";
@@ -42,7 +43,6 @@ import {
 const req = (over: Partial<AskRequest> = {}) => AskRequestSchema.parse({ boardId: "b1", message: "help me with 2", screen: { empty: true }, ...over });
 const ctx = (over: Partial<AskLearnerContext> = {}) => ({ learner: { ...EMPTY_ASK_CONTEXT, ...over } });
 const userText = (m: { content: unknown }) => (typeof m.content === "string" ? m.content : (m.content as Array<{ type: string; text?: string }>).find((p) => p.type === "text")?.text ?? "");
-const systemText = (m: { content: unknown }) => (m.content as Array<{ text: string }>)[0].text;
 const IMAGE = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==";
 
 describe("ask prompt: the system prompt", () => {
@@ -55,6 +55,12 @@ describe("ask prompt: the system prompt", () => {
     // help_board is the student's OWN work; help_problem a problem the tutor wrote
     expect(ASK_SYSTEM_PROMPT).toMatch(/help_board.*the student's OWN work/);
     expect(ASK_SYSTEM_PROMPT).toMatch(/Never help_problem for their own work; never help_board for a listed problem/);
+  });
+
+  it("asks for the K–8 forms the board checks (boxes, circles, money, {,}, remainders, percents, a value then its expression) and steers off the rest", () => {
+    for (const f of BOARD_PROBLEM_FORMS) expect(ASK_SYSTEM_PROMPT, f.kind).toContain(`- ${f.kind}`);
+    for (const ex of ["4 + \\square = 9", "\\frac{3}{4} \\bigcirc \\frac{5}{8}", "\\$3.25 + \\$1.50", "1{,}234 + 567", "47 \\div 5", "25\\% \\times 80", '["x = 3","2x + 5 ="]']) expect(ASK_SYSTEM_PROMPT, ex).toContain(ex);
+    for (const avoid of BOARD_PROBLEM_AVOID) expect(ASK_SYSTEM_PROMPT).toContain(avoid);
   });
 
   it("the board block: one, at the end, maths only, never repeated in the reply", () => {
@@ -115,7 +121,7 @@ describe("ask prompt: the examples reach the board", () => {
     const engine = await getEngine();
     for (const e of ASK_EXAMPLES) {
       for (const a of e.actions ?? []) {
-        if (a.type === "write_problems") for (const p of a.problems) expect(verifyProblem(engine, p), `${e.student}: ${p.join("; ")}`).toMatchObject({ ok: true });
+        if (a.type === "write_problems") for (const p of a.problems) expect(verifyForBoard(engine, p), `${e.student}: ${p.join("; ")}`).toMatchObject({ ok: true });
         if (a.type === "teach") expect(checkTeach(engine, a), e.student).toMatchObject({ ok: true });
         if (a.type === "write_proof") expect(checkProofProposal(a), e.student).toMatchObject({ ok: true });
         if (a.type === "draw_figure") expect(figureProblems(a.figure), e.student).toEqual([]);

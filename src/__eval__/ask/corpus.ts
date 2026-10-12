@@ -104,6 +104,12 @@ export const ASK_CORPUS: readonly AskCase[] = [
     expect: { board: "required", types: ["write_problems"], count: 3 },
     rubric: "Three more 2-digit × 1-digit multiplications like the ones on the screen; may notice their first two answers are right.",
   },
+  // ---------------------------------------------------------------- K–8 worksheet forms (src/lib/live/chat/problemForms.ts)
+  { id: "p-1-blanks", group: "problems", grade: 1, subject: "maths", message: "can i have some fill in the blank adding problems", expect: { board: "required", types: ["write_problems"] }, rubric: "Missing-number sums within 10 or 20 with a box (4 + □ = 9); a tiny cheerful reply." },
+  { id: "p-3-money", group: "problems", grade: 3, subject: "maths", message: "3 money problems adding dollars and cents", expect: { board: "required", types: ["write_problems"], count: 3 }, rubric: "Three sums of dollars and cents written as decimals ($3.25 + $1.50)." },
+  { id: "p-4-compare", group: "problems", grade: 4, subject: "maths", message: "give me 4 problems comparing fractions", expect: { board: "required", types: ["write_problems"], count: 4 }, rubric: "Four fraction comparisons to fill in with <, > or = (a circle between the sides)." },
+  { id: "p-4-remainders", group: "problems", grade: 4, subject: "maths", message: "4 division problems with remainders", expect: { board: "required", types: ["write_problems"], count: 4 }, rubric: "Four divisions that leave a remainder, written as the division alone (47 ÷ 5)." },
+  { id: "p-6-percent", group: "problems", grade: 6, subject: "maths", message: "3 percent of a number problems", expect: { board: "required", types: ["write_problems"], count: 3 }, rubric: "Three percent-of problems written as products (25% × 80) with whole-number answers." },
   // ---------------------------------------------------------------- concepts
   { id: "e-3-mult", group: "explain", grade: 3, subject: "maths", message: "what does multiplication mean?", expect: { board: "optional", allow: ["write_problems"], explain: true }, rubric: "Equal groups / repeated addition with one tiny concrete example (3 groups of 4); simple words for an 8-year-old." },
   { id: "e-5-denominator", group: "explain", grade: 5, subject: "maths", message: "why do you need a common denominator to add fractions", expect: { board: "optional", allow: ["write_problems"], explain: true }, rubric: "Pieces must be the same size to be counted together; one tiny example like 1/2 + 1/4 = 3/4." },

@@ -217,11 +217,23 @@ describe.skipIf(!RUN)("eval: Ask with real models (RUN_ASK_EVAL=1)", () => {
       writeFileSync(join(MODELS_CACHE_DIR, "ask-last-run.json"), JSON.stringify(results.map((r) => ({ ...r, content: r.content.slice(0, 6000) })), null, 1) + "\n");
       if (process.env.EVAL_WRITE === "1") {
         writeFileSync(target, md);
-        const scores = results.map(({ content: _c, call, judge: j, ...rest }) => {
-          void _c;
-          return { ...rest, ttftMs: call.ttftMs, totalMs: call.totalMs, costUsd: call.costUsd, cached: call.cached, judge: j ? { correctness: j.correctness, tutoring: j.tutoring, gradeFit: j.gradeFit, warmth: j.warmth, safety: j.safety, reason: j.reason } : undefined };
-        });
-        writeFileSync(join(ROOT, "docs", "eval", "ask.json"), JSON.stringify(scores, null, 1) + "\n");
+        // one line per ask: what it chose, what failed, the times, the cost, the judge
+        const scores = results.map((r) => ({
+          id: r.id,
+          model: r.label,
+          auto: r.auto,
+          failed: Object.fromEntries(Object.entries(r.checks).filter(([, v]) => !v.ok).map(([k, v]) => [k, v.why])),
+          chosen: r.chosen,
+          board: r.final.map((a) => a.type),
+          words: r.words,
+          ttftMs: r.call.ttftMs,
+          totalMs: r.call.totalMs,
+          costUsd: Number(r.call.costUsd.toFixed(6)),
+          judge: r.judge ? [r.judge.correctness, r.judge.tutoring, r.judge.gradeFit, r.judge.warmth, r.judge.safety] : null,
+          why: r.judge?.reason,
+          reply: r.reply,
+        }));
+        writeFileSync(join(ROOT, "docs", "eval", "ask.json"), `[\n${scores.map((x) => JSON.stringify(x)).join(",\n")}\n]\n`);
       }
     },
     90 * 60_000,
