@@ -34,6 +34,8 @@ export interface AskExpect {
   count?: number;
   /** a graph with a window */
   window?: boolean;
+  /** every drawing (graph, draw_figure, draw_model) goes beside this problem on the screen (`near`) */
+  near?: number;
   /** a help_problem, when there is one, is this problem and depth */
   help?: { problem: number; depth: "step" | "solve" };
   /** a help_board, when there is one, is this depth */
@@ -286,6 +288,42 @@ export const ASK_CORPUS: readonly AskCase[] = [
     ],
     expect: { board: "required", types: ["teach"], teach: { answers: ["x = 5"] }, explain: true },
     rubric: "Asked to have the listed problem explained: a teach of 3x - 4 = 11 ending x = 5.",
+  },
+  // a drawing of a problem on the screen goes beside it (near), never on a new screen (docs/ASK-V2.md, "Placement")
+  {
+    id: "b-7-number-line-near",
+    group: "board",
+    grade: 6,
+    subject: "maths",
+    message: "draw problem 2 on a number line",
+    // a grade-6 worksheet: graph each inequality (the board graphs an inequality in x alone as a number line)
+    screen: { empty: false, problems: ["x > -2", "x \\le 3", "-1 < x \\le 4"] },
+    history: [
+      { role: "user", text: "give me 3 inequalities to graph" },
+      { role: "tutor", text: "I put 3 on your board — try #1!" },
+    ],
+    expect: { board: "required", oneOf: ["graph", "draw_model"], near: 2, without: ["new_screen"] },
+    rubric: "x ≤ 3 on a number line (a closed dot at 3, shaded to the left) beside problem 2 on this screen (near 2), no new screen; a short reply that doesn't do the other problems.",
+  },
+  {
+    id: "b-8-graph-near",
+    group: "board",
+    grade: 8,
+    subject: "maths",
+    message: "graph y = 2x + 1 next to problem 3",
+    screen: { empty: false, problems: ["2x + 1 = 7", "3x - 2 = 10", "2x + 1 = -3", "x + 4 = 9"], student: ["2x = 6", "x = 3"] },
+    expect: { board: "required", types: ["graph"], near: 3, without: ["new_screen"] },
+    rubric: "The graph of y = 2x + 1 beside problem 3 on this screen (near 3), no new screen; maybe a question tying it to #3 (where is y = -3?) without solving it.",
+  },
+  {
+    id: "b-7-figure-near",
+    group: "board",
+    grade: 7,
+    subject: "maths",
+    message: "can you draw problem 2 as a picture?",
+    screen: { empty: false, problems: ["x + 35 = 90", "x + 50 + 70 = 180", "2x = 120"], student: ["x = 55"] },
+    expect: { board: "required", types: ["draw_figure"], near: 2, without: ["new_screen"] },
+    rubric: "A triangle with angles 50°, 70° and x beside problem 2 on this screen (near 2), no new screen; doesn't solve for x unasked.",
   },
   { id: "b-hs-formula", group: "board", course: "algebra1", subject: "maths", message: "write the quadratic formula on my board", expect: { board: "required", types: ["write_lines"] }, rubric: "The quadratic formula written on the board, correct." },
   { id: "b-hs-proof", group: "board", course: "geometry", subject: "maths", message: "write a proof", expect: { board: "required", types: ["write_proof"], worked: true }, rubric: "A whole two-column proof written by the tutor (not a question back)." },

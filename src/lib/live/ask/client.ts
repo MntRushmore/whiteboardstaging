@@ -77,6 +77,26 @@ function abortError(): DOMException {
   return new DOMException("aborted", "AbortError");
 }
 
+/** How long a finished answer's stream may take to close by itself before it is let go. */
+export const ASK_DRAIN_MS = 15_000;
+
+/**
+ * After `done` the route closes the stream itself: read it to its end, quietly, rather than cancel
+ * it — a body cancelled mid-response is a failed request in the browser's console
+ * (`net::ERR_ABORTED` after every answer). One that is still open after `ms` is let go.
+ */
+function drain(reader: ReadableStreamDefaultReader<Uint8Array>, ms: number): void {
+  const timer = setTimeout(() => {
+    reader.cancel().catch(() => {});
+  }, ms);
+  const pump = (): Promise<void> => reader.read().then(({ done }) => (done ? undefined : pump()));
+  void pump()
+    .catch(() => {
+      /* closed or let go: nothing to say */
+    })
+    .finally(() => clearTimeout(timer));
+}
+
 /**
  * Hands one frame to its handler. Answers true on `done`; throws AskStreamError on `error`. A
  * frame that does not parse, or an event this client does not know, is skipped: a newer route may
@@ -176,6 +196,8 @@ export async function streamAsk(req: AskRequest, handlers: AskStreamHandlers, op
     reader = res.body.getReader();
     const decoder = new TextDecoder();
     const parser = new SseFrameParser();
+    // `done` came before the stream's end: it closes by itself (drained, never cancelled)
+    let finishedOpen = false;
     try {
       for (;;) {
         const { value, done } = await reader.read();
@@ -183,16 +205,23 @@ export async function streamAsk(req: AskRequest, handlers: AskStreamHandlers, op
         if (timedOut) throw new AskTimeoutError();
         armIdle();
         const frames = done ? parser.flush() : parser.push(decoder.decode(value, { stream: true }));
-        for (const frame of frames) if (dispatch(frame, handlers)) return;
+        for (const frame of frames) {
+          if (!dispatch(frame, handlers)) continue;
+          finishedOpen = !done;
+          return;
+        }
         if (done) throw new AskStreamError({ code: "incomplete", message: "The answer was cut off" });
       }
     } catch (err) {
       if (err instanceof AskStreamError || err instanceof AskTimeoutError) throw err;
       throw settle(err);
     } finally {
-      reader.cancel().catch(() => {
-        /* already closed */
-      });
+      // a finished answer's stream ends on its own; a Stop, a timeout or a failure is cancelled
+      if (finishedOpen) drain(reader, ASK_DRAIN_MS);
+      else
+        reader.cancel().catch(() => {
+          /* already closed */
+        });
     }
   } finally {
     if (idle) clearTimeout(idle);

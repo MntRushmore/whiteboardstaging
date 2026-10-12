@@ -1,5 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { LiveError } from "@/lib/live/liveStore";
+import { CHAT_BUTTON_SIZE } from "@/components/chat/askButton";
 import { LIVE_COPY } from "../copy";
 import {
   boardMenuView,
@@ -151,6 +154,29 @@ describe("boardToolbarView", () => {
     expect(toolbar({ simple: true, mode: "off" }).place.ask).toBe("dock");
     expect(toolbar({ simple: true, liveEnabled: false }).place.ask).toBe("dock");
     expect(toolbar({ simple: false }).place.ask).toBe("bar");
+  });
+
+  it("simple board whose dock could not load: Ask comes back to the bar, so it never vanishes (the rest stays behind More)", () => {
+    const view = toolbar({ simple: true, dockFailed: true });
+    expect(view.place.ask).toBe("bar");
+    expect(view.place.dial).toBe("more");
+    expect(view.simple).toBe(true);
+    // on the ordinary board the flag changes nothing
+    expect(toolbar({ simple: false, dockFailed: true }).place.ask).toBe("bar");
+    // wired: the dock's boundary says so, and the board page hands it to the view
+    const read = (p: string) => fs.readFileSync(path.join(__dirname, p), "utf8");
+    expect(read("../../kidmode/slots.tsx")).toMatch(/componentDidCatch\(\)\s*\{[\s\S]*?noteKidDockFailed\(\)/);
+    const page = read("../../../app/board/[id]/page.tsx");
+    expect(page).toMatch(/const dockFailed = useKidDockFailed\(\)/);
+    expect(page).toMatch(/boardToolbarView\(\{[\s\S]*?dockFailed,[\s\S]*?\}\)/);
+  });
+
+  it("the bar's Ask button is a finger's 44 px on a touch screen or a phone, the bar's 32 px with a mouse", () => {
+    expect(CHAT_BUTTON_SIZE.split(" ").sort()).toEqual(["max-sm:h-11", "pointer-coarse:h-11"]);
+    const page = fs.readFileSync(path.join(__dirname, "../../../app/board/[id]/page.tsx"), "utf8");
+    const ask = page.slice(page.indexOf("const askChat = ("), page.indexOf("const bar = ("));
+    expect(ask).toMatch(/size="sm"/);
+    expect(ask).toMatch(/\$\{CHAT_BUTTON_SIZE\}/);
   });
 
   it("names the action Help, never Draw help", () => {

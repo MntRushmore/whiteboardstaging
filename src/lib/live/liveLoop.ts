@@ -3227,7 +3227,16 @@ export class LiveLoop implements LiveController {
       above: arithmetic ? this.workAbove(state) : [],
       beside: arithmetic ? this.answerBeside(state) : null,
       slip: this.slipAbove(state),
+      // only asked under a line asking for its value (`judgeLine`): the `3` of `x =` read apart is no answer
+      given: !arithmetic && Boolean(ctx.previous?.substituted) && this.givesValue(state),
     });
+  }
+
+  /** `state` is (part of) a value its column gives a letter (`givens.ts`: `x = 3`, or the `3` of `x =` read apart). */
+  private givesValue(state: LiveLineState): boolean {
+    const col = this.columnLines(state.line.column);
+    const index = col.findIndex((s) => s.line.id === state.line.id);
+    return index !== -1 && this.columnGivens(col).some((g) => g.lines.includes(index));
   }
 
   /** The student's lines above `state` in its column, as read: the working so far (a stacked sum is a problem of its own). */

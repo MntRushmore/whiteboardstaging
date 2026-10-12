@@ -79,9 +79,10 @@ import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 import { boardToolbarView } from "@/components/live/toolbar";
 import { AskButton } from "@/components/live/AskButton";
 import { setSimpleBoard, useSimpleBoard, useSimpleBoardGrade } from "@/components/kidmode/useSimpleBoard";
-import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, KidStatus, usePreloadKidDock } from "@/components/kidmode/slots";
+import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, KidStatus, useKidDockFailed, usePreloadKidDock } from "@/components/kidmode/slots";
 import { KID_COPY } from "@/components/kidmode/copy";
-import { CHAT_BUTTON_COPY, CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
+import { CHAT_BUTTON_COPY, CHAT_BUTTON_SIZE, CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
+import { chatHostClass } from "@/components/chat/chatSheet";
 import { useChatOpen } from "@/components/chat/useChatOpen";
 import { useLecture } from "@/components/lecture/useLecture";
 import { LectureBar } from "@/components/lecture/LectureBar";
@@ -199,12 +200,17 @@ const hugeIconsOverrides: TLUiOverrides = {
   },
 };
 
-// Live's tool overrides (Math tool, kbd "m") layered on top of the icon overrides above.
+// Live's tool overrides (Math tool, kbd "m") layered on top of the icon overrides above. The text
+// tool is taken off the board (its toolbar button and its "t" shortcut): typed text boxes are
+// invisible to the tutor, which reads handwriting, so a kid who types an answer gets no help.
 const boardOverrides: TLUiOverrides = {
   ...hugeIconsOverrides,
   tools(editor, tools, helpers) {
     const withIcons = hugeIconsOverrides.tools ? hugeIconsOverrides.tools(editor, tools, helpers) : tools;
-    return liveUiOverrides.tools ? liveUiOverrides.tools(editor, withIcons, helpers) : withIcons;
+    const all = liveUiOverrides.tools ? liveUiOverrides.tools(editor, withIcons, helpers) : withIcons;
+    const rest = { ...all };
+    delete rest.text;
+    return rest;
   },
 };
 
@@ -318,6 +324,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   // (BoardPage, beside the board's own load), the switch's choice on this device after that.
   const userId = user?.id;
   const simpleBoard = useSimpleBoard(userId) === true;
+  // the kid dock could not load: its Ask comes back to the bar (`boardToolbarView`)
+  const dockFailed = useKidDockFailed();
   const switchSimpleBoard = useCallback((on: boolean) => userId && setSimpleBoard(userId, on), [userId]);
   const [moreOpen, setMoreOpen] = useState(false);
   // More goes with the simple board, however it was switched off (More's own switch, Board options,
@@ -332,6 +340,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     auto: live.auto,
     hideAiShapes: live.hideAiShapes,
     simple: simpleBoard,
+    dockFailed,
   });
   const { place } = toolbar;
 
@@ -413,7 +422,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     <Button
       variant={chat.open ? "secondary" : "outline"}
       size="sm"
-      className={chat.open ? "shadow-sm" : "bg-white shadow-sm"}
+      // a finger's 44 px on a touch screen or a phone; the bar's 32 px with a mouse
+      className={`${chat.open ? "shadow-sm" : "bg-white shadow-sm"} ${CHAT_BUTTON_SIZE}`}
       title={CHAT_BUTTON_COPY.buttonHint}
       aria-label={CHAT_BUTTON_COPY.button}
       aria-expanded={chat.open}
@@ -985,15 +995,9 @@ export default function BoardPage() {
       </Tldraw>
       </div>
       {/* the chat panel: docked on the right on a wide screen held sideways, a bottom sheet on a
-          phone or an upright iPad (docked there it would leave the 16:9 board a postcard) */}
-      <div
-        ref={setChatHost}
-        className={
-          chatOpen
-            ? `relative z-[1100] ${chatTall ? "h-[88dvh]" : "h-[46dvh]"} shrink-0 overflow-hidden transition-[height] duration-200 motion-reduce:transition-none border-t border-gray-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:landscape:h-auto md:landscape:w-[360px] md:landscape:border-l md:landscape:border-t-0 md:landscape:shadow-none`
-            : "hidden"
-        }
-      />
+          phone or an upright iPad (docked there it would leave the 16:9 board a postcard); pulled
+          up tall, the board keeps room for its bar and toolbars (`chatHostClass`) */}
+      <div ref={setChatHost} className={chatHostClass(chatOpen, chatTall)} />
     </div>
   );
 }

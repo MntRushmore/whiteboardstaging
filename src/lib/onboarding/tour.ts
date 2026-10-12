@@ -237,13 +237,20 @@ export const COACH_COUNT = 3;
 
 /**
  * Where the student's ask in the panel is, from the board chat's messages (`useChatMessages`)
- * since coach mark 3 opened it (`since`, the count then): nothing sent yet, the tutor working on it,
- * or answered — a reply, or a failure, which also ends the wait.
+ * since coach mark 3 opened it (`since`, the count then of this tab's own: `tabMessageCount`):
+ * nothing sent yet, the tutor working on it, or answered — a reply, or a failure, which also ends
+ * the wait. The saved chat (`saved`) never counts: after a reload with the panel open it lands
+ * after the panel opened, and its finished turns are no new ask.
  */
 export type AskProgress = "waiting" | "busy" | "answered";
 
-export function askProgress(messages: ReadonlyArray<{ role: string; state?: string }>, since: number): AskProgress {
-  const fresh = messages.slice(Math.max(0, since));
+/** The messages asked in this tab, not read in from the saved chat. */
+export function tabMessageCount(messages: ReadonlyArray<{ saved?: boolean }>): number {
+  return messages.filter((m) => !m.saved).length;
+}
+
+export function askProgress(messages: ReadonlyArray<{ role: string; state?: string; saved?: boolean }>, since: number): AskProgress {
+  const fresh = messages.filter((m) => !m.saved).slice(Math.max(0, since));
   if (fresh.some((m) => m.role === "tutor" && (m.state === "done" || m.state === "error"))) return "answered";
   return fresh.length > 0 ? "busy" : "waiting";
 }

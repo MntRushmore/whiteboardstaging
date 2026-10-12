@@ -370,6 +370,28 @@ describe("cleaning the model's reply", () => {
     expect(dropped.map((d) => d.type)).toEqual(["help_problem", "help_problem", "help_problem"]);
   });
 
+  it("a drawing's near: a number (or \"2\", \"#2\"); anything else is no near, and the drawing is kept", () => {
+    const { actions, dropped } = cleanChatActions([
+      { type: "graph", relations: ["y = 2x + 1"], near: 3 },
+      { type: "graph", relations: ["y = x"], near: "#2" },
+      { type: "draw_figure", figure: PROBE_FIGURE, near: "1" },
+      { type: "graph", relations: ["y = 3x"], near: null },
+      { type: "graph", relations: ["y = 4x"], near: "two" },
+      { type: "graph", relations: ["y = 5x"], near: 0 },
+    ]);
+    expect(dropped).toEqual([]);
+    expect(actions.map((a) => ("near" in a ? a.near : "none"))).toEqual([3, 2, 1, "none", "none", "none"]);
+  });
+
+  it("a stray {near} right after a drawing with none is that drawing's (a figure's braces closed a key early); anywhere else it is dropped", () => {
+    // as Haiku 5.5 wrote it: ...,"angles":[...]}},{"near":2}]
+    const { actions, dropped } = cleanChatActions([{ type: "draw_figure", figure: PROBE_FIGURE }, { near: 2 }, { type: "clear_tutor" }, { near: 1 }]);
+    expect(actions).toEqual([{ type: "draw_figure", figure: PROBE_FIGURE, near: 2 }, { type: "clear_tutor" }]);
+    expect(dropped).toEqual([{ type: "?", reason: "unknown action" }]);
+    // a drawing that already has one keeps it
+    expect(cleanChatActions([{ type: "graph", relations: ["y = x"], near: 1 }, { near: 3 }]).actions).toEqual([{ type: "graph", relations: ["y = x"], near: 1 }]);
+  });
+
   it("help with a problem that is not on the screen is dropped, with a note for the panel", () => {
     const screen = { problems: ["2\\cos x = 1", "\\tan x = \\sqrt{3}", "\\sin x = -\\frac{1}{2}"] };
     const res = dropMissingProblems(

@@ -7,6 +7,7 @@ import { CHAT_PROBLEM_META, problemMetaOf } from "./cells";
 import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow, DrawModelAction } from "./contracts";
 import { CHAT_LIMITS, noProblemNote } from "./contracts";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
+import { legibleBoxes, placeDrawingRect } from "./place";
 import type * as Verify from "./verify";
 import type * as Models from "./models";
 import type { LecturePageMeta } from "../lecture/contracts";
@@ -43,12 +44,19 @@ export const CHAT_WRITE = {
   graphLabelSize: 34,
   /** space between a graph's equations and the graph */
   graphLabelGap: 14,
-  /** figure boxes, largest first */
+  /**
+   * figure boxes, largest first, down to the legible minimum: the drawer's labels stop shrinking at
+   * a box ~245 px on its short side (`FIGURE.textScale.min`), so the last box has the same hand as
+   * the one before it, on a smaller figure — one that fits under a problem in a grid of six
+   */
   figureBoxes: [
     { w: 460, h: 380 },
     { w: 380, h: 310 },
     { w: 300, h: 250 },
+    { w: 260, h: 215 },
   ],
+  /** graph boxes, largest first, down to the legible minimum (the graph's labels are one size at any box) */
+  graphBoxes: [GRAPH.box, ...GRAPH.fallbackBoxes],
   /** a problem set is written a little faster than a worked solution: six problems in ~8 s */
   problemPace: 1.8,
   /** how long to wait for the loop's own writing to finish before starting */
@@ -160,6 +168,17 @@ function plural(n: number, one: string, many: string): string {
   return n === 1 ? one : many;
 }
 
+function unionRect(a: Rect, b: Rect): Rect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
+/** A drawing that goes with a problem on this screen (`near`): a graph, a figure or a visual model. */
+export function isNearDrawing(action: ChatAction): action is Extract<ChatAction, { type: "graph" | "draw_figure" | "draw_model" }> {
+  return (action.type === "graph" || action.type === "draw_figure" || action.type === "draw_model") && action.near !== undefined;
+}
+
 /** A graph intent seen through a requested window: key points outside it are left out. */
 export function windowedIntent(intent: GraphIntent, win: ChatWindow | undefined): GraphIntent {
   if (!win || intent.kind !== "plane") return intent;
@@ -251,10 +270,18 @@ export class ChatDesk {
     try {
       const engine = await this.host.engine();
       this.expectedPage = this.host.pageId();
+      // a drawing of a problem on this screen goes beside it: a new screen in the same reply would
+      // take the student away from that problem (the prompt says so; this holds if a model forgets)
+      const nearDrawings = actions.filter(isNearDrawing).map((a) => a.type);
       for (const action of actions) {
         if (this.host.pageId() !== this.expectedPage) {
           report.outcomes.push({ type: action.type, ok: false, note: "I stopped because you moved to another screen." });
           break;
+        }
+        if (action.type === "new_screen" && nearDrawings.length > 0) {
+          this.host.metric?.("live.chat.newScreen.ignored", { drawings: nearDrawings.join(",") });
+          report.outcomes.push({ type: "new_screen", ok: false, why: "near_drawing" });
+          continue;
         }
         report.outcomes.push(await this.runOne(action, engine, report));
       }
@@ -271,9 +298,9 @@ export class ChatDesk {
       case "write_lines":
         return this.writeLines(action.lines, engine, report);
       case "graph":
-        return this.graph(action.relations, action.window, engine, report);
+        return this.graph(action.relations, action.window, engine, report, action.near);
       case "draw_figure":
-        return this.figure(action.figure, report);
+        return this.figure(action.figure, report, action.near);
       case "new_screen":
         return (await this.newScreen(report)) ? { type: "new_screen", ok: true } : { type: "new_screen", ok: false, note: "This board already has the most screens it can hold." };
       case "clear_tutor":
@@ -423,29 +450,79 @@ export class ChatDesk {
   }
 
   /**
-   * Where a drawing goes (docs/ASK-V2.md, "Drawing"): a figure, a graph or a visual model that can
-   * be planned at several sizes (`boxes`, largest first). It stays on THIS screen whenever any size
-   * fits — beside problem `near` when given — and a new screen is started only when none does.
-   * Answers the plan placed, or null when it fits nowhere (nor on a new screen). CONTRACT: the
-   * placement part makes it place beside `near` and shrink to a legible minimum; this first
-   * version tries the sizes anywhere free on the screen.
+   * Where a drawing goes (docs/ASK-V2.md, "Placement"): a figure, a graph or a visual model that can
+   * be planned at several sizes (`boxes`, largest first, down to its legible minimum). It stays on
+   * THIS screen whenever any size fits anywhere (`placeDrawingRect`): beside problem `near` — right
+   * of its line in its cell, else in the cell's work room under it, else anywhere free on the
+   * screen — and without `near` anywhere free. Only when nothing fits even at the smallest size is a
+   * new screen started, the drawing at its largest there. Never over the student's ink, a problem or
+   * the tutor's writing. Answers the plan placed, or null when it fits nowhere (nor on a new
+   * screen), or `plan` planned it in no box.
    */
   private async placeDrawing(
     plan: (box: { w: number; h: number }) => HandPlan | null,
     opts: { near?: number; boxes: readonly { w: number; h: number }[] },
     report: Report,
   ): Promise<HandPlan | null> {
-    const plans: HandPlan[] = [];
-    for (const box of opts.boxes) {
-      const p = plan(box);
-      if (!p) continue;
-      plans.push(p);
-      const slot = findFreeArea({ w: p.bounds.w, h: p.bounds.h }, this.host.screen(), this.obstacles());
-      if (slot) return placeHandPlan(p, { x: slot.x, y: slot.y });
+    const plans = legibleBoxes(opts.boxes).map((box) => {
+      try {
+        return plan(box);
+      } catch {
+        return null;
+      }
+    });
+    const largest = plans.find((p): p is HandPlan => p !== null);
+    if (!largest) return null;
+    // what is on the screen once the loop's own writing is on it
+    await this.waitForHand();
+    const near = opts.near !== undefined ? this.problemOnScreen(opts.near) : null;
+    const sizes = plans.map((p) => (p ? { w: p.bounds.w, h: p.bounds.h } : null));
+    const here = placeDrawingRect({ screen: this.host.screen(), ink: this.inkRects(), cells: this.cellRects(), near, sizes });
+    const metric = (spot: string, size: number) =>
+      this.host.metric?.("live.chat.place", { spot, size, near: opts.near !== undefined, ...(opts.near !== undefined ? { found: near !== null } : {}) });
+    if (here) {
+      metric(here.spot, here.index);
+      return placeHandPlan(plans[here.index]!, { x: here.rect.x, y: here.rect.y });
     }
-    if (plans.length === 0 || !(await this.newScreen(report))) return null;
-    const slot = findFreeArea({ w: plans[0].bounds.w, h: plans[0].bounds.h }, this.host.screen(), this.obstacles());
-    return slot ? placeHandPlan(plans[0], { x: slot.x, y: slot.y }) : null;
+    // nothing fits on this screen even at the smallest: a new one, the drawing at its largest
+    if (!(await this.newScreen(report))) {
+      metric("none", -1);
+      return null;
+    }
+    const slot = findFreeArea({ w: largest.bounds.w, h: largest.bounds.h }, this.host.screen(), this.obstacles());
+    metric(slot ? "new_screen" : "none", slot ? plans.indexOf(largest) : -1);
+    return slot ? placeHandPlan(largest, { x: slot.x, y: slot.y }) : null;
+  }
+
+  /** Problem `n` on this screen: its cell and where its ink is (its number and lines); null when it is not here. */
+  private problemOnScreen(n: number): { cell: Rect; head: Rect } | null {
+    let cell: Rect | null = null;
+    let head: Rect | null = null;
+    for (const s of this.host.shapes()) {
+      const p = problemMetaOf(s.meta);
+      if (!p || p.n !== n || !s.bounds) continue;
+      // one problem per number on a screen; another block of the same number (an old one) is not it
+      if (cell && (cell.x !== p.cell.x || cell.y !== p.cell.y)) continue;
+      cell ??= p.cell;
+      const b = s.bounds;
+      head = head ? unionRect(head, b) : { ...b };
+    }
+    return cell && head ? { cell, head } : null;
+  }
+
+  /** The bounds of everything on this screen: the student's ink, the problems, the tutor's writing. */
+  private inkRects(): Rect[] {
+    return this.host.shapes().flatMap((s) => (s.bounds ? [s.bounds] : []));
+  }
+
+  /** Each problem's cell on this screen, once. */
+  private cellRects(): Rect[] {
+    const cells = new Map<string, Rect>();
+    for (const s of this.host.shapes()) {
+      const p = problemMetaOf(s.meta);
+      if (p) cells.set(`${p.cell.x},${p.cell.y}`, p.cell);
+    }
+    return [...cells.values()];
   }
 
   // ---------------------------------------------------------------- problems
@@ -572,16 +649,16 @@ export class ChatDesk {
     }
     const { plan } = planHandwriting(clean, { size: CHAT_WRITE.linesSize, seed: this.host.seed(`chat:lines:${clean.join(";")}`) });
     if (!plan) return { type: "write_lines", ok: false, note: "I couldn't write that on the board." };
-    await this.waitForHand();
-    const slot = await this.placeFor({ w: plan.bounds.w, h: plan.bounds.h }, report);
-    if (!slot) return { type: "write_lines", ok: false, note: "There's no room left on this board." };
-    await this.writeBlock(placeHandPlan(plan, { x: slot.x, y: slot.y }), meta);
+    // one size (a formula is written at the size a problem is read at), anywhere free, a new screen last
+    const placed = await this.placeDrawing(() => plan, { boxes: [{ w: plan.bounds.w, h: plan.bounds.h }] }, report);
+    if (!placed) return { type: "write_lines", ok: false, note: "There's no room left on this board." };
+    await this.writeBlock(placed, meta);
     return { type: "write_lines", ok: true };
   }
 
   // ---------------------------------------------------------------- graphs
 
-  private async graph(relations: readonly string[], win: ChatWindow | undefined, engine: LiveEngine, report: Report): Promise<ChatActionOutcome> {
+  private async graph(relations: readonly string[], win: ChatWindow | undefined, engine: LiveEngine, report: Report, near?: number): Promise<ChatActionOutcome> {
     const clean = relations.map((r) => r.trim()).filter(Boolean);
     const cannot: ChatActionOutcome = { type: "graph", ok: false, note: "I couldn't graph that." };
     if (!this.host.handwriting()) return { type: "graph", ok: false, note: "The tutor's handwriting is switched off, so I can't sketch a graph." };
@@ -597,60 +674,43 @@ export class ChatDesk {
     const seed = this.host.seed(`chat:graph:${intent.key}`);
     const label = planHandwriting(clean, { size: CHAT_WRITE.graphLabelSize, seed: seed + 7 });
     const labelPlan = label.plan && label.unsupported.length === 0 ? label.plan : null;
-    await this.waitForHand();
-    const tryPlace = (): { plan: HandPlan } | null => {
-      for (const box of [GRAPH.box, ...GRAPH.fallbackBoxes]) {
-        const g = planGraph(shown, { seed, box, window: hint });
-        if (!g) return null;
-        const labelH = labelPlan ? labelPlan.bounds.h + CHAT_WRITE.graphLabelGap : 0;
-        const size = { w: Math.max(g.plan.bounds.w, labelPlan?.bounds.w ?? 0), h: g.plan.bounds.h + labelH };
-        const slot = findFreeArea(size, this.host.screen(), this.obstacles());
-        if (!slot) continue;
-        const parts = [...(labelPlan ? [placeHandPlan(labelPlan, { x: slot.x, y: slot.y })] : []), placeHandPlan(g.plan, { x: slot.x, y: slot.y + labelH })];
-        const plan = joinPlans(parts, 300, graphPaceFor);
-        return plan ? { plan } : null;
-      }
-      return null;
+    const labelH = labelPlan ? labelPlan.bounds.h + CHAT_WRITE.graphLabelGap : 0;
+    let planned = false;
+    // the equation, then the sketch under it, as one block (placed as a whole by `placeDrawing`)
+    const plan = (box: { w: number; h: number }): HandPlan | null => {
+      const g = planGraph(shown, { seed, box, window: hint });
+      if (!g) return null;
+      planned = true;
+      return joinPlans([...(labelPlan ? [placeHandPlan(labelPlan, { x: 0, y: 0 })] : []), placeHandPlan(g.plan, { x: 0, y: labelH })], 300, graphPaceFor);
     };
-    let placed = tryPlace();
-    if (!placed && planGraph(shown, { seed, window: hint }) && (await this.newScreen(report))) placed = tryPlace();
-    if (!placed) return planGraph(shown, { seed, window: hint }) ? { type: "graph", ok: false, note: "There's no room left for the graph." } : cannot;
-    await this.writeBlock(placed.plan, { [CHAT_BLOCK_META]: "graph", chatGraph: intent.key });
-    this.host.metric?.("live.chat.graph", { kind: intent.kind, window: Boolean(win) });
+    const placed = await this.placeDrawing(plan, { near, boxes: CHAT_WRITE.graphBoxes }, report);
+    if (!placed) return planned ? { type: "graph", ok: false, note: "There's no room left for the graph." } : cannot;
+    await this.writeBlock(placed, { [CHAT_BLOCK_META]: "graph", chatGraph: intent.key });
+    this.host.metric?.("live.chat.graph", { kind: intent.kind, window: Boolean(win), near: near !== undefined });
     return { type: "graph", ok: true };
   }
 
   // ---------------------------------------------------------------- figures
 
-  private async figure(spec: FigureSpec, report: Report): Promise<ChatActionOutcome> {
+  private async figure(spec: FigureSpec, report: Report, near?: number): Promise<ChatActionOutcome> {
     const cannot: ChatActionOutcome = { type: "draw_figure", ok: false, note: "I couldn't draw that figure." };
     if (!this.host.handwriting()) return { type: "draw_figure", ok: false, note: "The tutor's handwriting is switched off, so I can't draw a figure." };
     const seed = this.host.seed(`chat:figure:${JSON.stringify(spec).slice(0, 400)}`);
-    await this.waitForHand();
-    const plans: HandPlan[] = [];
-    for (const box of CHAT_WRITE.figureBoxes) {
+    let planned = false;
+    // a box the drawer cannot plan in is no reason to give up on a figure it drew in another
+    const plan = (box: { w: number; h: number }): HandPlan | null => {
       let res: FigurePlanResult | null = null;
       try {
         res = this.host.planFigure(spec, { seed, box });
       } catch {
         res = null;
       }
-      // a smaller box the drawer cannot plan in is no reason to give up on a figure it drew in a
-      // larger one: that one goes on a new screen
-      if (!res) {
-        if (plans.length === 0) return cannot;
-        break;
-      }
-      plans.push(res.plan);
-      const slot = findFreeArea({ w: res.plan.bounds.w, h: res.plan.bounds.h }, this.host.screen(), this.obstacles());
-      if (!slot) continue;
-      await this.writeBlock(placeHandPlan(res.plan, { x: slot.x, y: slot.y }), { [CHAT_BLOCK_META]: "figure" });
-      return { type: "draw_figure", ok: true };
-    }
-    if (!(await this.newScreen(report))) return { type: "draw_figure", ok: false, note: "There's no room left for the figure." };
-    const slot = findFreeArea({ w: plans[0].bounds.w, h: plans[0].bounds.h }, this.host.screen(), this.obstacles());
-    if (!slot) return cannot;
-    await this.writeBlock(placeHandPlan(plans[0], { x: slot.x, y: slot.y }), { [CHAT_BLOCK_META]: "figure" });
+      if (res) planned = true;
+      return res?.plan ?? null;
+    };
+    const placed = await this.placeDrawing(plan, { near, boxes: CHAT_WRITE.figureBoxes }, report);
+    if (!placed) return planned ? { type: "draw_figure", ok: false, note: "There's no room left for the figure." } : cannot;
+    await this.writeBlock(placed, { [CHAT_BLOCK_META]: "figure" });
     return { type: "draw_figure", ok: true };
   }
 

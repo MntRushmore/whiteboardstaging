@@ -101,6 +101,19 @@ describe("eval: Ask (offline)", () => {
     expect(intent("p-7-two-step", [five], [five], { problems: 5, verified: 4 }).why).toBe("1 of 5 problems not verified (left out)");
   });
 
+  it("scoring a drawing of a problem on the screen: beside that problem (near), never with a new screen", () => {
+    const graph: ChatAction = { type: "graph", relations: ["y = 2x + 1"], near: 3 };
+    expect(intent("b-8-graph-near", [graph], [graph], { graphs: 1, graphed: 1 })).toEqual({ ok: true, why: "" });
+    expect(intent("b-8-graph-near", [{ type: "new_screen" }, graph], [{ type: "new_screen" }, graph], { graphs: 1, graphed: 1 }).why).toBe("new_screen where it does not apply");
+    const loose: ChatAction = { type: "graph", relations: ["y = 2x + 1"] };
+    expect(intent("b-8-graph-near", [loose], [loose], { graphs: 1, graphed: 1 }).why).toBe("graph with no near, not beside problem 3");
+    const elsewhere: ChatAction = { type: "graph", relations: ["2x \\le 8"], near: 1 };
+    expect(intent("b-7-number-line-near", [elsewhere], [elsewhere], { graphs: 1, graphed: 1 }).why).toBe("graph near 1, not beside problem 2");
+    const figure: ChatAction = { type: "draw_figure", figure: { points: { A: { x: 0, y: 0 }, B: { x: 4, y: 0 }, C: { x: 1, y: 2 } }, segments: [], angles: [], polygons: [{ vertices: ["A", "B", "C"] }], lines: [], circles: [] }, near: 2 };
+    expect(intent("b-7-figure-near", [figure], [figure], { figures: 1, figuresClean: 1 }).ok).toBe(true);
+    for (const id of ["b-7-number-line-near", "b-8-graph-near", "b-7-figure-near"]) expect(caseOf(id).expect).toMatchObject({ board: "required", without: ["new_screen"] });
+  });
+
   it("scoring the words: what it must and must never say, the length for the grade, spoken, Markdown-lite", () => {
     expect(checkSays(caseOf("f-3-seven-eight"), "It's **56**!", []).ok).toBe(true);
     expect(checkSays(caseOf("f-3-seven-eight"), "Let's count by 8s!", []).ok).toBe(false);

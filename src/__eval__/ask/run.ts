@@ -213,9 +213,9 @@ export function describeActions(actions: readonly ChatAction[]): string[] {
       case "write_lines":
         return `write_lines: ${a.lines.join(" ")}`;
       case "graph":
-        return `graph: ${a.relations.join(", ")}${a.window ? ` (x from ${a.window.xMin} to ${a.window.xMax})` : ""}`;
+        return `graph: ${a.relations.join(", ")}${a.window ? ` (x from ${a.window.xMin} to ${a.window.xMax})` : ""}${a.near !== undefined ? ` (beside problem ${a.near})` : ""}`;
       case "draw_figure":
-        return `draw_figure: points ${Object.keys(a.figure.points).join(", ")}; labels ${(a.figure.segments ?? []).map((s) => s.label).filter(Boolean).join(", ")}`;
+        return `draw_figure: points ${Object.keys(a.figure.points).join(", ")}; labels ${[...(a.figure.segments ?? []).map((s) => s.label), ...(a.figure.angles ?? []).map((g) => g.label)].filter(Boolean).join(", ")}${a.near !== undefined ? ` (beside problem ${a.near})` : ""}`;
       case "help_problem":
         return `help_problem: problem ${a.problem}, ${a.depth === "step" ? "the next step" : "the whole solution"} written under it`;
       case "help_board":
@@ -259,6 +259,7 @@ export function judgeAskIntent(
   if (e.window && !r.chosen.some((a) => a.type === "graph" && a.window)) return { ok: false, why: "no window for the range asked" };
   if (r.gate.graphs > r.gate.graphed) return { ok: false, why: "a graph the engine could not draw" };
   for (const a of r.chosen) {
+    if ((a.type === "graph" || a.type === "draw_figure" || a.type === "draw_model") && e.near !== undefined && a.near !== e.near) return { ok: false, why: `${a.type} ${a.near === undefined ? "with no near" : `near ${a.near}`}, not beside problem ${e.near}` };
     if (a.type === "help_problem" && e.help && (a.problem !== e.help.problem || a.depth !== e.help.depth)) return { ok: false, why: `help_problem ${a.problem} ${a.depth}, not ${e.help.problem} ${e.help.depth}` };
     if (a.type === "help_board" && e.helpBoard && a.depth !== e.helpBoard) return { ok: false, why: `help_board ${a.depth}, not ${e.helpBoard}` };
   }
@@ -435,7 +436,7 @@ export async function runOne(c: AskCase, cfg: AskModelConfig, opts: Omit<AskRunO
       }
       if (problems.length === 0) {
         gate.figuresClean++;
-        final.push({ type: "draw_figure", figure: spec });
+        final.push({ ...action, figure: spec });
       }
     } else if (action.type === "graph") {
       gate.graphs++;

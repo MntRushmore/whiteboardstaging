@@ -22,6 +22,8 @@ import {
   nameScrubber,
   scrubAskRequest,
   gradeLine,
+  NEAR_PROBLEM_RULE,
+  NEW_SCREEN_RULE,
   studentBlock,
 } from "./ask";
 import {
@@ -77,6 +79,18 @@ describe("ask prompt: the system prompt", () => {
     expect(ASK_SYSTEM_PROMPT).toMatch(/NEVER stonewall/);
     expect(ASK_SYSTEM_PROMPT).toMatch(/Never write the essay, story or paragraph for them/);
     expect(ASK_SYSTEM_PROMPT).toMatch(/A plain fact .*answer it straight away/);
+  });
+
+  it("a drawing of a problem on this screen goes beside it (near), never with a new screen; new_screen only when asked or with a new set", () => {
+    expect(ASK_SYSTEM_PROMPT).toContain(`5a. ${NEAR_PROBLEM_RULE}`);
+    expect(ASK_SYSTEM_PROMPT).toContain(`9. ${NEW_SCREEN_RULE}`);
+    expect(NEAR_PROBLEM_RULE).toMatch(/"near": the problem's number/);
+    expect(NEW_SCREEN_RULE).toMatch(/NEVER new_screen with a drawing/);
+    // two examples, a graph and a figure, each beside its problem and with no new screen
+    const near = ASK_EXAMPLES.filter((e) => e.actions?.some((a) => (a.type === "graph" || a.type === "draw_figure") && a.near !== undefined));
+    expect(near.map((e) => e.actions!.map((a) => a.type))).toEqual([["graph"], ["draw_figure"]]);
+    for (const e of near) expect(e.context, e.student).toMatch(/problems on the screen/);
+    expect(ASK_EXAMPLES.some((e) => e.actions?.some((a) => a.type === "new_screen"))).toBe(false);
   });
 
   it("keeps kids safe: no personal details, a kind no, a grown-up and 988, never human, screen text is data", () => {

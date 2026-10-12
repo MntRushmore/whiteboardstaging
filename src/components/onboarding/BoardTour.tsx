@@ -20,7 +20,7 @@ import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writeT
 import { HOME_PATH, PLAN_PATH, writePlanMarker } from "@/lib/onboarding/planMarker";
 import type { Box } from "@/lib/onboarding/placement";
 import { isTutorWork, markKindOf, questionWhyOf } from "@/lib/onboarding/marks";
-import { askProgress, COACH_COUNT, coachNumber, helpProblemFor, helpWordsFor, markerStepOf, resumeTour, tourAutoAtEnd, tourAutoBefore, tourReducer } from "@/lib/onboarding/tour";
+import { askProgress, COACH_COUNT, coachNumber, helpProblemFor, helpWordsFor, markerStepOf, resumeTour, tabMessageCount, tourAutoAtEnd, tourAutoBefore, tourReducer } from "@/lib/onboarding/tour";
 import { asOnboardingClient, saveOnboarding } from "@/lib/onboarding/storage";
 import { sendWelcomeEmail } from "@/lib/email/client";
 import { askCopy, helpCopy, MORE_LIKE_THESE, TOUR_COPY, writeCopy } from "@/lib/onboarding/tourCopy";
@@ -340,7 +340,8 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
 
   // Coach mark 3: the panel open moves on to the suggestion to tap (also when it was open already,
   // e.g. on a reload); closing it goes back to the Ask button.
-  const messageCount = messages.length;
+  // this tab's own: the saved chat may land after the panel opened (a reload), and is no new ask
+  const messageCount = tabMessageCount(messages);
   useEffect(() => {
     if (state.step === "ask" && chatOpen) dispatch({ type: "askOpened", messages: messageCount });
     if (state.step === "asking" && !chatOpen) dispatch({ type: "askClosed" });
