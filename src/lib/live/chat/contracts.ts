@@ -63,13 +63,16 @@ export function plainWords(max: number, min = 1) {
     .refine((s) => !/[\\$<>{}\n\r\t]/.test(s), { message: "plain words only" });
 }
 
-/** LaTeX as the hand writes it: short, no `$` delimiters, no words (`\text{…}` is refused). */
+/**
+ * LaTeX as the hand writes it: short, no `$` delimiters, no words (`\text{…}` is refused). Money's
+ * dollar sign is maths, written escaped (`\$3.25 + \$1.50`): the hand draws it and the engine reads it.
+ */
 export const ChatLatexSchema = z
   .string()
   .trim()
   .min(1)
   .max(CHAT_LIMITS.lineLatex)
-  .refine((s) => !/\$/.test(s), { message: "no $ delimiters" })
+  .refine((s) => !/(?<!\\)\$/.test(s), { message: "no $ delimiters" })
   .refine((s) => !/\\(?:text[a-z]*|mbox|mathrm\{[A-Za-z]{3,}|operatorname\{[A-Za-z]{5,})/.test(s), { message: "no words on the board" });
 
 // ------------------------------------------------------------------ request

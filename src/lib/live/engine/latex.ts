@@ -179,7 +179,9 @@ export function preprocessLatex(latex: string): string {
   s = s.replace(/²/g, "^{2}").replace(/³/g, "^{3}").replace(/°/g, "^{\\circ}").replace(/π/g, "\\pi ");
   // 20^{\circ}C / 20^\circ \mathrm{C} -> 20 \mathrm{degC}; same for F
   s = s.replace(/\^\s*\{?\s*\\circ\s*\}?\s*(?:\\mathrm\s*\{\s*([CF])\s*\}|([CF]))(?![a-zA-Z])/g, (_m, a: string | undefined, b: string | undefined) => ` \\mathrm{deg${a ?? b}}`);
-  // thousands separators: 2,000 -> 2000 (only when exactly three digits follow)
+  // thousands separators: 2,000 -> 2000 (only when exactly three digits follow); `1{,}234{,}567` is
+  // how LaTeX writes one (the braces keep the comma's spacing) — every group, not just the first
+  s = s.replace(/(\d)\{,\}(?=\d{3}(?!\d))/g, "$1");
   s = s.replace(/(\d),(\d{3})(?!\d)/g, "$1$2");
   s = s.replace(/∞/g, "\\infty ").replace(/≤/g, "\\le ").replace(/≥/g, "\\ge ").replace(/≠/g, "\\ne ").replace(/≈/g, "\\approx ");
   s = s.replace(/\\(?:checkmark|square|blacksquare|qed|hfill|newline|par|noindent|allowbreak)\b/g, " ").replace(/[✓✔☐■□]/g, " ");
@@ -268,6 +270,7 @@ export function preprocessPlain(text: string): string {
     .replace(/³/g, "^3")
     .replace(/°/g, " deg ")
     .replace(/π/g, " pi ")
+    .replace(/(\d)\{,\}(?=\d{3}(?!\d))/g, "$1")
     .replace(/(\d),(\d{3})(?!\d)/g, "$1$2")
     .replace(/\s+/g, " ")
     .trim();

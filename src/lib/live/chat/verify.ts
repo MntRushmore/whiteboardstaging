@@ -1,11 +1,41 @@
+import { layoutSteps } from "@/lib/hand/writeSteps";
 import type { LineAnalysis, LiveEngine } from "../contracts";
+import { boardBlanks, compareBlank } from "../engine/blanks";
 import { analyzeColumn, localSolve } from "../localSolve";
 
 /**
  * The board chat's interlock: nothing a model proposed reaches the board until the local engine
- * has read it. Pure (engine in, verdict out), so the board (`ChatDesk`) and the chat eval
- * (`src/__eval__/chat`) judge a problem exactly the same way.
+ * has read it. Pure (engine in, verdict out), so the board (`ChatDesk`), the chat route's gate
+ * (`src/lib/server/chatProblems.ts`) and the chat eval (`src/__eval__/chat`) judge a problem
+ * exactly the same way — the hand's own check (`handCanWrite`) included, so a problem the route
+ * passes is never one the board then refuses.
  */
+
+/** The hand size the board writes problems at (`PROBLEM_GRID.size`; what it can draw does not depend on it). */
+const HAND_CHECK_SIZE = 48;
+
+/**
+ * Can the tutor's hand draw every glyph of these lines? The board's interlock before it writes
+ * (`planHandwriting`'s `unsupported`), as a pure check on the hand's layout alone — no tldraw, so
+ * the route runs it too. Prod 2026-10: the route passed `1 + 2 = \square` (the engine reads it), the
+ * hand could not draw the box, and the board refused the set ("I couldn't check those problems").
+ */
+export function handCanWrite(lines: readonly string[]): boolean {
+  try {
+    return layoutSteps(lines, { size: HAND_CHECK_SIZE, seed: 1 }).unsupported.length === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A problem's lines as the board writes them: trimmed, empty lines gone, and a worksheet's blanks
+ * in the board's one form (`?`, `\_\_`, `\underline{\quad}`, `\boxed{}` → `\square`; a comparison's
+ * blank → `\bigcirc`), which the engine reads (`engine/blanks.ts`) and the hand draws.
+ */
+export function boardProblemLines(lines: readonly string[]): string[] {
+  return lines.map((l) => boardBlanks(l.trim())).filter(Boolean);
+}
 
 /** Words on the board: `\text{…}` and friends, or a run of plain letters that is not maths. */
 export function hasWords(latex: string): boolean {
@@ -15,30 +45,42 @@ export function hasWords(latex: string): boolean {
   return /(?:^|[^\\A-Za-z])[A-Za-z]{5,}/.test(latex);
 }
 
+/**
+ * A remainder written into a problem (`47 \div 5 = \square \, R \, \square`, `17 \div 5 = 3 R 2`):
+ * the engine reads that R as a letter and "solves" for it (`R = \frac{47}{5}`), so it is no problem
+ * the board can check. A division with a remainder is written as the division (`47 \div 5`).
+ */
+const REMAINDER = /(?:\d|\\square|\?)\s*(?:\\[,;: ]\s*)*(?:\\(?:text|mathrm|textrm)\s*\{\s*[Rr]\s*\}|(?<![a-zA-Z\\])[Rr])(?![a-zA-Z])\s*(?:\\[,;: ]\s*)*(?:\d|\\square|\?)/;
+
 /** Kinds the engine returns for a line it cannot reason about. */
 const UNREADABLE: ReadonlySet<LineAnalysis["kind"]> = new Set(["unknown", "text", "label", "incomplete"]);
 
 export type ProblemVerdict =
-  | { ok: true; steps: string[] }
+  /** `lines`: the problem as the board writes it (`boardProblemLines`) — what was checked */
+  | { ok: true; steps: string[]; lines: string[] }
   | { ok: false; reason: "words" | "unreadable" | "false" | "unsolved" | "unwritable" };
 
 /**
  * A problem the tutor may write for the student: every line reads as maths, none is false on its
  * face (`2 + 2 = 5`), and `localSolve` — the very function Solve uses — answers it. `steps` is
  * the engine's worked solution (never written; it is the proof the problem has an answer).
- * `canDraw` is the hand's interlock (every glyph drawable); default yes.
+ * `canDraw` is the hand's interlock (every glyph drawable; `handCanWrite`); default yes. A
+ * comparison to fill in (`\frac{3}{4} \bigcirc \frac{5}{8}`) reads as no relation the engine
+ * analyses, and is checked by its answer alone: exactly one of `<`, `=`, `>` holds.
  */
 export function verifyProblem(engine: LiveEngine, lines: readonly string[], canDraw: (lines: readonly string[]) => boolean = () => true): ProblemVerdict {
-  const clean = lines.map((l) => l.trim()).filter(Boolean);
+  const clean = boardProblemLines(lines);
   if (clean.length === 0) return { ok: false, reason: "unreadable" };
   if (clean.some(hasWords)) return { ok: false, reason: "words" };
+  if (clean.some((l) => REMAINDER.test(l))) return { ok: false, reason: "unreadable" };
   let analyses: (LineAnalysis | null)[];
   try {
     analyses = analyzeColumn(engine, clean, "answer");
   } catch {
     return { ok: false, reason: "unreadable" };
   }
-  if (analyses.some((a) => !a || UNREADABLE.has(a.kind))) return { ok: false, reason: "unreadable" };
+  const comparison = clean.length === 1 && compareBlank(clean[0]) !== null;
+  if (!comparison && analyses.some((a) => !a || UNREADABLE.has(a.kind))) return { ok: false, reason: "unreadable" };
   if (analyses.some((a) => a?.verdict === "mismatch")) return { ok: false, reason: "false" };
   let steps: string[] = [];
   try {
@@ -49,7 +91,7 @@ export function verifyProblem(engine: LiveEngine, lines: readonly string[], canD
     return { ok: false, reason: "unsolved" };
   }
   if (!canDraw(clean)) return { ok: false, reason: "unwritable" };
-  return { ok: true, steps };
+  return { ok: true, steps, lines: clean };
 }
 
 /** The most common of these reasons (the first on a tie), or null for none: what a report names. */

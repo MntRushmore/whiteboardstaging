@@ -185,6 +185,22 @@ describe("live loop — the board chat", () => {
       ]);
     });
 
+    /**
+     * Prod 2026-10 (`note_write_problems`): "I couldn't check those problems, so I didn't write them."
+     * for a first-grader's fill in the blank — the route had passed `1 + 2 = \square`, and the hand
+     * had no box. A worksheet's forms are written now: the box, the circle to compare in, money.
+     */
+    it("a K–2 worksheet: blanks, a comparison and money are all written, in the board's one form", async () => {
+      start();
+      const report = await run([{ type: "write_problems", problems: [["1 + 2 = \\square"], ["4 + ? = 9"], ["\\frac{3}{4} \\; ? \\; \\frac{5}{8}"], ["\\$3.25 + \\$1.50"]] }]);
+      expect(report).toMatchObject({ problemsWritten: 4, problemsDropped: 0 });
+      expect(report.outcomes).toEqual([{ type: "write_problems", ok: true }]);
+      const want = ["1 + 2 = \\square", "4 + \\square = 9", "\\frac{3}{4} \\bigcirc \\frac{5}{8}", "\\$3.25 + \\$1.50"];
+      expect(problems().map((p) => p.lines)).toEqual(want.map((l) => [l]));
+      // in the tutor's hand, each with its number (`written` is sorted: the number's ink starts lower)
+      expect(problems().map((p) => p.written)).toEqual(want.map((l, i) => [`${i + 1}.`, l].sort()));
+    });
+
     it("none checks out: nothing is written", async () => {
       start();
       const report = await run([{ type: "write_problems", problems: [["y = 2x - 5"]] }]);
@@ -258,6 +274,23 @@ describe("live loop — the board chat", () => {
       // under problem 2 (3x = 12), x = 2 is wrong
       expect(liveStore.lines.get()[wrong].analysis?.verdict).toBe("mismatch");
       await settleStable(() => String(tutor().length));
+      expect(marksOf(wrong)).toEqual(["circle"]);
+    });
+
+    it("a worksheet's blank: the number for the box is ticked and solves it, a wrong one is ringed — never a '?'", async () => {
+      start();
+      await run([{ type: "write_problems", problems: [["4 + ? = 9"], ["1 + 2 = \\square"], ["\\frac{3}{4} \\; ? \\; \\frac{5}{8}"], ["7 + \\square = 12"]] }]);
+      const right = await penLine("2", 120, 200, "5");
+      const sum = await penLine("2", 900, 200, "3");
+      const sign = await penLine("2", 120, 600, ">");
+      const wrong = await penLine("2", 900, 600, "6");
+      await settleStable(() => String(tutor().length));
+      const lines = liveStore.lines.get();
+      expect(lines[right].analysis).toMatchObject({ verdict: "ok", solved: true });
+      expect(lines[sum].analysis).toMatchObject({ verdict: "ok", solved: true });
+      expect(lines[sign].analysis).toMatchObject({ verdict: "ok", solved: true });
+      expect(lines[wrong].analysis?.verdict).toBe("mismatch");
+      expect([right, sum, sign].map(marksOf)).toEqual([["check"], ["check"], ["check"]]);
       expect(marksOf(wrong)).toEqual(["circle"]);
     });
 
