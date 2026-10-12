@@ -188,6 +188,51 @@ describe("sendAsk: one ask, streamed", () => {
     expect(JSON.stringify(reports)).not.toContain("fractions");
   });
 
+  it("a drop after the board started writing: the words stay, the writing finishes once, done with a note — never Try again", async () => {
+    const actions = [{ type: "write_problems", problems: [["x+1=2"]] }] as unknown as ChatAction[];
+    let finishRun: () => void = () => {};
+    const written: ChatAction[][] = [];
+    const ctl = controller({
+      runChatActions: (a: readonly ChatAction[]) => {
+        written.push([...a]);
+        return new Promise<ChatRunReport>((resolve) => {
+          finishRun = () => resolve(REPORT);
+        });
+      },
+    } as Partial<LiveController>);
+    const s = stream([
+      (h) => h.onDelta?.("Here are 5 two-step equations."),
+      (h) => h.onReply?.("Here are 5 two-step equations."),
+      (h) => h.onActions?.({ actions, notes: [] }),
+      () => {
+        throw new AskStreamError({ code: "upstream", message: "dropped", status: 502 });
+      },
+    ]);
+    const { sink, calls } = speechSpy();
+    const asking = sendAsk(B, "5 two-step equations", {}, { controller: ctl, speech: () => sink, stream: s });
+    // the hand is still writing: the ask is not over (busy), and nothing says it failed
+    await vi.waitFor(() => expect(written).toHaveLength(1));
+    await Promise.resolve();
+    expect(tutorOf()).toMatchObject({ state: "writing", text: "Here are 5 two-step equations." });
+    await sendAsk(B, "another", {}, { controller: ctl, speech: () => null, stream: s });
+    expect(boardChatMessages(B).filter((m) => m.role === "user")).toHaveLength(1);
+    finishRun();
+    await asking;
+
+    const tutor = tutorOf();
+    expect(tutor).toMatchObject({ state: "done", text: "Here are 5 two-step equations.", notes: [CHAT_COPY.cutOff] });
+    expect(tutor.error).toBeUndefined();
+    expect(tutor.retryText).toBeUndefined();
+    // nothing to try again: the problems are written once
+    expect(retryOf(boardChatMessages(B), tutor.id)).toBeNull();
+    expect(written).toHaveLength(1);
+    // the words were final: read aloud to the end, not cut off
+    expect(calls).toContain("finish Here are 5 two-step equations.");
+    expect(calls).not.toContain("stop");
+    // heard of as a warning, with the stream's code
+    expect(reports).toEqual([expect.objectContaining({ kind: "live.chat", code: "stream_upstream", level: "warn" })]);
+  });
+
   it("Try again sends the same words with the same clientId (the route saves it once), said if it was said", async () => {
     const fail = stream([() => {
       throw new AskStreamError({ code: "timeout", message: "slow", status: 504 });

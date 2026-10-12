@@ -32,6 +32,8 @@ export const CHAT_COPY = {
   done: "Done! Take a look at your board.",
   /** the stream ended with no words and nothing to write */
   empty: "Hmm, I'm not sure. Can you ask me another way?",
+  /** the connection dropped after the board had started writing: the writing finished, no Try again */
+  cutOff: "The internet cut out at the end, but I kept what I wrote.",
   thinking: "Thinking…",
   writing: "Writing on your board…",
   retry: "Try again",

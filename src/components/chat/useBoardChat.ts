@@ -255,6 +255,8 @@ export async function sendAsk(boardId: string, text: string, opts: AskSendOption
   const painter = frameBatcher(() => patch(boardId, tutorId, (m) => ({ text: shownReply(written), state: m.state === "writing" ? "writing" : "streaming" })));
   // the board's writing, started on `actions` (a holder: the stream's handlers set it)
   const board: { run: Promise<ChatRunReport> | null } = { run: null };
+  // the stream reached its end (`done`): a failure after it is the board's, not the connection's
+  let streamEnded = false;
   try {
     const { controller } = deps;
     if (!controller.chatScreen || !controller.runChatActions) throw new BoardNotReadyError();
@@ -317,6 +319,7 @@ export async function sendAsk(boardId: string, text: string, opts: AskSendOption
       },
       { signal: ctrl.signal },
     );
+    streamEnded = true;
     painter.flush();
     const shown = shownReply(written).trim();
     finishSpeech(shown);
@@ -332,6 +335,20 @@ export async function sendAsk(boardId: string, text: string, opts: AskSendOption
     }
   } catch (err) {
     painter.flush();
+    if (board.run) {
+      // The board was already writing when the stream ended early (a dropped connection after
+      // `actions`, before `done`): the words stay, the writing finishes, and the ask is done with a
+      // short note. Never Try again: it would write the problems a second time (and cost again).
+      const shown = shownReply(written).trim();
+      finishSpeech(shown);
+      patch(boardId, tutorId, () => ({ text: shown }));
+      const report = await board.run.catch(() => null);
+      const cut = isAbort(err) || streamEnded ? [] : [CHAT_COPY.cutOff];
+      patch(boardId, tutorId, (m) => ({ notes: [...new Set([...(m.notes ?? []), ...runNotes(report), ...cut])], state: "done", ...(shown ? {} : { text: CHAT_COPY.done }) }));
+      for (const note of chatNoteReports(report, boardId)) reportUserError(note);
+      if (!isAbort(err)) reportUserError({ ...chatFailureReport(chatErrorFor(err), err, boardId), level: "warn" });
+      return;
+    }
     if (isAbort(err)) {
       // Stop: what came stays, and it is part of the chat from here on
       deps.speech()?.stop();
