@@ -6,6 +6,7 @@ import { DEFAULT_SCREEN } from "@/lib/screens/screens";
 import {
   ASK_IMAGE,
   ASK_IMAGE_LADDER,
+  askImage,
   askImageSize,
   askImageWanted,
   askScene,
@@ -303,5 +304,24 @@ describe("captureAskImage", () => {
 
   it("too big at every step: null", async () => {
     expect(await captureAskImage(boardWith([drawShapeFromPoints(STROKE_A)]), {}, fakeBrowser({ sizes: [2_000_000] }).deps)).toBeNull();
+  });
+});
+
+describe("askImage: the policy, then the capture", () => {
+  it("no capture for an empty screen or the tutor's problems alone; the student's ink is captured", async () => {
+    const capture = vi.fn(async () => "data:image/jpeg;base64,AAAA");
+    expect(await askImage(boardWith([]), capture)).toBeNull();
+    const problem = { ...drawShapeFromPoints(STROKE_A), meta: live({ chatProblem: { n: 1, lines: ["2x+3=7"], cell: { x: 0, y: 0, w: 10, h: 10 } }, handLine: "2x+3=7" }) } as TLShape;
+    expect(await askImage(boardWith([problem]), capture)).toBeNull();
+    expect(capture).not.toHaveBeenCalled();
+    expect(await askImage(boardWith([problem, drawShapeFromPoints([{ x: 400, y: 400 }, { x: 460, y: 420 }])]), capture)).toBe("data:image/jpeg;base64,AAAA");
+    expect(capture).toHaveBeenCalledTimes(1);
+  });
+
+  it("never throws", async () => {
+    const broken = { ...boardWith([]), getCurrentPageShapes: () => { throw new Error("gone"); } } as unknown as AskImageEditor;
+    expect(await askImage(broken)).toBeNull();
+    const failing = vi.fn(async () => Promise.reject(new Error("canvas gone")));
+    expect(await askImage(boardWith([drawShapeFromPoints(STROKE_A)]), failing)).toBeNull();
   });
 });

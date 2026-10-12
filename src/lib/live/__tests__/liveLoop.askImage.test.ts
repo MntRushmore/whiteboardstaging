@@ -22,7 +22,8 @@ const capture = vi.fn(async (): Promise<string | null> => PICTURE);
 
 vi.mock("../ask/boardImage", async (importOriginal) => {
   const real = await importOriginal<typeof import("../ask/boardImage")>();
-  return { ...real, captureAskImage: () => capture() };
+  // the real policy (`askImage`), a fake camera
+  return { ...real, askImage: (editor: Parameters<typeof real.askImage>[0]) => real.askImage(editor, () => capture()) };
 });
 
 let engine: LiveEngine;

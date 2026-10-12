@@ -569,3 +569,17 @@ export async function captureAskImage(editor: AskImageEditor, opts: { timeoutMs?
     done = true;
   }
 }
+
+/**
+ * What an ask sends (`LiveLoop.chatImage`, which loads this module on first use): the picture when
+ * the screen holds something its LaTeX cannot say (`askImageWanted`), else null. Never throws.
+ * `capture` is the tests' way in.
+ */
+export async function askImage(editor: AskImageEditor, capture: (editor: AskImageEditor) => Promise<string | null> = captureAskImage): Promise<string | null> {
+  try {
+    if (!askImageWanted(askScene(editor)?.shapes ?? [])) return null;
+    return await capture(editor);
+  } catch {
+    return null;
+  }
+}
