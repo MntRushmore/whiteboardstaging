@@ -46,8 +46,9 @@ describe("board chat panel — view logic", () => {
 
   it("the stream's own failures: an error event by its code, a quiet stream as a timeout", () => {
     const ev = (code: string, status?: number) => new AskStreamError({ code, message: "x", ...(status ? { status } : {}) });
-    expect(chatErrorFor(ev("credits_exhausted"))).toMatchObject({ kind: "ink", retry: false });
-    expect(chatErrorFor(ev("anything", 402)).kind).toBe("ink");
+    // the route's `credits_exhausted` is the tutor's model out (503), never the student's ink
+    expect(chatErrorFor(ev("credits_exhausted", 503))).toEqual({ kind: "other", message: CHAT_COPY.errors.resting, retry: true });
+    expect(chatErrorFor(ev("internal", 500))).toEqual({ kind: "other", message: CHAT_COPY.errors.other, retry: true });
     expect(chatErrorFor(ev("rate_limited", 429)).kind).toBe("rate_limited");
     expect(chatErrorFor(ev("timeout"))).toMatchObject({ kind: "timeout", retry: true });
     expect(chatErrorFor(ev("upstream"))).toEqual({ kind: "other", message: CHAT_COPY.errors.other, retry: true });
@@ -75,7 +76,7 @@ describe("board chat panel — view logic", () => {
     }
   });
 
-  it("the chat so far: finished turns only (a stopped reply as far as it got), a failed ask left out, the last twelve", () => {
+  it("the chat so far: finished turns only (a stopped reply as far as it got), an ask with no reply left out, the last twelve", () => {
     const m = (role: ChatMessage["role"], text: string, state?: ChatMessage["state"], extra: Partial<ChatMessage> = {}): ChatMessage => ({ id: text, role, text, state, ...extra });
     const messages = [
       m("user", "3 two-step equations"),
@@ -86,9 +87,12 @@ describe("board chat panel — view logic", () => {
       m("tutor", "Here is the graph.", "writing"),
       m("user", "why is the sky blue?"),
       m("tutor", "Sunlight bounces", "done", { stopped: true }),
+      m("user", "what is pi?"),
+      m("tutor", CHAT_COPY.stopped, "done", { stopped: true }),
       m("user", "draw a triangle"),
       m("tutor", "Let me dr", "streaming"),
     ];
+    // never two of the student's turns in a row: the next ask is the student's turn
     expect(historyFor(messages)).toEqual([
       { role: "user", text: "3 two-step equations" },
       { role: "tutor", text: "Here are 3." },
@@ -96,8 +100,9 @@ describe("board chat panel — view logic", () => {
       { role: "tutor", text: "Here is the graph." },
       { role: "user", text: "why is the sky blue?" },
       { role: "tutor", text: "Sunlight bounces" },
-      { role: "user", text: "draw a triangle" },
     ]);
+    // a failed last ask is left out too
+    expect(historyFor([m("user", "hi"), m("tutor", "Hello!", "done"), m("user", "why?"), m("tutor", "Oops", "error")]).map((t) => t.text)).toEqual(["hi", "Hello!"]);
     const long = Array.from({ length: 20 }, (_, i) => [m("user", `ask ${i}`), m("tutor", `reply ${i}`, "done")]).flat();
     expect(historyFor(long)).toHaveLength(ASK_LIMITS.turns);
     expect(ASK_LIMITS.turns).toBe(12);
@@ -232,7 +237,9 @@ describe("the hello and its chips", () => {
 
   it("the tutor's own hello and chips, when it has them", () => {
     const hello = { greeting: "Welcome back, Maya! Last time you worked on dividing fractions.", chips: ["3 more like last time", "Practice my weak spots"] };
-    expect(helloFor({ hello, grade: 5, screenHasWork: true })).toEqual({ greeting: hello.greeting, chips: hello.chips });
+    expect(helloFor({ hello, grade: 5, screenHasWork: false })).toEqual({ greeting: hello.greeting, chips: hello.chips });
+    // work on the screen: "3 more like these" takes the place of "3 more like last time" (one, not two alike)
+    expect(helloFor({ hello, grade: 5, screenHasWork: true })).toEqual({ greeting: hello.greeting, chips: [MORE_LIKE_THESE_CHIP, "Practice my weak spots"] });
     // an empty hello is none
     expect(helloFor({ hello: { greeting: " ", chips: [] }, grade: 5, screenHasWork: false }).greeting).toBe(CHAT_COPY.hello);
     // a greeting with no chips of its own gets the grade's

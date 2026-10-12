@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent } from "react";
 import { ArrowUp, ChevronDown, ChevronUp, Smile, Square, Star, Volume2, VolumeX, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/AuthProvider";
@@ -97,6 +97,24 @@ function screenHasWorkOn(controller: LiveController): boolean {
   }
 }
 
+/**
+ * A phone, upright or sideways: the mic sits small beside the words (`AskMic compact`). An iPad is
+ * wider than 639 px and taller than 500 px whichever way it is held.
+ */
+const PHONE_QUERY = "(max-width: 639px), (max-height: 500px)";
+
+function useIsPhone(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const mq = typeof window !== "undefined" ? window.matchMedia?.(PHONE_QUERY) : undefined;
+      mq?.addEventListener("change", cb);
+      return () => mq?.removeEventListener("change", cb);
+    },
+    () => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia(PHONE_QUERY).matches : false),
+    () => false,
+  );
+}
+
 /** Near enough the bottom that new words keep the list following them. */
 const STICK_PX = 96;
 
@@ -115,6 +133,7 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
   const speech = useAskSpeech();
   const { messages, busy, send, stop, retry, weakSpot, practiceWeakSpots, hello } = useBoardChat(boardId, controller, speech);
   const grade = useGrade(useAuth().user?.id);
+  const isPhone = useIsPhone();
   const [draft, setDraft] = useState("");
   const panelRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -170,11 +189,14 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
       const active = document.activeElement;
       const inPanel = Boolean(active && panelRef.current?.contains(active));
       const onToggle = Boolean(active instanceof HTMLElement && active.closest(`[${CHAT_TOGGLE_ATTR}]`));
-      if (inPanel || onToggle || !active || active === document.body) onClose();
+      if (inPanel || onToggle || !active || active === document.body) {
+        speech.stop();
+        onClose();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, speech]);
 
   const grow = () => {
     const el = inputRef.current;
@@ -185,15 +207,28 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
 
   const submit = (text: string, opts?: SendOptions) => {
     if (!text.trim() || busy) return;
-    setDraft("");
+    // said into the mic: sent as said, and anything typed stays in the box
+    if (!opts?.voice) {
+      setDraft("");
+      requestAnimationFrame(grow);
+    }
     stick.current = true;
-    requestAnimationFrame(grow);
     void send(text, opts);
+  };
+
+  // Stop ends the words and the voice reading them; closing the panel silences it too
+  const halt = () => {
+    speech.stop();
+    stop();
+  };
+  const close = () => {
+    speech.stop();
+    onClose();
   };
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (canStop(messages)) stop();
+    if (canStop(messages)) halt();
     else submit(draft);
   };
 
@@ -223,7 +258,8 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
           <Smile className="size-5" strokeWidth={2.25} />
         </span>
         <h2 className="min-w-0 flex-1 truncate text-[17px] font-semibold">{CHAT_COPY.title}</h2>
-        <HeaderButton label={speech.on ? CHAT_COPY.speakerOn : CHAT_COPY.speakerOff} pressed={speech.on} onClick={speech.toggle}>
+        {/* named for what a tap does ("Stop reading answers out loud" while it reads) */}
+        <HeaderButton label={speech.on ? CHAT_COPY.speakerOff : CHAT_COPY.speakerOn} active={speech.on} onClick={speech.toggle}>
           {speech.on ? <Volume2 className="size-5" aria-hidden /> : <VolumeX className="size-5" aria-hidden />}
         </HeaderButton>
         {onTallChange && (
@@ -232,7 +268,7 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
             {tall ? <ChevronDown className="size-5" aria-hidden /> : <ChevronUp className="size-5" aria-hidden />}
           </HeaderButton>
         )}
-        <HeaderButton label={CHAT_COPY.close} title={`${CHAT_COPY.close} (Esc)`} onClick={onClose}>
+        <HeaderButton label={CHAT_COPY.close} title={`${CHAT_COPY.close} (Esc)`} onClick={close}>
           <X className="size-5" aria-hidden />
         </HeaderButton>
       </header>
@@ -288,7 +324,7 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
             // 17 px: big enough to read, and never under 16 px (iOS zooms the page into a smaller box)
             className="max-h-[132px] min-h-11 flex-1 resize-none bg-transparent py-2.5 text-[17px] leading-6 text-slate-900 outline-none placeholder:text-slate-400"
           />
-          <AskMic compact disabled={busy} onText={(t) => submit(t, { voice: true })} />
+          <AskMic compact={isPhone} disabled={busy} onText={(t) => submit(t, { voice: true })} />
           {stoppable ? (
             <button type="submit" aria-label={CHAT_COPY.stop} title={CHAT_COPY.stop} className={cn(ROUND, "bg-slate-800 text-white hover:bg-slate-700")}>
               <Square className="size-4 fill-current" aria-hidden />
@@ -313,16 +349,17 @@ const CHIP =
 const ROUND =
   "flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1 disabled:cursor-default";
 
-function HeaderButton({ label, title, pressed, className, onClick, children }: { label: string; title?: string; pressed?: boolean; className?: string; onClick: () => void; children: React.ReactNode }) {
+/** A 44 px round header button; `active` tints it (the speaker while it reads: its label says what a tap does). */
+function HeaderButton({ label, title, active, className, onClick, children }: { label: string; title?: string; active?: boolean; className?: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
       aria-label={label}
       title={title ?? label}
-      aria-pressed={pressed}
       onClick={onClick}
       className={cn(
-        "flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 aria-pressed:text-blue-700",
+        "flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50",
+        active ? "text-blue-700" : "text-slate-500",
         className,
       )}
     >

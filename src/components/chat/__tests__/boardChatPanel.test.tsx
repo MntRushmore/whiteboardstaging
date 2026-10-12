@@ -20,6 +20,7 @@ vi.mock("../useBoardChat", () => ({
 import { BoardChatPanel } from "../BoardChatPanel";
 import { CHAT_COPY, SUGGESTIONS, WEAK_SPOTS_COPY, type ChatMessage } from "../chatView";
 import type { LiveController } from "@/lib/live/contracts";
+import { ASK_VOICE_COPY } from "../voice/copy";
 
 const render = (props: { tall?: boolean; onTallChange?: (t: boolean) => void } = {}) =>
   renderToStaticMarkup(<BoardChatPanel boardId="b1" controller={{} as LiveController} onClose={() => {}} {...props} />).replace(/&#x27;/g, "'");
@@ -113,8 +114,11 @@ describe("BoardChatPanel", () => {
     for (const b of buttons) expect(b).toMatch(/\b(size-11|min-h-11|h-11)\b/);
   });
 
-  it("the speaker toggle and, on a bottom sheet, grow and shrink", () => {
-    expect(render()).toContain(`aria-label="${CHAT_COPY.speakerOff}"`);
+  it("the speaker toggle (named for what a tap does: off until the setting is read) and, on a bottom sheet, grow and shrink", () => {
+    expect(CHAT_COPY.speakerOn).toBe(ASK_VOICE_COPY.speakerOn);
+    expect(CHAT_COPY.speakerOff).toBe(ASK_VOICE_COPY.speakerOff);
+    expect(render()).toContain(`aria-label="${ASK_VOICE_COPY.speakerOn}"`);
+    expect(render()).not.toContain(`aria-label="${ASK_VOICE_COPY.speakerOff}"`);
     expect(render()).not.toContain(CHAT_COPY.grow);
     expect(render({ tall: false, onTallChange: () => {} })).toContain(`aria-label="${CHAT_COPY.grow}"`);
     expect(render({ tall: true, onTallChange: () => {} })).toContain(`aria-label="${CHAT_COPY.shrink}"`);

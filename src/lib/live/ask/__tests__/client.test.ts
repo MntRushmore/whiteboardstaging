@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api-client";
-import { chatErrorFor } from "@/components/chat/chatView";
+import { CHAT_COPY, chatErrorFor } from "@/components/chat/chatView";
 import { ASK_PATH, type AskRequest } from "../contracts";
 import { ASK_IDLE_TIMEOUT_MS, AskStreamError, AskTimeoutError, streamAsk, type AskStreamHandlers } from "../client";
 
@@ -111,10 +111,17 @@ describe("streamAsk", () => {
     expect(chatErrorFor(err)).toMatchObject({ kind: "other", retry: true });
   });
 
-  it("an error event saying the ink ran out mid-way shows as out of ink", async () => {
-    const body = [frame("error", { code: "credits_exhausted", message: "x", status: 402 })];
+  it("the tutor's model running out mid-way (credits_exhausted) is a short break to retry, never the kid's ink", async () => {
+    // the route's own words for it: the provider's account, 503 (ink is taken before the stream and given back)
+    const body = [frame("delta", { text: "Let's" }), frame("error", { code: "credits_exhausted", message: "The tutor is unavailable right now.", status: 503 })];
     const err = await streamAsk(REQ, {}, { fetchImpl: async () => sse(body) }).catch((e: unknown) => e);
-    expect(chatErrorFor(err).kind).toBe("ink");
+    expect(chatErrorFor(err)).toEqual({ kind: "other", message: CHAT_COPY.errors.resting, retry: true });
+  });
+
+  it("out of ink before the stream is the 402 JSON answer: the ink panel, no Retry", async () => {
+    const res = new Response(JSON.stringify({ error: "ink_empty", message: "Out of ink" }), { status: 402, headers: { "Content-Type": "application/json" } });
+    const err = await streamAsk(REQ, {}, { fetchImpl: async () => res }).catch((e: unknown) => e);
+    expect(chatErrorFor(err)).toMatchObject({ kind: "ink", retry: false });
   });
 
   it("a stream that closes before done is cut off, not a success", async () => {

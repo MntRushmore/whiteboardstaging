@@ -15,6 +15,7 @@ import {
   isAbort,
   messagesFromHistory,
   problemFor,
+  retryOf,
   runNotes,
   shownReply,
   WEAK_SPOTS_COPY,
@@ -165,9 +166,9 @@ function loadPractice(): Promise<PracticeSource> {
 const randomSeed = () => Math.floor(Math.random() * 0x7fffffff);
 
 /**
- * The saved chat of a board, or null for none. Until the memory part's route is merged it answers
- * 404 (or the contract's 501): that is "no history", quietly. `retry` says whether a later open may
- * try again (a dropped connection, a 5xx) rather than never on this board this session.
+ * The saved chat of a board (`GET /api/live/ask/history`), or null for none. A board that is not
+ * the student's (404) has none, quietly. `retry` says whether a later open may try again (a dropped
+ * connection, the route's 502, being rate limited) rather than never on this board this session.
  */
 export async function fetchAskHistory(boardId: string, signal: AbortSignal, fetchImpl: typeof authedFetch = authedFetch): Promise<{ history: AskHistoryResponse | null; retry: boolean }> {
   let res: Response;
@@ -177,8 +178,7 @@ export async function fetchAskHistory(boardId: string, signal: AbortSignal, fetc
     if (isAbort(err)) throw err;
     return { history: null, retry: true };
   }
-  // 404 / 501: no saved chat (yet); a 5xx may be better on the next open; any other 4xx will not
-  if (!res.ok) return { history: null, retry: res.status >= 500 && res.status !== 501 };
+  if (!res.ok) return { history: null, retry: res.status >= 500 || res.status === 429 };
   const parsed = AskHistoryResponseSchema.safeParse(await res.json().catch(() => null));
   return { history: parsed.success ? parsed.data : null, retry: false };
 }
@@ -206,6 +206,158 @@ export interface BoardChat {
   practiceWeakSpots: () => Promise<void>;
   /** the saved chat's hello (null: none); `loading` while the saved chat is being read */
   hello: { loading: boolean; hello: AskHello | null };
+}
+
+/** What one ask needs besides its words: the board, read-aloud as it is now, and (tests) the stream. */
+export interface AskDeps {
+  controller: LiveController;
+  /** read-aloud as it is at each word (null once the panel is closed: a closed panel speaks no more) */
+  speech: () => AskSpeechSink | null;
+  /** tests: the stream (default `streamAsk`) */
+  stream?: typeof streamAsk;
+}
+
+/** The send's own options: a retry's place in the chat and its user message's id (saved once). */
+export type AskSendOptions = SendOptions & { prior?: ChatMessage[]; clientId?: string };
+
+/**
+ * One ask on a board, start to end (the panel's send; exported for the tests): the kid's words and a
+ * thinking tutor go in the store, read-aloud starts a new reply, the screen (and its picture, when
+ * there is work on it and it comes in time) goes with the chat so far, the words paint as they
+ * stream (`reply` replaces them), the checked board actions are written in the tutor's hand, and a
+ * failure is one calm line with Try again (reported as `live.chat`). One at a time per board.
+ */
+export async function sendAsk(boardId: string, text: string, opts: AskSendOptions, deps: AskDeps): Promise<void> {
+  const message = text.trim();
+  if (!message || busyBoards.has(boardId)) return;
+  setBusy(boardId, true);
+  const ctrl = new AbortController();
+  inflight.set(boardId, ctrl);
+  const before = opts.prior ?? histories.get(boardId) ?? EMPTY;
+  const tutorId = nextId();
+  const clientId = opts.clientId ?? nextId();
+  const voice = opts.voice === true;
+  setHistory(boardId, [...before, { id: nextId(), role: "user", text: message, clientId, ...(voice ? { voice } : {}) }, { id: tutorId, role: "tutor", text: "", state: "thinking" }]);
+  // a new reply: whatever is still being read aloud stops
+  deps.speech()?.start(tutorId);
+
+  // the reply so far, painted once a frame
+  let written = "";
+  let finished = false;
+  /** the reply is final: read-aloud says what it has not said yet (once) */
+  const finishSpeech = (final: string) => {
+    if (finished || !final) return;
+    finished = true;
+    deps.speech()?.finish(tutorId, final);
+  };
+  // the saved tutor turn's id (`done`; none when saving failed: the chat goes on, unsaved)
+  let turnId: string | undefined;
+  const painter = frameBatcher(() => patch(boardId, tutorId, (m) => ({ text: shownReply(written), state: m.state === "writing" ? "writing" : "streaming" })));
+  // the board's writing, started on `actions` (a holder: the stream's handlers set it)
+  const board: { run: Promise<ChatRunReport> | null } = { run: null };
+  try {
+    const { controller } = deps;
+    if (!controller.chatScreen || !controller.runChatActions) throw new BoardNotReadyError();
+    const history = historyFor(before);
+    // the problem typed earlier, when the turns sent no longer hold it ("do the actual problem")
+    const problem = problemFor(before, history);
+    // what the tutor knows about this student (their record), once the board has loaded it
+    const learner = learningBus.learner();
+    const screen = controller.chatScreen();
+    // a picture of the screen for what the read maths cannot say (drawings, a photo, a PDF page)
+    const image = screen.empty ? null : await settleWithin(controller.chatImage?.(), ASK_IMAGE_WAIT_MS);
+    if (ctrl.signal.aborted) throw new DOMException("aborted", "AbortError");
+    const picture = image && AskImageSchema.safeParse(image).success ? image : null;
+    const req: AskRequest = {
+      boardId,
+      message,
+      history,
+      screen: picture ? { ...screen, image: picture } : screen,
+      ...(problem ? { problem } : {}),
+      ...(learner ? { learner } : {}),
+      ...(voice ? { voice } : {}),
+      clientId,
+    };
+    const runActions = controller.runChatActions;
+    await (deps.stream ?? streamAsk)(
+      req,
+      {
+        onDelta(delta) {
+          written += delta;
+          // the whole reply so far (never the board block): sentences are read as they complete
+          deps.speech()?.feed(tutorId, shownReply(written));
+          painter.schedule();
+        },
+        onReply(final) {
+          // the reply as the route finally shows it (cleaned, capped): it replaces what streamed
+          written = final;
+          painter.flush();
+          patch(boardId, tutorId, (m) => ({ text: shownReply(final), state: m.state === "writing" ? "writing" : "streaming" }));
+          finishSpeech(shownReply(final).trim());
+        },
+        onActions(ev) {
+          painter.flush();
+          const writes = ev.actions.length > 0;
+          patch(boardId, tutorId, () => ({ text: shownReply(written), notes: ev.notes, ...(writes ? { state: "writing" as const } : {}) }));
+          // written as soon as the engine has passed them: the stream's end is not waited for
+          if (writes) board.run = runActions(ev.actions);
+        },
+        onDone(ev) {
+          turnId = ev.turnId;
+        },
+      },
+      { signal: ctrl.signal },
+    );
+    painter.flush();
+    const shown = shownReply(written).trim();
+    finishSpeech(shown);
+    const saved = turnId ? { turnId } : {};
+    if (board.run) {
+      // the words now; "Writing on your board…" under them until the hand is done
+      patch(boardId, tutorId, () => ({ text: shown, ...saved }));
+      const report = await board.run;
+      patch(boardId, tutorId, (m) => ({ notes: [...new Set([...(m.notes ?? []), ...runNotes(report)])], state: "done", ...(shown ? {} : { text: CHAT_COPY.done }) }));
+      for (const note of chatNoteReports(report, boardId)) reportUserError(note);
+    } else {
+      patch(boardId, tutorId, () => ({ text: shown || CHAT_COPY.empty, state: "done", ...saved }));
+    }
+  } catch (err) {
+    painter.flush();
+    if (isAbort(err)) {
+      // Stop: what came stays, and it is part of the chat from here on
+      deps.speech()?.stop();
+      patch(boardId, tutorId, () => ({ state: "done", stopped: true, text: shownReply(written).trim() || CHAT_COPY.stopped }));
+      return;
+    }
+    deps.speech()?.stop();
+    const error = err instanceof BoardNotReadyError ? { kind: "other" as const, message: CHAT_COPY.errors.board, retry: true } : chatErrorFor(err);
+    patch(boardId, tutorId, () => ({ state: "error", error, text: error.message, retryText: message }));
+    reportUserError(chatFailureReport(error, err, boardId));
+  } finally {
+    if (inflight.get(boardId) === ctrl) inflight.delete(boardId);
+    setBusy(boardId, false);
+  }
+}
+
+/** Stop: ends the board's ask in flight (what came stays). */
+export function stopAsk(boardId: string): void {
+  inflight.get(boardId)?.abort();
+}
+
+/** This board's messages, outside React (tests). */
+export function boardChatMessages(boardId: string): ChatMessage[] {
+  return histories.get(boardId) ?? EMPTY;
+}
+
+/** Forget every board's chat in this tab (tests). */
+export function resetBoardChats(): void {
+  for (const c of inflight.values()) c.abort();
+  histories.clear();
+  inflight.clear();
+  busyBoards.clear();
+  hellos.clear();
+  historyRead.clear();
+  notify();
 }
 
 /**
@@ -288,122 +440,11 @@ export function useBoardChat(boardId: string, controller: LiveController, speech
   );
 
   const send = useCallback(
-    async (text: string, opts: SendOptions & { prior?: ChatMessage[]; clientId?: string } = {}) => {
-      const message = text.trim();
-      if (!message || busyBoards.has(boardId)) return;
-      setBusy(boardId, true);
-      const ctrl = new AbortController();
-      inflight.set(boardId, ctrl);
-      const before = opts.prior ?? histories.get(boardId) ?? EMPTY;
-      const tutorId = nextId();
-      const clientId = opts.clientId ?? nextId();
-      const voice = opts.voice === true;
-      setHistory(boardId, [...before, { id: nextId(), role: "user", text: message, clientId, ...(voice ? { voice } : {}) }, { id: tutorId, role: "tutor", text: "", state: "thinking" }]);
-
-      // the reply so far, painted once a frame
-      let written = "";
-      let started = false;
-      let finished = false;
-      const speak = {
-        start() {
-          if (started) return;
-          started = true;
-          speechRef.current?.start(tutorId);
-        },
-        finish(final: string) {
-          if (finished) return;
-          finished = true;
-          speak.start();
-          speechRef.current?.finish(tutorId, final);
-        },
-      };
-      const painter = frameBatcher(() => patch(boardId, tutorId, (m) => ({ text: shownReply(written), state: m.state === "writing" ? "writing" : "streaming" })));
-      // the board's writing, started on `actions` (a holder: the stream's handlers set it)
-      const board: { run: Promise<ChatRunReport> | null } = { run: null };
-      try {
-        if (!controller.chatScreen || !controller.runChatActions) throw new BoardNotReadyError();
-        const history = historyFor(before);
-        // the problem typed earlier, when the turns sent no longer hold it ("do the actual problem")
-        const problem = problemFor(before, history);
-        // what the tutor knows about this student (their record), once the board has loaded it
-        const learner = learningBus.learner();
-        const screen = controller.chatScreen();
-        // a picture of the screen for what the read maths cannot say (drawings, a photo, a PDF page)
-        const image = screen.empty ? null : await settleWithin(controller.chatImage?.(), ASK_IMAGE_WAIT_MS);
-        if (ctrl.signal.aborted) throw new DOMException("aborted", "AbortError");
-        const picture = image && AskImageSchema.safeParse(image).success ? image : null;
-        const req: AskRequest = {
-          boardId,
-          message,
-          history,
-          screen: picture ? { ...screen, image: picture } : screen,
-          ...(problem ? { problem } : {}),
-          ...(learner ? { learner } : {}),
-          ...(voice ? { voice } : {}),
-          clientId,
-        };
-        const runActions = controller.runChatActions;
-        await streamAsk(
-          req,
-          {
-            onDelta(delta) {
-              speak.start();
-              written += delta;
-              speechRef.current?.feed(tutorId, delta);
-              painter.schedule();
-            },
-            onReply(final) {
-              // the reply as the route finally shows it (cleaned, capped): it replaces what streamed
-              written = final;
-              painter.flush();
-              patch(boardId, tutorId, (m) => ({ text: shownReply(final), state: m.state === "writing" ? "writing" : "streaming" }));
-              speak.finish(shownReply(final));
-            },
-            onActions(ev) {
-              painter.flush();
-              const writes = ev.actions.length > 0;
-              patch(boardId, tutorId, () => ({ text: shownReply(written), notes: ev.notes, ...(writes ? { state: "writing" as const } : {}) }));
-              // written as soon as the engine has passed them: the stream's end is not waited for
-              if (writes) board.run = runActions(ev.actions);
-            },
-          },
-          { signal: ctrl.signal },
-        );
-        painter.flush();
-        const shown = shownReply(written).trim();
-        if (shown) speak.finish(shown);
-        if (board.run) {
-          // the words now; "Writing on your board…" under them until the hand is done
-          patch(boardId, tutorId, () => ({ text: shown }));
-          const report = await board.run;
-          patch(boardId, tutorId, (m) => ({ notes: [...new Set([...(m.notes ?? []), ...runNotes(report)])], state: "done", ...(shown ? {} : { text: CHAT_COPY.done }) }));
-          for (const note of chatNoteReports(report, boardId)) reportUserError(note);
-        } else {
-          patch(boardId, tutorId, () => ({ text: shown || CHAT_COPY.empty, state: "done" }));
-        }
-      } catch (err) {
-        painter.flush();
-        if (isAbort(err)) {
-          // Stop: what came stays, and it is part of the chat from here on
-          speechRef.current?.stop();
-          patch(boardId, tutorId, () => ({ state: "done", stopped: true, text: shownReply(written).trim() || CHAT_COPY.stopped }));
-          return;
-        }
-        speechRef.current?.stop();
-        const error = err instanceof BoardNotReadyError ? { kind: "other" as const, message: CHAT_COPY.errors.board, retry: true } : chatErrorFor(err);
-        patch(boardId, tutorId, () => ({ state: "error", error, text: error.message, retryText: message }));
-        reportUserError(chatFailureReport(error, err, boardId));
-      } finally {
-        if (inflight.get(boardId) === ctrl) inflight.delete(boardId);
-        setBusy(boardId, false);
-      }
-    },
+    (text: string, opts: AskSendOptions = {}) => sendAsk(boardId, text, opts, { controller, speech: () => speechRef.current }),
     [boardId, controller],
   );
 
-  const stop = useCallback(() => {
-    inflight.get(boardId)?.abort();
-  }, [boardId]);
+  const stop = useCallback(() => stopAsk(boardId), [boardId]);
 
   /**
    * "Practice my weak spots": the problems are made here (`practice.ts`) and written by the chat's
@@ -448,17 +489,12 @@ export function useBoardChat(boardId: string, controller: LiveController, speech
 
   const retry = useCallback(
     (messageId: string) => {
-      const cur = histories.get(boardId) ?? EMPTY;
-      const i = cur.findIndex((m) => m.id === messageId);
-      const failed = cur[i];
-      if (!failed?.retryText) return;
       // the failed ask and its error go; the same words are sent again, with the same id (saved once)
-      const asked = i > 0 && cur[i - 1].role === "user" ? cur[i - 1] : null;
-      const start = asked ? i - 1 : i;
-      const rest = [...cur.slice(0, start), ...cur.slice(i + 1)];
+      const again = retryOf(histories.get(boardId) ?? EMPTY, messageId);
+      if (!again) return;
       // the chip ran on the device, and so does its retry (typed, the same words go to the model)
-      if (failed.local === "weak_spots") void practiceWeakSpots(rest);
-      else void send(failed.retryText, { prior: rest, voice: asked?.voice, clientId: asked?.clientId });
+      if (again.local) void practiceWeakSpots(again.prior);
+      else void send(again.text, { prior: again.prior, voice: again.voice, clientId: again.clientId });
     },
     [boardId, send, practiceWeakSpots],
   );

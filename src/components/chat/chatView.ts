@@ -12,6 +12,7 @@ import type { ChatRunReport } from "@/lib/live/chat/contracts";
 import type { PracticeProblem, SkillId } from "@/lib/learning/contracts";
 import type { LearnerHint } from "@/lib/learning/hint";
 import { CHAT_BUTTON_COPY } from "./askButton";
+import { ASK_VOICE_COPY } from "./voice/copy";
 
 /** Ink per request: ROUTE_COSTS["live/chat"] on the server (pinned equal in the tests). */
 export const CHAT_INK = 3;
@@ -35,8 +36,9 @@ export const CHAT_COPY = {
   writing: "Writing on your board…",
   retry: "Try again",
   cost: `Each question uses ${CHAT_INK} ink.`,
-  speakerOn: "Reading answers out loud. Tap to stop.",
-  speakerOff: "Read answers out loud",
+  /** the header's speaker toggle, named for what a tap does (the voice part's words) */
+  speakerOn: ASK_VOICE_COPY.speakerOn,
+  speakerOff: ASK_VOICE_COPY.speakerOff,
   replay: "Read it again",
   grow: "Make the chat bigger",
   shrink: "Make the chat smaller",
@@ -52,6 +54,8 @@ export const CHAT_COPY = {
     unauthorized: "Please sign in again.",
     network: "Couldn't reach your tutor. Check the internet and try again.",
     timeout: "Your tutor took too long. Try again.",
+    /** the tutor's model is out for a while (the provider's account, never the student's ink) */
+    resting: "Your tutor is taking a short break. Try again in a few minutes.",
     other: "Something went wrong. Try again.",
     board: "The board isn't ready yet. Try again in a moment.",
   },
@@ -95,8 +99,9 @@ export const MAX_CHIPS = 4;
 /**
  * The hello a board with no chat opens on: the tutor's own (`GET /api/live/ask/history`, "Welcome
  * back, Maya!") with its chips, else a friendly default with the grade's suggestions. When the
- * screen has work on it, "3 more like these" comes first (unless the tutor's chips already offer
- * more like it).
+ * screen has work on it, "3 more like these" comes first and takes the place of the tutor's "3 more
+ * like last time" (the work in front of the kid beats last time's, and the guided board's last
+ * coach mark taps it by its words).
  */
 export function helloFor(opts: {
   hello: AskHello | null | undefined;
@@ -107,8 +112,9 @@ export function helloFor(opts: {
 }): { greeting: string; chips: string[] } {
   const own = opts.hello && opts.hello.greeting.trim() ? opts.hello : null;
   const base = own && own.chips.length > 0 ? own.chips : SUGGESTIONS[gradeBand(opts.grade)];
-  const more = opts.screenHasWork && !base.some((c) => /more like/i.test(c)) ? [MORE_LIKE_THESE_CHIP] : [];
-  const chips = [...new Set([...more, ...base].map((c) => c.trim()).filter((c) => c && !(opts.weakSpot && c === WEAK_SPOTS_COPY.chip)))].slice(0, MAX_CHIPS);
+  const rest = opts.screenHasWork ? base.filter((c) => !/\bmore like\b/i.test(c)) : base;
+  const more = opts.screenHasWork ? [MORE_LIKE_THESE_CHIP] : [];
+  const chips = [...new Set([...more, ...rest].map((c) => c.trim()).filter((c) => c && !(opts.weakSpot && c === WEAK_SPOTS_COPY.chip)))].slice(0, MAX_CHIPS);
   return { greeting: own ? own.greeting : CHAT_COPY.hello, chips };
 }
 
@@ -148,6 +154,8 @@ export interface ChatMessage {
   stopped?: boolean;
   /** loaded from the saved chat (`GET /api/live/ask/history`), not this session's */
   saved?: boolean;
+  /** a finished tutor message: its saved turn's id (`done.turnId`); absent when it was not saved */
+  turnId?: string;
 }
 
 /** A failure of the ask as the panel shows it. */
@@ -158,10 +166,12 @@ export function chatErrorFor(err: unknown): ChatError {
     if (err.status === 401 || err.code === "unauthorized") return { kind: "unauthorized", message: CHAT_COPY.errors.unauthorized, retry: false };
     return { kind: "other", message: CHAT_COPY.errors.other, retry: true };
   }
-  // an `error` event once the answer was streaming: the route's code says which
+  // An `error` event once the answer was streaming: the route's code says which. Never ink: the
+  // ink was taken before the stream and is given back on a failure, so `credits_exhausted` here is
+  // the tutor's model being out (the provider's account), not the student.
   if (err instanceof AskStreamError) {
     const { code, status } = err.event;
-    if (isOutOfInk({ status, code })) return { kind: "ink", message: CHAT_COPY.errors.ink, retry: false };
+    if (code === "credits_exhausted") return { kind: "other", message: CHAT_COPY.errors.resting, retry: true };
     if (status === 429 || code === "rate_limited") return rateLimited(undefined);
     if (code === "timeout") return { kind: "timeout", message: CHAT_COPY.errors.timeout, retry: true };
     if (status === 401 || code === "unauthorized") return { kind: "unauthorized", message: CHAT_COPY.errors.unauthorized, retry: false };
@@ -191,13 +201,16 @@ export function historyFor(messages: readonly ChatMessage[]): AskTurn[] {
   const turns: AskTurn[] = [];
   for (const m of messages) {
     if (m.role === "tutor" && m.state !== "done" && m.state !== "writing") continue;
+    // stopped before a word: nothing was said
+    if (m.role === "tutor" && m.stopped && m.text === CHAT_COPY.stopped) continue;
     const text = m.text.trim().slice(0, ASK_LIMITS.turnText).trim();
     if (text) turns.push({ role: m.role, text });
   }
-  // a user turn whose reply failed is not part of the conversation
+  // a user turn with no reply (it failed, or was stopped before a word) is not part of the
+  // conversation: the next ask is the student's turn
   const out: AskTurn[] = [];
   for (let i = 0; i < turns.length; i++) {
-    if (turns[i].role === "user" && turns[i + 1] && turns[i + 1].role === "user") continue;
+    if (turns[i].role === "user" && turns[i + 1]?.role !== "tutor") continue;
     out.push(turns[i]);
   }
   return out.slice(-ASK_LIMITS.turns);
@@ -246,6 +259,29 @@ export function shownReply(text: string): string {
 export function runNotes(report: ChatRunReport | null): string[] {
   if (!report) return [];
   return [...new Set(report.outcomes.map((o) => o.note).filter((n): n is string => Boolean(n)))];
+}
+
+/**
+ * What Try again sends: the failed ask's words, the chat without it and its error, and its user
+ * message's id (`clientId`: the route saves the turn once) and whether it was said. Null for a
+ * message that cannot be tried again. `local`: the ask ran on the device (the weak-spots chip).
+ */
+export function retryOf(
+  messages: readonly ChatMessage[],
+  messageId: string,
+): { text: string; prior: ChatMessage[]; local: boolean; voice?: boolean; clientId?: string } | null {
+  const i = messages.findIndex((m) => m.id === messageId);
+  const failed = messages[i];
+  if (!failed?.retryText) return null;
+  const asked = i > 0 && messages[i - 1].role === "user" ? messages[i - 1] : null;
+  const start = asked ? i - 1 : i;
+  return {
+    text: failed.retryText,
+    prior: [...messages.slice(0, start), ...messages.slice(i + 1)],
+    local: failed.local === "weak_spots",
+    ...(asked?.voice ? { voice: true } : {}),
+    ...(asked?.clientId ? { clientId: asked.clientId } : {}),
+  };
 }
 
 /** Enter sends; Shift+Enter (or composing an IME character) makes a new line. */
