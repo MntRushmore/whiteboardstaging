@@ -14,6 +14,9 @@ export const LOGIN_COPY = {
     "This email hasn't been confirmed yet. Open the confirmation link in your inbox, then sign in.",
   network: "Can't reach the sign-in service. Check your connection and try again.",
   rateLimited: "Too many attempts for now. Wait a minute, then try again.",
+  // Supabase's own wait between two emails to one address (isResendWindow): the last link is on
+  // its way. No number here: the button counts the real seconds down (resendLabel).
+  resendWait: "A link can be sent once a minute. Check your inbox for the last one, or try again shortly.",
   alreadyRegistered: "An account with this email already exists. Sign in instead.",
   weakPassword: "Use a password with at least 6 characters.",
   breachedPassword:
@@ -133,6 +136,32 @@ export function classifyLoginError(err: unknown): LoginErrorKind {
 }
 
 /**
+ * Supabase's wait between two emails to one address (GoTrue's SMTP max_frequency, 60 s on the
+ * cloud project): a 429 saying "For security purposes, you can only request this after 42
+ * seconds." (older servers: "... once every 60 seconds"). Pressing "Send reset link" again inside
+ * it is the limit working, not a failure: the first link is on its way. Not the project-wide email
+ * cap ("Email rate limit exceeded") nor the per-IP request limit ("Request rate limit reached"):
+ * while one of those holds nobody gets a link, so they stay worth a look on the admin page.
+ */
+const RESEND_WINDOW = /for security purposes|only request this/i;
+const RESEND_SECONDS = /after (\d+) seconds?/i;
+
+export function isResendWindow(err: unknown): boolean {
+  return classifyLoginError(err) === "rate-limited" && RESEND_WINDOW.test(messageOf(err));
+}
+
+/**
+ * Seconds left in that window as the server counts them (at least 1, at most an hour), or null
+ * when it does not say, or the error is some other limit.
+ */
+export function resendWaitSeconds(err: unknown): number | null {
+  if (!isResendWindow(err)) return null;
+  const seconds = RESEND_SECONDS.exec(messageOf(err));
+  if (!seconds) return null;
+  return Math.min(3600, Math.max(1, Number(seconds[1])));
+}
+
+/**
  * The server states its own minimum ("Password should be at least 8
  * characters."), and the cloud and local projects differ (8 vs 6), so the
  * number is read from the message rather than assumed.
@@ -161,7 +190,7 @@ export function loginErrorMessage(err: unknown): string {
     case "network":
       return LOGIN_COPY.network;
     case "rate-limited":
-      return LOGIN_COPY.rateLimited;
+      return isResendWindow(err) ? LOGIN_COPY.resendWait : LOGIN_COPY.rateLimited;
     case "already-registered":
       return LOGIN_COPY.alreadyRegistered;
     case "weak-password":
@@ -221,7 +250,10 @@ const LOGIN_FAILURES: ReadonlySet<LoginErrorKind> = new Set<LoginErrorKind>([
 /**
  * A failed sign-in, sign-up, reset email or password update as the admin page hears of it
  * (`live.auth`, code `<action>_<kind>`), or null when it was the student's own mistake. Our words
- * only (never the server's, never the address); a rate limit is a warning.
+ * only (never the server's, never the address). A rate limit is a warning, except Supabase's wait
+ * between two emails to one address (isResendWindow): a parent pressing "Send reset link" twice in
+ * a minute is expected, so `info`: kept for the record, never an issue (the admin page's issues
+ * read error and warn only).
  */
 export function loginFailureReport(err: unknown, action: string): UserErrorInput | null {
   const kind = classifyLoginError(err);
@@ -230,6 +262,6 @@ export function loginFailureReport(err: unknown, action: string): UserErrorInput
     kind: "live.auth",
     code: `${action}_${kind.replace(/-/g, "_")}`,
     message: kind === "other" || kind === "clock-skew" ? LOGIN_COPY.fallback : loginErrorMessage(err),
-    ...(kind === "rate-limited" ? { level: "warn" as const } : {}),
+    ...(kind === "rate-limited" ? { level: isResendWindow(err) ? ("info" as const) : ("warn" as const) } : {}),
   };
 }

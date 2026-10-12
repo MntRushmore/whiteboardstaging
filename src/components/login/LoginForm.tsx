@@ -14,17 +14,28 @@ import { Input } from "@/registry/components/input/input";
 import { PasswordField } from "@/registry/components/password-field/password-field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/registry/components/tabs/tabs";
 import { LANDING_PATH, wantsSignUp } from "@/lib/landing/links";
-import { loginErrorField, loginErrorMessage, loginFailureReport } from "@/lib/loginErrorMessage";
+import {
+  LOGIN_COPY,
+  classifyLoginError,
+  loginErrorField,
+  loginErrorMessage,
+  loginFailureReport,
+  resendWaitSeconds,
+} from "@/lib/loginErrorMessage";
 import { reportUserError } from "@/lib/reportAppError";
 import {
   AUTH_FORM_METHOD,
   FORM_COPY,
   afterSignInPath,
   hasFieldErrors,
+  resendLabel,
+  resendSecondsLeft,
+  resendWaitFrom,
   signUpRequest,
   validateLoginForm,
   type FieldErrors,
   type LoginMode,
+  type ResendWait,
 } from "@/lib/loginForm";
 import styles from "./auth.module.css";
 
@@ -133,6 +144,12 @@ export function LoginForm() {
   // Inline error about the attempt as a whole; cleared when the user edits or switches tabs.
   const [formError, setFormError] = useState<string | null>(null);
   const [sent, setSent] = useState<Sent | null>(null);
+  // "Send reset link" rests for a minute after a link went out (RESET_RESEND_MS), counting down on
+  // the button: Supabase refuses a second email to the same address inside it. Kept across the
+  // "Check your email" screen and the tabs, so coming straight back to "Forgot your password?"
+  // shows the wait instead of a 429. `now` ticks only while a wait is running.
+  const [resendWait, setResendWait] = useState<ResendWait | null>(null);
+  const [now, setNow] = useState(0);
 
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -161,9 +178,32 @@ export function LoginForm() {
     if (el instanceof HTMLInputElement && target === "password") el.select();
   });
 
+  useEffect(() => {
+    if (!resendWait) return;
+    const id = window.setInterval(() => {
+      const t = Date.now();
+      setNow(t);
+      if (t >= resendWait.until) {
+        window.clearInterval(id);
+        // the wait's own sentence ends with it; any other error stays until the user edits
+        setFormError((e) => (e === LOGIN_COPY.resendWait ? null : e));
+      }
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [resendWait]);
+
+  /** Start the wait for `address`: the server's own seconds when a 429 gave them, else a minute. */
+  function startResendWait(address: string, seconds?: number | null) {
+    const t = Date.now();
+    setNow(t);
+    setResendWait(resendWaitFrom(address, t, seconds));
+  }
+
   // A session exists (just signed in, or already signed in): the effect above is redirecting.
   const redirecting = Boolean(user) && !submitting;
   const busy = submitting || redirecting;
+  // Seconds before another reset link to the typed address; 0 on the other tabs and other addresses.
+  const resendLeft = mode === "forgot" ? resendSecondsLeft(resendWait, email, now) : 0;
 
   /** `focus` null leaves focus where it is (arrow keys moving between the tabs). */
   function switchMode(next: LoginMode, focus: FocusTarget | null) {
@@ -177,7 +217,7 @@ export function LoginForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || resendLeft > 0) return;
     const address = email.trim();
     const errors = validateLoginForm(mode, address, password, agreed);
     setFormError(null);
@@ -215,6 +255,7 @@ export function LoginForm() {
         });
         if (error) throw error;
         setSent({ kind: "reset", email: address });
+        startResendWait(address);
         pendingFocus.current = "heading";
       }
     } catch (error) {
@@ -222,9 +263,15 @@ export function LoginForm() {
       const message = loginErrorMessage(error);
       const field = loginErrorField(error);
       // Our failures (the network, a rate limit, the sign-in service) go to the admin page — never
-      // the student's own mistakes (a wrong password, a weak one), never the address.
+      // the student's own mistakes (a wrong password, a weak one), never the address. Supabase's
+      // minute between two emails to one address goes as info (loginFailureReport).
       const failure = loginFailureReport(error, mode);
       if (failure) reportUserError(failure);
+      // A reset refused for a limit (a reload, another tab or device sent one): the button rests
+      // for the seconds the server named, or a minute.
+      if (mode === "forgot" && classifyLoginError(error) === "rate-limited") {
+        startResendWait(address, resendWaitSeconds(error));
+      }
       if (field === "form") setFormError(message);
       else setFieldErrors({ [field]: message });
       // Inline only: a toast repeating the same sentence read as noise, on phones especially.
@@ -327,8 +374,14 @@ export function LoginForm() {
 
       {formError && <Alert id="login-error" data-state="error" tone="danger" title={formError} />}
 
-      <Button type="submit" size="lg" className={styles.submit} loading={busy} disabled={!hydrated}>
-        {redirecting ? "Opening your boards…" : busy ? label.busy : label.idle}
+      <Button type="submit" size="lg" className={styles.submit} loading={busy} disabled={!hydrated || resendLeft > 0}>
+        {redirecting
+          ? "Opening your boards…"
+          : busy
+            ? label.busy
+            : resendLeft > 0
+              ? resendLabel(resendLeft)
+              : label.idle}
       </Button>
 
       {mode === "signin" && (

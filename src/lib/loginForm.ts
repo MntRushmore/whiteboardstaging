@@ -85,6 +85,42 @@ export function signUpRequest(email: string, password: string) {
 }
 
 /**
+ * How long "Send reset link" rests after a link went out. Supabase sends one email per address a
+ * minute (GoTrue's SMTP max_frequency, 60 s on the cloud project) and answers a second inside that
+ * with a 429, which read as "Too many attempts" and reached the admin page as live.auth
+ * forgot_rate_limited. Counting the minute down on the button makes the limit hard to hit; when a
+ * 429 does say how long is left (resendWaitSeconds), its number wins.
+ */
+export const RESET_RESEND_MS = 60_000;
+
+/** The address a reset link last went to (or was refused for) and when another may be asked for. */
+export type ResendWait = { email: string; until: number };
+
+/** Addresses compare as Supabase stores them: trimmed, lower case. */
+function addressKey(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/** The wait after a link to `email` went out at `now` (or was refused with `seconds` still to go). */
+export function resendWaitFrom(email: string, now: number, seconds?: number | null): ResendWait {
+  return { email: addressKey(email), until: now + (seconds && seconds > 0 ? seconds * 1000 : RESET_RESEND_MS) };
+}
+
+/**
+ * Whole seconds until a link to `email` may be asked for again: 0 once the wait is over, and 0 for
+ * any other address (the limit is per address, so a mistyped email fixed is never held back).
+ */
+export function resendSecondsLeft(wait: ResendWait | null, email: string, now: number): number {
+  if (!wait || wait.email !== addressKey(email)) return 0;
+  return Math.max(0, Math.ceil((wait.until - now) / 1000));
+}
+
+/** The resting button: the real seconds left, so the wait never looks like a broken button. */
+export function resendLabel(seconds: number): string {
+  return `Send again in ${seconds}s`;
+}
+
+/**
  * The pages a signed-out visit (or an expired session) comes back to after sign-in: a board, the
  * weekly report on a week (the Sunday email's "See the full report"), and a replay from it. Each is
  * a whole path on this site, anchored, so `next` can never send anyone to an absolute URL, `//host`,
