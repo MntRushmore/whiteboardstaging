@@ -85,6 +85,10 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
         return loop.runLectureActions(actions, opts);
       },
       saveLectureTranscript: (text) => loopRef.current?.saveLectureTranscript(text),
+      // Type it: writing a line is the kid working, not asking (no `asked`: Auto stays theirs)
+      writeTyped: (args) => loopRef.current?.writeTyped(args) ?? { ok: false, reason: "off" },
+      typedSpot: (opts) => loopRef.current?.typedSpot(opts) ?? null,
+      typedLines: () => loopRef.current?.typedLines() ?? [],
     };
   }, []);
 }

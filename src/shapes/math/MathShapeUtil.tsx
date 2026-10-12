@@ -29,6 +29,7 @@ import {
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { getLiveSettings } from "@/lib/live/liveSettings";
 import { liveStore } from "@/lib/live/liveStore";
+import { lineGroupsOf } from "@/lib/live/typedInk";
 import { badgeLabel, badgeTitle, dispatchBadgeTap, isBadgeStatus, noteLineFor } from "./badge";
 import { escapeHtml, renderLatex } from "./katex";
 import { latexToPlainText } from "@/lib/boards/boardTitle";
@@ -221,15 +222,31 @@ function MathShapeView({ shape }: { shape: MathShape }) {
   // could not write it after their `=` (the typeset fallback). A result the engine merely knows
   // (`\int_0^2 3x^2 dx` with no `=`) is not written unasked — Solve writes it by hand.
   const askedResult = asksResult(shape.props);
+  // A line the kid typed (Type it, docs/TYPE-MATH.md): its readback would only say back what they
+  // typed. It stays on the page (the line's status, a reload) and its ticks and rings are the tutor's
+  // ink beside it, but it never shows — unless it carries an answer they asked for, or the hand is off.
+  const typed = useValue(
+    "echo: typed",
+    () => {
+      if (source !== "echo") return false;
+      const groups = lineGroupsOf(anchors.flatMap((id) => editor.getShape(id as TLShapeId) ?? []));
+      return groups.length === 1 && Boolean(groups[0].latex) && groups[0].strokeIds.length === anchors.length;
+    },
+    [editor, source, anchors],
+  );
   const settings = getLiveSettings();
   const reveal =
-    source !== "echo" || isEditing || touched || askedResult || !settings.handwriting
+    source !== "echo" || isEditing || askedResult || !settings.handwriting
       ? "always"
-      : justRead && !settings.hideAiShapes
-        ? "read"
-        : writing
-          ? "off"
-          : "hover";
+      : typed
+        ? "off"
+        : touched
+          ? "always"
+          : justRead && !settings.hideAiShapes
+            ? "read"
+            : writing
+              ? "off"
+              : "hover";
 
   return (
     <HTMLContainer
