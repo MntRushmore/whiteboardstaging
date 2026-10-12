@@ -85,6 +85,30 @@ like a written one.
 `clientMetric("type.write" | "type.edit" | "type.refused" | "type.open", …)`, so /admin
 shows who types and how often a typed line is refused.
 
+## Status (2026-10-12)
+
+Built on `feat/type-math` from three branches (parser, writer, bar) and tested end to end on
+`next dev` against local Supabase. Screenshots are in `docs/qa-screenshots/type-math/e2e/`.
+
+- **Laptop:** the bar opens focused, with the tip shown once. `3x+5=20` → `3x=15` → `x=5` is
+  marked ✓ ✓. A wrong `2x=14` gets the ring; ↑ loads it as "Line 2"; `2x=6` → ✓. In Solve,
+  `1/2+3/4=` gets `5/4` in the tutor's hand. Undo takes a typed line off in one step. After a
+  reload every typed line is still typed.
+- **Recognizer:** zero recognize POSTs for typed lines, before or after the reload (the only
+  calls were the board's capabilities GET).
+- **Phone:** the bar starts closed; the toolbar's Type button opens it.
+- **Kid profile:** `36+47=` then `83` → ✓.
+- **Parser decisions** (fractions, `x` as times, mixed numbers, `:` as ÷, `?` as a blank) are
+  written up in the header of `src/lib/typeMath/parse.ts`.
+
+Known gaps, not blocking:
+- Pen ink written on a typed line's row stays its own line (a typed group is always a fixed
+  line).
+- A pasted copy of a typed line is read as plain ink.
+- "New problem" pressed while under one of the chat's problems can land inside that problem's
+  cell.
+- The on-screen-keyboard lift for the bar on a real phone is untested.
+
 ## Phone as a pen (next)
 
 A plan comes after Type it ships: docs/PHONE-PEN.md.
