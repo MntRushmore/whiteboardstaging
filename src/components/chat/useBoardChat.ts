@@ -13,6 +13,7 @@ import {
   CHAT_COPY,
   historyFor,
   isAbort,
+  mergeSavedChat,
   messagesFromHistory,
   problemFor,
   retryOf,
@@ -437,7 +438,8 @@ export function loadSavedChat(boardId: string, fetchImpl: typeof authedFetch = a
       if (retry) historyRead.delete(boardId);
       else historyRead.set(boardId, "done");
       const cur = histories.get(boardId) ?? EMPTY;
-      if (history && history.turns.length > 0 && !cur.some((m) => m.saved)) setHistory(boardId, [...messagesFromHistory(history.turns), ...cur]);
+      // before what was asked in this tab meanwhile, never an exchange twice (a retried read holds this tab's)
+      if (history && history.turns.length > 0 && !cur.some((m) => m.saved)) setHistory(boardId, mergeSavedChat(messagesFromHistory(history.turns), cur));
       hellos.set(boardId, history?.hello ?? null);
     })
     .catch(() => {

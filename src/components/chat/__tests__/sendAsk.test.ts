@@ -7,7 +7,7 @@ import { AskStreamError, type AskStreamHandlers, type AskStreamOptions, type str
 import type { AskRequest } from "@/lib/live/ask/contracts";
 import type { ChatAction, ChatRunReport, ChatScreen } from "@/lib/live/chat/contracts";
 import type { LiveController } from "@/lib/live/contracts";
-import { CHAT_COPY, messagesFromHistory, retryOf, type ChatMessage } from "../chatView";
+import { CHAT_COPY, mergeSavedChat, messagesFromHistory, retryOf, type ChatMessage } from "../chatView";
 import { ASK_HISTORY_WAIT_MS, ASK_IMAGE_WAIT_MS, boardChatMessages, fetchAskHistory, loadSavedChat, resetBoardChats, sendAsk, stopAsk, type AskSpeechSink } from "../useBoardChat";
 
 /**
@@ -385,6 +385,68 @@ describe("the saved chat and an ask typed as the panel opens", () => {
     await loading;
     expect(boardChatMessages(B).map((m) => m.role)).toEqual(["user", "tutor", "user", "tutor"]);
     expect(boardChatMessages(B)[0].saved).toBe(true);
+  });
+
+  it("a read retried after asks in this tab: the older saved turns go first, this tab's exchanges are never added twice, nor sent twice", async () => {
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+    // the first read fails (the route's 502): a later open tries again
+    await loadSavedChat(B, (async () => json({ error: "upstream_error" }, 502)) as unknown as Parameters<typeof loadSavedChat>[1]);
+    expect(boardChatMessages(B)).toEqual([]);
+
+    // meanwhile, two asks in this tab: one saved (`done.turnId`), one whose `done` never came (saved all the same)
+    await sendAsk(B, "what is 3/4 of 8?", {}, { controller: controller(), speech: () => null, stream: stream([(h) => h.onReply?.("It is 6."), (h) => h.onDone?.({ model: "m", ms: 1, turnId: "t3" })]) });
+    await sendAsk(B, "and of 12?", {}, { controller: controller(), speech: () => null, stream: stream([(h) => h.onReply?.("It is 9."), (h) => h.onDone?.({ model: "m", ms: 1 })]) });
+
+    // the retried read: the older chat, then this tab's two exchanges as the route saved them
+    const turns = [
+      ...SAVED.turns,
+      { id: "u3", role: "user", text: "what is 3/4 of 8?", notes: [], wrote: [], at: "z1" },
+      { id: "t3", role: "tutor", text: "It is 6.", notes: [], wrote: [], at: "z2" },
+      { id: "u4", role: "user", text: "and of 12?", notes: [], wrote: [], at: "z3" },
+      { id: "t4", role: "tutor", text: "It is 9.", notes: [], wrote: [], at: "z4" },
+    ];
+    await loadSavedChat(B, (async () => json({ turns, hello: null })) as unknown as Parameters<typeof loadSavedChat>[1]);
+    expect(boardChatMessages(B).map((m) => m.text)).toEqual(["How do I add 1/2 and 1/4?", "Make the bottoms match: 1/2 is 2/4, so 2/4 + 1/4 = 3/4.", "what is 3/4 of 8?", "It is 6.", "and of 12?", "It is 9."]);
+    expect(boardChatMessages(B).slice(0, 2).every((m) => m.saved)).toBe(true);
+
+    // the next ask carries each exchange once
+    const s = stream([(h) => h.onReply?.("It is 12."), (h) => h.onDone?.({ model: "m", ms: 1 })]);
+    await sendAsk(B, "and of 16?", {}, { controller: controller(), speech: () => null, stream: s });
+    expect(s.requests[0].history.map((t) => t.text)).toEqual(["How do I add 1/2 and 1/4?", "Make the bottoms match: 1/2 is 2/4, so 2/4 + 1/4 = 3/4.", "what is 3/4 of 8?", "It is 6.", "and of 12?", "It is 9."]);
+  });
+
+  it("mergeSavedChat: this tab's exchanges found by turn id or by their words; an older one with the same words stays", () => {
+    const saved = messagesFromHistory([
+      { id: "a", role: "user", text: "5 adding problems", notes: [], wrote: [], at: "x" },
+      { id: "b", role: "tutor", text: "Here are 5.", notes: [], wrote: [], at: "x" },
+      { id: "c", role: "user", text: "why?", notes: [], wrote: [], at: "x" },
+      { id: "d", role: "tutor", text: "Because.", notes: [], wrote: [], at: "x" },
+      { id: "e", role: "user", text: "5 adding problems", notes: [], wrote: [], at: "x" },
+      { id: "f", role: "tutor", text: "Here are 5.", notes: [], wrote: [], at: "x" },
+    ]);
+    // the same words asked yesterday and today: only today's (the newest) is this tab's
+    const today: ChatMessage[] = [
+      { id: "1", role: "user", text: "5 adding problems", clientId: "c1" },
+      { id: "2", role: "tutor", text: "Here are 5.", state: "done" },
+    ];
+    expect(mergeSavedChat(saved, today).map((m) => m.id)).toEqual(["saved_a", "saved_b", "saved_c", "saved_d", "1", "2"]);
+    // by turn id: everything from it on is this tab's
+    const byId: ChatMessage[] = [
+      { id: "1", role: "user", text: "why?", clientId: "c1" },
+      { id: "2", role: "tutor", text: "Because.", state: "done", turnId: "d" },
+      { id: "3", role: "user", text: "5 adding problems", clientId: "c2" },
+      { id: "4", role: "tutor", text: "Here are 5.", state: "done", turnId: "f" },
+    ];
+    expect(mergeSavedChat(saved, byId).map((m) => m.id)).toEqual(["saved_a", "saved_b", "1", "2", "3", "4"]);
+    // a failed or stopped ask in this tab was never saved: the whole saved chat goes first
+    const failed: ChatMessage[] = [
+      { id: "1", role: "user", text: "why?" },
+      { id: "2", role: "tutor", text: CHAT_COPY.errors.other, state: "error", retryText: "why?" },
+    ];
+    expect(mergeSavedChat(saved, failed)).toHaveLength(8);
+    // nothing in this tab, or the saved chat already in it
+    expect(mergeSavedChat(saved, [])).toEqual(saved);
+    expect(mergeSavedChat(saved, [...saved])).toEqual(saved);
   });
 
   it("read once a session: a second open does not read it again, nor add the turns twice", async () => {

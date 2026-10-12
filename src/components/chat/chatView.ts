@@ -248,6 +248,41 @@ export function messagesFromHistory(turns: readonly AskStoredTurn[]): ChatMessag
     .map((t) => (t.role === "user" ? { id: `saved_${t.id}`, role: "user" as const, text: t.text, saved: true } : { id: `saved_${t.id}`, role: "tutor" as const, text: t.text, notes: t.notes, state: "done" as const, saved: true }));
 }
 
+/** An exchange by its words (the student's, then the tutor's), as both the tab and the saved chat hold them. */
+const exchangeKey = (asked: string, answered: string) => `${asked.trim()}\u0000${answered.trim()}`;
+
+/**
+ * The saved chat (`messagesFromHistory`) merged with what this tab already holds: the saved turns
+ * go first, but never an exchange twice. A read retried after a failure comes back with this tab's
+ * finished exchanges in it (the route saved them meanwhile): they are found by the tutor turn's id
+ * from `done` (`turnId`), or — a `done` that never came — by both their words (the newest saved
+ * exchange with them: this tab's are the newest), and the saved turns from the first of them on are
+ * left out, as this tab has them. A tab that already holds the saved chat keeps what it has.
+ */
+export function mergeSavedChat(saved: readonly ChatMessage[], cur: readonly ChatMessage[]): ChatMessage[] {
+  if (saved.length === 0 || cur.some((m) => m.saved)) return [...cur];
+  if (cur.length === 0) return [...saved];
+  const ids = new Set(cur.flatMap((m) => (m.role === "tutor" && m.turnId ? [`saved_${m.turnId}`] : [])));
+  const unsaved = new Set<string>();
+  for (let i = 1; i < cur.length; i++) {
+    const [asked, answer] = [cur[i - 1], cur[i]];
+    if (asked.role === "user" && answer.role === "tutor" && !answer.turnId && !answer.stopped && (answer.state === "done" || answer.state === "writing")) unsaved.add(exchangeKey(asked.text, answer.text));
+  }
+  // where a saved exchange starts: its student turn, or the tutor turn when that has none before it
+  const startOf = (i: number) => (saved[i - 1]?.role === "user" ? i - 1 : i);
+  let cut = saved.length;
+  for (let i = 0; i < saved.length; i++) if (saved[i].role === "tutor" && ids.has(saved[i].id)) cut = Math.min(cut, startOf(i));
+  for (const key of unsaved) {
+    for (let i = saved.length - 1; i > 0; i--) {
+      if (saved[i].role === "tutor" && saved[i - 1].role === "user" && exchangeKey(saved[i - 1].text, saved[i].text) === key) {
+        cut = Math.min(cut, i - 1);
+        break;
+      }
+    }
+  }
+  return [...saved.slice(0, cut), ...cur];
+}
+
 /**
  * The reply as the panel shows it while it streams: never the board block, nor the start of its
  * tag held back at the end (the route strips both; this is the panel's own guard).
