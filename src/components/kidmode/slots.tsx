@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useSyncExternalStore } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { PenStyleButton } from "@/components/board/PenStyleButton";
 import { ScreenStrip, ScreenStripCorner } from "@/components/screens/ScreenStrip";
@@ -32,6 +32,29 @@ export function preloadKidDock(): void {
   }
 }
 
+// The dock could not load this session (`KidDockBoundary`): the board page puts Ask back in the bar.
+let dockFailed = false;
+const dockListeners = new Set<() => void>();
+
+/** The kid dock failed to load or threw (the palette stands in): Ask comes back to the bar (`boardToolbarView`). */
+export function useKidDockFailed(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      dockListeners.add(cb);
+      return () => dockListeners.delete(cb);
+    },
+    () => dockFailed,
+    () => false,
+  );
+}
+
+/** The dock failed (`KidDockBoundary`); exported for the tests. */
+export function noteKidDockFailed(): void {
+  if (dockFailed) return;
+  dockFailed = true;
+  dockListeners.forEach((l) => l());
+}
+
 function useSimple(): boolean {
   return useSimpleBoard(useAuth().user?.id) === true;
 }
@@ -39,7 +62,8 @@ function useSimple(): boolean {
 /** The Toolbar slot: tldraw's palette (with the Math tool), or the kid dock. */
 export function BoardToolbar() {
   const simple = useSimple();
-  // a dock whose chunk failed to load: the grown-up palette rather than no tools at all
+  // a dock whose chunk failed to load: the grown-up palette rather than no tools at all, and Ask,
+  // which the dock carried, in the bar (`useKidDockFailed`)
   if (simple) {
     return (
       <KidDockBoundary fallback={<LiveToolbar />}>
@@ -78,6 +102,10 @@ class KidDockBoundary extends React.Component<{ fallback: React.ReactNode; child
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  componentDidCatch() {
+    // Ask lives in the dock: told, the board page puts it in the bar
+    noteKidDockFailed();
   }
   render() {
     return this.state.failed ? this.props.fallback : this.props.children;

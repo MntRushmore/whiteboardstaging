@@ -79,7 +79,7 @@ import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 import { boardToolbarView } from "@/components/live/toolbar";
 import { AskButton } from "@/components/live/AskButton";
 import { setSimpleBoard, useSimpleBoard, useSimpleBoardGrade } from "@/components/kidmode/useSimpleBoard";
-import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, KidStatus, usePreloadKidDock } from "@/components/kidmode/slots";
+import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, KidStatus, useKidDockFailed, usePreloadKidDock } from "@/components/kidmode/slots";
 import { KID_COPY } from "@/components/kidmode/copy";
 import { CHAT_BUTTON_COPY, CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
 import { useChatOpen } from "@/components/chat/useChatOpen";
@@ -318,6 +318,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   // (BoardPage, beside the board's own load), the switch's choice on this device after that.
   const userId = user?.id;
   const simpleBoard = useSimpleBoard(userId) === true;
+  // the kid dock could not load: its Ask comes back to the bar (`boardToolbarView`)
+  const dockFailed = useKidDockFailed();
   const switchSimpleBoard = useCallback((on: boolean) => userId && setSimpleBoard(userId, on), [userId]);
   const [moreOpen, setMoreOpen] = useState(false);
   // More goes with the simple board, however it was switched off (More's own switch, Board options,
@@ -332,6 +334,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     auto: live.auto,
     hideAiShapes: live.hideAiShapes,
     simple: simpleBoard,
+    dockFailed,
   });
   const { place } = toolbar;
 

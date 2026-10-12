@@ -34,6 +34,11 @@ export interface BoardToolbarState {
   hideAiShapes?: boolean;
   /** the simple board for young kids (`useSimpleBoard`): on for K–3 by default, switchable */
   simple?: boolean;
+  /**
+   * The kid dock could not load (its chunk failed, or it threw): tldraw's palette stands in for it
+   * (`BoardToolbar`), and Ask, which lives in the dock, comes back to the bar so it never vanishes.
+   */
+  dockFailed?: boolean;
 }
 
 /** Where a control sits: in the bar itself, or behind the simple board's More button. */
@@ -125,7 +130,7 @@ export function boardToolbarView(state: BoardToolbarState): BoardToolbarView {
       : {
           dial: "more",
           auto: "more",
-          ask: "dock",
+          ask: state.dockFailed ? "bar" : "dock",
           pill: "more",
           ink: "more",
           report: "more",
