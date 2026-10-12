@@ -14,6 +14,7 @@ import {
   captureAskImage,
   dataUrlChars,
   fitAskImage,
+  heavyPictures,
   type AskCanvas,
   type AskContext,
   type AskFitStep,
@@ -304,6 +305,66 @@ describe("captureAskImage", () => {
 
   it("too big at every step: null", async () => {
     expect(await captureAskImage(boardWith([drawShapeFromPoints(STROKE_A)]), {}, fakeBrowser({ sizes: [2_000_000] }).deps)).toBeNull();
+  });
+
+  /** A photo (or PDF page) on the screen whose asset is `asset`, beside some ink. */
+  function boardWithPicture(asset: Record<string, unknown>) {
+    const photo = { id: nextShapeId(), typeName: "shape", type: "image", x: 400, y: 100, rotation: 0, index: "a1", parentId: "page:page", isLocked: true, opacity: 1, meta: { isProtected: true, kind: "pdf" }, props: { w: 300, h: 400, assetId: "asset:page", playing: true, url: "", crop: null, flipX: false, flipY: false, altText: "" } } as unknown as TLShape;
+    const editor = boardWith([drawShapeFromPoints(STROKE_A), photo]);
+    return Object.assign(editor, {
+      getAsset: vi.fn(() => ({ id: "asset:page", type: "image", props: { src: "https://storage.example/page.png", ...asset } })),
+      resolveAssetUrl: vi.fn(async () => "https://storage.example/page.png"),
+    });
+  }
+
+  it("a big photo or PDF page on the screen: never put whole in an SVG (twice in base64), drawn by hand from its URL", async () => {
+    const editor = boardWithPicture({ w: 2480, h: 3508, fileSize: 2_400_000 });
+    const page = { page: true };
+    const loaded: string[] = [];
+    const { deps, ops } = fakeBrowser({
+      loadImage: async (src) => {
+        loaded.push(src);
+        return page as unknown as CanvasImageSource;
+      },
+    });
+    expect(heavyPictures(editor, askScene(editor)!)).toBe(true);
+    const url = await captureAskImage(editor, {}, deps);
+    expect(AskImageSchema.safeParse(url).success).toBe(true);
+    expect(editor.getSvgString).not.toHaveBeenCalled();
+    // decoded from its URL, drawn at its size on the board (the picture's scale is the canvas's)
+    expect(loaded).toEqual(["https://storage.example/page.png"]);
+    expect(ops).toContain("drawImage img,0,0,300,400");
+  });
+
+  it("an inline picture (a data URL in the board) counts by its length; small pictures still go through the export", async () => {
+    const inline = boardWithPicture({ w: 1200, h: 1600, src: `data:image/png;base64,${"A".repeat(2_100_000)}` });
+    expect(heavyPictures(inline, askScene(inline)!)).toBe(true);
+    const small = boardWithPicture({ w: 800, h: 600, fileSize: 120_000 });
+    expect(heavyPictures(small, askScene(small)!)).toBe(false);
+    await captureAskImage(small, {}, fakeBrowser().deps);
+    expect(small.getSvgString).toHaveBeenCalledTimes(1);
+  });
+
+  it("an export that answers past the deadline is dropped: its SVG is neither encoded again nor decoded", async () => {
+    let answer: () => void = () => {};
+    const late = vi.fn(() => new Promise<{ svg: string; width: number; height: number }>((resolve) => (answer = () => resolve({ svg: "<svg/>", width: 10, height: 10 }))));
+    const editor = boardWith([drawShapeFromPoints(STROKE_A)], late);
+    const loaded: string[] = [];
+    const { deps, canvases } = fakeBrowser({
+      loadImage: async (src) => {
+        loaded.push(src);
+        return {} as CanvasImageSource;
+      },
+    });
+    const url = await captureAskImage(editor, { timeoutMs: 400 }, deps);
+    // drawn by hand in time
+    expect(AskImageSchema.safeParse(url).success).toBe(true);
+    const made = canvases.length;
+    answer();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(loaded.filter((src) => src.startsWith("data:image/svg"))).toEqual([]);
+    expect(canvases).toHaveLength(made);
+    expect(canvases.every((c) => c.released)).toBe(true);
   });
 });
 
