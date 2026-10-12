@@ -116,6 +116,16 @@ describe("DailyBoard", () => {
     expect(out).not.toContain("data-complete");
   });
 
+  it("on the simple board: as tall as its bar, saying what it counts (Today) before the stars", () => {
+    const out = html(<ProgressPill goal={5} done={0} stars={0} spot={spot} big />);
+    expect(out).toContain('data-big=""');
+    expect(out).toContain(`>${DAILY_BOARD_COPY.pillTitle}<`);
+    expect(out).toContain(">0 of 5<");
+    // read out as one, as before: "Today" is in its label already
+    expect(DAILY_BOARD_COPY.pillLabel(0, 0, 5)).toMatch(/^Today's practice/);
+    expect(html(<ProgressPill goal={5} done={0} stars={0} spot={spot} />)).not.toContain(DAILY_BOARD_COPY.pillTitle + "<");
+  });
+
   it("past the goal: 5 of 5 and the extra ones", () => {
     const out = html(<ProgressPill goal={5} done={7} stars={6} spot={spot} />);
     expect(out).toContain(">5 of 5<");

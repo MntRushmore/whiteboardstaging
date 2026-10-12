@@ -9,7 +9,8 @@ import { BOARD_BAR_ATTR } from "@/components/live/hintPlacement";
 import type { LiveController } from "@/lib/live/contracts";
 import { clientMetric } from "@/lib/logger";
 import { DAILY_BOARD_COPY } from "@/lib/daily/copy";
-import { PILL, pillSpot, type PillSpot } from "@/lib/daily/pill";
+import { BIG_PILL, PILL, pillSpot, type PillSpot } from "@/lib/daily/pill";
+import { useSimpleBoard } from "@/components/kidmode/useSimpleBoard";
 import { boardProblems } from "@/lib/daily/progress";
 import { useDailyBoard, type BoardProblem } from "./useDailyBoard";
 import styles from "./dailyBoard.module.css";
@@ -44,7 +45,7 @@ const MORE_SELECTOR = "[aria-controls=grown-up-more]";
  * Where the pill goes, measured against the board's top bar as it wraps and the board resizes, and
  * against the simple board's More as it comes and goes (lazy, and with the Simple board switch).
  */
-function usePillSpot(editor: Editor, active: boolean): PillSpot {
+function usePillSpot(editor: Editor, active: boolean, big: boolean): PillSpot {
   const [spot, setSpot] = useState<PillSpot>({ top: PILL.top, right: PILL.gap, inline: false });
   useLayoutEffect(() => {
     if (!active) return;
@@ -72,11 +73,14 @@ function usePillSpot(editor: Editor, active: boolean): PillSpot {
       const box = container.getBoundingClientRect();
       const b = bar?.getBoundingClientRect();
       const m = more?.getBoundingClientRect();
-      const next = pillSpot({
-        width: box.width,
-        bar: b ? { top: b.top - box.top, right: b.right - box.left, bottom: b.bottom - box.top } : null,
-        corner: m && m.width > 0 ? { left: m.left - box.left, bottom: m.bottom - box.top } : null,
-      });
+      const next = pillSpot(
+        {
+          width: box.width,
+          bar: b ? { top: b.top - box.top, right: b.right - box.left, bottom: b.bottom - box.top } : null,
+          corner: m && m.width > 0 ? { left: m.left - box.left, bottom: m.bottom - box.top, right: m.right - box.left } : null,
+        },
+        big ? BIG_PILL : PILL,
+      );
       setSpot((prev) => (prev.top === next.top && prev.right === next.right && prev.inline === next.inline ? prev : next));
     }
     ro?.observe(container);
@@ -85,7 +89,7 @@ function usePillSpot(editor: Editor, active: boolean): PillSpot {
       ro?.disconnect();
       mo?.disconnect();
     };
-  }, [editor, active]);
+  }, [editor, active, big]);
   return spot;
 }
 
@@ -124,13 +128,21 @@ function Stars({ goal, done, stars, size }: { goal: number; done: number; stars:
   );
 }
 
-/** The pill. Exported for its markup test. */
-export function ProgressPill({ goal, done, stars, spot }: { goal: number; done: number; stars: number; spot: PillSpot }) {
+/**
+ * The pill. Exported for its markup test. `big`: the simple board's, as tall as its bar's buttons and
+ * level with them, saying what it counts ("Today") before the stars.
+ */
+export function ProgressPill({ goal, done, stars, spot, big = false }: { goal: number; done: number; stars: number; spot: PillSpot; big?: boolean }) {
   const shown = Math.min(stars, goal);
   const extra = Math.max(0, done - goal);
   return (
-    <div className={styles.pill} data-daily-pill="" data-complete={done >= goal ? "" : undefined} style={{ top: spot.top, right: spot.right }} role="img" aria-label={DAILY_BOARD_COPY.pillLabel(shown, done, goal)}>
-      <Stars goal={goal} done={Math.min(done, goal)} stars={shown} size={15} />
+    <div className={styles.pill} data-daily-pill="" data-big={big ? "" : undefined} data-complete={done >= goal ? "" : undefined} style={{ top: spot.top, right: spot.right }} role="img" aria-label={DAILY_BOARD_COPY.pillLabel(shown, done, goal)}>
+      {big && (
+        <span className={styles.today} aria-hidden>
+          {DAILY_BOARD_COPY.pillTitle}
+        </span>
+      )}
+      <Stars goal={goal} done={Math.min(done, goal)} stars={shown} size={big ? 17 : 15} />
       <span className={styles.count} aria-hidden>
         {DAILY_BOARD_COPY.pill(done, goal)}
       </span>
@@ -193,7 +205,9 @@ export default function DailyBoard({ boardId, userId, controller }: DailyBoardPr
   const router = useRouter();
   const onBoard = useCallback(() => problemsOnBoard(editor), [editor]);
   const daily = useDailyBoard(boardId, userId, controller, onBoard);
-  const spot = usePillSpot(editor, Boolean(daily.marker));
+  // the simple board's bar is 48 px tall: its pill is too, and says what it counts
+  const big = useSimpleBoard(userId) === true;
+  const spot = usePillSpot(editor, Boolean(daily.marker), big);
   const { celebrating, dismiss } = daily;
 
   // the celebration closes itself after a while
@@ -210,7 +224,7 @@ export default function DailyBoard({ boardId, userId, controller }: DailyBoardPr
       <p role="status" aria-live="polite" className={styles.srOnly}>
         {celebrating ? DAILY_BOARD_COPY.announce(daily.streak) : ""}
       </p>
-      <ProgressPill goal={daily.goal} done={daily.done} stars={daily.stars} spot={spot} />
+      <ProgressPill goal={daily.goal} done={daily.done} stars={daily.stars} spot={spot} big={big} />
       {celebrating && (
         <Celebration
           goal={daily.goal}

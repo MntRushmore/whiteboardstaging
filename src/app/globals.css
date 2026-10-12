@@ -164,6 +164,12 @@
   background-color: #ffffff !important;
 }
 
+/* …but for the table around the board's 16:9 screen (ScreenBackground): a soft flat grey, so the
+ * white screen reads as the page and the bar and the dock float on the table around it. */
+.tl-background[data-board-table] {
+  background-color: #f2f4f7 !important;
+}
+
 .tl-canvas {
   background-color: #ffffff !important;
 }

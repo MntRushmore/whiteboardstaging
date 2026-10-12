@@ -136,8 +136,9 @@ export default function KidDock() {
           <ImagePlus className={ICON} strokeWidth={2} aria-hidden />
         </DockButton>
       )}
+      {/* its bar open: grey, like a button whose popover is open (blue is for the tool in hand) */}
       {view.type && !view.typeInMore && (
-        <DockButton label={DOCK_COPY.type} title={DOCK_COPY.typeHint} pressed={type.open} compact={compact} onClick={act(toggleTypeBar)}>
+        <DockButton label={DOCK_COPY.type} title={DOCK_COPY.typeHint} expanded={type.open} compact={compact} onClick={act(toggleTypeBar)}>
           <Keyboard className={ICON} strokeWidth={2} aria-hidden />
         </DockButton>
       )}

@@ -52,6 +52,8 @@ export const TODAY_COPY = {
 export const DAILY_BOARD_COPY = {
   /** the pill */
   pill: (done: number, goal: number) => `${Math.min(done, goal)} of ${goal}`,
+  /** before the stars on the simple board's pill: what they count */
+  pillTitle: "Today",
   pillLabel: (stars: number, done: number, goal: number) => `Today's practice: ${Math.min(done, goal)} of ${goal} done, ${stars} ${stars === 1 ? "star" : "stars"}`,
   extra: (n: number) => `+${n}`,
   /** the celebration */
