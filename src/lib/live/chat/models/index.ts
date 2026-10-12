@@ -35,13 +35,14 @@ export type { ModelSketch };
 type Box = { readonly w: number; readonly h: number };
 
 /**
- * The boxes each kind is planned in, largest first, down to the smallest that is still legible: a
+ * The boxes each kind is planned in, largest first, down to the smallest that is still legible (each
+ * at least half the largest: `placeDrawing` plans no box below that, `legibleBoxes`): a
  * number line or a tape is long and low, a clock square, fraction circles a row. A planner takes
  * what it needs of a box (a 0–5 line is not stretched to 900 px).
  */
 export const MODEL_BOXES: Readonly<Record<VisualModelKind, readonly Box[]>> = {
   number_line: [
-    { w: 960, h: 300 },
+    { w: 880, h: 300 },
     { w: 800, h: 270 },
     { w: 660, h: 240 },
     { w: 540, h: 220 },

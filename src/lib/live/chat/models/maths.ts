@@ -10,17 +10,16 @@ const EPS = 1e-9;
 /** The most ticks a number line may have: more cannot be read on a board. */
 export const MAX_TICKS = 41;
 
-/** A step that gives a number line from..to between ~5 and 20 intervals, on a 1–2–5 ladder (or 1/4, 1/2 within 0..1). */
+/**
+ * The step a number line gets when the spec gives none: 1 for whole numbers up to 20 apart (0 to 20
+ * in ones), else the finest of 1–2–2.5–5 × 10ⁿ that gives at most 10 intervals (0 to 100 in tens,
+ * 0 to 1 in tenths).
+ */
 export function autoStep(from: number, to: number): number {
   const span = to - from;
   if (!(span > 0)) return 1;
-  if (Number.isInteger(from) && Number.isInteger(to) && span <= 20) return 1;
-  const ladder: number[] = [];
-  for (let e = -3; e <= 7; e++) for (const m of [1, 2, 2.5, 5]) ladder.push(m * 10 ** e);
-  for (const s of ladder) {
-    const n = span / s;
-    if (n <= 20 + EPS) return s;
-  }
+  if (Number.isInteger(from) && Number.isInteger(to) && span >= 2 && span <= 20) return 1;
+  for (let e = -3; e <= 7; e++) for (const m of [1, 2, 2.5, 5]) if (span / (m * 10 ** e) <= 10 + EPS) return m * 10 ** e;
   return 10 ** 8;
 }
 
@@ -82,7 +81,7 @@ function plain(label: string): string {
  */
 export function evaluate(text: string): number | null {
   // "3 x 4" as a teacher writes times
-  const src = plain(text).replace(/(\d)\s*x\s*(?=\d)/g, "$1*");
+  const src = plain(text).replace(/([\d)])\s*x\s*(?=[\d(])/g, "$1*");
   if (!/^[\d\s.+\-*/()]+$/.test(src) || !/\d/.test(src)) return null;
   let i = 0;
   const peek = () => {

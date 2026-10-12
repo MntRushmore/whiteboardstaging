@@ -20,8 +20,9 @@ type Bars = Extract<VisualModel, { kind: "fraction_bars" }>;
 type Circles = Extract<VisualModel, { kind: "fraction_circles" }>;
 
 export const FRACTION_BARS = {
-  /** a bar's length: at most this, as long as the box allows */
+  /** a bar's length: at most this, as long as the box allows, never under the least that reads as a bar */
   maxLength: 640,
+  minLength: 220,
   /** the narrowest a part may be */
   minPart: 15,
   height: { max: 70, min: 46 },
@@ -61,7 +62,7 @@ function attemptBars(spec: Bars, box: { w: number; h: number }, seed: number, si
   const n = spec.bars.length;
   const length = Math.min(B.maxLength, box.w - B.labelGap - labelW - 8);
   const maxParts = Math.max(...spec.bars.map((b) => b.parts));
-  if (length / maxParts < B.minPart) return null;
+  if (length < B.minLength || length / maxParts < B.minPart) return null;
   // as tall as the box allows (a fraction label stacks two numbers: the bar is at least that tall)
   const labelH = Math.max(...sizes.map((s) => s!.h));
   const fit = (box.h - 8) / (n + (n - 1) * B.gap);

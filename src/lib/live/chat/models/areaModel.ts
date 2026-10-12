@@ -17,6 +17,9 @@ export const AREA = {
   /** the rectangle at most this wide / tall: a single cell (7 × 8) smaller than a split one */
   maxW: [380, 540, 600],
   maxH: [250, 340],
+  /** …and at least this big: smaller is a scribble, not a model */
+  minW: 150,
+  minH: 100,
   /** a part's least share of its side, so a small part (the 3 of 23) still has a cell */
   minShare: 0.2,
   /** px round a product inside its cell */
@@ -95,6 +98,7 @@ function attempt(spec: Area, box: { w: number; h: number }, seed: number, size: 
   if (W * ratio > H + 1) W = Math.max(colMin.reduce((a, b) => a + b, 0), H / ratio);
   const widths = sides(top, colMin, W);
   if (!widths) return null;
+  if (W < A.minW || H < A.minH) return null;
   const heights = sides(side, rowMin, H);
   if (!heights) return null;
 
