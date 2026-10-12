@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api-client";
 import { CHAT_COPY, chatErrorFor } from "@/components/chat/chatView";
 import { ASK_PATH, type AskRequest } from "../contracts";
-import { ASK_IDLE_TIMEOUT_MS, AskStreamError, AskTimeoutError, streamAsk, type AskStreamHandlers } from "../client";
+import { ASK_DRAIN_MS, ASK_IDLE_TIMEOUT_MS, AskStreamError, AskTimeoutError, streamAsk, type AskStreamHandlers } from "../client";
 
 /** POST /api/live/ask from the panel: the stream, event by event, and every way it can end. */
 
@@ -190,5 +190,59 @@ describe("streamAsk", () => {
     const pending = streamAsk(REQ, {}, { signal: ctrl.signal, fetchImpl: () => new Promise<Response>(() => undefined) });
     ctrl.abort();
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+describe("streamAsk: a finished answer's stream ends on its own (no net::ERR_ABORTED after every ask)", () => {
+  /** A body that sends `chunks` and closes when told; `cancelled` records a cancel (the browser's aborted request). */
+  function openBody(chunks: string[]) {
+    const enc = new TextEncoder();
+    let controller: ReadableStreamDefaultController<Uint8Array>;
+    const state = { cancelled: false, fetchAborted: false };
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+        for (const ch of chunks) c.enqueue(enc.encode(ch));
+      },
+      cancel() {
+        state.cancelled = true;
+      },
+    });
+    const fetchImpl = async (_path: string, init?: RequestInit) => {
+      init?.signal?.addEventListener("abort", () => (state.fetchAborted = true));
+      return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    };
+    return { state, fetchImpl, close: () => controller.close() };
+  }
+
+  it("after `done`, the rest is read to its end: never cancelled, the request never aborted — a Stop after it changes nothing", async () => {
+    const s = openBody([frame("reply", { text: "Hi!" }), frame("done", { model: "m", ms: 1, turnId: "t" })]);
+    const stop = new AbortController();
+    const { seen, h } = recorder();
+    await streamAsk(REQ, h, { signal: stop.signal, fetchImpl: s.fetchImpl });
+    expect(seen).toEqual(["reply:Hi!", "done:m:t"]);
+    // the route closes the stream a moment later (`after()` work); a Stop tapped meanwhile is too late to matter
+    stop.abort();
+    s.close();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(s.state).toEqual({ cancelled: false, fetchAborted: false });
+  });
+
+  it("a finished answer's stream still open long after `done` is let go", async () => {
+    vi.useFakeTimers();
+    const s = openBody([frame("done", { model: "m", ms: 1 })]);
+    await streamAsk(REQ, {}, { fetchImpl: s.fetchImpl });
+    await vi.advanceTimersByTimeAsync(ASK_DRAIN_MS - 100);
+    expect(s.state.cancelled).toBe(false);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(s.state.cancelled).toBe(true);
+  });
+
+  it("a Stop mid-answer still cancels it", async () => {
+    const s = openBody([frame("delta", { text: "One" })]);
+    const stop = new AbortController();
+    const pending = streamAsk(REQ, { onDelta: () => stop.abort() }, { signal: stop.signal, fetchImpl: s.fetchImpl });
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(s.state.cancelled || s.state.fetchAborted).toBe(true);
   });
 });
