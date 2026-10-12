@@ -1,6 +1,6 @@
 import { placeStrokes, strokeBounds, totalDurationMs, type Stroke } from "@/lib/hand";
 import type { GraphAsymptote, GraphCurve, GraphIntent, GraphKeyPoint, NumberLineIntent, PlaneGraphIntent, Rect } from "../contracts";
-import { niceLatex } from "../engine/graphIntent";
+import { niceLatex } from "../engine/niceNumber";
 import type { HandLinePlan, HandPlan } from "../handwriting";
 import { Pen, clipPolyline, clipSegment, inRect, rectsOverlap, writeMath, type Pt, type Written } from "./pen";
 import { chooseWindow, fromPx, numberLineWindow, ticksIn, toPx, type GraphWindow, type GraphWindowHint } from "./window";

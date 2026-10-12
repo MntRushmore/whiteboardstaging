@@ -18,6 +18,8 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
   // whether the loop is up, not yet, or gone with the board: for runs that outlive a render (`whenReady`)
   const [gate] = useState(createLoopGate);
   const optsRef = useRef(opts);
+  /** the Type it bar asked for its writer (`prepareTyped`): a loop made after that gets it too */
+  const typedRef = useRef(false);
   // Ask's chat per screen: whoever listens through the controller hears whichever loop is current
   const [screenListeners] = useState(() => new Set<(screenId: string, how: ChatScreenChange) => void>());
   // Effects run in declaration order: the ref is fresh before the loop is (re)created below.
@@ -31,6 +33,7 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
     const loop = createLiveLoop(editor, optsRef.current);
     loopRef.current = loop;
     loop.start();
+    if (typedRef.current) loop.prepareTyped().catch(() => undefined);
     const offScreens = loop.onChatScreenChange((screenId, how) => screenListeners.forEach((cb) => cb(screenId, how)));
     gate.open(boardId);
     return () => {
@@ -118,6 +121,15 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
         return loop.runLectureActions(actions, opts);
       },
       saveLectureTranscript: (text) => loopRef.current?.saveLectureTranscript(text),
+      // Type it: writing a line is the kid working, not asking (no `asked`: Auto stays theirs). The
+      // writer loads with the bar (`prepareTyped`), never with the board.
+      prepareTyped: async () => {
+        typedRef.current = true;
+        await loopRef.current?.prepareTyped();
+      },
+      writeTyped: (args) => loopRef.current?.writeTyped(args) ?? { ok: false, reason: "off" },
+      typedSpot: (opts) => loopRef.current?.typedSpot(opts) ?? null,
+      typedLines: () => loopRef.current?.typedLines() ?? [],
     };
   }, [screenListeners, gate]);
 }

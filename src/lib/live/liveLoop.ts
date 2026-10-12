@@ -2,7 +2,7 @@
 
 import { toast } from "sonner";
 import { say } from "@/lib/speech/say";
-import { Box, createShapeId } from "tldraw";
+import { Box, createShapeId, DefaultColorStyle } from "tldraw";
 import type {
   Editor,
   HistoryEntry,
@@ -83,8 +83,10 @@ import { GRAPH, chooseWindow, placeGraphBlock, planGraph, type GraphPlaceContext
 import {
   HandWriter,
   handBlockOf,
+  handInkPoints,
   handLinesOf,
   handSeedFor,
+  handStrokeShape,
   handSizeFor,
   inlineHandSizeFor,
   joinHandPlans,
@@ -130,6 +132,12 @@ import {
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
 import { assignColumns, clusterLines, inkScale, medianStrokeHeight, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
+import type { Stroke } from "@/lib/hand";
+import { roundInk } from "./inkCompact";
+import { lineGroupsOf, type LineGroup } from "./typedInk";
+import { TYPED_COUNT_META, TYPED_ID_META, type TypedLineRef, type TypedSpot, type WriteTypedArgs, type WriteTypedResult } from "@/lib/typeMath/contracts";
+// Type it's writer is the bar's: loaded with it (`prepareTyped`), never with the board
+import type { TypedHost, TypedWriter } from "./typedWriter";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { captureInkCrop } from "./inkCrop";
 import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, leadingSigns, ownTicks, readYoungHand } from "./youngHand";
@@ -204,6 +212,14 @@ export interface LiveEditorLike {
   getSelectedShapeIds?(): TLShapeId[];
   /** the camera's fit zoom (`boardZoom`); optional: test editors have no camera */
   getBaseZoom?(): number;
+  /** Type it (`writeTyped`): the kid's typed line is theirs — one undo step, their pen's colour, kept in view */
+  markHistoryStoppingPoint?(name?: string): unknown;
+  getStyleForNextShape?: Editor["getStyleForNextShape"];
+  getCamera?: Editor["getCamera"];
+  setCamera?: Editor["setCamera"];
+  getZoomLevel?(): number;
+  /** one transaction: the bar's reactive reads never see a typed line half written */
+  run?(fn: () => void): unknown;
 }
 
 export type StreamFn = (path: string, body: unknown, opts?: StreamOptions) => AsyncGenerator<LiveSseEvent, void, undefined>;
@@ -874,6 +890,17 @@ export class LiveLoop implements LiveController {
   /** the student's strokes rubbed out on this screen: one coming back is Undo, not the pen */
   private readonly goneStrokeIds = new Set<string>();
   /**
+   * Strokes the loop itself just wrote or rubbed out as the kid's (a typed line, `writeInk`): the
+   * store listener hears them as the kid's own changes, and leaves them alone once (`writeInk` has
+   * read them already).
+   */
+  private readonly ownInk = new Set<string>();
+  /** the typed line just written (its `typedId`): finished at Enter, so its read is the pause too */
+  private typedFresh: string | null = null;
+  /** Type it's writer, once the bar has loaded it (`prepareTyped`) */
+  private typed: TypedWriter | null = null;
+  private typedLoad: Promise<void> | null = null;
+  /**
    * Which came last, the pen or a pick with the select tool (a count of both): the newer one decides
    * (`picked`). tldraw keeps a selection, unseen, while the pen writes elsewhere; it is no pick then.
    */
@@ -1151,6 +1178,7 @@ export class LiveLoop implements LiveController {
     this.penStrokeId = null;
     this.penLineId = null;
     this.goneStrokeIds.clear();
+    this.typedFresh = null;
     liveStore.helpTarget.set(null);
     liveStore.diagrams.set([]);
     this.proofs.reset();
@@ -1514,7 +1542,7 @@ export class LiveLoop implements LiveController {
     const finished: TLShape[] = [];
 
     for (const rec of Object.values(entry.changes.added)) {
-      if (!isShapeRecord(rec)) continue;
+      if (!isShapeRecord(rec) || this.ownInk.delete(rec.id)) continue;
       // Undo brought back a readback the same action had deleted (Live never writes as the user)
       if (rec.type === "math" && isLiveMeta(rec.meta) && rec.meta.source === "echo") {
         this.restoredEcho(rec);
@@ -1564,7 +1592,7 @@ export class LiveLoop implements LiveController {
     let problemErased = false;
     const pageId = this.editor.getCurrentPage?.()?.id;
     for (const rec of Object.values(entry.changes.removed)) {
-      if (!isShapeRecord(rec)) continue;
+      if (!isShapeRecord(rec) || this.ownInk.delete(rec.id)) continue;
       // shapes going with another screen (one deleted) are nothing the student rubbed out here: a
       // figure answer among them must not be "dismissed" in this screen's page meta
       if (pageId && String(rec.parentId).startsWith("page:") && rec.parentId !== pageId) continue;
@@ -1729,12 +1757,18 @@ export class LiveLoop implements LiveController {
   private markUnsettled(): void {
     this.autoInk();
     this.settled = false;
+    // ink after Enter: the typed line no longer ends the writing by itself (`settleNow`)
+    this.typedFresh = null;
     if (this.settleTimer) clearTimeout(this.settleTimer);
-    this.settleTimer = setTimeout(() => {
-      this.settleTimer = null;
-      this.settled = true;
-      this.renderSettled();
-    }, ANSWER_SETTLE_MS);
+    this.settleTimer = setTimeout(() => this.settleNow(), ANSWER_SETTLE_MS);
+  }
+
+  /** The student has stopped: the settle clock ran out, or a typed line was read (Enter is a stop). */
+  private settleNow(): void {
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.settleTimer = null;
+    this.settled = true;
+    this.renderSettled();
   }
 
   /**
@@ -1789,6 +1823,17 @@ export class LiveLoop implements LiveController {
       if (ink) out.push(ink);
     }
     return out;
+  }
+
+  /** The whole line groups on this screen (`lineGroupsOf`): typed lines, each one line of its own. */
+  private lineGroups(): LineGroup[] {
+    return lineGroupsOf(this.editor.getCurrentPageShapes().filter((s) => isStudentInk(s) && (s as TLDrawShape).props.isComplete));
+  }
+
+  /** The line group that is this line, whole and nothing else, or null: pen ink, or a group partly rubbed out. */
+  private typedGroupOf(line: Pick<InkLine, "strokeIds">): LineGroup | null {
+    const groups = lineGroupsOf(line.strokeIds.flatMap((id) => this.editor.getShape(id) ?? []));
+    return groups.length === 1 && groups[0].strokeIds.length === line.strokeIds.length ? groups[0] : null;
   }
 
   /** A finished student stroke as ink in page coordinates, or null for anything else. */
@@ -1907,16 +1952,20 @@ export class LiveLoop implements LiveController {
     // Where the student last WROTE: their last pen stroke, not ink rubbed out, dragged or brought
     // back by Undo (`helpTargetLine`). Before the pen has written on this screen, what they touched.
     const wrote: ReadonlySet<string> = this.penStrokeId ? new Set([this.penStrokeId]) : dirty;
+    // A line typed (or sent whole) is a line of its own: no drawing, never joined to the ink around it
+    const groups = this.lineGroups();
     // Drawings (and their marks and labels) first: only handwriting is grouped into lines. A bar
     // under an equation with a number under it ("divide both sides") is a line of its own.
-    const { split, touched: drawn } = this.splitDrawings(ink, wrote);
+    const { split, touched: drawn } = this.splitDrawings(ink, wrote, groups);
     const prevStates = liveStore.lines.get();
     const prevLines = Object.values(prevStates).map((s) => s.line);
+    const grouped = groups.flatMap((g) => g.strokeIds as string[]);
     // what the columns know besides the lines: what fills a gap under one, and which lines were one problem
-    const inLines = new Set<string>([...split.writing.map((s) => s.id), ...split.bars.flatMap((b) => [b.bar, ...b.divisor]), ...split.stacks.flatMap((s) => s.strokeIds)]);
+    const inLines = new Set<string>([...split.writing.map((s) => s.id), ...split.bars.flatMap((b) => [b.bar, ...b.divisor]), ...split.stacks.flatMap((s) => s.strokeIds), ...grouped]);
     const columns = this.columnOptions(inLines);
-    // a division bar with its divisor, and a stacked sum, are a line each whatever the clusterer makes of them
-    const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink)];
+    // a division bar with its divisor, a stacked sum and a typed line are a line each whatever the clusterer makes of them
+    const byId = new Map(ink.map((s) => [s.id as string, s]));
+    const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink), ...groups.map((g) => g.strokeIds.flatMap((id) => byId.get(id) ?? []))];
     // ink beside one of the chat's problems is never one line with ink under another (`splitAcrossProblems`)
     const cells = this.problemCells();
     const apart = cells.length > 1 ? (group: InkStroke[]) => splitAcrossProblems(group, cells) : undefined;
@@ -2011,9 +2060,11 @@ export class LiveLoop implements LiveController {
    * Runs `splitInk` over the screen's ink and keeps the drawings: a drawing that is gone takes the
    * tutor's answer about it with it. Returns the split and the drawing `dirty` touched, if any.
    */
-  private splitDrawings(ink: InkStroke[], dirty: ReadonlySet<string>): { split: InkSplit; touched: Diagram | null } {
+  private splitDrawings(ink: InkStroke[], dirty: ReadonlySet<string>, groups = this.lineGroups()): { split: InkSplit; touched: Diagram | null } {
+    // a typed line is writing, whole: its long fraction bar or a radical's overline is never a drawing
+    const own = new Set<string>(groups.flatMap((g) => g.strokeIds));
     // the tutor's problems are equations a division bar may be drawn under (their ink is not ink here)
-    const split = splitInk(ink, this.diagrams, { equations: this.problemEquations(), zoom: this.boardZoom() });
+    const split = splitInk(own.size > 0 ? ink.filter((s) => !own.has(s.id)) : ink, this.diagrams, { equations: this.problemEquations(), zoom: this.boardZoom() });
     const gone = this.diagrams.filter((d) => !split.diagrams.some((n) => n.id === d.id));
     this.diagrams = split.diagrams;
     this.glyph = split.glyph;
@@ -2077,12 +2128,15 @@ export class LiveLoop implements LiveController {
     rt.readRetryTimer = null;
     this.closeHintsFor(lineId);
 
+    // a line typed whole is read as what was typed (`lineGroupsOf`), however many strokes it took
+    const group = this.typedGroupOf(line);
+    const typed = group?.latex;
     const payload = buildPayload(line, ink);
-    if (!payload) {
+    if (!payload && typed === undefined) {
       this.applyUnknown(lineId, "Too much ink for one line");
       return;
     }
-    const hash = await hashPayload(payload);
+    const hash = payload ? await hashPayload(payload) : `typed:${group?.id}`;
     const state = liveStore.lines.get()[lineId];
     if (!state || rt.processing !== ticket) return;
 
@@ -2093,6 +2147,17 @@ export class LiveLoop implements LiveController {
       this.replaceEcho(lineId);
       return;
     }
+    if (typed !== undefined) {
+      // No recognizer, no second reader, nothing queued offline: the tutor reads exactly what was
+      // typed. Enter finished the line, so the tutor treats it as the kid's pause, at once.
+      await this.readAsTyped(lineId, typed);
+      if (group?.id === this.typedFresh && this.started) {
+        this.typedFresh = null;
+        this.settleNow();
+      }
+      return;
+    }
+    if (!payload) return;
 
     // New or changed ink: recognize. Whatever failed for this line before is stale now.
     this.abortLlm(lineId);
@@ -7989,8 +8054,108 @@ export class LiveLoop implements LiveController {
     });
   }
 
+  // ---------------------------------------------------------------- Type it (docs/TYPE-MATH.md)
+  /**
+   * Type it's writer (`typedWriter.ts`): where a typed line goes, how big, a rewrite. Only the bar
+   * uses it, so it loads with the bar (`prepareTyped`), never with the board. Until it has, a write
+   * is refused as if Live were off and there is no spot and no line to offer. A typed line already on
+   * the board is read, undone and reloaded by the loop itself, with or without the bar.
+   */
+  prepareTyped(): Promise<void> {
+    this.typedLoad ??= import("./typedWriter").then(
+      (m) => {
+        this.typed = m.typedWriter(this.typedHost());
+      },
+      (err: unknown) => {
+        // a chunk that did not load is asked for again next time
+        this.typedLoad = null;
+        throw err;
+      },
+    );
+    return this.typedLoad;
+  }
+
+  writeTyped(args: WriteTypedArgs): WriteTypedResult {
+    return this.typed?.write(args) ?? { ok: false, reason: "off" };
+  }
+
+  typedSpot(opts?: { newProblem?: boolean }): TypedSpot | null {
+    return this.typed?.spot(opts) ?? null;
+  }
+
+  typedLines(): TypedLineRef[] {
+    return this.typed?.lines() ?? [];
+  }
+
+  /** What the writer needs of the loop that only the loop knows (`TypedHost`). */
+  private typedHost(): TypedHost {
+    return {
+      loop: this,
+      deps: this.deps,
+      on: () => this.started && this.opts.enabled,
+      target: (column) => {
+        const c = column ?? this.helpTargetLine()?.line.column;
+        if (c !== undefined) return { states: this.columnLines(c), head: this.columnHeads.get(c) ?? null };
+        const cells = this.problemCells();
+        const head = cells.length > 0 ? currentProblem(cells, this.targetProblem(), (p) => this.problemState(p)) : null;
+        return head ? { states: [], head } : null;
+      },
+      busy: () =>
+        [this.writer, this.graphWriter, this.sketchWriter, ...[...this.rt.values()].flatMap((r) => [r.markWriter, r.stepWriter?.writer, r.resultWriter])].flatMap((w) =>
+          w?.bounds ? [w.bounds] : [],
+        ),
+    };
+  }
+
+  /**
+   * Writes laid-out strokes (the hand engine's; a phone pen's, later) as the kid's own ink with its
+   * top-left at `at`: one draw shape per stroke in their pen's colour, one line group (`typedId` on
+   * each, the count and `lead` on the first), in ONE undo step — taking `replace`, the line it
+   * rewrites, with it. Then it is read at once, and it is where the kid last wrote: Help and Auto act
+   * on it. The new shape ids, in order. Type it's writer writes with it; so will a phone used as a pen.
+   */
+  writeInk(strokes: readonly Stroke[], at: { x: number; y: number }, typedId: string, lead: JsonObject, replace: readonly TLShapeId[] = []): TLShapeId[] {
+    const color = this.editor.getStyleForNextShape?.(DefaultColorStyle) ?? "black";
+    const origin = { x: roundInk(at.x), y: roundInk(at.y) };
+    const shapes = strokes.map((s, i) =>
+      handStrokeShape(createShapeId(), origin, handInkPoints(s.points), {
+        color,
+        weight: s.weight,
+        meta: i === 0 ? { [TYPED_ID_META]: typedId, [TYPED_COUNT_META]: strokes.length, ...lead } : { [TYPED_ID_META]: typedId },
+      }),
+    );
+    const ids = shapes.map((s) => s.id);
+    for (const id of [...ids, ...replace]) this.ownInk.add(id);
+    // the line it replaces coming back is Undo, not the pen
+    for (const id of replace) this.goneStrokeIds.add(id);
+    this.editor.markHistoryStoppingPoint?.("type it");
+    // the shapes and the lines they make land together: the bar reads `typedLines`/`typedSpot` in a
+    // reactive computation, and a read between the two showed the line above as the last one
+    const write = () => {
+      if (replace.length > 0) this.editor.deleteShapes([...replace]);
+      this.editor.createShapes(shapes);
+      // the student wrote (Auto's pending answers stop, as for the pen); the typed line's read ends it
+      this.markUnsettled();
+      this.typedFresh = typedId;
+      if (this.quietTimer) clearTimeout(this.quietTimer);
+      this.quietTimer = null;
+      this.pendingRewrite = false;
+      this.wrote(ids[0]);
+      for (const id of ids) this.dirtyStrokeIds.add(id);
+      this.flush();
+    };
+    if (this.editor.run) this.editor.run(write);
+    else write();
+    return ids;
+  }
+
   /** Student typed over an echo (or the unreadable chip): trust the text, skip recognition. */
   retypeLine(lineId: string, latex: string): void {
+    void this.readAsTyped(lineId, latex);
+  }
+
+  /** A line's reading is what the kid typed (a retype, a typed line): no recognizer. Resolves once it is analysed. */
+  private async readAsTyped(lineId: string, latex: string): Promise<void> {
     const state = liveStore.lines.get()[lineId];
     if (!state) return;
     const rt = this.runtime(lineId);
@@ -8004,10 +8169,9 @@ export class LiveLoop implements LiveController {
     // typed in this session: new work for the learning record
     this.learnFresh.add(lineId);
     forgetOldest(this.learnFresh);
-    void this.ensureEngine().then(() => {
-      if (liveStore.lines.get()[lineId]?.latex !== latex) return;
-      this.analyzeAndRender(lineId, { cascade: true });
-    });
+    await this.ensureEngine();
+    if (liveStore.lines.get()[lineId]?.latex !== latex) return;
+    this.analyzeAndRender(lineId, { cascade: true });
   }
 }
 

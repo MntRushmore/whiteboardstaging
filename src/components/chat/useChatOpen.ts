@@ -32,14 +32,17 @@ export function useChatOpen(): [boolean, (open: boolean) => void] {
     readOpen,
     () => false,
   );
-  const setOpen = useCallback((next: boolean) => {
-    openCache = next;
-    try {
-      window.localStorage.setItem(OPEN_KEY, next ? "1" : "0");
-    } catch {
-      /* private mode: this session only */
-    }
-    openListeners.forEach((l) => l());
-  }, []);
+  const setOpen = useCallback((next: boolean) => setChatOpen(next), []);
   return [open, setOpen];
+}
+
+/** Opens or closes the panel from outside React (the Type button closes Ask's sheet to show its bar). */
+export function setChatOpen(next: boolean): void {
+  openCache = next;
+  try {
+    window.localStorage.setItem(OPEN_KEY, next ? "1" : "0");
+  } catch {
+    /* private mode: this session only */
+  }
+  openListeners.forEach((l) => l());
 }

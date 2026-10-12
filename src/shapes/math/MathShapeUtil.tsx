@@ -29,10 +29,12 @@ import {
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { getLiveSettings } from "@/lib/live/liveSettings";
 import { liveStore } from "@/lib/live/liveStore";
+import { lineGroupsOf } from "@/lib/live/typedInk";
 import { badgeLabel, badgeTitle, dispatchBadgeTap, isBadgeStatus, noteLineFor } from "./badge";
 import { escapeHtml, renderLatex } from "./katex";
 import { latexToPlainText } from "@/lib/boards/boardTitle";
 import { MathEditor } from "./MathEditor";
+import { requestTypedEdit, typedEditTarget } from "@/lib/typeMath/barLink";
 
 export { BADGE_TAP_EVENT, type BadgeTapDetail } from "./badge";
 
@@ -194,7 +196,12 @@ function MathShapeView({ shape }: { shape: MathShape }) {
   const fontSize = MATH_FONT_PX[size];
   const innerRef = useRef<HTMLDivElement>(null);
 
-  useMeasuredSize(editor, shape.id, innerRef, shape.props.w, shape.props.h, isEditing);
+  // A readback's edit goes to the Type it bar's box (plain typing, never raw LaTeX) while the board
+  // has one (docs/TYPE-MATH.md); the LaTeX editor is the fallback when the bar does not take it.
+  const toBar = useTypedEditRoute(editor, shape, isEditing);
+  const editingHere = isEditing && !toBar;
+
+  useMeasuredSize(editor, shape.id, innerRef, shape.props.w, shape.props.h, editingHere);
 
   const unreadable = status === "unknown" && latex.trim() === "";
   const noteLine = noteLineFor(status, note);
@@ -221,15 +228,31 @@ function MathShapeView({ shape }: { shape: MathShape }) {
   // could not write it after their `=` (the typeset fallback). A result the engine merely knows
   // (`\int_0^2 3x^2 dx` with no `=`) is not written unasked — Solve writes it by hand.
   const askedResult = asksResult(shape.props);
+  // A line the kid typed (Type it, docs/TYPE-MATH.md): its readback would only say back what they
+  // typed. It stays on the page (the line's status, a reload) and its ticks and rings are the tutor's
+  // ink beside it, but it never shows — unless it carries an answer they asked for, or the hand is off.
+  const typed = useValue(
+    "echo: typed",
+    () => {
+      if (source !== "echo") return false;
+      const groups = lineGroupsOf(anchors.flatMap((id) => editor.getShape(id as TLShapeId) ?? []));
+      return groups.length === 1 && Boolean(groups[0].latex) && groups[0].strokeIds.length === anchors.length;
+    },
+    [editor, source, anchors],
+  );
   const settings = getLiveSettings();
   const reveal =
-    source !== "echo" || isEditing || touched || askedResult || !settings.handwriting
+    source !== "echo" || editingHere || askedResult || !settings.handwriting
       ? "always"
-      : justRead && !settings.hideAiShapes
-        ? "read"
-        : writing
-          ? "off"
-          : "hover";
+      : typed
+        ? "off"
+        : touched
+          ? "always"
+          : justRead && !settings.hideAiShapes
+            ? "read"
+            : writing
+              ? "off"
+              : "hover";
 
   return (
     <HTMLContainer
@@ -242,7 +265,7 @@ function MathShapeView({ shape }: { shape: MathShape }) {
       style={{ fontSize }}
     >
       <style>{STYLE}</style>
-      {isEditing ? (
+      {editingHere ? (
         <div ref={innerRef} style={{ position: "absolute", left: 0, top: 0, width: "max-content" }}>
           <MathEditor shape={shape} fontSize={fontSize} />
         </div>
@@ -271,6 +294,25 @@ function MathShapeView({ shape }: { shape: MathShape }) {
       )}
     </HTMLContainer>
   );
+}
+
+/**
+ * A readback (`source: "echo"`, its line's reading) opened for editing — double-clicked, or Enter on
+ * it — while the Type it bar listens (`typedEditTarget`): the bar loads that line into its box in
+ * edit mode and the shape leaves editing at once, so a kid never sees the LaTeX. True while that
+ * is the route; false (the LaTeX editor shows) for any other math shape, or with no bar.
+ */
+function useTypedEditRoute(editor: Editor, shape: MathShape, isEditing: boolean): boolean {
+  const target = useValue("typed edit target", () => typedEditTarget.get(), []);
+  const routable = shape.props.source === "echo" && shape.props.lineId !== "" && target;
+  const lineId = shape.props.lineId;
+  useLayoutEffect(() => {
+    if (!isEditing || !routable) return;
+    if (requestTypedEdit(lineId)) editor.cancel();
+    // nobody took it after all: no bar to send edits to, so this editor shows (the atom re-renders it)
+    else typedEditTarget.set(false);
+  }, [editor, isEditing, routable, lineId]);
+  return routable;
 }
 
 export interface BadgeProps {
