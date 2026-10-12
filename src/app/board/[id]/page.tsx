@@ -82,6 +82,7 @@ import { setSimpleBoard, useSimpleBoard, useSimpleBoardGrade } from "@/component
 import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, KidStatus, useKidDockFailed, usePreloadKidDock } from "@/components/kidmode/slots";
 import { KID_COPY } from "@/components/kidmode/copy";
 import { CHAT_BUTTON_COPY, CHAT_BUTTON_SIZE, CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
+import { chatHostClass } from "@/components/chat/chatSheet";
 import { useChatOpen } from "@/components/chat/useChatOpen";
 import { useLecture } from "@/components/lecture/useLecture";
 import { LectureBar } from "@/components/lecture/LectureBar";
@@ -989,15 +990,9 @@ export default function BoardPage() {
       </Tldraw>
       </div>
       {/* the chat panel: docked on the right on a wide screen held sideways, a bottom sheet on a
-          phone or an upright iPad (docked there it would leave the 16:9 board a postcard) */}
-      <div
-        ref={setChatHost}
-        className={
-          chatOpen
-            ? `relative z-[1100] ${chatTall ? "h-[88dvh]" : "h-[46dvh]"} shrink-0 overflow-hidden transition-[height] duration-200 motion-reduce:transition-none border-t border-gray-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:landscape:h-auto md:landscape:w-[360px] md:landscape:border-l md:landscape:border-t-0 md:landscape:shadow-none`
-            : "hidden"
-        }
-      />
+          phone or an upright iPad (docked there it would leave the 16:9 board a postcard); pulled
+          up tall, the board keeps room for its bar and toolbars (`chatHostClass`) */}
+      <div ref={setChatHost} className={chatHostClass(chatOpen, chatTall)} />
     </div>
   );
 }
