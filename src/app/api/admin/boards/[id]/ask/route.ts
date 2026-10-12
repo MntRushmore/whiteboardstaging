@@ -13,7 +13,8 @@ const log = logger.child({ module: "admin-console", route: "admin/boards/[id]/as
  * src/lib/admin/contracts.ts; src/lib/server/adminConsole/askChat.ts), once admin_audit has the look
  * ('board.ask').
  *
- * `requireAdmin` first (401 signed out, 404 for everyone else), then the console's bucket. 400 for a
+ * `requireAdmin` first: requireUser(req) (401 signed out), then the admins table (404 for everyone
+ * else), then the console's bucket. 400 for a
  * bad id, 404 for no such board, 503 without SUPABASE_SERVICE_ROLE_KEY or when the look cannot be
  * logged, 502 naming the table when a read fails. Always no-store.
  */
