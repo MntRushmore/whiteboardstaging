@@ -18,6 +18,9 @@ export const DOCK_COPY = {
   pen: "Pen",
   eraser: "Eraser",
   undo: "Undo",
+  /** Type it: the bar to type maths in (`TYPE_BUTTON_COPY.label`, pinned equal in the tests) */
+  type: "Type",
+  typeHint: "Type your math",
   colour: "Color",
   colours: "Colors",
   colourName: {

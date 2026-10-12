@@ -7,6 +7,7 @@ import { watchReadAloud } from "@/lib/speech/say";
 import { whenIdle } from "@/lib/whenIdle";
 import type { LiveController, OpenHint } from "@/lib/live/contracts";
 import { clearLiveError, liveStore, retryLiveError, type LiveError } from "@/lib/live/liveStore";
+import { typeBarInset } from "@/lib/typeMath/barLink";
 import { LIVE_COPY } from "./copy";
 import { errorCardTitle, liveErrorView } from "./errorView";
 import {
@@ -121,7 +122,8 @@ export function LiveHintLayer({ editor, controller }: LiveHintLayerProps) {
       if (hints.length === 0 && !errorAnchor) return [];
       const screen = editor.getViewportScreenBounds();
       const { top, bottom } = insets.get();
-      const area = { width: screen.width, height: screen.height, top, bottom };
+      // the Type it bar, open over the toolbar: cards stay above it too
+      const area = { width: screen.width, height: screen.height, top, bottom: Math.max(bottom, typeBarInset.get()) };
       const width = cardWidth(screen.width);
       // cards on the same line stack instead of covering each other
       const perLine = new Map<string, number>();

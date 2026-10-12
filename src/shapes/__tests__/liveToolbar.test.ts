@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Editor, TLUiToolsContextType } from "tldraw";
 import { MathShapeTool, liveTools, liveUiOverrides } from "..";
+import { DOCK_COPY } from "@/components/kidmode/dockView";
+import { TYPE_BUTTON_COPY } from "@/components/typeMath/typeBarStore";
 
 const tool = (id: string, kbd?: string) => ({ id, label: id, icon: id, kbd, onSelect: () => {} }) as unknown as TLUiToolsContextType[string];
 
@@ -23,5 +25,10 @@ describe("the old Math tool is gone from the board (Type it replaces it)", () =>
 
   it("the math shape's tool stays registered, so a board left in it still loads", () => {
     expect(liveTools).toContain(MathShapeTool);
+  });
+
+  it("the kid dock's Type button says what the toolbar's says", () => {
+    expect(DOCK_COPY.type).toBe(TYPE_BUTTON_COPY.label);
+    expect(DOCK_COPY.typeHint).toBe(TYPE_BUTTON_COPY.hint);
   });
 });
