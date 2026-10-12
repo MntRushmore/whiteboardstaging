@@ -51,6 +51,10 @@ import { PROOF_EXAMPLES } from "@/lib/server/prompts/chat";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
 import { POST as chat } from "@/app/api/live/chat/route";
 
+// The first test that reaches the gates cold-loads the board's engine (mathjs, ~2 MB): past the default
+// 5 s on a busy machine. Every test in this file gets room for it.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_CHAT"];
 const savedEnv: Record<string, string | undefined> = {};
 const BODY = {

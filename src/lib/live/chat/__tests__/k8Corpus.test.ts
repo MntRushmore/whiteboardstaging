@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { LiveEngine } from "../../contracts";
 import { getEngine } from "../../engine";
 import { planHandwriting } from "../../handwriting";
@@ -7,6 +7,10 @@ import { handCanWrite, verifyProblem, type ProblemVerdict } from "../verify";
 import { verifyForBoard } from "@/lib/server/chatProblems";
 import { K8_CHECKABLE, K8_MODEL_PROBLEMS, K8_MODEL_UNCHECKABLE, K8_UNCHECKABLE } from "./k8Fixtures";
 import { BOARD_PROBLEM_FORMS } from "../problemForms";
+
+// The corpus runs every K–8 form through the engine (loaded cold in `beforeAll`) and the hand's
+// planner: well past the default 5 s under load. The whole file gets 120 s.
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 /**
  * The route and the board agree, on a K–8 corpus. Prod (2026-10-04 to 10-11): `live.chat`
@@ -50,7 +54,7 @@ describe("K–8 corpus: what the board must write, the route and the board write
     }
     expect(failed).toEqual([]);
     expect(K8_CHECKABLE.length).toBeGreaterThan(140);
-  }, 60_000);
+  });
 
   it("what is written is what the hand's own planner draws, at the problem size", () => {
     for (const [, problem] of K8_CHECKABLE) {
