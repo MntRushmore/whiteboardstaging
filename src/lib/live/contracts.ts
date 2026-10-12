@@ -13,6 +13,7 @@ import type { LectureAction, LectureRunReport, LectureScreen } from "./lecture/c
 import type { LectureRunOptions } from "./lecture/desk";
 import { LearnerHintSchema } from "@/lib/learning/hint";
 import type { ChatRunOrigin } from "@/lib/learning/contracts";
+import type { TypedLineRef, TypedSpot, WriteTypedArgs, WriteTypedResult } from "@/lib/typeMath/contracts";
 
 // 1. Modes, verdicts, kinds -------------------------------------------------
 export const HELP_MODES = ["off", "feedback", "suggest", "answer"] as const;
@@ -920,6 +921,14 @@ export interface LiveController {
   lectureScreen?(): LectureScreen;
   runLectureActions?(actions: readonly LectureAction[], opts?: LectureRunOptions): Promise<LectureRunReport>;
   saveLectureTranscript?(text: string): void;
+  /**
+   * Type it (docs/TYPE-MATH.md): a typed line written on the board in the kid's own ink by the
+   * hand engine, read as what they typed (no recognizer); where the next one goes; and the
+   * current problem's lines, top to bottom, for editing. Optional, like the chat's.
+   */
+  writeTyped?(args: WriteTypedArgs): WriteTypedResult;
+  typedSpot?(opts?: { newProblem?: boolean }): TypedSpot | null;
+  typedLines?(): TypedLineRef[];
 }
 export interface UseLiveMathOptions {
   boardId: string;
