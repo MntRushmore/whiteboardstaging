@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "tldraw";
-import type { LiveController, UseLiveMathOptions } from "./contracts";
+import type { ChatScreenChange, LiveController, UseLiveMathOptions } from "./contracts";
 import { createLiveLoop, type LiveLoop } from "./liveLoop";
 import { resetLiveStore } from "./liveStore";
 
@@ -15,6 +15,8 @@ import { resetLiveStore } from "./liveStore";
 export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveController {
   const loopRef = useRef<LiveLoop | null>(null);
   const optsRef = useRef(opts);
+  // Ask's chat per screen: whoever listens through the controller hears whichever loop is current
+  const [screenListeners] = useState(() => new Set<(screenId: string, how: ChatScreenChange) => void>());
   // Effects run in declaration order: the ref is fresh before the loop is (re)created below.
   useEffect(() => {
     optsRef.current = opts;
@@ -26,12 +28,14 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
     const loop = createLiveLoop(editor, optsRef.current);
     loopRef.current = loop;
     loop.start();
+    const offScreens = loop.onChatScreenChange((screenId, how) => screenListeners.forEach((cb) => cb(screenId, how)));
     return () => {
+      offScreens();
       loop.stop();
       if (loopRef.current === loop) loopRef.current = null;
       resetLiveStore();
     };
-  }, [editor, boardId]);
+  }, [editor, boardId, screenListeners]);
 
   useEffect(() => {
     loopRef.current?.setOptions({ boardId, mode, enabled, auto });
@@ -83,6 +87,16 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
       chatScreen: () => loopRef.current?.chatScreen() ?? { empty: true, student: [], tutor: [], problems: [] },
       // Ask's picture of the screen (null when the LaTeX says it all); its code loads on first use
       chatImage: async () => (await loopRef.current?.chatImage()) ?? null,
+      // Ask's chat per screen: the screen shown, its number, and the board moving to another
+      chatScreenId: () => loopRef.current?.chatScreenId() ?? null,
+      chatScreenIndex: () => loopRef.current?.chatScreenIndex() ?? null,
+      onChatScreenChange: (cb) => {
+        const entry = (screenId: string, how: ChatScreenChange) => cb(screenId, how);
+        screenListeners.add(entry);
+        return () => {
+          screenListeners.delete(entry);
+        };
+      },
       // `from`: where the problems it writes come from, for the learning record (the chat's own by default)
       runChatActions: async (actions, from) => {
         const loop = loopRef.current;
@@ -98,5 +112,5 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
       },
       saveLectureTranscript: (text) => loopRef.current?.saveLectureTranscript(text),
     };
-  }, []);
+  }, [screenListeners]);
 }

@@ -74,6 +74,9 @@ export const LIMITS = {
   liveTitle: LIVE_RATE_LIMITS.liveTitle,
   liveAskHistory: LIVE_RATE_LIMITS.liveAskHistory,
   liveAskMemory: LIVE_RATE_LIMITS.liveAskMemory,
+  // Ask's exchange moving with a screen the tutor started (POST /api/live/ask/history/move): at
+  // most one per ask, and asks are `liveChat`'s 12 a minute; uncharged writes of the caller's own rows.
+  liveAskMove: { limit: 20, windowMs: MINUTE },
   // Read aloud (POST /api/live/speak): a minute's budget and a day's cap (src/lib/speech/contracts.ts).
   liveSpeak: SPEAK_RATE_LIMITS.perMinute,
   liveSpeakDay: SPEAK_RATE_LIMITS.perDay,

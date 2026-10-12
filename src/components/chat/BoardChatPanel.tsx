@@ -131,7 +131,8 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
   const plan = useUnlimited().state;
   const showCost = hasPlan(plan) && !isUnlimited(plan);
   const speech = useAskSpeech();
-  const { messages, busy, send, stop, retry, weakSpot, practiceWeakSpots, hello } = useBoardChat(boardId, controller, speech);
+  // the chat of the screen the board is on: another screen shows its own (docs/ASK-V2.md, "A chat per screen")
+  const { messages, busy, send, stop, retry, weakSpot, practiceWeakSpots, hello, screen } = useBoardChat(boardId, controller, speech);
   const grade = useGrade(useAuth().user?.id);
   const isPhone = useIsPhone();
   const [draft, setDraft] = useState("");
@@ -140,9 +141,12 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const stick = useRef(true);
 
-  // does the screen have work on it ("3 more like these" leads the chips)? Read as the panel opens
-  // and again when a finger or the mouse comes back to it
-  const [screenHasWork, setScreenHasWork] = useState(() => screenHasWorkOn(controller));
+  // does the screen have work on it ("3 more like these" leads the chips)? Read as the panel opens,
+  // when the board moves to another screen, and when a finger or the mouse comes back to it
+  const [workOn, setWorkOn] = useState(() => ({ screen: screen.id, has: screenHasWorkOn(controller) }));
+  if (workOn.screen !== screen.id) setWorkOn({ screen: screen.id, has: screenHasWorkOn(controller) });
+  const screenHasWork = workOn.has;
+  const setScreenHasWork = (has: boolean) => setWorkOn({ screen: screen.id, has });
 
   // the topic picker's words, sent once as the student's first ask
   const sendRef = useRef(send);
@@ -154,6 +158,13 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
   const kickoffId = kickoff ? `${boardId}:${kickoff.id}` : null;
   const kickoffText = kickoff?.message ?? "";
   useEffect(() => startKickoff(kickoffId, kickoffText, { send: (text) => void sendRef.current(text), sent: () => sentRef.current?.() }), [kickoffId, kickoffText]);
+
+  // Another screen's chat is shown from its end, and followed from there.
+  useLayoutEffect(() => {
+    stick.current = true;
+    const list = listRef.current;
+    if (list) list.scrollTop = list.scrollHeight;
+  }, [screen.id]);
 
   // New words keep the list following them while the kid is at the bottom, but never scroll the
   // kid's own question out of sight: a long answer stops at its top, to be read from there.
@@ -252,7 +263,7 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
 
   const stoppable = canStop(messages);
   const fresh = messages.length === 0;
-  const first = helloFor({ hello: hello.hello, grade, screenHasWork, weakSpot: Boolean(weakSpot) });
+  const first = helloFor({ hello: hello.hello, grade, screenHasWork, weakSpot: Boolean(weakSpot), screenIndex: screen.index });
   // the chips wait for the grade and the saved hello, so they never change under a finger
   const helloReady = !hello.loading && grade !== undefined;
 
@@ -268,7 +279,15 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
         <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
           <Smile className="size-5" strokeWidth={2.25} />
         </span>
-        <h2 className="min-w-0 flex-1 truncate text-[17px] font-semibold">{CHAT_COPY.title}</h2>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[17px] font-semibold leading-tight">{CHAT_COPY.title}</h2>
+          {/* quiet: the chat follows the screen, so the kid knows which screen's chat this is */}
+          {screen.index !== null && (
+            <p data-ask-screen="" title={CHAT_COPY.screenHint(screen.index)} className="truncate text-[13px] leading-tight text-slate-500">
+              {CHAT_COPY.screen(screen.index)}
+            </p>
+          )}
+        </div>
         {/* named for what a tap does ("Stop reading answers out loud" while it reads) */}
         <HeaderButton label={speech.on ? CHAT_COPY.speakerOff : CHAT_COPY.speakerOn} active={speech.on} onClick={speech.toggle}>
           {speech.on ? <Volume2 className="size-5" aria-hidden /> : <VolumeX className="size-5" aria-hidden />}

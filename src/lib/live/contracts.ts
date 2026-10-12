@@ -875,6 +875,11 @@ export interface LiveTranscript {
   lines: LiveTranscriptLine[];
   summary: string;
 }
+/** How the board came to another screen (`LiveController.onChatScreenChange`). */
+export interface ChatScreenChange {
+  /** the tutor's own actions started this screen (a reply's new screen); false: the student moved */
+  tutor: boolean;
+}
 export interface LiveController {
   getTranscript(): LiveTranscript;
   placeMath(args: { latex: string; nearLineId?: string; tone?: MathTone }): TLShapeId | null;
@@ -905,11 +910,15 @@ export interface LiveController {
    */
   chatImage?(): Promise<string | null>;
   /**
-   * Ask's chat per screen (docs/ASK-V2.md): the current screen's id (its tldraw page id), and a
-   * subscription to the student (or the tutor) moving to another screen. Optional, like the chat's.
+   * Ask's chat per screen (docs/ASK-V2.md): the current screen's id (its tldraw page id), its place
+   * on the board (1 = the first, by the pages' order: the panel's "Screen 2", and which screen holds
+   * the turns saved before chats were per screen), and a subscription to the student (or the tutor)
+   * moving to another screen. `how.tutor`: the tutor's own actions started that screen (a reply's
+   * new screen), not the student moving. Optional, like the chat's.
    */
   chatScreenId?(): string | null;
-  onChatScreenChange?(cb: (screenId: string) => void): () => void;
+  chatScreenIndex?(): number | null;
+  onChatScreenChange?(cb: (screenId: string, how: ChatScreenChange) => void): () => void;
   runChatActions?(actions: readonly ChatAction[], from?: ChatRunOrigin): Promise<ChatRunReport>;
   /**
    * Lecture mode (`src/lib/live/lecture`): the current screen in words for the director, the

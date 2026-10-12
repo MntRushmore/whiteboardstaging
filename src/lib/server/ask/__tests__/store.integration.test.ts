@@ -11,7 +11,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { adminDeleteUser, createSupabaseHttp, loadDotEnvLocal, provisionUser, resolveSupabaseEnv, waitForHealth } from "../../../../../scripts/lib/supabaseHttp.mjs";
-import { askStoreDeps, deleteKidMemory, deleteLearnerMemory, fetchKidMemory, fetchLearnerMemory, loadAskContext, readAskHistory, rememberFromTurn, saveAskTurns } from "../store";
+import { askStoreDeps, deleteKidMemory, deleteLearnerMemory, fetchKidMemory, fetchLearnerMemory, loadAskContext, moveAskTurns, readAskHistory, rememberFromTurn, saveAskTurns } from "../store";
 
 const enabled = process.env.RUN_DB_TESTS === "1";
 const suite = enabled ? describe : describe.skip;
@@ -81,6 +81,38 @@ suite("Ask store (live Supabase)", () => {
     expect(await saveAskTurns(b(), boardA, [{ role: "user", text: "hi there" }])).toBeNull();
     expect(await readAskHistory(b(), boardA)).toEqual({ kind: "missing" });
     expect(await readAskHistory(b(), boardB)).toEqual({ kind: "turns", turns: [] });
+  });
+
+  it("a chat per screen (20261012010000_ask_screens.sql): each screen reads its own; the first also the turns with no screen; moves are the owner's alone", async () => {
+    const S1 = "page:itFirst";
+    const S2 = "page:itSecond";
+    // the turns of the first test (saved without a screen) are the first screen's
+    const one = await saveAskTurns(a(), boardA, [{ role: "user", text: "on screen 1", clientId: "it_s1" }, { role: "tutor", text: "Screen 1 reply." }], { screenId: S1 });
+    const two = await saveAskTurns(a(), boardA, [{ role: "user", text: "5 more please", clientId: "it_s2" }, { role: "tutor", text: "Here are 5 on a new screen." }], { screenId: S1 });
+    expect(one).toHaveLength(2);
+    expect(two).toHaveLength(2);
+
+    const first = await readAskHistory(a(), boardA, { id: S1, first: true });
+    expect(first.kind === "turns" && first.turns.map((t) => t.text)).toEqual(["what is 7 x 8?", "What is 7 x 4? Now double it.", "on screen 1", "Screen 1 reply.", "5 more please", "Here are 5 on a new screen."]);
+    expect(await readAskHistory(a(), boardA, { id: S2, first: false })).toEqual({ kind: "turns", turns: [] });
+
+    // the tutor started screen 2 for the second exchange: it moves there, with the owner's token
+    expect(await moveAskTurns(a(), boardA, two!, S2)).toEqual({ kind: "moved", moved: 2 });
+    const second = await readAskHistory(a(), boardA, { id: S2, first: false });
+    expect(second.kind === "turns" && second.turns.map((t) => [t.text, t.screenId])).toEqual([
+      ["5 more please", S2],
+      ["Here are 5 on a new screen.", S2],
+    ]);
+    const firstAfter = await readAskHistory(a(), boardA, { id: S1, first: true });
+    expect(firstAfter.kind === "turns" && firstAfter.turns.map((t) => t.text)).not.toContain("5 more please");
+
+    // B moves none of A's turns: on A's board it is not B's board; on B's own board the ids are not B's
+    expect(await moveAskTurns(b(), boardA, one!, S2)).toEqual({ kind: "missing" });
+    expect(await moveAskTurns(b(), boardB, one!, S2)).toEqual({ kind: "moved", moved: 0 });
+    // A's turns named with the wrong board move nothing
+    expect(await moveAskTurns(a(), boardB, one!, S2)).toEqual({ kind: "missing" });
+    const still = await readAskHistory(a(), boardA, { id: S1, first: true });
+    expect(still.kind === "turns" && still.turns.filter((t) => t.screenId === S1).map((t) => t.text)).toEqual(["on screen 1", "Screen 1 reply."]);
   });
 
   it("remembers through the service role, the owner reads and clears; a grown-up's path reads and clears too", async () => {
