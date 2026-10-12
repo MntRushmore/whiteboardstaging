@@ -1,5 +1,3 @@
-import { Sigma } from "lucide-react";
-import { createElement } from "react";
 import type { TLAnyShapeUtilConstructor, TLStateNodeConstructor, TLUiOverrides } from "tldraw";
 import { GraphShapeUtil } from "./graph/GraphShapeUtil";
 import { MathShapeTool } from "./math/MathShapeTool";
@@ -11,20 +9,24 @@ import { MathShapeUtil } from "./math/MathShapeUtil";
  *   <Tldraw shapeUtils={liveShapeUtils} tools={liveTools} overrides={...} components={{ Toolbar: LiveToolbar }} />
  */
 export const liveShapeUtils: readonly TLAnyShapeUtilConstructor[] = [MathShapeUtil, GraphShapeUtil] as const;
+/**
+ * The old Math tool stays registered, so a board left in it still opens, but nothing reaches it any
+ * more: no toolbar button, no `m` shortcut (`liveUiOverrides`). Its typed boxes were never read by the
+ * tutor; a kid types maths in the Type it bar now (docs/TYPE-MATH.md).
+ */
 export const liveTools: readonly TLStateNodeConstructor[] = [MathShapeTool] as const;
 export const LIVE_SHAPE_TYPES = ["math", "graph"] as const;
 
-/** Adds the Math tool item; merge with other overrides as `liveUiOverrides.tools!(editor, other.tools!(...), helpers)`. */
+/**
+ * Live's tool overrides, merged as `liveUiOverrides.tools!(editor, other.tools!(...), helpers)`. It
+ * used to add the Math tool (kbd `m`); now it only makes sure no `math` item is offered, the way the
+ * board page takes the text tool off (da3aabb).
+ */
 export const liveUiOverrides: TLUiOverrides = {
-  tools(editor, tools) {
-    tools.math = {
-      id: "math",
-      label: "Math",
-      kbd: "m",
-      icon: createElement("div", null, createElement(Sigma, { size: 22, strokeWidth: 1.5 })),
-      onSelect: () => editor.setCurrentTool("math"),
-    };
-    return tools;
+  tools(_editor, tools) {
+    const rest = { ...tools };
+    delete rest.math;
+    return rest;
   },
 };
 
