@@ -11,16 +11,19 @@ vi.hoisted(() => {
 });
 
 import { LIVE_MODELS } from "@/lib/live/contracts";
+import { skillDef } from "@/lib/learning/contracts";
 import { UpstreamError } from "@/lib/server/openrouter";
 import {
   askStoreDeps,
   clearLearnerMemory,
   deleteKidMemory,
   deleteLearnerMemory,
+  earlierSessionAttempts,
   EMPTY_ASK_CONTEXT,
   fetchKidMemory,
   fetchLearnerMemory,
   firstName,
+  LAST_SESSION_GAP_MS,
   loadAskContext,
   readAskHistory,
   readLearnerMemory,
@@ -226,6 +229,25 @@ describe("loadAskContext", () => {
       return new Error("timeout");
     });
     expect(await loadAskContext(caller)).toEqual({ name: null, nameWords: [], grade: null, course: "algebra1", memory: [], memoryAt: null, recent: [] });
+  });
+
+  it("for the hello (lastSession): only an earlier session's skills — not the board being opened, not the last half hour", async () => {
+    const now = Date.parse("2026-10-12T15:00:00Z");
+    const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
+    const rows = [
+      { skill: "add_within_10", outcome: "first_try", lines_written: 2, board_id: BOARD, started_at: at(0.15) },
+      { skill: "add_within_20", outcome: "first_try", lines_written: 2, board_id: "b-other", started_at: at(29) },
+      { skill: "times_tables", outcome: "with_help", lines_written: 3, board_id: BOARD, started_at: at(24 * 60) },
+      { skill: "divide_fractions", outcome: "with_help", lines_written: 3, board_id: null, started_at: at(31) },
+      { skill: "percents", outcome: "first_try", lines_written: 1, board_id: "b-other", started_at: "not a time" },
+    ];
+    expect(earlierSessionAttempts(rows, BOARD, now).map((r) => r.skill)).toEqual(["divide_fractions"]);
+    expect(LAST_SESSION_GAP_MS).toBe(30 * 60_000);
+    useDbs((q) => (q.table === "learning_attempts" ? { data: rows } : { data: null }));
+    expect((await loadAskContext(caller, { lastSession: { boardId: BOARD, now } })).recent).toEqual(["Dividing fractions"]);
+    expect(userDb.calls.find((c) => c.table === "learning_attempts")?.select).toBe("skill,outcome,lines_written,board_id,started_at");
+    // the ask route's read keeps what they are working on now: context for the answer
+    expect((await loadAskContext(caller)).recent).toEqual(["add_within_10", "add_within_20", "times_tables", "divide_fractions", "percents"].map((id) => skillDef(id)!.name));
   });
 
   it("never throws: the empty context", async () => {

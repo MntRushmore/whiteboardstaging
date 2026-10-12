@@ -303,7 +303,34 @@ export function recentSkillNames(rows: ReadonlyArray<{ skill?: unknown; outcome?
   return out;
 }
 
-export async function loadAskContext(caller: AskStoreCaller): Promise<AskLearnerContext> {
+/**
+ * The hello's "Last time you worked on…" means an earlier session: an attempt this recent (or on the
+ * board being opened) is this session's, not last time's.
+ */
+export const LAST_SESSION_GAP_MS = 30 * 60_000;
+
+type AttemptRow = { skill?: unknown; outcome?: unknown; lines_written?: unknown; board_id?: unknown; started_at?: unknown };
+
+/**
+ * The attempts of an earlier session than this one: not on `boardId` (the board being opened) and
+ * started at least LAST_SESSION_GAP_MS before `now`. An attempt whose time cannot be read is left out.
+ */
+export function earlierSessionAttempts<T extends AttemptRow>(rows: readonly T[], boardId: string, now: number): T[] {
+  const cutoff = now - LAST_SESSION_GAP_MS;
+  return rows.filter((r) => {
+    if (r.board_id === boardId) return false;
+    const at = typeof r.started_at === "string" ? Date.parse(r.started_at) : Number.NaN;
+    return Number.isFinite(at) && at <= cutoff;
+  });
+}
+
+/**
+ * What the tutor knows about the student (`AskLearnerContext`), read as the student. `lastSession`:
+ * for the hello on a board being opened, `recent` holds only an earlier session's skills
+ * (`earlierSessionAttempts`), so a problem worked on this board a minute ago is not "last time". The
+ * ask route reads every recent skill: what they are working on now is context for the answer.
+ */
+export async function loadAskContext(caller: AskStoreCaller, opts: { lastSession?: { boardId: string; now?: number } } = {}): Promise<AskLearnerContext> {
   try {
     const db = askStoreDeps.user(caller.token);
     const settle = async <T>(what: string, run: () => PromiseLike<{ data: T | null; error: DbError | null }>): Promise<T | null> => {
@@ -326,10 +353,10 @@ export async function loadAskContext(caller: AskStoreCaller): Promise<AskLearner
       settle<{ notes?: unknown; updated_at?: unknown }>("read learner memory", () =>
         db.from(LEARNER_MEMORY_TABLE).select("notes,updated_at").eq("user_id", caller.userId).abortSignal(timeout()).maybeSingle(),
       ),
-      settle<Array<{ skill?: unknown; outcome?: unknown; lines_written?: unknown }>>("read recent skills for ask", () =>
+      settle<AttemptRow[]>("read recent skills for ask", () =>
         db
           .from("learning_attempts")
-          .select("skill,outcome,lines_written")
+          .select("skill,outcome,lines_written,board_id,started_at")
           .eq("user_id", caller.userId)
           .order("started_at", { ascending: false })
           .limit(RECENT_ATTEMPTS)
@@ -338,6 +365,8 @@ export async function loadAskContext(caller: AskStoreCaller): Promise<AskLearner
     ]);
     const grade = profile?.grade;
     const course = profile?.course;
+    const worked = Array.isArray(attempts) ? attempts : [];
+    const session = opts.lastSession;
     return {
       name: firstName(profile?.display_name),
       nameWords: nameWords(profile?.display_name),
@@ -345,7 +374,7 @@ export async function loadAskContext(caller: AskStoreCaller): Promise<AskLearner
       course: isCourseId(course) ? course : null,
       memory: cleanMemoryNotes(strings(memory?.notes)),
       memoryAt: typeof memory?.updated_at === "string" ? memory.updated_at : null,
-      recent: recentSkillNames(Array.isArray(attempts) ? attempts : []),
+      recent: recentSkillNames(session ? earlierSessionAttempts(worked, session.boardId, session.now ?? Date.now()) : worked),
     };
   } catch (err) {
     log.warn({ error: errorText(err) }, "load ask context threw");
