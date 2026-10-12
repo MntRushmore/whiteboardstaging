@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Eraser, FilePlus2, MessageCircle, Pencil, Undo2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eraser, FilePlus2, Keyboard, MessageCircle, Pencil, Undo2 } from "lucide-react";
 import {
   DefaultColorStyle,
   DefaultSizeStyle,
@@ -17,6 +17,7 @@ import {
 import { screenStripSlot } from "@/components/screens/ScreenStrip";
 import { CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
 import { useChatOpen } from "@/components/chat/useChatOpen";
+import { toggleTypeBar, useTypeButton } from "@/components/typeMath/typeBarStore";
 import { addScreen, goToScreen, MAX_SCREENS, screenPosition } from "@/lib/screens/screens";
 import { DOCK_COPY, hitMarginFor, KID_COLORS, kidDockView, penSizeOnClose, penSizeOnOpen, type KidColor, type KidDockView } from "./dockView";
 import { KID_PEN_ATTR } from "./tourAnchors";
@@ -41,6 +42,8 @@ export default function KidDock() {
   const view = kidDockView({ narrow, tool, color, canUndo, page: index, pages: count, maxPages: MAX_SCREENS });
   // the board chat's open state is the page's own store, so the dock's Ask and the panel agree
   const [chatOpen, setChatOpen] = useChatOpen();
+  // Type it (docs/TYPE-MATH.md): the bar to type maths in, opened and closed here too
+  const type = useTypeButton();
 
   const pick = (c: KidColor) =>
     editor.run(() => {
@@ -70,6 +73,11 @@ export default function KidDock() {
         <DockButton label={DOCK_COPY.undo} disabled={!view.undo} onClick={() => editor.undo()}>
           <Undo2 className="size-6" strokeWidth={2.25} aria-hidden />
         </DockButton>
+        {type.available && (
+          <DockButton label={DOCK_COPY.type} title={DOCK_COPY.typeHint} pressed={type.open} onClick={() => toggleTypeBar()}>
+            <Keyboard className="size-6" strokeWidth={2.25} aria-hidden />
+          </DockButton>
+        )}
         <span aria-hidden className="mx-1 h-9 w-px shrink-0 bg-slate-200" />
         {view.colours.layout === "row" ? (
           <div role="group" aria-label={DOCK_COPY.colours} className="flex items-center">

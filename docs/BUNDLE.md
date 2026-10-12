@@ -47,6 +47,15 @@ boundaries) share. The reporter itself, `src/lib/clientErrors.ts` (1.7 KB raw / 
 chunk fetched 3 s after the page loads, or at the first error; shipped in the first load it cost 887 B.
 Other routes grew 274 to 405 B for the same front door.
 
+**Type it bar, 2026-10-12** (`feat/type-bar`, against a build of the contract commit `3948f04`, which
+measured 1,097,951 B: 2,049 B under the budget, not the ~10 KB the plan assumed): `/board/[id]`
+1,099,155 B (+1,204, 845 B under). In the first load: whether the bar shows and the Type buttons'
+state (`src/components/typeMath/typeBarStore.ts`, 1.9 KB raw), the readback's edit event and the
+bar's inset atom (`src/lib/typeMath/barLink.ts`), the toolbar's keyboard icon (lucide), and a few
+lines in the page, `MathShapeUtil` and `LiveHintLayer`. Lazy: the bar itself, its parser, its
+preview and its keys (`src/components/typeMath/TypeBar.tsx`, one chunk loaded while it shows). The
+writer's part in the Live loop (`writeTyped`, `typedSpot`, `typedLines`) is not in this number.
+
 **Sync follow-ups, 2026-10-03** (`fix/sync-followups`, measured against a build of
 `release/ink-and-board` `ce2b2f7`, which itself measured 1,054,882 B): `/board/[id]` 1,056,203 B
 (+1,321, 3,797 B under the budget). In the first load: the per-tab backup key and its Web Lock, the
