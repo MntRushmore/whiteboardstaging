@@ -55,8 +55,15 @@ function MathNode({ src, display, render }: { src: string; display: boolean; ren
     // a long formula scrolls sideways on a phone instead of pushing the panel wider
     return <span className="block max-w-full overflow-x-auto overflow-y-hidden py-1 text-center" dangerouslySetInnerHTML={{ __html: html }} />;
   }
+  // A fraction in a line is set as big as a display one (`askMathSource`): as an inline-block with a
+  // little room above and below, its line grows to hold it, so one line's denominator never meets the
+  // next line's numerator. Kept on its baseline; maths with no fraction stays inline, its line tight.
+  if (TALL_INLINE.test(src)) return <span className="my-[0.3em] inline-block max-w-full align-baseline" dangerouslySetInnerHTML={{ __html: html }} />;
   return <span dangerouslySetInnerHTML={{ __html: html }} />;
 }
+
+/** Inline maths KaTeX sets in display style, as tall as a display fraction (`askMathSource`'s rule). */
+const TALL_INLINE = /\\(?:d?frac|binom)\b/;
 
 function Inlines({ nodes, render, tail }: { nodes: readonly RichInline[]; render: RenderMath | null; tail?: ReactNode }) {
   return (
