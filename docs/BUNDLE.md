@@ -33,7 +33,7 @@ Run it with `npm run bundle:check` (`node scripts/check-bundle.mjs`). Unit tests
 
 | Route | Measured first-load JS (gzip) | Budget (gzip) |
 | --- | --- | --- |
-| `/board/[id]` | 1,100,646 B (1.05 MB) at `feat/type-math` (2026-10-12, below) | **1,102,000 B (~1.05 MB)**: raised from 1,100,000 on 2026-10-12 for Type it (below); from 1,060,000 on 2026-10-04 |
+| `/board/[id]` | 1,076,120 B (1.03 MB) at `feat/type-math` (2026-10-12, below) | **1,100,000 B (~1.05 MB)**: raised from 1,060,000 on 2026-10-04 (below) |
 
 The budget lives in `BUDGETS` in `scripts/check-bundle.mjs`. Raising it needs a line in this file saying
 what was added and why it could not be lazy-loaded. `/train` has no budget: trainer-only route, same
@@ -72,11 +72,14 @@ need all of Type it in about 1 KB, less than the bar's own share, so moving Type
 it. The large lever is older code: the engine's LaTeX translator (`src/lib/live/engine/latex.ts`,
 27.8 KB raw) is in the first load through static imports (`liveLoop.ts` → `engine/domain.ts`,
 `graphing/plan.ts` → `engine/graphIntent.ts`), although the engine itself loads after the board.
-**Budget raised to 1,102,000 B, 2026-10-12** (`feat/type-math`). What has to stay in the first load is
-listed above: a typed line has to be read with no bar on the board (a reload, an iPad with the bar
-closed, another tab), and the toolbar's Type button decides its state on the first frame. 646 B over;
-the extra 1,354 B is a margin, not room for the next feature. The engine's LaTeX translator (above) is
-the cut to make before the board grows again.
+**The graph reader leaves the first load, 2026-10-12** (`feat/type-math`, after merging `main` with
+Ask v2, #39). Merged, the board measured 1,102,309 B: 2,309 B over the budget. The graph sketcher
+(`graphing/plan.ts`, in the first load) imported one helper, `niceLatex`, from the engine's graph reader
+(`engine/graphIntent.ts`), and that one import brought the reader, its classifier, its function and
+transformation helpers and much of the engine's LaTeX translator into the first load with it. The nice
+numbers moved to `engine/niceNumber.ts` (no imports; `graphIntent.ts` re-exports them). After:
+**1,076,120 B (−26,189 B), 23,880 B under the budget**, with Type it in. `latex.ts` itself is still in
+the first load through `liveLoop.ts` → `engine/domain.ts` (`parseDomainPiece`), the next lever.
 
 **Sync follow-ups, 2026-10-03** (`fix/sync-followups`, measured against a build of
 `release/ink-and-board` `ce2b2f7`, which itself measured 1,054,882 B): `/board/[id]` 1,056,203 B

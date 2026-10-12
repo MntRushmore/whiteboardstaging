@@ -52,6 +52,7 @@ import { compileExpr, toXExpression } from "./graph";
 import { preprocessLatex, splitRelations, type Translated } from "./latex";
 import { safeParse } from "./math";
 import { argsOf, fnOf } from "./nodes";
+import { niceLatex, niceRational, snap } from "./niceNumber";
 import { qNum } from "./poly";
 import { affineCall, keyPointOf, tellingPoints, type Affine } from "./transformations";
 
@@ -66,8 +67,8 @@ export const MAX_GRAPH_CURVES = 3;
 export const SEARCH: { readonly lo: number; readonly hi: number; readonly step: number } = { lo: -40, hi: 40, step: 0.05 };
 /** At most this many key points on one graph. */
 const MAX_POINTS = 6;
-/** A coordinate is written only when it is p/q with q at most this. */
-const MAX_DENOMINATOR = 12;
+
+export { niceLatex, niceRational, snap } from "./niceNumber";
 
 type Sampler = (x: number) => number;
 type Sampler2 = (x: number, y: number) => number;
@@ -78,41 +79,6 @@ const FLIP: Record<GraphRelOp, GraphRelOp> = { "=": "=", "<": ">", ">": "<", "<=
 const MIRROR: Record<string, string> = { "<": ">", ">": "<", "<=": ">=", ">=": "<=", "!=": "!=" };
 
 // ------------------------------------------------------------------ numbers
-
-/** `v` as p/q with a small q, or null. */
-export function niceRational(v: number): { p: number; q: number } | null {
-  if (!Number.isFinite(v) || Math.abs(v) > 1e6) return null;
-  for (let q = 1; q <= MAX_DENOMINATOR; q++) {
-    const p = Math.round(v * q);
-    if (Math.abs(v * q - p) < 1e-7 * Math.max(1, Math.abs(p))) return { p, q };
-  }
-  return null;
-}
-
-/** The exact value `v` snaps to (`0.49999999997` → `0.5`), or `v` itself. */
-export function snap(v: number): number {
-  const r = niceRational(v);
-  if (!r) return v;
-  const s = r.p / r.q;
-  return Object.is(s, -0) ? 0 : s;
-}
-
-/** LaTeX of a nice number (`-\frac{1}{2}`, `3`), or null when it is not one. */
-export function niceLatex(v: number): string | null {
-  const r = niceRational(v);
-  if (!r) return null;
-  const g = gcdInt(Math.abs(r.p), r.q);
-  const p = r.p / g;
-  const q = r.q / g;
-  if (p === 0) return "0";
-  if (q === 1) return String(p);
-  return `${p < 0 ? "-" : ""}\\frac{${Math.abs(p)}}{${q}}`;
-}
-
-function gcdInt(a: number, b: number): number {
-  while (b) [a, b] = [b, a % b];
-  return a || 1;
-}
 
 /** `(x, y)` when both coordinates are exact, else ''. */
 export function pointLabel(x: number, y: number): string {
