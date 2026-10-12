@@ -48,9 +48,11 @@ export function isAbortLike(err: unknown): boolean {
 }
 
 /**
- * Additive hints the recognize route puts on its `recognizer_failed` 502 (see
+ * Additive hints the recognize route puts on its `recognizer_failed` answer (see
  * `recognizeFailureHints` in src/lib/server/recognizeHints.ts). They are read from the
- * error itself, its raw body and its `details` so the shape of the transport never matters.
+ * error itself, its raw body and its `details` so the shape of the transport never matters,
+ * and never from the status (a 503; a 502 until Cloudflare was found replacing it with its own
+ * page, hints and all: `RECOGNIZER_FAILED_STATUS`).
  *
  *  - `needsCrop`      the server had nothing to fall back on: send the same line again with
  *                     a crop and the vision recognizer can still read it (one retry).

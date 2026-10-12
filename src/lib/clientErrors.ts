@@ -78,6 +78,8 @@ export type ClientErrorReport = {
   requestId?: string;
   /** Vercel's `x-vercel-error` on the failed response: the platform answered, not our route */
   vercelError?: string;
+  /** an error a student saw: machine facts about it (`UserErrorInput.facts`), in the event's `meta` */
+  facts?: string;
 };
 
 /**
@@ -139,6 +141,12 @@ export interface UserErrorInput {
   requestId?: string;
   /** the failed response's `x-vercel-error` (`errorTrace`); anything else is dropped */
   vercelError?: string;
+  /**
+   * Machine facts about the failure, as `key=value` pairs (`how=drawn,bytes=41234,status=502`):
+   * statuses, error names, sizes and our own enums only, composed by the caller, never words and
+   * never anything the student wrote. Anything not of `FACTS`' shape is dropped.
+   */
+  facts?: string;
 }
 
 /**
@@ -297,6 +305,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The shapes the route accepts for a request id and a Vercel error (the same as api-client's). */
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const VERCEL_ERROR = /^[A-Z0-9_]{1,64}$/;
+/** `key=value` pairs, comma separated (the route accepts the same). */
+const FACTS = /^[A-Za-z0-9_.:=,+-]{1,200}$/;
 
 /** A code the route accepts: lower case, `[a-z0-9_.:-]`, at most 40 chars; "unknown" when empty. */
 export function userErrorCode(code: unknown): string {
@@ -324,7 +334,7 @@ export function userErrorMessage(message: unknown): string {
 /**
  * One page load's reporter of errors a student saw: builds the report from scratch (only the kind,
  * code, level, our words, the path, the board id, the browser, the release, and the failed
- * request's id and Vercel error when they have their shape — nothing else the caller passed), sends the same kind + code + message at most once per `windowMs`, and stops after
+ * request's id, Vercel error and machine facts when they have their shape — nothing else the caller passed), sends the same kind + code + message at most once per `windowMs`, and stops after
  * `max`. Never throws. Exported for tests.
  */
 export function createUserReporter(
@@ -363,6 +373,7 @@ export function createUserReporter(
         release: RELEASE,
         ...(typeof input.requestId === "string" && REQUEST_ID.test(input.requestId) ? { requestId: input.requestId } : {}),
         ...(typeof input.vercelError === "string" && VERCEL_ERROR.test(input.vercelError) ? { vercelError: input.vercelError } : {}),
+        ...(typeof input.facts === "string" && FACTS.test(input.facts) ? { facts: input.facts } : {}),
       });
     } catch {
       // Reporting must never become the next error.

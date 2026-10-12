@@ -76,6 +76,14 @@ export default function NowYouTry({ controller, tour }: NowYouTryProps) {
   useEffect(() => {
     tourRef.current = tour;
   });
+  // the board is still here: a problem cut short by the kid leaving is no failure to toast on the next page
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   // every attempt's latest state, as the tracker publishes it
   useEffect(() => learningBus.onAttempt((record) => dispatch({ type: "attempt", record, now: Date.now(), tour: tourRef.current })), []);
@@ -119,12 +127,13 @@ export default function NowYouTry({ controller, tour }: NowYouTryProps) {
       try {
         if (!controller.runChatActions) throw new Error("The board is not ready yet.");
         const report = await controller.runChatActions([{ type: "write_problems", problems: [[...o.problem]] }], { origin: "now_you_try", parentId: o.attemptId });
-        if (report.problemsWritten === 0) {
+        if (report.problemsWritten === 0 && mounted.current) {
           toast(NOW_YOU_TRY_COPY.failed);
           reportUserError({ kind: "live.practice", code: "now_you_try_none_written", message: NOW_YOU_TRY_COPY.failed });
         }
       } catch (e) {
         clientMetric("learning.now_you_try.failed", { error: e instanceof Error ? e.message : String(e) });
+        if (!mounted.current) return;
         toast(NOW_YOU_TRY_COPY.failed);
         reportUserError({ kind: "live.practice", code: controller.runChatActions ? "now_you_try_failed" : "now_you_try_board_not_ready", message: NOW_YOU_TRY_COPY.failed });
       }

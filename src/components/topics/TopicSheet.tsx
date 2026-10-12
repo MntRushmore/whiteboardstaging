@@ -13,7 +13,7 @@ import type { LiveController } from "@/lib/live/contracts";
 import { clientMetric } from "@/lib/logger";
 import { reportUserError } from "@/lib/reportAppError";
 import { practiceDeps } from "@/components/learning/PracticeBoard";
-import { PRACTICE_COPY, writePracticeSet } from "@/components/learning/usePracticeBoard";
+import { boardLifeDeps, PRACTICE_COPY, writePracticeSet } from "@/components/learning/usePracticeBoard";
 import { AskBox, TopicList } from "./TopicPicker";
 import { topicSheetOpen } from "./topicSheetState";
 import { useTopicData } from "./useTopicStart";
@@ -82,6 +82,8 @@ export default function TopicSheet({ boardId, userId, controller, onModeChange, 
             ...practiceDeps(editor, onModeChange),
             run: (actions, from) => run(actions, from),
             reportFailure: (code, message) => reportUserError({ kind: "live.practice", code, message, boardId }),
+            // the set outlives the sheet (the look at the example): it ends quietly once the kid leaves the board
+            ...boardLifeDeps(boardId, controller),
           },
           { newScreen },
         );

@@ -237,7 +237,8 @@ export function useDailyBoard(
       const note = noteRef.current;
       const last = tries.count >= MAX_TOP_UPS;
       const failed = (code: string) => {
-        if (!last) return;
+        // a write cut short by the kid leaving is no failure to toast on the next page
+        if (!last || controller.boardClosed?.(boardId)) return;
         toast(DAILY_BOARD_COPY.topUpFailed);
         reportUserError({ kind: "live.practice", code, message: DAILY_BOARD_COPY.topUpFailed, boardId });
       };
@@ -291,6 +292,7 @@ export function useDailyBoard(
     const note = noteRef.current;
     const skills = setSkills(note, boardId);
     const failed = (code: string) => {
+      if (controller.boardClosed?.(boardId)) return;
       toast(DAILY_BOARD_COPY.bonusFailed);
       reportUserError({ kind: "live.practice", code, message: DAILY_BOARD_COPY.bonusFailed, boardId });
     };

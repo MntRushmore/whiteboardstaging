@@ -489,6 +489,65 @@ describe("live loop — visible errors and retry", () => {
     expect(liveStore.recognizer.get()).toBe("mathpix");
   });
 
+  /** liveLoop's CAPS_RETRY_MS: the capabilities' one more try after a dropped request */
+  const CAPS_RETRY_MS = 2000;
+
+  it("a capabilities request dropped while online is tried once more on its own before any card", async () => {
+    loop.stop();
+    resetLiveStore();
+    capsCalls = 0;
+    capsScript.push(new TypeError("Load failed"));
+    loop = makeLoop();
+    loop.start();
+    await settle(4);
+    expect(capsCalls).toBe(1);
+    expect(liveStore.lastError.get()).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(CAPS_RETRY_MS + 1);
+    await settle(4);
+    expect(capsCalls).toBe(2);
+    expect(liveStore.lastError.get()).toBeNull();
+    expect(liveStore.recognizer.get()).toBe("mathpix");
+  });
+
+  it("dropped twice: the card shows (once), and Retry fetches again", async () => {
+    loop.stop();
+    resetLiveStore();
+    capsCalls = 0;
+    capsScript.push(new TypeError("Load failed"), new TypeError("Load failed"));
+    loop = makeLoop();
+    loop.start();
+    await settle(4);
+    await vi.advanceTimersByTimeAsync(CAPS_RETRY_MS + 1);
+    await settle(4);
+    expect(capsCalls).toBe(2);
+    expect(liveStore.lastError.get()).toMatchObject({ kind: "capabilities", code: "network" });
+    // no third try on its own
+    await vi.advanceTimersByTimeAsync(CAPS_RETRY_MS * 3);
+    await settle(4);
+    expect(capsCalls).toBe(2);
+
+    retryLiveError();
+    await settle(4);
+    expect(capsCalls).toBe(3);
+    expect(liveStore.lastError.get()).toBeNull();
+  });
+
+  it("a board closed before the one more try never fetches again", async () => {
+    loop.stop();
+    resetLiveStore();
+    capsCalls = 0;
+    capsScript.push(new TypeError("Load failed"));
+    loop = makeLoop();
+    loop.start();
+    await settle(4);
+    loop.stop();
+    await vi.advanceTimersByTimeAsync(CAPS_RETRY_MS + 1);
+    await settle(4);
+    expect(capsCalls).toBe(1);
+    expect(liveStore.lastError.get()).toBeNull();
+  });
+
   it("capabilities failure while offline stays quiet", async () => {
     loop.stop();
     resetLiveStore();

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, apiErrorFromResponse, errorTrace } from "@/lib/api-client";
+import { ApiError, apiErrorFromResponse, errorTrace, isBareServerError } from "@/lib/api-client";
+import { recognizeFailureHints } from "@/lib/live/recognizeClient";
 
 describe("apiErrorFromResponse", () => {
   it("keeps the server's retryAfterMs from the body", async () => {
@@ -38,6 +39,33 @@ describe("apiErrorFromResponse", () => {
     // a function killed at its maxDuration: the platform answers, with its own error and no id of ours
     const killed = await apiErrorFromResponse(new Response("An error occurred", { status: 504, headers: { "x-vercel-error": "FUNCTION_INVOCATION_TIMEOUT" } }));
     expect(errorTrace(killed)).toEqual({ vercelError: "FUNCTION_INVOCATION_TIMEOUT" });
+  });
+
+  it("Cloudflare's page in place of a route's 502 is a bare 5xx: no code, no hints, no request id (production, 2026-10-12)", async () => {
+    const page = "<!DOCTYPE html><html><head><title>www.agathon.app | 502: Bad gateway</title></head><body>cloudflare</body></html>";
+    const err = await apiErrorFromResponse(
+      new Response(page, { status: 502, headers: { "Content-Type": "text/html; charset=UTF-8", Server: "cloudflare", "cf-ray": "a4925f9e3b1509ae-SJC" } }),
+    );
+    expect(err).toMatchObject({ status: 502, message: "Request failed (502)" });
+    expect(err.code).toBeUndefined();
+    expect(errorTrace(err)).toEqual({});
+    expect(isBareServerError(err)).toBe(true);
+    // what the route meant to say never arrived: the board can take its word for nothing
+    expect(recognizeFailureHints(err)).toEqual({ needsCrop: false, recognizerDown: false, unreadable: false, transient: false });
+
+    // the route's own answer, as it now gets through (503): its hints and its id
+    const ours = await apiErrorFromResponse(
+      new Response(JSON.stringify({ error: "recognizer_failed", message: "Couldn't read this line right now.", provider: null, needsCrop: true, unreadable: true }), {
+        status: 503,
+        headers: { "Content-Type": "application/json", "X-Request-Id": "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc" },
+      }),
+    );
+    expect(isBareServerError(ours)).toBe(false);
+    expect(recognizeFailureHints(ours)).toMatchObject({ needsCrop: true, unreadable: true });
+    expect(errorTrace(ours)).toEqual({ requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc" });
+    // only 5xx: a 4xx without our body is not a server that lost its answer
+    expect(isBareServerError(await apiErrorFromResponse(new Response("no", { status: 413 })))).toBe(false);
+    expect(isBareServerError(new TypeError("Load failed"))).toBe(false);
   });
 
   it("takes neither when it does not have the shape it should; nothing for an error that is not an ApiError", async () => {

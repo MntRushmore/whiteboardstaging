@@ -11,6 +11,7 @@ import type { TLBaseShape, TLShapeId } from "tldraw";
 import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
 import type { LectureAction, LectureRunReport, LectureScreen } from "./lecture/contracts";
 import type { LectureRunOptions } from "./lecture/desk";
+import type { LoopReadiness } from "./loopGate";
 import { LearnerHintSchema } from "@/lib/learning/hint";
 import type { ChatRunOrigin } from "@/lib/learning/contracts";
 
@@ -871,6 +872,15 @@ export interface LiveController {
    */
   chatScreen?(): ChatScreen;
   runChatActions?(actions: readonly ChatAction[], from?: ChatRunOrigin): Promise<ChatRunReport>;
+  /**
+   * For work that outlives a render (a practice set's look at its worked example, a retry): the
+   * board's loop for `boardId` is up ("ready"), the board has gone ("closed": the kid left, it
+   * unmounted — stop without a word), or it did not come up within `timeoutMs` ("timeout").
+   * Event-driven (`src/lib/live/loopGate.ts`). Optional, like the chat's.
+   */
+  whenReady?(boardId: string, timeoutMs: number): Promise<LoopReadiness>;
+  /** The board `boardId` is gone from this controller (see `whenReady`). */
+  boardClosed?(boardId: string): boolean;
   /**
    * Lecture mode (`src/lib/live/lecture`): the current screen in words for the director, the
    * director's actions sketched one block at a time (`LectureDesk`), and heard text saved on the

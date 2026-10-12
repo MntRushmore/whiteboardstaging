@@ -97,6 +97,19 @@ describe("classifyLiveFailure", () => {
     expect(classifyLiveFailure(e, { ...ONLINE, attempts: 1 })?.message).toBe("The tutor service had a hiccup");
     expect(classifyLiveFailure(e, { ...ONLINE, attempts: 3 })?.message).toBe("The tutor service had a hiccup — tried 3 times");
   });
+
+  it("a 5xx no route of ours wrote (Cloudflare's page for a 502) is reported as `upstream:bare_<status>`; the student sees the same hiccup", () => {
+    // production, 2026-10-12: the recognize route's 502 reached the iPad as Cloudflare's HTML page
+    const bare = classifyLiveFailure(new ApiError("Request failed (502)", 502), ONLINE);
+    expect(bare).toMatchObject({ code: "upstream", message: "The tutor service had a hiccup", reportCode: "upstream:bare_502" });
+    expect(bare).not.toHaveProperty("requestId");
+    expect(classifyLiveFailure(new ApiError("Request failed (504)", 504), ONLINE)).toMatchObject({ reportCode: "upstream:bare_504" });
+    // our own answers keep the plain code: they carry their request id to join
+    const ours = new ApiError("bad gateway", 502, "upstream_error");
+    ours.requestId = "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc";
+    expect(classifyLiveFailure(ours, ONLINE)).not.toHaveProperty("reportCode");
+    expect(classifyLiveFailure(new ApiError("Couldn't read this line right now.", 503, "recognizer_failed"), ONLINE)).not.toHaveProperty("reportCode");
+  });
 });
 
 describe("liveErrorView", () => {
