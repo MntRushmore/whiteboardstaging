@@ -7,7 +7,7 @@ import { CHAT_PROBLEM_META, problemMetaOf } from "./cells";
 import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow } from "./contracts";
 import { CHAT_LIMITS, noProblemNote } from "./contracts";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
-import { commonestReason, verifyLines, verifyProblem } from "./verify";
+import type * as Verify from "./verify";
 import type { LecturePageMeta } from "../lecture/contracts";
 import { LECTURE_BLOCK_META } from "../lecture/meta";
 
@@ -52,7 +52,30 @@ export const CHAT_WRITE = {
   /** after adding a screen, until the loop has switched to it (one frame, normally) */
   screenWaitStepMs: 20,
   screenWaitMaxMs: 2_000,
+  /**
+   * `help_board` on a line still being read: how long to wait for the read (the recognizer's own
+   * timeout and a moment, as Help me waits — `HELP_READ_WAIT_MS`)
+   */
+  readWaitMaxMs: 8_000,
 } as const;
+
+/**
+ * What the board's own Help me / Solve it did with an ask from the chat (`ChatHost.helpBoard`):
+ * `writing` — the help is going on the board; `nothing` — nothing of the student's on this screen to
+ * help with; `busy` — the tutor is writing on it already; `reading` — the line it is about is still
+ * being read (asked again in a moment); `unread` — the line could not be read as maths (it got the
+ * board's "?"); `done` — it is already worked out; `off` — the tutor (Live) is switched off.
+ */
+export type HelpBoardResult = "writing" | "nothing" | "busy" | "reading" | "unread" | "done" | "off";
+
+/** The panel's words for each `help_board` that wrote nothing (plain, for a 7-year-old). */
+export const HELP_BOARD_NOTES: Record<Exclude<HelpBoardResult, "writing" | "reading">, string> = {
+  nothing: "There's nothing of yours to help with on this screen yet.",
+  busy: "I'm still writing on your work. Ask me again when I'm done.",
+  unread: "I can't read your last line yet. Try writing it again, a little bigger.",
+  done: "That one is already solved on the board.",
+  off: "The tutor is switched off on this board, so I can't see your work.",
+};
 
 export interface ChatShape {
   id: string;
@@ -101,6 +124,11 @@ export interface ChatHost {
    * `n` here; `done`: nothing left to write; `busy`: it is being written already.
    */
   helpProblem(n: number, depth: "step" | "solve"): "writing" | "done" | "busy" | "missing";
+  /**
+   * Help me (`step`) / Solve it (`solve`) on the student's own work on this screen, as the board's
+   * button does it (`LiveLoop.chatHelpBoard`), whatever the dial says. Absent: nothing to help with.
+   */
+  helpBoard?(depth: "step" | "solve"): HelpBoardResult;
   planFigure(spec: FigureSpec, opts: FigurePlanOptions): FigurePlanResult | null;
   seed(key: string): number;
   delay(ms: number): Promise<void>;
@@ -143,6 +171,7 @@ export class ChatDesk {
   private tail: Promise<unknown> = Promise.resolve();
   private expectedPage = "";
   private running = 0;
+  private verify: Promise<typeof Verify> | null = null;
 
   constructor(host: ChatHost) {
     this.host = host;
@@ -249,8 +278,7 @@ export class ChatDesk {
       case "help_problem":
         return this.helpProblem(action.problem, action.depth);
       case "help_board":
-        // CONTRACT STUB (docs/ASK-V2.md, part "board"): the board part runs Help me / Solve it here
-        return { type: "help_board", ok: false, note: "I can't help with that from here yet. Try the Help me button." };
+        return this.helpBoard(action.depth);
       case "write_proof":
         return (await import("./proofWrite")).writeProof(this.writerDesk(report), action);
       case "teach":
@@ -274,6 +302,30 @@ export class ChatDesk {
     await this.waitForHand();
     this.host.metric?.("live.chat.help", { depth });
     return { type: "help_problem", ok: true };
+  }
+
+  /**
+   * "Is this right?", "help me with this", "what's next?", "solve it" about the student's OWN work
+   * (`help_board`): exactly what the board's Help me (`step`) and Solve it (`solve`) buttons do
+   * (`ChatHost.helpBoard`), after any writing already under way; a line still being read is waited
+   * for, as the button waits. Honest about what happened: written, nothing of theirs here, busy, a
+   * line it could not read, already worked out, or the tutor switched off.
+   */
+  private async helpBoard(depth: "step" | "solve"): Promise<ChatActionOutcome> {
+    await this.waitForHand();
+    const ask = (): HelpBoardResult => this.host.helpBoard?.(depth) ?? "nothing";
+    let res = ask();
+    for (let waited = 0; res === "reading" && waited < CHAT_WRITE.readWaitMaxMs; waited += CHAT_WRITE.waitStepMs) {
+      await this.host.delay(CHAT_WRITE.waitStepMs);
+      res = ask();
+    }
+    this.host.metric?.("live.chat.helpBoard", { depth, outcome: res });
+    if (res === "writing") {
+      await this.waitForHand();
+      return { type: "help_board", ok: true };
+    }
+    const why = res === "reading" ? "busy" : res;
+    return { type: "help_board", ok: false, note: HELP_BOARD_NOTES[why], why };
   }
 
   /**
@@ -339,10 +391,20 @@ export class ChatDesk {
     await this.host.write(plan, extraMeta);
   }
 
-  private canDraw = (lines: readonly string[]): boolean => {
-    if (!this.host.handwriting()) return true;
-    return planHandwriting(lines, { size: PROBLEM_GRID.size, seed: 1 }).unsupported.length === 0;
-  };
+  /**
+   * The interlock (`verify.ts`, with the worksheet blanks it reads, `engine/blanks.ts`), loaded with
+   * the first problem or line the chat writes, never with the board (its first load is budgeted,
+   * docs/BUNDLE.md); the engine it checks with is loaded then anyway.
+   */
+  private verifier(): Promise<typeof Verify> {
+    this.verify ??= import("./verify");
+    return this.verify;
+  }
+
+  /** The hand's interlock, the one the route's gate runs too (`handCanWrite`); typeset maths can say anything. */
+  private canDraw(v: typeof Verify): (lines: readonly string[]) => boolean {
+    return (lines) => !this.host.handwriting() || v.handCanWrite(lines);
+  }
 
   /** A place for a block of this size on this screen, else on a new one. */
   private async placeFor(size: { w: number; h: number }, report: Report): Promise<Rect | null> {
@@ -378,12 +440,15 @@ export class ChatDesk {
   }
 
   private async writeProblems(problems: readonly string[][], engine: LiveEngine, report: Report): Promise<ChatActionOutcome> {
+    const verify = await this.verifier();
+    const canDraw = this.canDraw(verify);
     const kept: string[][] = [];
     let unchecked = 0;
     const reasons: string[] = [];
     for (const p of problems) {
-      const v = verifyProblem(engine, p, this.canDraw);
-      if (v.ok) kept.push(p.map((l) => l.trim()));
+      const v = verify.verifyProblem(engine, p, canDraw);
+      // as checked: in the board's own form (a worksheet's blank as the box the hand draws)
+      if (v.ok) kept.push(v.lines);
       else {
         unchecked++;
         reasons.push(v.reason);
@@ -391,12 +456,18 @@ export class ChatDesk {
       }
     }
     // why, for the report (`note_write_problems_<why>`): the engine's commonest reason
-    const why = commonestReason(reasons) ?? undefined;
+    const why = verify.commonestReason(reasons) ?? undefined;
     if (kept.length === 0) {
       report.problemsDropped += unchecked;
       return { type: "write_problems", ok: false, note: `I couldn't check ${plural(problems.length, "that problem", "those problems")}, so I didn't write ${plural(problems.length, "it", "them")}.`, ...(why ? { why } : {}) };
     }
     const hand = this.host.handwriting();
+    // A problem too wide for a screen even alone, at the smallest hand, is left out by itself: the
+    // grid of its screen used to come back empty (`planGrid`: null) and every problem on it went.
+    const screen = this.host.screen();
+    const fitting = hand ? kept.filter((lines) => planGrid(screen, 1, (_, size) => this.problemWidth(lines, 99, size)) !== null) : kept;
+    const tooWide = kept.length - fitting.length;
+    kept.splice(0, kept.length, ...fitting);
     let written = 0;
     let n = 1;
     let index = 0;
@@ -434,7 +505,7 @@ export class ChatDesk {
       }
       n += items.length;
     }
-    const unplaced = kept.length - written;
+    const unplaced = kept.length - written + tooWide;
     report.problemsWritten += written;
     report.problemsDropped += unchecked + unplaced;
     if (written > 0) this.host.problemsChanged();
@@ -449,7 +520,8 @@ export class ChatDesk {
   // ---------------------------------------------------------------- lines
 
   private async writeLines(lines: readonly string[], engine: LiveEngine, report: Report): Promise<ChatActionOutcome> {
-    const v = verifyLines(engine, lines, this.canDraw);
+    const verify = await this.verifier();
+    const v = verify.verifyLines(engine, lines, this.canDraw(verify));
     if (!v.ok) {
       const note = v.reason === "false" ? "I left out lines that didn't check out." : v.reason === "unchecked" ? "I couldn't check those lines, so I didn't write them." : "I couldn't write that on the board.";
       return { type: "write_lines", ok: false, note, why: v.reason };
@@ -529,7 +601,12 @@ export class ChatDesk {
       } catch {
         res = null;
       }
-      if (!res) return cannot;
+      // a smaller box the drawer cannot plan in is no reason to give up on a figure it drew in a
+      // larger one: that one goes on a new screen
+      if (!res) {
+        if (plans.length === 0) return cannot;
+        break;
+      }
       plans.push(res.plan);
       const slot = findFreeArea({ w: res.plan.bounds.w, h: res.plan.bounds.h }, this.host.screen(), this.obstacles());
       if (!slot) continue;

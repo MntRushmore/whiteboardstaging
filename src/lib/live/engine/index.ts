@@ -48,6 +48,7 @@ import { judgeOperation, operandMath, parseOperationLine, plainRelation } from "
 import { linearRelation, operationResult } from "./operationResult";
 import { domainChain, isTrigLine, parseDomainPiece, splitDomain, type DomainBounds } from "./domain";
 import { judgePrimaryLine } from "./primaryWork";
+import { blankAsUnknown, blankBack, compareBlank, filledBlank } from "./blanks";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -1719,12 +1720,31 @@ export function createEngine(mod: MathModule): LiveEngine {
   };
 
   /**
+   * A child's answer to a worksheet's blank (`blanks.ts`, `filledBlank`): `5` under `4 + \square = 9`
+   * is `4 + 5 = 9` — true, so the answer (a tick, the problem solved); `6` is `4 + 6 = 9`, ringed.
+   * `>` under `\frac{3}{4} \bigcirc \frac{5}{8}` likewise. Null for any other line (its own rules).
+   */
+  const judgeBlank = (problem: string, latex: string, ctx: AnalyzeContext): LineAnalysis | null => {
+    const filled = filledBlank(problem, latex);
+    if (!filled) return null;
+    const closed = analyzeLine(filled.line, { mode: ctx.mode });
+    if (closed.verdict !== "ok" && closed.verdict !== "mismatch") return null;
+    const out: LineAnalysis = { kind: filled.lone ? "expression" : closed.kind, math: closed.math, resultLatex: "", verdict: closed.verdict, note: "" };
+    if (closed.verdict === "ok") out.solved = true;
+    if (filled.lone) out.bareAnswer = true;
+    return out;
+  };
+
+  /**
    * A young student's line of working under a problem with no letters (`primaryWork.ts`), as a line
    * analysis: the line's own analysis (its kind and maths, as any line's), its mark and whether it
    * solves the problem judged against the problem. Null when it is not such a line.
    */
   const judgeWork: NonNullable<LiveEngine["judgeWork"]> = ({ problem, above, latex, ctx }) => {
     try {
+      // a worksheet's blank (`4 + \square = 9`, `\frac{3}{4} \bigcirc \frac{5}{8}`): the answer put in it
+      const blank = problem.length === 1 ? judgeBlank(problem[0], latex, ctx) : null;
+      if (blank) return blank;
       const judged = judgePrimaryLine(problem, above, latex);
       if (!judged) return null;
       const kind = judged.relation ? "equation" : "expression";
@@ -1740,8 +1760,43 @@ export function createEngine(mod: MathModule): LiveEngine {
     }
   };
 
+  /**
+   * A worksheet's blank (`blanks.ts`): `4 + \square = 9` is read as the equation it is, with the
+   * blank as its unknown, and what comes back puts the blank where the letter was. A line with no
+   * such blank is read exactly as before.
+   */
+  const analyzeWithBlanks = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
+    const blank = latex ? blankAsUnknown(latex) : null;
+    if (!blank) return analyzeLine(latex, ctx);
+    const out = analyzeLine(blank.latex, ctx);
+    return out.resultLatex ? { ...out, resultLatex: blankBack(out.resultLatex, blank.letter) } : out;
+  };
+
+  /**
+   * `\frac{3}{4} \bigcirc \frac{5}{8}`: the comparison filled in (`\frac{3}{4} > \frac{5}{8}`), when
+   * exactly one of `<`, `=`, `>` is true of the two sides as the engine judges a closed line.
+   */
+  const solveComparison = (latex: string): { latex: string; steps: string[] } | null => {
+    const sides = compareBlank(latex);
+    if (!sides) return null;
+    const holds = (["<", "=", ">"] as const).filter((rel) => analyzeLine(`${sides.left} ${rel} ${sides.right}`, { mode: "answer" }).verdict === "ok");
+    if (holds.length !== 1) return null;
+    const filled = `${sides.left} ${holds[0]} ${sides.right}`;
+    return { latex: filled, steps: [filled] };
+  };
+
+  const solveWithBlanks = (latex: string, solveOptions?: SolveOptions): { latex: string; steps: string[] } | null => {
+    const compared = latex ? solveComparison(latex) : null;
+    if (compared) return compared;
+    const blank = latex ? blankAsUnknown(latex) : null;
+    if (!blank) return solveLatex(latex, solveOptions);
+    const column = solveOptions?.column?.map((l) => blankAsUnknown(l)?.latex ?? l);
+    const solved = solveLatex(blank.latex, solveOptions ? { ...solveOptions, ...(column ? { column } : {}) } : undefined);
+    return solved && { latex: blankBack(solved.latex, blank.letter), steps: solved.steps.map((s) => blankBack(s, blank.letter)) };
+  };
+
   return {
-    analyzeLine,
+    analyzeLine: analyzeWithBlanks,
     judgeWork,
     solveFromLines: (lines: readonly string[]) => {
       try {
@@ -1770,7 +1825,7 @@ export function createEngine(mod: MathModule): LiveEngine {
         return null;
       }
     },
-    solveLatex,
+    solveLatex: solveWithBlanks,
     simplifySteps,
     alreadySimplest,
     graphFor: (lines: readonly string[]) => {
