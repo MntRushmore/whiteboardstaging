@@ -248,6 +248,9 @@ export class ChatDesk {
         return { type: "clear_tutor", ok: true };
       case "help_problem":
         return this.helpProblem(action.problem, action.depth);
+      case "help_board":
+        // CONTRACT STUB (docs/ASK-V2.md, part "board"): the board part runs Help me / Solve it here
+        return { type: "help_board", ok: false, note: "I can't help with that from here yet. Try the Help me button." };
       case "write_proof":
         return (await import("./proofWrite")).writeProof(this.writerDesk(report), action);
       case "teach":

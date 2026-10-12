@@ -175,6 +175,18 @@ export const HelpProblemSchema = z.object({
 });
 
 /**
+ * Help with the student's OWN work on this screen (a problem they wrote, not one the chat wrote):
+ * exactly what the board's Help me (`step`) and Solve it (`solve`) buttons do
+ * (`LiveController.requestHelp`), so "is this right?", "help me with this" and "what's next?" work
+ * on anything the student is solving. Ask (docs/ASK-V2.md) uses it; a screen with nothing of the
+ * student's to help with gets a note instead.
+ */
+export const HelpBoardSchema = z.object({
+  type: z.literal("help_board"),
+  depth: z.enum(["step", "solve"]),
+});
+
+/**
  * One statement of a two-column proof as the proof reader reads a student's
  * (`src/lib/live/proof/facts.ts`): `\overline{AB} \cong \overline{CB}`, `\triangle ABD \cong
  * \triangle CBD`, `M \text{ is the midpoint of } \overline{AB}`. Words only as that reader reads
@@ -237,12 +249,13 @@ export const ChatActionSchema = z.discriminatedUnion("type", [
   NewScreenSchema,
   ClearTutorSchema,
   HelpProblemSchema,
+  HelpBoardSchema,
   WriteProofSchema,
   TeachSchema,
 ]);
 export type ChatAction = z.infer<typeof ChatActionSchema>;
 export type ChatActionType = ChatAction["type"];
-export const CHAT_ACTION_TYPES = ["write_problems", "write_lines", "graph", "draw_figure", "new_screen", "clear_tutor", "help_problem", "write_proof", "teach"] as const satisfies readonly ChatActionType[];
+export const CHAT_ACTION_TYPES = ["write_problems", "write_lines", "graph", "draw_figure", "new_screen", "clear_tutor", "help_problem", "help_board", "write_proof", "teach"] as const satisfies readonly ChatActionType[];
 
 /** The note for help asked about a problem that is not on this screen (the route's, and the board's). */
 export function noProblemNote(n: number): string {

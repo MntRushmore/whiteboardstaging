@@ -47,6 +47,7 @@ Usage that week: 145 asks from 10 subscribers.
 |---|---|
 | `src/lib/live/ask/contracts.ts` | Request, SSE events, saved turns, hello, memory, transcribe, limits, paths |
 | `src/lib/live/ask/splitter.ts` | Reply / board-block splitter (done, tested) |
+| `src/lib/live/chat/contracts.ts` | New action `help_board {depth: step\|solve}`: Help me / Solve it on the student's OWN work (stubbed in `ChatDesk`; the board part runs it) |
 | `src/lib/live/contracts.ts` | `LIVE_MODELS.ask/askFallback/askMemory/askMemoryFallback`, `LIVE_RATE_LIMITS.liveTranscribe`, `LiveController.chatImage?()` |
 | `src/lib/env.ts` | `LIVE_MODEL_ASK`, `getLiveModels().ask…` |
 | `src/lib/server/ask/store.ts` | STUB: save, load and remember (never throws) |
@@ -61,8 +62,8 @@ Usage that week: 145 asks from 10 subscribers.
 | Part | Branch | Owns |
 |---|---|---|
 | Server | `feat/ask2-server` | `src/app/api/live/ask/route.ts`. It moves the old route's engine gates into a shared `src/lib/server/chatGate.ts` that both `/api/live/chat` and `/api/live/ask` use. It also covers: streaming with fallback and watchdogs, the image passed to the model, metering (`live/chat`, 3 ink, refunded as before), saving turns, `after()` memory, events and logs, and route tests. |
-| Brain | `feat/ask2-brain` | `src/lib/server/prompts/ask.ts`, `src/lib/server/prompts/askMemory.ts`, `npm run eval:ask` (`src/__eval__/ask`), the model bake-off and `docs/eval/ask.md`, and the `LIVE_MODELS.ask*` values. |
-| Memory | `feat/ask2-memory` | Migration `20261011000000_ask_v2.sql`, plus its `verify-rls` checks. `src/lib/server/ask/store.ts`. `GET /api/live/ask/history` (turns and hello), and `GET` and `DELETE /api/live/ask/memory`. The account page's "What Ask remembers". The admin board viewer's Ask tab. The privacy line. |
+| Brain | `feat/ask2-brain` | `src/lib/server/prompts/ask.ts`, `npm run eval:ask` (`src/__eval__/ask`), the model bake-off and `docs/eval/ask.md`, and the `LIVE_MODELS.ask*` values. |
+| Memory | `feat/ask2-memory` | Migration `20261011000000_ask_v2.sql`, plus its `verify-rls` checks. `src/lib/server/ask/store.ts` and the memory prompt `src/lib/server/prompts/askMemory.ts`. `GET /api/live/ask/history` (turns and hello), and `GET` and `DELETE /api/live/ask/memory`. The account page's "What Ask remembers". The admin board viewer's Ask tab. The privacy line. |
 | Panel | `feat/ask2-panel` | `src/lib/live/ask/client.ts`, the panel rebuilt (`src/components/chat/*`): streaming, rich text with KaTeX, hello and chips, saved history, and mounting the mic, speech and image. The kid dock's Ask button. |
 | Voice | `feat/ask2-voice` | `src/components/chat/voice/*` and `POST /api/live/transcribe`. |
 | Vision | `feat/ask2-vision` | `src/lib/live/ask/boardImage.ts` and `LiveLoop.chatImage`. |
