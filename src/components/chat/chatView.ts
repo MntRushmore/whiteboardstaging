@@ -33,7 +33,7 @@ export const CHAT_COPY = {
   /** the stream ended with no words and nothing to write */
   empty: "Hmm, I'm not sure. Can you ask me another way?",
   /** the connection dropped after the board had started writing: the writing finished, no Try again */
-  cutOff: "The internet cut out at the end, but I kept what I wrote.",
+  cutOff: "The internet cut out, but your board is done.",
   thinking: "Thinking…",
   writing: "Writing on your board…",
   retry: "Try again",
@@ -330,6 +330,19 @@ export function retryOf(
 export function followTarget(o: { scrollHeight: number; clientHeight: number; lastIsTutor: boolean; questionTop: number | null }): number {
   const end = o.scrollHeight - o.clientHeight;
   return o.lastIsTutor && o.questionTop !== null ? Math.min(end, o.questionTop - 12) : end;
+}
+
+/**
+ * What the panel does with words said into the mic (`AskMic`'s `onText`): sent as said — or, while
+ * the tutor is still answering, put in the box after anything typed there (at most the box's
+ * length), to send when the kid is ready. Never dropped.
+ */
+export function spokenWords(o: { busy: boolean; draft: string; said: string }): { send: string | null; draft: string } {
+  const said = o.said.trim();
+  if (!said) return { send: null, draft: o.draft };
+  if (!o.busy) return { send: said, draft: o.draft };
+  const typed = o.draft.trimEnd();
+  return { send: null, draft: (typed ? `${typed} ${said}` : said).slice(0, ASK_LIMITS.message) };
 }
 
 /** Enter sends; Shift+Enter (or composing an IME character) makes a new line. */

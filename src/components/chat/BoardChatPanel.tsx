@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/AuthProvider";
 import type { LiveController } from "@/lib/live/contracts";
 import { ASK_LIMITS } from "@/lib/live/ask/contracts";
-import { canStop, CHAT_COPY, followTarget, helloFor, sendsOnKey, WEAK_SPOTS_COPY } from "./chatView";
+import { canStop, CHAT_COPY, followTarget, helloFor, sendsOnKey, spokenWords, WEAK_SPOTS_COPY } from "./chatView";
 import { useBoardChat, type SendOptions } from "./useBoardChat";
 import { AskMessage } from "./AskMessage";
 import { AskMic } from "./voice/AskMic";
@@ -216,6 +216,17 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
     void send(text, opts);
   };
 
+  // Words said into the mic: sent as said, or — the tutor still answering — waiting in the box
+  // (a kid mid-sentence when the last ask went finishes it; the words are never lost)
+  const onSpoken = (said: string) => {
+    const next = spokenWords({ busy, draft, said });
+    if (next.send) return submit(next.send, { voice: true });
+    if (next.draft !== draft) {
+      setDraft(next.draft);
+      requestAnimationFrame(grow);
+    }
+  };
+
   // Stop ends the words and the voice reading them; closing the panel silences it too
   const halt = () => {
     speech.stop();
@@ -327,7 +338,7 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
             // 17 px: big enough to read, and never under 16 px (iOS zooms the page into a smaller box)
             className="max-h-[132px] min-h-11 flex-1 resize-none bg-transparent py-2.5 text-[17px] leading-6 text-slate-900 outline-none placeholder:text-slate-400"
           />
-          <AskMic compact={isPhone} disabled={busy} onText={(t) => submit(t, { voice: true })} />
+          <AskMic compact={isPhone} disabled={busy} onText={onSpoken} />
           {stoppable ? (
             <button type="submit" aria-label={CHAT_COPY.stop} title={CHAT_COPY.stop} className={cn(ROUND, "bg-slate-800 text-white hover:bg-slate-700")}>
               <Square className="size-4 fill-current" aria-hidden />
