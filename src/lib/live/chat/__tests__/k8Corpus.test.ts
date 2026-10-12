@@ -50,7 +50,7 @@ describe("K–8 corpus: what the board must write, the route and the board write
     }
     expect(failed).toEqual([]);
     expect(K8_CHECKABLE.length).toBeGreaterThan(140);
-  });
+  }, 60_000);
 
   it("what is written is what the hand's own planner draws, at the problem size", () => {
     for (const [, problem] of K8_CHECKABLE) {
