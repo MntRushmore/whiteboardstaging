@@ -563,4 +563,113 @@ describe("live loop — the board chat", () => {
     expect(metas.length).toBeGreaterThan(3);
     for (const m of metas) expect(m).toMatchObject({ n: 1, lines: ["2x + 3 = 11"], cell: { x: expect.any(Number), w: expect.any(Number) } });
   });
+
+  describe("Ask's chat per screen: which screen, and the board moving to another", () => {
+    /** Every screen change heard, as `id:tutor|student`, until unsubscribed. */
+    function listen(): { heard: string[]; off: () => void } {
+      const heard: string[] = [];
+      const off = loop.onChatScreenChange((id, how) => heard.push(`${id}:${how.tutor ? "tutor" : "student"}`));
+      return { heard, off };
+    }
+    const settle = () => vi.advanceTimersByTimeAsync(50);
+
+    it("the current screen's page id and its number, from 1", () => {
+      start();
+      const first = editor.getCurrentPage().id;
+      expect(loop.chatScreenId()).toBe(first);
+      expect(loop.chatScreenId()).toMatch(/^page:[A-Za-z0-9_-]{1,64}$/);
+      expect(loop.chatScreenIndex()).toBe(1);
+      const second = editor.addPage({ screen: { ...DEFAULT_SCREEN } });
+      editor.switchPage(second);
+      expect(loop.chatScreenId()).toBe(second);
+      expect(loop.chatScreenIndex()).toBe(2);
+    });
+
+    it("the student moving between screens is heard as theirs, each time; unsubscribed hears nothing", async () => {
+      start();
+      const first = editor.getCurrentPage().id;
+      const second = editor.addPage({ screen: { ...DEFAULT_SCREEN } });
+      const { heard, off } = listen();
+      editor.switchPage(second);
+      await settle();
+      editor.switchPage(first);
+      await settle();
+      expect(heard).toEqual([`${second}:student`, `${first}:student`]);
+      off();
+      editor.switchPage(second);
+      await settle();
+      expect(heard).toHaveLength(2);
+    });
+
+    it("a screen the tutor's own actions started is heard as the tutor's; coming back to it later is the student's", async () => {
+      start();
+      const first = editor.getCurrentPage().id;
+      const { heard } = listen();
+      const report = await run([{ type: "new_screen" }]);
+      expect(report.screensAdded).toBe(1);
+      const made = editor.getCurrentPage().id;
+      expect(made).not.toBe(first);
+      expect(heard).toEqual([`${made}:tutor`]);
+      expect(loop.chatScreenId()).toBe(made);
+      expect(loop.chatScreenIndex()).toBe(2);
+      editor.switchPage(first);
+      await settle();
+      editor.switchPage(made);
+      await settle();
+      expect(heard).toEqual([`${made}:tutor`, `${first}:student`, `${made}:student`]);
+    });
+
+    it("heard a frame later, as the browser's store tells its listeners: still the tutor's, and only that once", async () => {
+      const g = globalThis as { __FORCE_RAF_IN_TESTS__?: boolean; requestAnimationFrame?: unknown; cancelAnimationFrame?: unknown };
+      const had = { raf: g.requestAnimationFrame, caf: g.cancelAnimationFrame };
+      g.__FORCE_RAF_IN_TESTS__ = true;
+      g.requestAnimationFrame = (cb: () => void) => setTimeout(cb, 16);
+      g.cancelAnimationFrame = (id: ReturnType<typeof setTimeout>) => clearTimeout(id);
+      try {
+        start();
+        const first = editor.getCurrentPage().id;
+        const { heard } = listen();
+        await run([{ type: "new_screen" }]);
+        await settle();
+        const made = editor.getCurrentPage().id;
+        expect(heard).toEqual([`${made}:tutor`]);
+        editor.switchPage(first);
+        // not heard yet: the store tells its listeners on the next frame
+        expect(heard).toHaveLength(1);
+        await settle();
+        editor.switchPage(made);
+        await settle();
+        expect(heard).toEqual([`${made}:tutor`, `${first}:student`, `${made}:student`]);
+      } finally {
+        delete g.__FORCE_RAF_IN_TESTS__;
+        g.requestAnimationFrame = had.raf;
+        g.cancelAnimationFrame = had.caf;
+      }
+    });
+
+    it("more problems on a full screen start a new one: heard as the tutor's", async () => {
+      start();
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"]] }]);
+      const { heard } = listen();
+      const report = await run([{ type: "write_problems", problems: [["4x = 8"], ["5x + 1 = 11"], ["x - 3 = 4"], ["6x = 18"], ["7x - 7 = 0"], ["x + 9 = 12"], ["2x = 14"], ["9x = 81"]] }]);
+      expect(report.screensAdded).toBeGreaterThan(0);
+      expect(heard.length).toBeGreaterThan(0);
+      expect(heard.every((h) => h.endsWith(":tutor"))).toBe(true);
+      expect(heard.at(-1)).toBe(`${loop.chatScreenId()}:tutor`);
+    });
+
+    it("a listener that throws never stops the others, nor the loop", async () => {
+      start();
+      const second = editor.addPage({ screen: { ...DEFAULT_SCREEN } });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      loop.onChatScreenChange(() => {
+        throw new Error("boom");
+      });
+      const { heard } = listen();
+      editor.switchPage(second);
+      await settle();
+      expect(heard).toEqual([`${second}:student`]);
+      warn.mockRestore();
+    });
+  });
 });

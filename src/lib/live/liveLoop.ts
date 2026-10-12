@@ -27,6 +27,7 @@ import {
   isLiveMeta,
   type Annotation,
   type CapabilitiesResponse,
+  type ChatScreenChange,
   type CheckLine,
   type CheckRequest,
   type GraphIntent,
@@ -191,6 +192,8 @@ export interface LiveEditorLike {
   getViewportPageBounds(): Box;
   /** the board's current screen lives in its page meta (optional: test editors have no pages) */
   getCurrentPage?(): TLPage;
+  /** the board's screens in order (Ask's "Screen 2"); optional: test editors have no pages */
+  getPages?(): TLPage[];
   createShapes(shapes: TLShapePartial[]): unknown;
   updateShapes(shapes: TLShapePartial[]): unknown;
   deleteShapes(ids: TLShapeId[]): unknown;
@@ -353,6 +356,12 @@ const HELP_READ_WAIT_MS = LIVE_TIMING.recognizeTimeoutMs + 1_000;
 
 /** Recognition failures that leave a chip under the ink (the pill carries the rest). */
 const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
+
+/**
+ * A screen's id as Ask's contract takes it (`AskScreenIdSchema`, src/lib/live/ask/contracts.ts: a
+ * copy, so the board's first load never pulls in Ask's contract).
+ */
+const CHAT_SCREEN_ID = /^page:[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * A read that failed the way a blip fails (it timed out, or the server answered 5xx) is tried once
@@ -891,6 +900,16 @@ export class LiveLoop implements LiveController {
   private touchedProblem: string | null = null;
   /** the screen the loop last took in (`start` / `switchScreen`): the chat writes only once it is this one */
   private screenSeen: string | null = null;
+  /** Ask's chat per screen: who hears the board come to another screen (`onChatScreenChange`) */
+  private readonly chatScreenListeners = new Set<(screenId: string, how: ChatScreenChange) => void>();
+  /**
+   * Screens the tutor's own actions started (the chat's `addScreen`), not yet announced: the move to
+   * one is the tutor's (`ChatScreenChange.tutor`). Taken out when announced, so the student coming
+   * back to it later is the student's move.
+   */
+  private readonly tutorScreens = new Set<string>();
+  /** the tutor's screen being made right now (the chat's `addScreen`), and whether its move was heard yet */
+  private addingScreen: { announced: string | null } | null = null;
 
   /**
    * lecture mode's hand: the director's actions, one block at a time (`src/lib/live/lecture/desk.ts`),
@@ -997,6 +1016,7 @@ export class LiveLoop implements LiveController {
     this.deps.events?.removeEventListener("offline", this.onOffline);
     this.deps.events?.removeEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
     this.resetRuntime();
+    this.tutorScreens.clear();
     // what lecture mode heard since the last write is saved with the board, not lost with the loop
     this.flushPageMeta();
     if (liveStore.retryHandler.get() === this.retryHandler) liveStore.retryHandler.set(null);
@@ -1095,10 +1115,34 @@ export class LiveLoop implements LiveController {
       if (to.typeName !== "instance" || from.typeName !== "instance") continue;
       if (from.currentPageId !== to.currentPageId) {
         this.switchScreen();
+        this.announceScreen(to.currentPageId);
         return;
       }
     }
     if (picked) this.publishHelpTarget();
+  }
+
+  /**
+   * Ask's chat per screen hears that the board is on another screen (`onChatScreenChange`), and
+   * whether the tutor's own actions started it. A listener that throws never stops the others.
+   */
+  private announceScreen(screenId: string): void {
+    let tutor: boolean;
+    if (this.addingScreen) {
+      // heard while the tutor's screen is being made
+      this.addingScreen.announced = screenId;
+      tutor = true;
+    } else {
+      tutor = this.tutorScreens.delete(screenId);
+    }
+    const how: ChatScreenChange = { tutor };
+    for (const cb of [...this.chatScreenListeners]) {
+      try {
+        cb(screenId, how);
+      } catch (err) {
+        console.warn("[live] a chat screen listener failed", err);
+      }
+    }
   }
 
   /**
@@ -6172,7 +6216,20 @@ export class LiveLoop implements LiveController {
       addScreen: () => {
         const ed = this.editor as unknown as Partial<ScreensEditor>;
         if (typeof ed.getPages !== "function" || typeof ed.createPage !== "function" || typeof ed.setCurrentPage !== "function" || typeof ed.run !== "function") return false;
-        return addScreen(ed as ScreensEditor);
+        // The tutor's own new screen: Ask's exchange that asked for it goes with it (`announceScreen`).
+        // The store tells its listeners on the next frame (at once in tests, or when something
+        // flushes it early), so the move is marked both while it is made and after.
+        const adding: { announced: string | null } = { announced: null };
+        this.addingScreen = adding;
+        let added = false;
+        try {
+          added = addScreen(ed as ScreensEditor);
+        } finally {
+          this.addingScreen = null;
+        }
+        const made = this.pageKey();
+        if (added && adding.announced !== made) this.tutorScreens.add(made);
+        return added;
       },
       screenReady: () => !this.started || this.screenSeen === this.pageKey(),
       clearTutor: () => this.clearMarks(),
@@ -6335,6 +6392,34 @@ export class LiveLoop implements LiveController {
   /** The current screen as maths, for a chat request: what "more like these" refers to. */
   chatScreen(): ChatScreen {
     return this.chat.picture();
+  }
+
+  /**
+   * Ask's chat per screen (docs/ASK-V2.md): the current screen's id, its tldraw page id, or null on
+   * an editor without pages (or an id Ask's contract would refuse: `AskScreenIdSchema`).
+   */
+  chatScreenId(): string | null {
+    const id = this.editor.getCurrentPage?.()?.id;
+    return typeof id === "string" && CHAT_SCREEN_ID.test(id) ? id : null;
+  }
+
+  /** The current screen's place on the board, from 1 (the pages' order), or null without pages. */
+  chatScreenIndex(): number | null {
+    const id = this.editor.getCurrentPage?.()?.id;
+    const at = id ? (this.editor.getPages?.() ?? []).findIndex((p) => p.id === id) : -1;
+    return at >= 0 ? at + 1 : null;
+  }
+
+  /**
+   * Hears the board come to another screen: the student moving (the strip, a deleted screen) or the
+   * tutor's own actions starting one (`how.tutor`). Answers the unsubscribe.
+   */
+  onChatScreenChange(cb: (screenId: string, how: ChatScreenChange) => void): () => void {
+    const entry = (screenId: string, how: ChatScreenChange) => cb(screenId, how);
+    this.chatScreenListeners.add(entry);
+    return () => {
+      this.chatScreenListeners.delete(entry);
+    };
   }
 
   /**
