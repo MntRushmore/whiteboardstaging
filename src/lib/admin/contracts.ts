@@ -518,6 +518,28 @@ export const AdminBoardDocSchema = z.object({
 export type AdminBoardDoc = z.infer<typeof AdminBoardDocSchema>;
 export const AdminBoardUnchangedSchema = z.object({ unchanged: z.literal(true), version: z.number().int() });
 
+/**
+ * GET ADMIN_API.boardAsk(id): the board's Ask chat (ask_messages, 20261011000000_ask_v2.sql), oldest
+ * first: every turn the board keeps (at most ADMIN_LIMITS.askTurns). The tutor's turns carry the
+ * notes the student was shown and the kinds of action written on the board, never their content.
+ * Read with the service role once admin_audit has the look ('board.ask'), like the board itself.
+ */
+export const AdminAskTurnSchema = z.object({
+  id: z.string(),
+  role: z.enum(["user", "tutor"]),
+  text: z.string(),
+  notes: z.array(z.string()),
+  wrote: z.array(z.string()),
+  at: z.string(),
+});
+export type AdminAskTurn = z.infer<typeof AdminAskTurnSchema>;
+export const AdminAskChatSchema = z.object({
+  generatedAt: z.string(),
+  boardId: z.string(),
+  turns: z.array(AdminAskTurnSchema),
+});
+export type AdminAskChat = z.infer<typeof AdminAskChatSchema>;
+
 export const ADMIN_LIMITS = {
   users: 2000,
   boardsPage: 48,
@@ -526,6 +548,8 @@ export const ADMIN_LIMITS = {
   liveWindowMin: 5,
   /** the viewer's follow-live poll */
   followPollMs: 4000,
+  /** a board's Ask chat, read whole (the table keeps a board's newest 400) */
+  askTurns: 400,
 } as const;
 
 /** The console's pages (all behind requireAdmin's answer: a non-admin gets the app's 404). */
@@ -546,6 +570,8 @@ export const ADMIN_API = {
   user: (id: string) => `/api/admin/users/${id}`,
   boards: "/api/admin/boards",
   board: (id: string) => `/api/admin/boards/${id}`,
+  /** GET: the board's Ask chat (AdminAskChat), logged as 'board.ask' */
+  boardAsk: (id: string) => `/api/admin/boards/${id}/ask`,
   bugs: "/api/admin/bugs",
   /** PATCH */
   bug: (id: string) => `/api/admin/bugs/${id}`,

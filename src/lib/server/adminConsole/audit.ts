@@ -20,6 +20,8 @@ export const ADMIN_AUDIT_RETENTION_DAYS = 180;
 export type AuditAction =
   /** a board's snapshot read (the viewer, the replay; every read that returns one) */
   | "board.view"
+  /** a board's Ask chat read (the viewer's Ask tab) */
+  | "board.ask"
   /** a page of board rows read (their thumbnails are the students' screens) */
   | "boards.list"
   /** a user's page read (their boards' thumbnails, their learning record, their errors) */

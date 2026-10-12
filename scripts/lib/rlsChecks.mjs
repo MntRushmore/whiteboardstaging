@@ -3088,6 +3088,208 @@ export const BUG_REPLY_CHECKS = [
 ];
 
 /**
+ * One ask_messages row as src/lib/server/ask/store.ts writes it: no id, seq, user_id or created_at
+ * (the database fills them).
+ * @param {string} boardId
+ * @param {Record<string, unknown>} [over]
+ */
+export function askRow(boardId, over = {}) {
+  return { board_id: boardId, role: "user", body: "rls-verify: what is 3/4 + 1/8?", notes: [], wrote: [], client_id: null, ...over };
+}
+
+/** The store's write: insert, skipping a turn whose (board_id, client_id) is already there. */
+const ASK_INSERT = { query: { on_conflict: "board_id,client_id" }, prefer: "resolution=ignore-duplicates,return=representation" };
+
+/**
+ * Ask's saved chat and memory (migration 20261011000000_ask_v2.sql; src/lib/server/ask/store.ts).
+ *
+ * ask_messages: anon gets nothing. A saves turns on their own board (the database makes them A's,
+ * with a seq and the server's time), and saving the same client id again inserts nothing (the
+ * store's ON CONFLICT DO NOTHING; a plain insert of it is 23505). A cannot save on B's board or as
+ * B, set id or created_at, update or delete a turn (no grants). The database refuses each value the
+ * code would never send (23514). B reads none of A's turns. A board keeps its newest 400 turns
+ * (a 405-turn insert leaves 400, the oldest gone); deleting the board takes its chat.
+ *
+ * learner_memory: anon gets nothing; A can neither insert nor update their own row (the server
+ * writes it). With the service role: A's notes are written, A reads them, B does not; the database
+ * refuses 13 notes and a note over 160 characters (23514); B's delete of A's row deletes nothing,
+ * A's own deletes it. Deleting an account (delete_own_account(), as a throwaway user D) takes D's
+ * chat and memory. Removes everything it wrote.
+ *
+ * Kept out of ALL_CHECKS (the in-memory fake does not model these); scripts/verify-rls.mjs and the
+ * DB integration test run ASK_CHECKS after the rest.
+ * @param {CheckContext} ctx
+ */
+export async function checkAsk({ anon, a, b, service, newUser }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const refusedWith = (/** @type {HttpResult} */ res, /** @type {string} */ want) => !isOk(res) && code(res) === want;
+  const save = (/** @type {RlsClient} */ c, /** @type {unknown} */ body) => c.rest("POST", "ask_messages", { ...ASK_INSERT, body });
+  const turnsOf = (/** @type {RlsClient} */ c, /** @type {string} */ boardId) =>
+    c.rest("GET", "ask_messages", { query: { board_id: `eq.${boardId}`, select: "id,seq,user_id,role,body,client_id,created_at", order: "seq.asc" } });
+
+  const boardA = await createBoard(a, "rls-verify ask");
+  const boardB = await createBoard(b, "rls-verify ask B");
+  const tag = uuid().slice(0, 8);
+  try {
+    // ---------------------------------------------------------------- anon
+    for (const table of ["ask_messages", "learner_memory"]) {
+      const sel = await anon.rest("GET", table, { query: { select: "*", limit: "1" } });
+      out.push(result(`ask: anon cannot select ${table}`, isDenied(sel), describe(sel)));
+    }
+    const anonIns = await anon.rest("POST", "ask_messages", { body: askRow(boardA.id), prefer: "return=minimal" });
+    out.push(result("ask: anon cannot insert into ask_messages", isDenied(anonIns), describe(anonIns)));
+
+    // ---------------------------------------------------------------- A's own chat
+    const pair = await save(a, [
+      askRow(boardA.id, { client_id: `rls-${tag}` }),
+      askRow(boardA.id, { role: "tutor", body: "rls-verify: 7/8. Want another?", notes: ["One problem couldn't be checked."], wrote: ["write_problems"], client_id: `rls-${tag}:tutor` }),
+    ]);
+    const saved = rows(pair);
+    out.push(
+      result(
+        "ask: A saves an exchange on own board; the database makes it A's, in order, with server times",
+        isOk(pair) && saved.length === 2 && saved.every((r) => r.user_id === a.userId && typeof r.created_at === "string") && Number(saved[0]?.seq) < Number(saved[1]?.seq),
+        describe(pair),
+      ),
+    );
+    const again = await save(a, [askRow(boardA.id, { client_id: `rls-${tag}` }), askRow(boardA.id, { role: "tutor", body: "rls-verify: another reply", client_id: `rls-${tag}:tutor` })]);
+    const afterRetry = rows(await turnsOf(a, boardA.id));
+    out.push(result("ask: saving the same client ids again inserts nothing (a retry is not saved twice)", isOk(again) && rows(again).length === 0 && afterRetry.length === 2, `${describe(again)} / ${afterRetry.length} rows`));
+    const plainDup = await a.rest("POST", "ask_messages", { body: askRow(boardA.id, { client_id: `rls-${tag}` }), prefer: "return=minimal" });
+    out.push(result("ask: a plain insert of a client id already on the board is refused (23505)", refusedWith(plainDup, "23505"), describe(plainDup)));
+    const noIds = await save(a, [askRow(boardA.id), askRow(boardA.id)]);
+    out.push(result("ask: turns without a client id never collide", isOk(noIds) && rows(noIds).length === 2, describe(noIds)));
+
+    const onB = await save(a, askRow(boardB.id));
+    out.push(result("ask: A cannot save a turn on B's board", refusedWith(onB, "42501"), describe(onB)));
+    const asB = await save(a, { ...askRow(boardA.id), user_id: b.userId });
+    out.push(result("ask: A cannot save a turn as B", refusedWith(asB, "42501"), describe(asB)));
+    const ghost = await save(a, askRow(uuid()));
+    out.push(result("ask: A cannot save a turn on a board that does not exist", !isOk(ghost) && ["42501", "23503"].includes(code(ghost)), describe(ghost)));
+    const stamp = await save(a, { ...askRow(boardA.id), created_at: "2026-01-02T00:00:00Z" });
+    out.push(result("ask: A cannot set created_at (server time only)", refusedWith(stamp, "42501"), describe(stamp)));
+    const ownId = await save(a, { ...askRow(boardA.id), id: uuid() });
+    out.push(result("ask: A cannot choose a turn's id", refusedWith(ownId, "42501"), describe(ownId)));
+    const firstId = String(saved[0]?.id ?? ZERO_UUID);
+    const upd = await a.rest("PATCH", "ask_messages", { query: { id: `eq.${firstId}` }, body: { body: "rls-verify: rewritten" }, prefer: "return=representation" });
+    out.push(result("ask: A cannot rewrite a saved turn (no update grant)", refusedWith(upd, "42501"), describe(upd)));
+    const del = await a.rest("DELETE", "ask_messages", { query: { id: `eq.${firstId}` }, prefer: "return=representation" });
+    out.push(result("ask: A cannot delete a saved turn (it goes with the board)", refusedWith(del, "42501"), describe(del)));
+
+    // ---------------------------------------------------------------- values the database refuses
+    /** @type {Array<[string, Record<string, unknown>]>} */
+    const bad = [
+      ["an unknown role", { role: "system" }],
+      ["a blank body", { body: " \n\t " }],
+      ["a body over 4,000 characters", { body: "x".repeat(4001) }],
+      ["9 notes", { notes: Array.from({ length: 9 }, (_, i) => `note ${i}`) }],
+      ["a note that is not a string", { notes: [3] }],
+      ["a note over 200 characters", { notes: ["x".repeat(201)] }],
+      ["notes that are not a list", { notes: { a: "b" } }],
+      ["13 action kinds", { wrote: Array.from({ length: 13 }, () => "graph") }],
+      ["an action kind that is not snake_case", { wrote: ["Write Problems"] }],
+      ["a client id with a space", { client_id: "a b" }],
+    ];
+    for (const [what, over] of bad) {
+      const res = await save(a, askRow(boardA.id, over));
+      out.push(result(`ask: the database refuses ${what} (23514)`, refusedWith(res, "23514"), describe(res)));
+    }
+
+    // ---------------------------------------------------------------- B
+    const bSel = await turnsOf(b, boardA.id);
+    out.push(result("ask: B cannot read A's chat", affectedNoRows(bSel), describe(bSel)));
+
+    // ---------------------------------------------------------------- a board keeps its newest 400 turns
+    const many = await a.rest("POST", "ask_messages", {
+      body: Array.from({ length: 405 }, (_, i) => askRow(boardA.id, { body: `rls-verify turn ${i}` })),
+      prefer: "return=minimal",
+    });
+    const kept = rows(await a.rest("GET", "ask_messages", { query: { board_id: `eq.${boardA.id}`, select: "body", order: "seq.asc" } }));
+    out.push(
+      result(
+        "ask: a board keeps its newest 400 turns (the oldest go)",
+        isOk(many) && kept.length === 400 && kept[0]?.body === "rls-verify turn 5" && kept[399]?.body === "rls-verify turn 404",
+        `${describe(many)} / ${kept.length} kept, first ${JSON.stringify(kept[0] ?? null)}`,
+      ),
+    );
+
+    // ---------------------------------------------------------------- learner_memory
+    const aIns = await a.rest("POST", "learner_memory", { body: { user_id: a.userId, notes: ["rls-verify: likes forged notes"] }, prefer: "return=minimal" });
+    out.push(result("ask: A cannot write their own memory (the server's alone)", refusedWith(aIns, "42501"), describe(aIns)));
+    const aUpd = await a.rest("PATCH", "learner_memory", { query: { user_id: `eq.${a.userId}` }, body: { notes: [] }, prefer: "return=representation" });
+    out.push(result("ask: A cannot update their own memory", refusedWith(aUpd, "42501"), describe(aUpd)));
+
+    if (!service) {
+      out.push(result("ask: the memory's server half (skipped: no service role client)", true));
+    } else {
+      const notes = ["rls-verify: gets stuck on borrowing across a zero", "rls-verify: likes word problems about animals"];
+      const write = await service.rest("POST", "learner_memory", { query: { on_conflict: "user_id" }, body: { user_id: a.userId, notes, updated_at: "2026-01-02T00:00:00Z" }, prefer: "resolution=merge-duplicates,return=representation" });
+      const written = rows(write)[0];
+      out.push(
+        result(
+          "ask: the service role writes A's memory (updated_at the server's clock)",
+          isOk(write) && Array.isArray(written?.notes) && written.notes.length === 2 && Date.parse(String(written?.updated_at)) > Date.parse("2026-10-01T00:00:00Z"),
+          describe(write),
+        ),
+      );
+      const aRead = rows(await a.rest("GET", "learner_memory", { query: { select: "notes" } }));
+      out.push(result("ask: A reads their memory", aRead.length === 1 && aRead[0]?.notes?.[0] === notes[0], JSON.stringify(aRead).slice(0, 200)));
+      const bRead = await b.rest("GET", "learner_memory", { query: { user_id: `eq.${a.userId}`, select: "notes" } });
+      out.push(result("ask: B cannot read A's memory", affectedNoRows(bRead), describe(bRead)));
+      const tooMany = await service.rest("PATCH", "learner_memory", { query: { user_id: `eq.${a.userId}` }, body: { notes: Array.from({ length: 13 }, (_, i) => `rls-verify note ${i}`) }, prefer: "return=minimal" });
+      const tooLong = await service.rest("PATCH", "learner_memory", { query: { user_id: `eq.${a.userId}` }, body: { notes: ["x".repeat(161)] }, prefer: "return=minimal" });
+      out.push(result("ask: the database refuses 13 notes and a note over 160 characters (23514)", refusedWith(tooMany, "23514") && refusedWith(tooLong, "23514"), `${describe(tooMany)} / ${describe(tooLong)}`));
+      const bDel = await b.rest("DELETE", "learner_memory", { query: { user_id: `eq.${a.userId}` }, prefer: "return=representation" });
+      out.push(result("ask: B cannot clear A's memory (0 rows)", deniedOrEmpty(bDel), describe(bDel)));
+      const aDel = await a.rest("DELETE", "learner_memory", { query: { user_id: `eq.${a.userId}` }, prefer: "return=representation" });
+      out.push(result("ask: A clears their own memory", isOk(aDel) && rows(aDel).length === 1, describe(aDel)));
+    }
+
+    // ---------------------------------------------------------------- deleting the board, the account
+    await deleteBoard(a, boardA.id);
+    if (service) {
+      const left = await service.rest("GET", "ask_messages", { query: { board_id: `eq.${boardA.id}`, select: "id", limit: "1" } });
+      out.push(result("ask: deleting the board takes its chat", affectedNoRows(left), describe(left)));
+    } else {
+      out.push(result("ask: deleting the board takes its chat (skipped: no service role client)", true));
+    }
+    if (!newUser) {
+      out.push(result("ask: delete_own_account takes the chat and memory (skipped: no newUser in the context)", true));
+    } else {
+      const d = await newUser();
+      const boardD = await createBoard(d, "rls-verify ask D");
+      const dSave = await save(d, [askRow(boardD.id, { client_id: "rls-d" }), askRow(boardD.id, { role: "tutor", body: "rls-verify: hi D", client_id: "rls-d:tutor" })]);
+      const dMemory = service ? await service.rest("POST", "learner_memory", { body: { user_id: d.userId, notes: ["rls-verify: asked for shorter hints"] }, prefer: "return=minimal" }) : null;
+      out.push(result("ask: D saves a chat (and the server a memory)", isOk(dSave) && (dMemory === null || isOk(dMemory)), `${describe(dSave)}${dMemory ? ` / ${describe(dMemory)}` : ""}`));
+      const gone = await rpc(d, "delete_own_account");
+      out.push(result("ask: D can still delete the account (the chat does not block it)", isOk(gone), describe(gone)));
+      if (service) {
+        const chat = await service.rest("GET", "ask_messages", { query: { user_id: `eq.${d.userId}`, select: "id" } });
+        const memory = await service.rest("GET", "learner_memory", { query: { user_id: `eq.${d.userId}`, select: "user_id" } });
+        out.push(result("ask: D's chat and memory are gone with the account", affectedNoRows(chat) && affectedNoRows(memory), `${describe(chat)} / ${describe(memory)}`));
+      } else {
+        out.push(result("ask: D's chat and memory are gone with the account (skipped: no service role client)", true));
+      }
+    }
+  } finally {
+    await deleteBoard(a, boardA.id);
+    await deleteBoard(b, boardB.id);
+    if (service) await service.rest("DELETE", "learner_memory", { query: { user_id: `in.(${a.userId},${b.userId})` } });
+  }
+  return out;
+}
+
+/**
+ * Ask's checks, run after the rest by scripts/verify-rls.mjs and src/__tests__/db-rls.integration.test.ts.
+ * @type {CheckDef[]}
+ */
+export const ASK_CHECKS = [
+  { name: "ask: ask_messages own rows on own boards, saved once, checked values, 400 a board; learner_memory the server's to write, the owner's to read and clear", run: checkAsk },
+];
+
+/**
  * Run one check, converting a thrown error into a single failing result.
  * @param {CheckDef} check
  * @param {CheckContext} ctx
