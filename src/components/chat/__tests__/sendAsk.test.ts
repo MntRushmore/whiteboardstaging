@@ -412,7 +412,7 @@ describe("the saved chat and an ask typed as the panel opens", () => {
     // the next ask carries each exchange once
     const s = stream([(h) => h.onReply?.("It is 12."), (h) => h.onDone?.({ model: "m", ms: 1 })]);
     await sendAsk(B, "and of 16?", {}, { controller: controller(), speech: () => null, stream: s });
-    expect(s.requests[0].history.map((t) => t.text)).toEqual(["How do I add 1/2 and 1/4?", "Make the bottoms match: 1/2 is 2/4, so 2/4 + 1/4 = 3/4.", "what is 3/4 of 8?", "It is 6.", "and of 12?", "It is 9."]);
+    expect((s.requests[0].history ?? []).map((t) => t.text)).toEqual(["How do I add 1/2 and 1/4?", "Make the bottoms match: 1/2 is 2/4, so 2/4 + 1/4 = 3/4.", "what is 3/4 of 8?", "It is 6.", "and of 12?", "It is 9."]);
   });
 
   it("mergeSavedChat: this tab's exchanges found by turn id or by their words; an older one with the same words stays", () => {
