@@ -101,8 +101,8 @@ export default function GrownUpMore({
   const { auto } = controls;
 
   return (
-    // level with the bar's 56 px Help me (the bar starts 16 px down)
-    <div ref={ref} className="pointer-events-auto absolute right-4 top-5">
+    // level with the bar's 48 px Back and Help me: the bar starts 16 px down
+    <div ref={ref} className="pointer-events-auto absolute right-4 top-4">
       <button
         type="button"
         aria-expanded={open}

@@ -79,7 +79,7 @@ import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 import { boardToolbarView } from "@/components/live/toolbar";
 import { AskButton } from "@/components/live/AskButton";
 import { setSimpleBoard, useSimpleBoard } from "@/components/kidmode/useSimpleBoard";
-import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, KidStatus, useKidDockFailed, usePreloadKidDock } from "@/components/kidmode/slots";
+import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, HelpChoice, KidStatus, useKidDockFailed, usePreloadKidDock } from "@/components/kidmode/slots";
 import { KID_COPY } from "@/components/kidmode/copy";
 import { CHAT_BUTTON_COPY, CHAT_BUTTON_SIZE, CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
 import { chatHostClass } from "@/components/chat/chatSheet";
@@ -376,15 +376,13 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     chat.onOpenChange(!chat.open);
     setMoreOpen(false);
   };
+  // the dial turned, from its tabs or the simple board's help choice: remembered, and Help me glows
+  const turnDial = (mode: AssistanceMode) => {
+    setAssistanceMode(mode);
+    setAskGlow((n) => n + 1);
+  };
   const dial = (
-    <Tabs
-      value={assistanceMode}
-      onValueChange={(value) => {
-        setAssistanceMode(value as AssistanceMode);
-        setAskGlow((n) => n + 1);
-      }}
-      className="w-auto shadow-sm rounded-lg"
-    >
+    <Tabs value={assistanceMode} onValueChange={(value) => turnDial(value as AssistanceMode)} className="w-auto shadow-sm rounded-lg">
       <TabsList aria-label="How much help">
         <TabsTrigger value="off" className={HELP_TAB_CLASS}>Off</TabsTrigger>
         <TabsTrigger value="feedback" className={HELP_TAB_CLASS}>Feedback</TabsTrigger>
@@ -526,7 +524,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           top: '16px',
           left: '16px',
           display: 'flex',
-          // the simple board's Back sits level with its taller Help me
+          // the simple board's Back, Help me and status share one height (48 px) and one centre line
           alignItems: toolbar.simple ? 'center' : 'flex-start',
           gap: '12px',
           // The controls wrap beside the back button (an upright iPad keeps one row) and leave
@@ -570,7 +568,21 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           nor a long status ever pushes the other controls onto a second row (Solve's steps
           button still wraps the status end there).
         */}
-        {toolbar.simple && askButton && <div className="pointer-events-auto shrink-0">{askButton}</div>}
+        {/*
+          The simple board's Help me, and joined to its right how much help it gives (Hint, Next step,
+          Solve it: the dial's Feedback, Suggest and Solve). Squared off where they meet once the
+          choice's chunk is in; a choice that fails to load leaves Help me whole.
+        */}
+        {toolbar.simple && askButton && (
+          <div className="pointer-events-auto flex shrink-0 items-center [&:has([data-help-choice])_[data-ask-button]]:rounded-r-none">
+            {askButton}
+            <LiveErrorBoundary>
+              <React.Suspense fallback={null}>
+                <HelpChoice mode={assistanceMode} onModeChange={turnDial} />
+              </React.Suspense>
+            </LiveErrorBoundary>
+          </div>
+        )}
         {/*
           The simple board's rest (the pill while it speaks up, the save pill): beside Help me when
           they fit, else a row of their own under it, as wide as the board (More is only beside

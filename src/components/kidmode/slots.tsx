@@ -22,10 +22,13 @@ export const GrownUpMore = React.lazy(loadGrownUpMore);
 const loadKidStatus = () => import("./KidStatus");
 /** The simple board's status in the bar (Thinking…, Try again): fetched with the dock, so it is there before a failure. */
 export const KidStatus = React.lazy(loadKidStatus);
+const loadHelpChoice = () => import("./HelpChoice");
+/** How much help the simple board's Help me gives (Hint, Next step, Solve it), joined to its right: fetched with the dock. */
+export const HelpChoice = React.lazy(loadHelpChoice);
 
-/** Fetches the kid dock's, More's and the kid status's chunks ahead of time (the board page calls it while the board loads). */
+/** Fetches the kid dock's, More's, the kid status's and the help choice's chunks ahead of time (the board page calls it while the board loads). */
 export function preloadKidDock(): void {
-  for (const load of [loadKidDock, loadGrownUpMore, loadKidStatus]) {
+  for (const load of [loadKidDock, loadGrownUpMore, loadKidStatus, loadHelpChoice]) {
     void load().catch(() => {
       /* tried again when it mounts */
     });
