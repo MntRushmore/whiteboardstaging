@@ -361,6 +361,16 @@ const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream
 const READ_RETRY_MS = 1500;
 
 /**
+ * GET /api/live/recognize (the capabilities, once as a board opens) dropped while the browser says
+ * online — Safari's and Brave's "Load failed" — is tried once more on its own this long after,
+ * before the student sees "Couldn't reach the tutor service". Like a dropped read (the offline
+ * queue's own replay) and the home page's board list (BOARDS_RETRY_MS). Seen on an iPhone
+ * (2026-10-05) and on the iPad that had "Couldn't load your boards" two days before (10-08), with
+ * every health check green both times: the request, not the service.
+ */
+const CAPS_RETRY_MS = 2000;
+
+/**
  * A failed read worth one more try of the same ink: a timeout or a server error. A
  * `recognizer_failed` only when the server says it was a blip (`transient`: Mathpix timed out or
  * could not be reached, and no crop could be sent instead) — not when the recognizer could not read
@@ -736,6 +746,8 @@ export class LiveLoop implements LiveController {
   private readonly offlineQueue = new Set<string>();
   /** the queue's next replay while the browser says online (`scheduleOfflineReplay`) */
   private offlineReplayTimer: ReturnType<typeof setTimeout> | null = null;
+  /** the capabilities' one more try after a dropped request (`CAPS_RETRY_MS`); the board's, not a screen's */
+  private capsRetryTimer: ReturnType<typeof setTimeout> | null = null;
   /** how many replays in a row have found the network still unreachable (picks the next wait) */
   private offlineReplayStep = 0;
   /** lines the next flush must recognize even when their stroke set is unchanged */
@@ -968,8 +980,14 @@ export class LiveLoop implements LiveController {
     liveStore.status.set(this.opts.enabled ? "idle" : "paused");
   }
 
-  /** GET /api/live/recognize: recognizer kind + warmup. A failure while online is shown and retryable. */
-  private fetchCaps(): void {
+  /**
+   * GET /api/live/recognize: recognizer kind + warmup. A failure while online is shown and
+   * retryable; a request dropped while online is first tried once more on its own (`CAPS_RETRY_MS`),
+   * and only `retried` is it shown.
+   */
+  private fetchCaps(retried = false): void {
+    if (this.capsRetryTimer) clearTimeout(this.capsRetryTimer);
+    this.capsRetryTimer = null;
     void this.deps
       .fetchCapabilities()
       .then((caps) => {
@@ -979,14 +997,26 @@ export class LiveLoop implements LiveController {
         this.noteSuccess("capabilities");
       })
       .catch((err: unknown) => {
+        if (!this.started) return;
+        // fetch's TypeError while the browser says online (classifyLiveFailure's `network`): the
+        // request dropped, not the service
+        if (!retried && err instanceof TypeError && this.deps.isOnline()) {
+          this.capsRetryTimer = setTimeout(() => {
+            this.capsRetryTimer = null;
+            if (this.started) this.fetchCaps(true);
+          }, CAPS_RETRY_MS);
+          return;
+        }
         // offline: recognizer stays 'unknown' and nothing is shown (classify returns null)
-        if (this.started) this.fail(err, { kind: "capabilities" }, { kind: "capabilities" });
+        this.fail(err, { kind: "capabilities" }, { kind: "capabilities" });
       });
   }
 
   stop(): void {
     if (!this.started) return;
     this.started = false;
+    if (this.capsRetryTimer) clearTimeout(this.capsRetryTimer);
+    this.capsRetryTimer = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.unsubscribeRemote?.();
