@@ -1,6 +1,7 @@
 "use client";
 
-import { ChartColumn, Flame, Pencil, Sparkles, Star, Trash2 } from "lucide-react";
+import { ChartColumn, Flame, NotebookText, Pencil, Sparkles, Star, Trash2 } from "lucide-react";
+import { ASK_MEMORY_COPY } from "@/lib/askMemory/copy";
 import type { FamilyMember } from "@/lib/family/contracts";
 import { FAMILY_COPY } from "@/lib/family/copy";
 import { gradeLabel, isGrade } from "@/lib/learning/grades";
@@ -12,10 +13,28 @@ import styles from "./familyPage.module.css";
  * One kid on the Family page: their picture, name and grade, this week's three numbers (streak,
  * problems this week, skills mastered: computed on the server for the grown-up's own kids), and what
  * the grown-up can do: switch to them, see their week (the weekly report at this kid, on the grown-up's
- * own profile: no switch), edit, remove. `busy` while this kid's switch is under way; `locked` while
- * another kid's is.
+ * own profile: no switch), what Ask remembers about them, edit, remove. `busy` while this kid's switch
+ * is under way; `locked` while another kid's is.
  */
-export function KidCard({ kid, busy, locked, onSwitch, onWeek, onEdit, onRemove }: { kid: FamilyMember; busy: boolean; locked: boolean; onSwitch: () => void; onWeek: () => void; onEdit: () => void; onRemove: () => void }) {
+export function KidCard({
+  kid,
+  busy,
+  locked,
+  onSwitch,
+  onWeek,
+  onMemory,
+  onEdit,
+  onRemove,
+}: {
+  kid: FamilyMember;
+  busy: boolean;
+  locked: boolean;
+  onSwitch: () => void;
+  onWeek: () => void;
+  onMemory: () => void;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
   const grade = isGrade(kid.grade) ? gradeLabel(kid.grade) : FAMILY_COPY.gradeNoneShort;
   return (
     <li className={styles.kid} data-testid="kid-card">
@@ -26,6 +45,9 @@ export function KidCard({ kid, busy, locked, onSwitch, onWeek, onEdit, onRemove 
           <p className={styles.kidGrade}>{grade}</p>
         </div>
         <div className={styles.kidTools}>
+          <button type="button" className={styles.iconButton} onClick={onMemory} aria-label={ASK_MEMORY_COPY.kidButton(kid.displayName)} title={ASK_MEMORY_COPY.kidButton(kid.displayName)} data-testid="kid-ask-memory">
+            <NotebookText size={16} strokeWidth={1.9} aria-hidden />
+          </button>
           <button type="button" className={styles.iconButton} onClick={onEdit} aria-label={FAMILY_COPY.editTitle(kid.displayName)} title={FAMILY_COPY.edit}>
             <Pencil size={16} strokeWidth={1.9} aria-hidden />
           </button>

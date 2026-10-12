@@ -1,34 +1,10 @@
 import { getLiveModels } from "@/lib/env";
-import { ChatRequestSchema, ChatResponseSchema, type ChatAction, type ChatResponse, type TeachAction, type WriteProofAction } from "@/lib/live/chat/contracts";
-import { figureProblems } from "@/lib/live/chat/figure";
-import { PROOF_CHECK, wantsHardProof } from "@/lib/live/chat/proof";
-import type { LiveEngine } from "@/lib/live/contracts";
-import { FigureSpecSchema } from "@/lib/live/figureDraw/contracts";
-import { enforceInk, refundInk, runCharged } from "@/lib/server/billing";
-import { gateChatProof, PROOF_NOT_WRITTEN } from "@/lib/server/chatProof";
-import { gateChatProblems, PROBLEM_DROP_WHY, type ProblemDropReason, type ProblemsRepair } from "@/lib/server/chatProblems";
-import { gateChatTeach, TEACH_NOT_WRITTEN } from "@/lib/server/chatTeach";
-import { commonestReason } from "@/lib/live/chat/verify";
+import { ChatRequestSchema, ChatResponseSchema, type ChatResponse } from "@/lib/live/chat/contracts";
+import { enforceInk, runCharged } from "@/lib/server/billing";
+import { chatGate } from "@/lib/server/chatGate";
 import { chatJsonWithFallback } from "@/lib/server/openrouter";
-import { errorResponse, recordRouteEvent } from "@/lib/server/request";
-import {
-  actionTypes,
-  buildChatMessages,
-  buildFigureRepairMessages,
-  buildProblemsRepairMessages,
-  buildProofRepairMessages,
-  buildTeachRepairMessages,
-  ChatReplyRawSchema,
-  cleanChatActions,
-  cleanReplyText,
-  dropMissingProblems,
-  FigureRepairReplySchema,
-  problemsFromRepair,
-  ProblemsRepairReplySchema,
-  ProofRepairReplySchema,
-  teachFromRepair,
-  TeachRepairReplySchema,
-} from "@/lib/server/prompts/chat";
+import { errorResponse } from "@/lib/server/request";
+import { actionTypes, buildChatMessages, ChatReplyRawSchema, cleanReplyText } from "@/lib/server/prompts/chat";
 import { livePreamble, withRequestId } from "@/lib/server/live-route";
 
 export const runtime = "nodejs";
@@ -37,58 +13,24 @@ export const maxDuration = 45;
 
 /** One attempt per model: a problem set or a figure spec is a longer reply than a setup. */
 const CHAT_ATTEMPT_MS = 18_000;
-/** The figure repair is one small call (at most one per request). */
-const REPAIR_ATTEMPT_MS = 10_000;
-/** A proof's repair carries its figure and statements back (at most one per request). */
-const PROOF_REPAIR_ATTEMPT_MS = 14_000;
-/** A worked solution's repair works the problem again (at most one per request). */
-const TEACH_REPAIR_ATTEMPT_MS = 16_000;
-/** A problem set's repair: new problems for the ones the engine refused (at most one per request). */
-const PROBLEMS_REPAIR_ATTEMPT_MS = 10_000;
 /**
  * Everything the route does ends this long after it started (maxDuration 45). Two 18 s attempts and
  * a repair after them could run past 45 s, and the platform then kills the function: no event, no
  * refund, and the student waits for nothing. Every model call gets what is left of this
- * (`deadline`), and a repair is not started with less than REPAIR_MIN_MS left.
+ * (`deadline`), and the gate does not start a repair with too little left (`chatGate`).
  */
 const CHAT_BUDGET_MS = 40_000;
-const REPAIR_MIN_MS = 6_000;
-
-const PROBLEMS_NOT_WRITTEN = "I couldn't check those problems, so I didn't write them.";
-const problemsLeftOut = (n: number, of: number) => `${n} of ${of} problems couldn't be checked, so I left ${n === 1 ? "it" : "them"} out.`;
-
-const FIGURE_NOT_DRAWN = "The figure couldn't be drawn.";
-
-/** The maths engine the teach check runs on, loaded on the first worked solution (mathjs, ~2 MB). */
-let enginePromise: Promise<LiveEngine> | null = null;
-function teachEngine(): Promise<LiveEngine> {
-  enginePromise ??= import("@/lib/live/engine").then((m) => m.getEngine());
-  return enginePromise;
-}
 
 /**
  * POST /api/live/chat — the board chat: a typed request → `{ reply, actions }`. The model plans
- * (`LIVE_MODELS.chat`, fallback `chatFallback`; prompt `prompts/chat.ts`); every action is validated
- * with zod and an invalid one is dropped, never guessed at. A `draw_figure` the drawer reports
- * problems with (`checkFigure`, run here: pure, ~2 ms, no drawing code) gets ONE repair
- * round-trip with those problems — one per request, so it stays cheap — and is dropped otherwise,
- * with a note. A `write_proof` goes on only when the engine's proof planner proves it with the
- * figure's own geometry (`gateChatProof` → `checkProofProposal`, pure, a few ms); one it cannot
- * gets ONE repair round-trip with the engine's problems, else it is dropped with a note. The board
- * verifies every problem (`src/lib/live/chat/verify.ts`) and every proof again before writing it.
- * A `teach` (a worked solution: "explain it step by step", "do the actual problem") goes on only
- * when the engine has checked every line of its maths (`gateChatTeach` → `checkTeach`, run here on
- * the engine, loaded on the first one); one it cannot check gets ONE repair round-trip with the
- * engine's findings, else it is dropped with a note — never written unchecked. Its figure, when the
- * drawer still finds problems with it after that, is left out and the working goes on.
- * A `write_problems` goes on with only the problems the engine verifies (`gateChatProblems` →
- * `verifyProblem`, the board's own check, run here first); the ones it refuses get ONE repair
- * round-trip (new problems of the same skill, told why), else they are left out with a note — the
- * whole set dropped when none is left. Every model call and repair fits the route's time
- * (`CHAT_BUDGET_MS`, `deadline`), so the platform never kills a request mid-way.
- * A `help_problem` ("help me with 3") names a problem on the screen by its number there; one about
- * a number the screen does not have is dropped with a note ("There's no problem 7 on this
- * screen."), which is the reply when nothing else is left.
+ * (`LIVE_MODELS.chat`, fallback `chatFallback`; prompt `prompts/chat.ts`); what it proposes for the
+ * board goes through the engine's gates (`chatGate`, shared with POST /api/live/ask): every action
+ * validated with zod and an invalid one dropped, never guessed at; a figure checked by the drawer, a
+ * proof proved by the engine's planner, a worked solution (`teach`) checked line by line, a problem
+ * set verified problem by problem — each with ONE repair round-trip when it fails, else dropped (or
+ * left out) with a note; help with a problem the screen does not have dropped with a note. The board
+ * verifies every problem and every proof again before writing it. Every model call and repair fits
+ * the route's time (`CHAT_BUDGET_MS`, `deadline`), so the platform never kills a request mid-way.
  *
  * Charged `live/chat` (3 ink) up front, refunded by `runCharged` on any non-2xx; a reply whose
  * every proposed action had to be dropped is refunded too (200, `refunded: true`), since the
@@ -105,13 +47,6 @@ export async function POST(req: Request) {
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   const deadline = startedAt + CHAT_BUDGET_MS;
-  /** repairs not started because the route's time was running out (an event when any) */
-  let repairsSkipped = 0;
-  const repairTime = () => {
-    if (deadline - Date.now() >= REPAIR_MIN_MS) return true;
-    repairsSkipped++;
-    return false;
-  };
 
   return runCharged(
     { userId: user.id, requestId },
@@ -130,238 +65,28 @@ export async function POST(req: Request) {
         deadline,
         title: "Agathon Live - chat",
       });
-      const proposed = raw.actions.length;
-      const { actions: valid, dropped } = cleanChatActions(raw.actions);
-      const notes: string[] = [];
+      const gate = await chatGate(raw.actions, {
+        request: data,
+        models: { primary: models.chat, fallback: models.chatFallback },
+        route: "chat",
+        model,
+        signal: req.signal,
+        requestId,
+        userId: user.id,
+        log,
+        startedAt,
+        deadline,
+      });
 
-      /** One repair round-trip for a proof the engine could not prove: the model gets the engine's problems. */
-      const repairProof = async (action: WriteProofAction, problems: readonly string[]) => {
-        if (!repairTime()) return null;
-        try {
-          const { data: fixed } = await chatJsonWithFallback(models.chat, models.chatFallback, {
-            messages: buildProofRepairMessages(data.message, action, problems),
-            schema: ProofRepairReplySchema,
-            signal: req.signal,
-            requestId,
-            maxTokens: 2000,
-            reasoningFor: () => "low",
-            latencyFirst: true,
-            attemptTimeoutMs: PROOF_REPAIR_ATTEMPT_MS,
-            deadline,
-            title: "Agathon Live - chat proof",
-          });
-          return fixed;
-        } catch (err) {
-          log.warn({ err: err instanceof Error ? err.message : String(err) }, "chat proof repair failed");
-          return null;
-        }
-      };
-
-      /** One repair round-trip for a worked solution the engine could not check: the model gets its findings. */
-      const repairTeach = async (action: TeachAction, problems: readonly string[]) => {
-        if (!repairTime()) return null;
-        try {
-          const { data: fixed } = await chatJsonWithFallback(models.chat, models.chatFallback, {
-            messages: buildTeachRepairMessages(data, action, problems),
-            schema: TeachRepairReplySchema,
-            signal: req.signal,
-            requestId,
-            maxTokens: 3000,
-            reasoningFor: () => "low",
-            latencyFirst: true,
-            attemptTimeoutMs: TEACH_REPAIR_ATTEMPT_MS,
-            deadline,
-            title: "Agathon Live - chat teach",
-          });
-          return teachFromRepair(fixed);
-        } catch (err) {
-          log.warn({ err: err instanceof Error ? err.message : String(err) }, "chat teach repair failed");
-          return null;
-        }
-      };
-
-      /** One repair round-trip for problems the engine could not check: new ones, told why. */
-      const repairProblems: ProblemsRepair = async (failed) => {
-        if (!repairTime()) return null;
-        try {
-          const { data: fixed } = await chatJsonWithFallback(models.chat, models.chatFallback, {
-            messages: buildProblemsRepairMessages(data.message, failed.map((f) => ({ problem: f.problem, why: PROBLEM_DROP_WHY[f.reason] }))),
-            schema: ProblemsRepairReplySchema,
-            signal: req.signal,
-            requestId,
-            maxTokens: 1500,
-            reasoningFor: () => "low",
-            latencyFirst: true,
-            attemptTimeoutMs: PROBLEMS_REPAIR_ATTEMPT_MS,
-            deadline,
-            title: "Agathon Live - chat problems",
-          });
-          return problemsFromRepair(fixed);
-        } catch (err) {
-          log.warn({ err: err instanceof Error ? err.message : String(err) }, "chat problems repair failed");
-          return null;
-        }
-      };
-
-      // Figures: checked by the drawer; one repair round-trip when it stays cheap, else dropped.
-      const actions: ChatAction[] = [];
-      let repairs = 0;
-      let figuresDropped = 0;
-      // Proofs: proved by the engine's planner with the figure (`gateChatProof`), one repair, else dropped.
-      let proofRepairs = 0;
-      let proofsDropped = 0;
-      // Worked solutions: every line checked by the engine (`gateChatTeach`), one repair, else dropped.
-      let teachRepairs = 0;
-      let teachesDropped = 0;
-      let teachChecked = 0;
-      // Problem sets: every problem verified by the engine (`gateChatProblems`), one repair, else left out.
-      let problemRepairs = 0;
-      let problemSetsDropped = 0;
-      const problemDrops: ProblemDropReason[] = [];
-      let problemsProposed = 0;
-      let problemsReplaced = 0;
-      // "the hardest proof ever" is held to it: a proof that takes a few rows is sent back once
-      const proofCheck = wantsHardProof(data.message) ? { minRows: PROOF_CHECK.hardMinRows } : {};
-      for (const action of valid) {
-        if (action.type === "write_problems") {
-          problemsProposed += action.problems.length;
-          const gated = await gateChatProblems(action, await teachEngine(), problemRepairs === 0 ? repairProblems : null);
-          if (gated.repaired) problemRepairs++;
-          problemDrops.push(...gated.dropped);
-          if (gated.ok) {
-            actions.push(gated.action);
-            problemsReplaced += gated.replaced;
-            if (gated.dropped.length > 0) notes.push(problemsLeftOut(gated.dropped.length, action.problems.length));
-          } else {
-            problemSetsDropped++;
-            dropped.push({ type: "write_problems", reason: `none checked (${commonestReason(gated.dropped) ?? "?"})` });
-          }
-          continue;
-        }
-        if (action.type === "teach") {
-          const gated = await gateChatTeach(action, await teachEngine(), teachRepairs === 0 ? (problems) => repairTeach(action, problems) : null);
-          if (gated.repaired) teachRepairs++;
-          if (gated.ok) {
-            actions.push(gated.action);
-            teachChecked += gated.checked;
-            if (gated.figureDropped && !notes.includes(FIGURE_NOT_DRAWN)) notes.push(FIGURE_NOT_DRAWN);
-          } else {
-            teachesDropped++;
-            dropped.push({ type: "teach", reason: gated.reason });
-          }
-          continue;
-        }
-        if (action.type === "write_proof") {
-          const gated = await gateChatProof(action, proofRepairs === 0 ? (problems) => repairProof(action, problems) : null, proofCheck);
-          if (gated.repaired) proofRepairs++;
-          if (gated.ok) actions.push(gated.action);
-          else {
-            proofsDropped++;
-            dropped.push({ type: "write_proof", reason: gated.reason });
-          }
-          continue;
-        }
-        if (action.type !== "draw_figure") {
-          actions.push(action);
-          continue;
-        }
-        let problems = figureProblems(action.figure);
-        if (problems.length > 0 && repairs === 0 && repairTime()) {
-          repairs++;
-          try {
-            const { data: fixed } = await chatJsonWithFallback(models.chat, models.chatFallback, {
-              messages: buildFigureRepairMessages(data.message, action.figure, problems),
-              schema: FigureRepairReplySchema,
-              signal: req.signal,
-              requestId,
-              maxTokens: 1500,
-              reasoningFor: () => "low",
-              latencyFirst: true,
-              attemptTimeoutMs: REPAIR_ATTEMPT_MS,
-              deadline,
-              title: "Agathon Live - chat figure",
-            });
-            const spec = FigureSpecSchema.parse(fixed.figure);
-            problems = figureProblems(spec);
-            if (problems.length === 0) {
-              actions.push({ type: "draw_figure", figure: spec });
-              continue;
-            }
-          } catch (err) {
-            log.warn({ err: err instanceof Error ? err.message : String(err) }, "chat figure repair failed");
-          }
-        }
-        if (problems.length === 0) {
-          actions.push(action);
-          continue;
-        }
-        figuresDropped++;
-        dropped.push({ type: "draw_figure", reason: problems.slice(0, 3).join("; ").slice(0, 160) });
-      }
-      if (figuresDropped > 0 && !notes.includes(FIGURE_NOT_DRAWN)) notes.push(FIGURE_NOT_DRAWN);
-      if (proofsDropped > 0) notes.push(PROOF_NOT_WRITTEN);
-      if (teachesDropped > 0) notes.push(TEACH_NOT_WRITTEN);
-      if (problemSetsDropped > 0) notes.push(PROBLEMS_NOT_WRITTEN);
-
-      // A screen added (or the tutor's ink cleared) only to make room for a figure, a proof or a
-      // worked solution that could not be written is not something the student asked for: with
-      // nothing else left, nothing is done.
-      if (figuresDropped + proofsDropped + teachesDropped + problemSetsDropped > 0 && actions.every((a) => a.type === "new_screen" || a.type === "clear_tutor")) actions.length = 0;
-
-      // Help with a problem that is not on this screen: dropped, and the panel says there is none.
-      const present = dropMissingProblems(actions, data.screen);
-      actions.splice(0, actions.length, ...present.actions);
-      dropped.push(...present.dropped);
-      notes.push(...present.notes);
-
-      // Nothing the model proposed survived: say so plainly, and give the ink back.
-      let reply = cleanReplyText(raw.reply);
-      let refunded = false;
-      if (proposed > 0 && actions.length === 0) {
-        reply =
-          teachesDropped > 0
-            ? "Sorry, I couldn't check that working, so I didn't write it. Try asking again."
-            : proofsDropped > 0
-              ? "Sorry, I couldn't check that proof, so I didn't write it. Try asking for another one."
-              : figuresDropped > 0
-                ? "Sorry, I couldn't draw that figure."
-                : problemSetsDropped > 0
-                  ? "Sorry, I couldn't check those problems, so I didn't write them. Try asking for them another way."
-                  : present.notes.length > 0
-                    ? present.notes[0]
-                    : "Sorry, I couldn't do that on the board. Try asking another way.";
-        notes.length = 0;
-        const r = await refundInk({ userId: user.id, requestId }, log);
-        refunded = r.refunded > 0;
-      }
-      if (!reply) reply = actions.length > 0 ? "Here you go." : "I can only help with maths on this board.";
-
-      // Problems the engine refused (left out, or a whole set dropped): the student reads a note
-      // about it, so the admin page hears of it too — with the engine's commonest reason in the code.
-      const why = commonestReason(problemDrops);
-      if (why) {
-        recordRouteEvent(log, {
-          level: "warn",
-          code: `problems_dropped_${why}`,
-          message: `${problemDrops.length} of ${problemsProposed} problems failed the engine's check`,
-          meta: { dropped: problemDrops.length, proposed: problemsProposed, reasons: [...new Set(problemDrops)].join(","), replaced: problemsReplaced, repaired: problemRepairs > 0, setsDropped: problemSetsDropped, model },
-        });
-      }
-      // A repair the route's time did not allow: what it would have fixed went out as it was.
-      if (repairsSkipped > 0) {
-        recordRouteEvent(log, {
-          level: "warn",
-          code: "budget",
-          message: `${repairsSkipped} repair${repairsSkipped === 1 ? "" : "s"} not started: the route's time was running out`,
-          meta: { skipped: repairsSkipped, ms: Date.now() - startedAt, budgetMs: CHAT_BUDGET_MS, model },
-        });
-      }
+      // Nothing the model proposed survived: the gate's words replace the reply (the ink is back).
+      let reply = gate.replacement ?? cleanReplyText(raw.reply);
+      if (!reply) reply = gate.actions.length > 0 ? "Here you go." : "I can only help with maths on this board.";
 
       const body: ChatResponse = ChatResponseSchema.parse({
         reply,
-        actions,
-        notes,
-        ...(refunded ? { refunded } : {}),
+        actions: gate.actions,
+        notes: gate.notes,
+        ...(gate.refunded ? { refunded: true } : {}),
         model,
         ms: Date.now() - startedAt,
       });
@@ -369,23 +94,14 @@ export async function POST(req: Request) {
         {
           model,
           ms: body.ms,
-          proposed,
-          actions: actionTypes(actions),
-          dropped: dropped.length,
-          droppedWhy: dropped.slice(0, 4),
-          repairs,
-          proofRepairs,
-          proofsDropped,
-          teachRepairs,
-          teachesDropped,
-          teachChecked,
-          problemRepairs,
-          problemsDropped: problemDrops.length,
-          problemsReplaced,
-          repairsSkipped,
+          proposed: gate.proposed,
+          actions: actionTypes(gate.actions),
+          dropped: gate.dropped.length,
+          droppedWhy: gate.dropped.slice(0, 4),
+          ...gate.stats,
           problemSent: Boolean(data.problem),
           learnerWeak: data.learner?.weakSkills.length ?? 0,
-          refunded,
+          refunded: gate.refunded,
           history: data.history.length,
           screenEmpty: data.screen.empty,
         },

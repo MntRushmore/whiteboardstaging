@@ -511,6 +511,16 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
+    path: "/api/live/transcribe",
+    file: "src/app/api/live/transcribe/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveTranscribe",
+    body: "zod",
+    purpose: "Ask's mic: multipart `audio` (webm/mp4/wav, at most 4 MB and 60 s) -> the words said (ElevenLabs Scribe; uncharged, never stored); 503 speech_unavailable without a key or a plan (the browser's recognizer)",
+    status: "active",
+  },
+  {
     path: "/api/live/reread",
     file: "src/app/api/live/reread/route.ts",
     methods: ["POST"],

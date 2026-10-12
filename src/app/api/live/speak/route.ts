@@ -1,16 +1,13 @@
-import type pino from "pino";
-import { parseInkSummary } from "@/lib/billing/inkSummary";
-import { hasPlan, parseUnlimitedState } from "@/lib/billing/unlimited";
-import { billingEnforced, getServerEnv, hasElevenLabs } from "@/lib/env";
-import { SPEAK_STARTER_WINDOW_MS } from "@/lib/speech/contracts";
+import { getServerEnv, hasElevenLabs } from "@/lib/env";
 import { spokenText } from "@/lib/speech/spoken";
 import { SpeakRequestSchema, TTS, ttsBody, ttsRefusal, ttsUrl, voiceIdOr } from "@/lib/speech/tts";
 import { json } from "@/lib/server/auth";
-import { userClient, type RpcClient } from "@/lib/server/billing";
+import { userClient } from "@/lib/server/billing";
 import { livePreamble, withRequestId } from "@/lib/server/live-route";
 import { UpstreamError } from "@/lib/server/openrouter";
 import { checkRateLimitDistributed, rateLimitedResponse, spendGlobalBudget } from "@/lib/server/rate-limit";
 import { errorResponse, recordRouteEvent } from "@/lib/server/request";
+import { speechEntitled } from "@/lib/server/speechAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,31 +23,6 @@ function unavailable(message: string = UNAVAILABLE_MESSAGE): Response {
 }
 
 /**
- * Whether this account hears the ElevenLabs voice: it has Agathon Unlimited (`hasPlan` on
- * ink_summary()'s plan, which is a kid's grown-up's through plan_owner_of), or it is on its guided
- * first board (starter ink left, granted at most SPEAK_STARTER_WINDOW_MS ago: the voice spends no
- * ink, so a balance alone would keep it for good on an account that never starts a plan). Always
- * where billing is not enforced. A check that fails is a no: the browser's voice, never a free one.
- */
-async function hearsTheVoice(client: RpcClient, log: pino.Logger): Promise<boolean> {
-  if (!billingEnforced()) return true;
-  try {
-    const { data, error } = await client.rpc("ink_summary");
-    const summary = error ? null : parseInkSummary(data);
-    if (!summary) {
-      log.warn({ error: error?.message ?? "unreadable" }, "read aloud: ink_summary failed; the browser's voice");
-      return false;
-    }
-    if (hasPlan(parseUnlimitedState(summary.unlimited))) return true;
-    const starterAt = summary.starter_at ? Date.parse(summary.starter_at) : Number.NaN;
-    return summary.balance > 0 && Number.isFinite(starterAt) && Date.now() - starterAt <= SPEAK_STARTER_WINDOW_MS;
-  } catch (err) {
-    log.warn({ error: err instanceof Error ? err.message : String(err) }, "read aloud: ink_summary threw; the browser's voice");
-    return false;
-  }
-}
-
-/**
  * POST /api/live/speak — read aloud: the tutor's words (a hint, a question, a coach mark) as
  * speech, so a child who cannot read yet hears them. `{ text }` in (plain words, at most
  * SPEAK_MAX_CHARS: `SpeakRequest`), `audio/mpeg` out, streamed from ElevenLabs as it is made
@@ -59,8 +31,9 @@ async function hearsTheVoice(client: RpcClient, log: pino.Logger): Promise<boole
  * requireUser → the `liveSpeak` minute budget → the body → the `liveSpeakDay` cap → without
  * ELEVENLABS_API_KEY a 503 `feature_unavailable` (the client falls back to the browser's voice) →
  * an account without Agathon Unlimited, past its guided first board, the same 503
- * (`hearsTheVoice`) → the words → the day's characters for everyone together
- * (`GLOBAL_BUDGETS.liveSpeakChars`; spent: the same 503, recorded for /admin) → ElevenLabs. The
+ * (`speechEntitled`, src/lib/server/speechAccess.ts) → the words → the day's characters for
+ * everyone together (`GLOBAL_BUDGETS.liveSpeakChars`; spent: the same 503, recorded for /admin) →
+ * ElevenLabs. The
  * text is made speakable again here (`spokenText`), so a client that sent LaTeX still gets words.
  *
  * Not charged: a hint the tutor already wrote should not cost ink twice, and a five-year-old never
@@ -86,7 +59,7 @@ export async function POST(req: Request) {
     return withRequestId(unavailable(), requestId);
   }
 
-  if (!(await hearsTheVoice(userClient(token), log))) {
+  if (!(await speechEntitled(userClient(token), log))) {
     log.info("read aloud: not this account's (no plan, past the guided board, or the check failed): the browser's voice");
     return withRequestId(unavailable(NOT_ENTITLED_MESSAGE), requestId);
   }

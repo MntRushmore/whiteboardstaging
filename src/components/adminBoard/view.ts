@@ -2,7 +2,7 @@
  * The admin board viewer's words: pure, so the side panel's copy is tested without a browser.
  * Times are formatted in the viewer's zone, or the one a test passes.
  */
-import type { AdminAttempt, AdminBoardDoc, AdminEvent } from "@/lib/admin/contracts";
+import type { AdminAskTurn, AdminAttempt, AdminBoardDoc, AdminEvent } from "@/lib/admin/contracts";
 import { formatWhen, kindLabel, relativeTime, type ViewClock } from "@/lib/admin/view";
 import { formatSize } from "@/lib/replay/format";
 
@@ -31,6 +31,19 @@ export const ADMIN_BOARD_COPY = {
   historyHint: "Kept for restoring a board; shown for reference.",
   historyEmpty: "No saved versions.",
   fixture: "Dev fixture: made-up data",
+  tabsLabel: "What to show",
+  tabBoard: "Board",
+  tabAsk: "Ask",
+  askTitle: "Ask chat on this board",
+  askHint: "What the student asked Ask here and what it answered, oldest first. Opening this is logged.",
+  askEmpty: "No Ask chat on this board yet.",
+  askFixture: "Dev fixture: no Ask chat.",
+  askLoadFailedTitle: "Couldn't load the Ask chat",
+  askLoadFallback: "Something went wrong reading the chat. Try again in a moment.",
+  askStudent: "Student",
+  askTutor: "Tutor",
+  askWrote: (kinds: string) => `Wrote on the board: ${kinds}`,
+  askCount: (n: number) => `${n} ${n === 1 ? "message" : "messages"}`,
 } as const;
 
 export const OUTCOME_VIEW: Record<AdminAttempt["outcome"], { label: string; tone: "good" | "ok" | "help" | "neutral" }> = {
@@ -125,6 +138,31 @@ const REASONS: Record<string, string> = {
 
 export function historyRows(history: AdminBoardDoc["history"], clock: ViewClock): { id: number; when: string; label: string }[] {
   return history.map((h) => ({ id: h.id, when: formatWhen(h.at, clock), label: `${REASONS[h.reason] ?? h.reason.replace(/[_-]+/g, " ")} · version ${h.version}` }));
+}
+
+export interface AskTurnView {
+  id: string;
+  role: AdminAskTurn["role"];
+  who: string;
+  text: string;
+  /** the notes the student was shown with a tutor turn ("1 problem couldn't be checked.") */
+  notes: string[];
+  /** "Wrote on the board: write problems, graph", or null */
+  wrote: string | null;
+  when: string;
+}
+
+/** The Ask tab's rows, in the order the chat happened. */
+export function askTurnRows(turns: readonly AdminAskTurn[], clock: ViewClock): AskTurnView[] {
+  return turns.map((t) => ({
+    id: t.id,
+    role: t.role,
+    who: t.role === "tutor" ? ADMIN_BOARD_COPY.askTutor : ADMIN_BOARD_COPY.askStudent,
+    text: t.text,
+    notes: t.notes,
+    wrote: t.wrote.length ? ADMIN_BOARD_COPY.askWrote(t.wrote.map((k) => k.replace(/_+/g, " ")).join(", ")) : null,
+    when: formatWhen(t.at, clock),
+  }));
 }
 
 /** "student@example.com · Created Oct 3, 4:12 PM · updated 3 min ago · 840 KB · version 42" (owner first, linked by the page) */

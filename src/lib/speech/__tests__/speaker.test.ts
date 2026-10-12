@@ -426,3 +426,67 @@ describe("silentWavDataUri", () => {
     expect([...bytes.slice(44)]).toEqual(Array(10).fill(128));
   });
 });
+
+describe("Speaker: prefetch (Ask's next sentence while one is said)", () => {
+  it("fetches without saying anything; the phrase said after plays from the cache, no second fetch", async () => {
+    const speaker = makeSpeaker();
+    speaker.prefetch("Then add $3$.");
+    await flush();
+    expect(fetchSpeech).toHaveBeenCalledTimes(1);
+    expect(fetchSpeech.mock.calls[0][0]).toBe("Then add 3.");
+    expect(audio.played).toEqual([]);
+    const said = speaker.speak("Then add 3.");
+    await flush();
+    expect(fetchSpeech).toHaveBeenCalledTimes(1);
+    expect(audio.played).toEqual(["blob:1"]);
+    audio.end();
+    await expect(said).resolves.toBe("voice");
+  });
+
+  it("a phrase said while its prefetch is on its way shares that request", async () => {
+    let answer: (b: Blob) => void = () => undefined;
+    fetchSpeech.mockImplementationOnce(() => new Promise<Blob>((resolve) => (answer = resolve)));
+    const speaker = makeSpeaker();
+    speaker.prefetch("Next, carry the one.");
+    speaker.prefetch("Next, carry the one.");
+    const said = speaker.speak("Next, carry the one.");
+    await flush();
+    expect(fetchSpeech).toHaveBeenCalledTimes(1);
+    answer(new Blob(["mp3"]));
+    await flush();
+    expect(audio.played).toEqual(["blob:1"]);
+    audio.end();
+    await expect(said).resolves.toBe("voice");
+  });
+
+  it("the next phrase's prefetch survives the one before ending and the next speak; stop drops it", async () => {
+    const signals: AbortSignal[] = [];
+    fetchSpeech.mockImplementation((_text, signal) => {
+      signals.push(signal);
+      return new Promise<Blob>(() => undefined);
+    });
+    const speaker = makeSpeaker();
+    void speaker.speak("First sentence.");
+    speaker.prefetch("Second sentence.");
+    await flush();
+    void speaker.speak("Third sentence.");
+    await flush();
+    expect(signals.map((s) => s.aborted)).toEqual([true, false, false]);
+    speaker.stop();
+    expect(signals.map((s) => s.aborted)).toEqual([true, true, true]);
+  });
+
+  it("nothing is prefetched for the browser's voice: no element, or the route resting", async () => {
+    makeSpeaker({ audio: null }).prefetch("Hello there.");
+    await flush();
+    expect(fetchSpeech).not.toHaveBeenCalled();
+
+    fetchSpeech.mockRejectedValueOnce(new SpeechFetchError("unavailable"));
+    const speaker = makeSpeaker();
+    await speaker.speak("Hello.");
+    expect(fetchSpeech).toHaveBeenCalledTimes(1);
+    speaker.prefetch("Hello again.");
+    await flush();
+    expect(fetchSpeech).toHaveBeenCalledTimes(1);
+  });
+});
