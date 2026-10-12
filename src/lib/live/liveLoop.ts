@@ -130,22 +130,13 @@ import {
   recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
-import { assignColumns, clusterLines, inkScale, median, medianStrokeHeight, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
-import { layoutMath, type Stroke } from "@/lib/hand";
+import { assignColumns, clusterLines, inkScale, medianStrokeHeight, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
+import type { Stroke } from "@/lib/hand";
 import { roundInk } from "./inkCompact";
 import { lineGroupsOf, type LineGroup } from "./typedInk";
-import { FREE_AREA, findFreeArea } from "./chat/layout";
-import {
-  TYPED_COUNT_META,
-  TYPED_ID_META,
-  TYPED_LATEX_META,
-  TYPED_TEXT_META,
-  type TypedLineRef,
-  type TypedSpot,
-  type WriteTypedArgs,
-  type WriteTypedResult,
-} from "@/lib/typeMath/contracts";
-import { typeBarInset } from "@/lib/typeMath/barLink";
+import { TYPED_COUNT_META, TYPED_ID_META, type TypedLineRef, type TypedSpot, type WriteTypedArgs, type WriteTypedResult } from "@/lib/typeMath/contracts";
+// Type it's writer is the bar's: loaded with it (`prepareTyped`), never with the board
+import type { TypedHost, TypedWriter } from "./typedWriter";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { captureInkCrop } from "./inkCrop";
 import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, leadingSigns, ownTicks, readYoungHand } from "./youngHand";
@@ -522,29 +513,6 @@ const MARK_META = "mark";
 const MARK_WHY_META = "markWhy";
 const ANSWER_ANCHORS_META = "answerAnchors";
 
-/**
- * Type it (docs/TYPE-MATH.md): how big a typed line is written and where it goes. Page px on a
- * desktop; a board shown smaller (`handScale`) grows them, so the line looks the same on screen.
- */
-const TYPED = {
-  /** with nothing of the kid's own writing to match: a little under the chat's problems (48), easy to read on a laptop */
-  size: 40,
-  /** matching a tiny trackpad hand, never smaller than this (a digit about 18 px tall) */
-  minSize: 28,
-  /** `layoutSteps`' line pitch, baseline to baseline, in sizes: the gap under the line above is this less a digit */
-  pitch: 1.7,
-  /** ...and at most this many of the column's lines, well inside the new-problem rule (2.5, f911cac) */
-  maxGapLines: 1.5,
-  /** "New problem" under one: this many of its lines further down, past the new-problem rule */
-  problemGapLines: 3,
-  /** what is still under a column: the tutor's work there is within this many of its lines of the next thing up */
-  reachLines: 1.5,
-  /** between a full column and the next */
-  columnGap: 64,
-  /** the typing bar docked over the bottom of the board, in CSS px: never written under */
-  barPx: 120,
-} as const;
-
 /** A stacked sum on the board, worked (`LiveLoop.stackWork`). */
 interface StackState {
   sum: StackedSum;
@@ -872,6 +840,9 @@ export class LiveLoop implements LiveController {
   private readonly ownInk = new Set<string>();
   /** the typed line just written (its `typedId`): finished at Enter, so its read is the pause too */
   private typedFresh: string | null = null;
+  /** Type it's writer, once the bar has loaded it (`prepareTyped`) */
+  private typed: TypedWriter | null = null;
+  private typedLoad: Promise<void> | null = null;
   /**
    * Which came last, the pen or a pick with the select tool (a count of both): the newer one decides
    * (`picked`). tldraw keeps a selection, unseen, while the pen writes elsewhere; it is no pick then.
@@ -7874,65 +7845,55 @@ export class LiveLoop implements LiveController {
 
   // ---------------------------------------------------------------- Type it (docs/TYPE-MATH.md)
   /**
-   * A line the kid typed, written on the board in their own ink by the hand engine and read as the
-   * LaTeX they typed: the next line of the problem they are on (or a new problem), or `replaceLineId`
-   * rewritten. A typed line is rewritten in place; a pen line keeps its ink and takes the typed
-   * reading. Everything after the read is as for any line: marks, Auto, Help, the learning record.
+   * Type it's writer (`typedWriter.ts`): where a typed line goes, how big, a rewrite. Only the bar
+   * uses it, so it loads with the bar (`prepareTyped`), never with the board. Until it has, a write
+   * is refused as if Live were off and there is no spot and no line to offer. A typed line already on
+   * the board is read, undone and reloaded by the loop itself, with or without the bar.
    */
+  prepareTyped(): Promise<void> {
+    this.typedLoad ??= import("./typedWriter").then(
+      (m) => {
+        this.typed = m.typedWriter(this.typedHost());
+      },
+      (err: unknown) => {
+        // a chunk that did not load is asked for again next time
+        this.typedLoad = null;
+        throw err;
+      },
+    );
+    return this.typedLoad;
+  }
+
   writeTyped(args: WriteTypedArgs): WriteTypedResult {
-    const latex = args.latex.trim();
-    const refused = (reason: "empty" | "unwritable" | "off" | "noLine"): WriteTypedResult => {
-      clientMetric("type.refused", { reason, len: latex.length });
-      return { ok: false, reason };
-    };
-    if (!this.started || !this.opts.enabled) return refused("off");
-    if (!latex) return refused("empty");
-    const old = args.replaceLineId ? liveStore.lines.get()[args.replaceLineId] : undefined;
-    if (args.replaceLineId && !old) return refused("noLine");
-    const group = old ? this.typedGroupOf(old.line) : null;
-    if (old && group?.latex === undefined) {
-      // written with the pen: the ink is theirs and stays; what it says is what they typed
-      this.retypeLine(old.line.id, latex);
-      clientMetric("type.edit", { typed: false, len: latex.length });
-      return { ok: true, lineId: old.line.id, bounds: old.line.bounds };
-    }
-    const id = group?.id ?? `ty_${this.deps.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
-    const target = old ? { states: this.columnLines(old.line.column), head: this.columnHeads.get(old.line.column) ?? null } : this.typedTarget();
-    const size = this.typedSize(target?.states ?? []);
-    // the same id, the same hand: a line typed again is not written differently for nothing
-    const layout = layoutMath(latex, { size, seed: handSeedFor(id) });
-    if (layout.unsupported.length > 0 || layout.strokes.length === 0) return refused("unwritable");
-    let at: { x: number; y: number };
-    if (old && group?.latex) {
-      // in its place: its left edge, on its writing line
-      const was = layoutMath(group.latex, { size, seed: handSeedFor(id) });
-      const b = old.line.bounds;
-      at = { x: b.x, y: b.y + (was.height > 0 ? (b.h * was.baseline) / was.height : b.h) - layout.baseline };
-    } else at = this.typedPlace(target, size, Boolean(args.newProblem), { w: layout.width, h: layout.height });
-    const ids = this.writeInk(layout.strokes, at, id, { [TYPED_LATEX_META]: latex, [TYPED_TEXT_META]: args.text }, group?.strokeIds);
-    const line = this.lineOfStroke(ids[0]);
-    const bounds = line?.bounds ?? { ...at, w: layout.width, h: layout.height };
-    this.keepInView(bounds);
-    clientMetric(old ? "type.edit" : "type.write", { typed: true, len: latex.length, strokes: ids.length, newProblem: Boolean(args.newProblem) });
-    return { ok: true, lineId: line?.id ?? "", bounds };
+    return this.typed?.write(args) ?? { ok: false, reason: "off" };
   }
 
-  /** Where Enter writes next, for the bar's ghost caret: as `writeTyped` would, with nothing written. */
-  typedSpot(opts: { newProblem?: boolean } = {}): TypedSpot | null {
-    if (!this.started || !this.opts.enabled) return null;
-    const target = this.typedTarget();
-    const size = this.typedSize(target?.states ?? []);
-    const h = size * HAND_WRITE.digitRatio;
-    const at = this.typedPlace(target, size, Boolean(opts.newProblem), { w: 2 * size, h });
-    return { x: at.x, baselineY: at.y + h, size };
+  typedSpot(opts?: { newProblem?: boolean }): TypedSpot | null {
+    return this.typed?.spot(opts) ?? null;
   }
 
-  /** The current problem's lines, top to bottom, for ↑ and the pencil in the bar. */
   typedLines(): TypedLineRef[] {
-    return (this.typedTarget()?.states ?? []).map((s) => {
-      const group = this.typedGroupOf(s.line);
-      return { lineId: s.line.id, typed: group?.latex !== undefined, typedText: group?.text ?? "", latex: s.latex, bounds: s.line.bounds };
-    });
+    return this.typed?.lines() ?? [];
+  }
+
+  /** What the writer needs of the loop that only the loop knows (`TypedHost`). */
+  private typedHost(): TypedHost {
+    return {
+      loop: this,
+      deps: this.deps,
+      on: () => this.started && this.opts.enabled,
+      target: (column) => {
+        const c = column ?? this.helpTargetLine()?.line.column;
+        if (c !== undefined) return { states: this.columnLines(c), head: this.columnHeads.get(c) ?? null };
+        const cells = this.problemCells();
+        const head = cells.length > 0 ? currentProblem(cells, this.targetProblem(), (p) => this.problemState(p)) : null;
+        return head ? { states: [], head } : null;
+      },
+      busy: () =>
+        [this.writer, this.graphWriter, this.sketchWriter, ...[...this.rt.values()].flatMap((r) => [r.markWriter, r.stepWriter?.writer, r.resultWriter])].flatMap((w) =>
+          w?.bounds ? [w.bounds] : [],
+        ),
+    };
   }
 
   /**
@@ -7940,9 +7901,9 @@ export class LiveLoop implements LiveController {
    * top-left at `at`: one draw shape per stroke in their pen's colour, one line group (`typedId` on
    * each, the count and `lead` on the first), in ONE undo step — taking `replace`, the line it
    * rewrites, with it. Then it is read at once, and it is where the kid last wrote: Help and Auto act
-   * on it. The new shape ids, in order.
+   * on it. The new shape ids, in order. Type it's writer writes with it; so will a phone used as a pen.
    */
-  private writeInk(strokes: readonly Stroke[], at: { x: number; y: number }, typedId: string, lead: JsonObject, replace: readonly TLShapeId[] = []): TLShapeId[] {
+  writeInk(strokes: readonly Stroke[], at: { x: number; y: number }, typedId: string, lead: JsonObject, replace: readonly TLShapeId[] = []): TLShapeId[] {
     const color = this.editor.getStyleForNextShape?.(DefaultColorStyle) ?? "black";
     const origin = { x: roundInk(at.x), y: roundInk(at.y) };
     const shapes = strokes.map((s, i) =>
@@ -7975,115 +7936,6 @@ export class LiveLoop implements LiveController {
     if (this.editor.run) this.editor.run(write);
     else write();
     return ids;
-  }
-
-  /** The problem Enter writes in: the column Help would act on (where the kid last wrote or typed), else the chat's current problem. */
-  private typedTarget(): { states: LiveLineState[]; head: ProblemCell | null } | null {
-    const line = this.helpTargetLine();
-    if (line) return { states: this.columnLines(line.line.column), head: this.columnHeads.get(line.line.column) ?? null };
-    const cells = this.problemCells();
-    const head = cells.length > 0 ? currentProblem(cells, this.targetProblem(), (c) => this.problemState(c)) : null;
-    return head ? { states: [], head } : null;
-  }
-
-  /** The hand a typed line is written in: the height of the kid's own writing in the column (`inlineHandSizeFor`), else a readable default. */
-  private typedSize(states: readonly LiveLineState[]): number {
-    const k = this.handScale();
-    const pen: InkStroke[] = [];
-    for (const s of states) {
-      if (this.typedGroupOf(s.line)?.latex !== undefined) continue;
-      for (const id of s.line.strokeIds) {
-        const shape = this.editor.getShape(id);
-        const ink = shape ? this.inkOf(shape) : null;
-        if (ink) pen.push(ink);
-      }
-    }
-    if (pen.length === 0) return Math.round(TYPED.size * k);
-    return Math.max(Math.round(TYPED.minSize * k), inlineHandSizeFor(medianStrokeHeight(pen), this.boardZoom()));
-  }
-
-  /**
-   * The top-left of a typed line `dims` big: at the left edge of the problem's column, under the
-   * lowest thing in its span (the kid's ink, the tutor's writing, readbacks, marks, a block still
-   * being written) and down to the next problem there, a step's gap below — or, for a new problem,
-   * past the new-problem gap. No room before the bar → the next column to the right; then anywhere
-   * free on the screen; with none at all, under the column regardless (the camera follows).
-   */
-  private typedPlace(target: { states: LiveLineState[]; head: ProblemCell | null } | null, size: number, newProblem: boolean, dims: { w: number; h: number }): { x: number; y: number } {
-    const k = this.handScale();
-    const screen = this.placementBounds();
-    // the screen's writing area: clear of the board's bar on top and the typing bar at the bottom
-    const room = { ...screen, h: screen.h - TYPED.barPx * Math.min(k, 2) };
-    const area = { x: screen.x + FREE_AREA.margin, y: screen.y + FREE_AREA.top, w: screen.w - 2 * FREE_AREA.margin, h: room.h - FREE_AREA.top };
-    const lines = Object.values(liveStore.lines.get());
-    const inLines = new Set<string>(lines.flatMap((s) => s.line.strokeIds));
-    const loose: Rect[] = [];
-    const avoid: Rect[] = [];
-    for (const s of this.editor.getCurrentPageShapes()) {
-      const b = this.editor.getShapePageBounds(s);
-      if (!b) continue;
-      avoid.push(boxToRect(b));
-      if (!inLines.has(s.id)) loose.push(boxToRect(b));
-    }
-    // the tutor's blocks still being written take their room too
-    const writers = [this.writer, this.graphWriter, this.sketchWriter, ...[...this.rt.values()].flatMap((r) => [r.markWriter, r.stepWriter?.writer, r.resultWriter])];
-    for (const w of writers) {
-      if (!w?.bounds) continue;
-      loose.push(w.bounds);
-      avoid.push(w.bounds);
-    }
-    const own = target?.states.map((s) => s.line.bounds) ?? [];
-    const col = target?.head ? [...own, target.head.head] : own;
-    let below: { x: number; y: number } | null = null;
-    let spread = 0;
-    if (target && col.length > 0) {
-      const head = target.head;
-      const lefts = own.length > 0 ? own : col;
-      const x = Math.min(...lefts.map((r) => r.x));
-      const right = Math.max(...col.map(rectMaxX));
-      const lineH = median(lefts.map((r) => r.h)) || dims.h;
-      const inSpan = (r: Rect) => r.x < right && rectMaxX(r) > x;
-      // a continued problem stays in the chat's cell it is under
-      const limit = Math.min(rectMaxY(area), head && !newProblem ? rectMaxY(head.cell) : Infinity);
-      const top = Math.min(...col.map((r) => r.y));
-      let bottom = Math.max(...col.map(rectMaxY));
-      // the next problem down in its span starts where everything under this one ends
-      const mine = new Set(target.states.map((s) => s.line.id));
-      const stop = Math.min(limit, ...lines.filter((s) => !mine.has(s.line.id) && inSpan(s.line.bounds) && s.line.bounds.y >= bottom).map((s) => s.line.bounds.y));
-      const reach = TYPED.reachLines * lineH;
-      for (const r of loose.filter((r) => inSpan(r) && rectMaxY(r) > top && r.y < stop).sort((a, b) => a.y - b.y)) {
-        if (r.y > bottom + reach) break;
-        bottom = Math.max(bottom, rectMaxY(r));
-      }
-      const gap = newProblem
-        ? TYPED.problemGapLines * Math.max(lineH, dims.h)
-        : Math.max(0.32 * size, Math.min((TYPED.pitch - HAND_WRITE.digitRatio) * size, TYPED.maxGapLines * lineH));
-      below = { x, y: bottom + gap };
-      if (below.y + dims.h <= limit) return below;
-      // no room under it: the next column, right of the work beside it, from the top
-      const band = head && !newProblem ? head.cell : area;
-      const from = Math.max(right, ...avoid.filter((r) => r.x >= x && rectsIntersect(r, band)).map(rectMaxX)) + TYPED.columnGap * k;
-      const next = placeInCell(dims, { x: from, y: head && !newProblem ? rectMaxY(head.head) + gap : area.y }, { ...band, h: limit - band.y }, avoid);
-      if (next && next.x >= from - 1) return next;
-      // anywhere else, far enough from other work not to be read as part of it
-      spread = TYPED.problemGapLines * lineH;
-    }
-    return findFreeArea(dims, room, spread > 0 ? avoid.map((r) => expandRect(r, spread)) : avoid) ?? below ?? { x: area.x, y: area.y };
-  }
-
-  /** The line just written is where the kid can see it: not off screen, not under the typing bar (a gentle pan). */
-  private keepInView(r: Rect): void {
-    const cam = this.editor.getCamera?.();
-    if (!cam || !this.editor.setCamera) return;
-    const view = this.editor.getViewportPageBounds();
-    const z = this.editor.getZoomLevel?.() || 1;
-    const pad = 24 / z;
-    // the open bar's real height (it grows with the keys row and an on-screen keyboard), else its usual one
-    const bar = typeBarInset.get() || TYPED.barPx;
-    const dy = Math.max(0, rectMaxY(r) + pad - (view.y + view.h - bar / z)) || Math.min(0, r.y - pad - view.y);
-    const dx = Math.max(0, rectMaxX(r) + pad - (view.x + view.w)) || Math.min(0, r.x - pad - view.x);
-    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
-    this.editor.setCamera({ x: cam.x - dx, y: cam.y - dy, z: cam.z }, this.deps.reducedMotion() ? undefined : { animation: { duration: 320 } });
   }
 
   /** Student typed over an echo (or the unreadable chip): trust the text, skip recognition. */

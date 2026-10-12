@@ -40,6 +40,11 @@ describe("TypeBar markup", () => {
     expect(renderToStaticMarkup(<TypeBar editor={editor} controller={{} as LiveController} parser={parser} />)).toBe("");
   });
 
+  it("no card until the writer's code is in (`prepareTyped`): Enter, the caret and ↑ need it", () => {
+    const loading = { ...writer(), prepareTyped: () => new Promise<void>(() => undefined) } as LiveController;
+    expect(renderToStaticMarkup(<TypeBar editor={editor} controller={loading} parser={parser} />)).toBe("");
+  });
+
   it("the box, its keys, New problem, Enter and Hide, each named for a screen reader", () => {
     const html = render();
     expect(html).toContain(`aria-label="${TYPE_COPY.region}"`);

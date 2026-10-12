@@ -101,6 +101,8 @@ describe("live loop — Type it: a typed line is the kid's ink, read as typed", 
 
   /** Types `latex` and presses Enter; resolves once the tutor has read and analysed the line. */
   async function type(latex: string, args: Partial<WriteTypedArgs> = {}): Promise<WriteTypedResult> {
+    // the writer is the bar's code: the bar loads it before Enter does anything
+    await loop.prepareTyped();
     const res = loop.writeTyped({ text: latex, latex, ...args });
     if (res.ok) await settleUntil(() => Boolean(lineOf(res.lineId)?.analysis));
     await settleStable(() => `${editor.getCurrentPageShapes().length}|${calls.length}`);
@@ -339,8 +341,24 @@ describe("live loop — Type it: a typed line is the kid's ink, read as typed", 
     expect(tutorWork()).toEqual([]);
   });
 
+  it("before the bar has loaded the writer: refused as off, no spot, no lines — then it all works", async () => {
+    start();
+    expect(loop.writeTyped({ text: "2x=8", latex: "2x=8" })).toEqual({ ok: false, reason: "off" });
+    expect(loop.typedSpot()).toBeNull();
+    expect(loop.typedLines()).toEqual([]);
+    expect(editor.getCurrentPageShapes()).toHaveLength(0);
+    // loaded once, however often it is asked for
+    const first = loop.prepareTyped();
+    expect(loop.prepareTyped()).toBe(first);
+    await first;
+    expect(loop.typedSpot()).not.toBeNull();
+    const res = ok(await type("2x=8"));
+    expect(loop.typedLines().map((l) => l.lineId)).toEqual([res.lineId]);
+  });
+
   it("refuses what it cannot write, with nothing written", async () => {
     start();
+    await loop.prepareTyped();
     const sentence = "\\text{this is a whole sentence of words that the hand never writes}";
     expect(layoutMath(sentence).unsupported.length).toBeGreaterThan(0);
     expect(loop.writeTyped({ text: "x", latex: sentence })).toEqual({ ok: false, reason: "unwritable" });

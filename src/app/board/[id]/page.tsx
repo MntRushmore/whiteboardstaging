@@ -299,6 +299,10 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   });
   // Type it: the bar shows while Live can write a typed line here (`useTypeBar` decides when).
   const typeShown = useTypeBar(liveEnabled && Boolean(controller.writeTyped), guided);
+  // ...and its writer's code loads beside the bar's chunk, not after it (`prepareTyped`)
+  useEffect(() => {
+    if (typeShown) controller.prepareTyped?.().catch(() => undefined);
+  }, [typeShown, controller]);
   // The learning record (src/lib/learning): the problems the student works here, loaded in idle time.
   useBoardLearning(id, user?.id);
   // Lecture mode: the mic and the tutor sketching what is said. Not gated on Live or the help

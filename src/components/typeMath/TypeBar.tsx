@@ -101,9 +101,33 @@ const GAP = 8;
 const SHORT_BOARD_PX = 560;
 
 export default function TypeBar(props: TypeBarProps) {
-  // no writer on this board (Live off, an old controller): no bar
-  if (!props.controller.writeTyped) return null;
+  const ready = useTypedWriter(props.controller);
+  // no writer on this board (Live off, an old controller): no bar; and none until its code is in
+  if (!props.controller.writeTyped || !ready) return null;
   return <TypeBarCard {...props} />;
+}
+
+/**
+ * The writer is the bar's code, not the board's (`controller.prepareTyped`, `src/lib/live/typedWriter.ts`):
+ * loaded once, before the card shows, since Enter, the caret and ↑ all need it. The board page starts
+ * it beside this chunk, so it is usually in already. A controller without it is ready at once.
+ */
+function useTypedWriter(controller: LiveController): boolean {
+  const [ready, setReady] = useState(!controller.prepareTyped);
+  useEffect(() => {
+    if (!controller.prepareTyped) return;
+    let live = true;
+    controller.prepareTyped().then(
+      () => {
+        if (live) setReady(true);
+      },
+      (err: unknown) => console.warn("[type] the writer did not load", err),
+    );
+    return () => {
+      live = false;
+    };
+  }, [controller]);
+  return ready;
 }
 
 function TypeBarCard({ editor, controller, tour = false, chatOpen = false, simple = false, parser = PARSER, initial }: TypeBarProps) {
