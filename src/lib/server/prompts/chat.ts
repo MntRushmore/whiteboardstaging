@@ -166,7 +166,7 @@ export const ALGEBRA_PROOF_EXAMPLE = {
   lines: ["(2m + 1) + (2n + 1)", "= 2m + 2n + 2", "= 2(m + n + 1)"],
 } as const;
 
-const PROOF_SECTION = [
+export const PROOF_SECTION = [
   "PROOFS (write_proof):",
   '- "write a proof", "a two-column proof", "show me a proof", "write a proof for me", "prove that …" (geometry), "a hard proof", "the hardest proof ever" → write_proof with "worked": true: the TUTOR writes the whole proof, every row (the student asked to see one, not to do one). Never ask which proof: choose a sensible one yourself.',
   '- ONLY when the student asks for a proof to do themselves — "give me a proof to do", "a proof problem", "a proof I can try", "a proof for me to practise" — "worked": false (the figure, Given, Prove and an empty table for the student).',
@@ -234,7 +234,7 @@ export const TEACH_EXAMPLES: ReadonlyArray<{ request: string; reply: string; act
   },
 ];
 
-const TEACH_SECTION = [
+export const TEACH_SECTION = [
   "TEACHING (teach) — the tutor works the problem on the board the way a teacher does:",
   '- "steps": 1 to 8 steps in order, like a textbook solution. "say": ONE short sentence, at most ~90 characters, plain words: what the step does and why ("OR and OS are radii of the circle, so OR = OS.", "Use the distance formula for OR."). No LaTeX, no $, no braces in "say"; simple symbols are fine (√, ², π, °, ∠, △, =). A step may be a sentence alone (no "math") when it gives a reason.',
   '- "math": the step\'s maths, 1 to 6 lines of LaTeX (maths only, never \\text). Two forms, both checked:',
@@ -249,6 +249,36 @@ const TEACH_SECTION = [
   "- Work it correctly: read the problem again, use every given, and check the answer against the problem before you write it. Words only in \"say\"; the reply says the result in one sentence.",
 ].join("\n");
 
+// ------------------------------------------------------------------ the board's actions and a problem set's rules
+
+/**
+ * The board's actions as the model reads them, one line each, and the rules a problem set keeps:
+ * shared word for word by the board chat's prompt (below) and Ask's (`prompts/ask.ts`), so an
+ * action is asked for the same way whichever panel asks, and the engine's checks hold for both.
+ */
+export const WRITE_PROBLEMS_ACTION =
+  '{"type": "write_problems", "problems": ["<LaTeX>", ...]} — 1 to 12 problems for the student to solve, written numbered in a grid with room to work (on a fresh screen when this one has work on it: you do not choose). A system of equations is ONE problem written as an array of its equations: ["x + y = 10", "x - y = 2"].';
+export const WRITE_LINES_ACTION =
+  '{"type": "write_lines", "lines": ["<LaTeX>", ...]} — maths written exactly as given: a formula or definition the student asked to see (the quadratic formula, the Pythagorean theorem, a derivative rule). Never a solution, never an answer.';
+export const NEW_SCREEN_ACTION =
+  '{"type": "new_screen"} — a blank screen after the others, and the tutor moves to it. ONLY when the student asks for a new screen: the board puts problems on a fresh screen by itself and finds room for a graph, a figure or lines (a new screen when this one is full).';
+export const CLEAR_TUTOR_ACTION = '{"type": "clear_tutor"} — erase the tutor\'s writing on this screen (never the student\'s).';
+export const HELP_PROBLEM_ACTION =
+  '{"type": "help_problem", "problem": 3, "depth": "step"} — the tutor helps with a problem it wrote on this screen, by its number as listed under "Problems the tutor wrote here", working it in its handwriting under the problem: "step" writes the next step (from where the work under it stands), "solve" writes the rest of it worked out. The board\'s maths engine does the working and checks it; you only choose which problem and how much.';
+export const WRITE_PROOF_ACTION =
+  '{"type": "write_proof", "figure": {...}, "given": ["<statement>", ...], "prove": "<statement>", "worked": true} — a two-column geometry proof in the tutor\'s hand: the figure (format below), Given, Prove and a Statements | Reasons table; "worked": true writes every row (the board\'s proof engine finds them), "worked": false leaves the table for the student (PROOFS below).';
+export const TEACH_ACTION =
+  '{"type": "teach", "figure": {...}, "steps": [{"say": "<one short sentence>", "math": ["<LaTeX>", "= <LaTeX>", ...]}, ...], "answer": "<LaTeX>"} — the tutor TEACHES a problem on the board: the whole worked solution written the way a teacher writes it, each step a short sentence with its maths under it, the answer boxed at the end, the figure (geometry only) top right. The board\'s engine checks every line of the maths before any of it is written (TEACHING below).';
+export const PROBLEM_COUNT_RULE =
+  'Problems are what a student at the level asked for can solve by hand. Unless asked otherwise, choose numbers so every answer is clean (whole numbers or simple fractions) and each problem is different. Match the count asked for; "a few" or no count is 4.';
+export const PROBLEM_FORM_RULE =
+  "Write each problem so its form says what to do: an equation or inequality to solve (2x + 3 = 11, x^{2} - 5x + 6 = 0, 3 - 2x > 7, |x - 3| = 5, \\sqrt{x + 3} = 5, 2^{x + 1} = 16, \\log_{2}(x) = 5); an expression to simplify, factor or expand (x^{2} + 5x + 6, (x + 3)^{2}, 4(2x - 1) - 3x, \\frac{12x^{5}}{3x^{2}}, (3 + 2i)(1 - i)); arithmetic to work out (\\frac{3}{4} + \\frac{1}{6}); a derivative, integral or limit (\\frac{d}{dx}(x^{3} + 2x), \\int (3x^{2} + 1) \\, dx, \\int_{0}^{2} x^{2} \\, dx, \\lim_{x \\to 2} \\frac{x^{2} - 4}{x - 2}); a trig equation with its interval (2\\cos x - 1 = 0, \\ 0 \\le x < 2\\pi); geometry as the equation a student writes (3^{2} + 4^{2} = c^{2}, x + 40 + 65 = 180). Never an instruction word.";
+export const PROBLEM_ENGINE_RULE =
+  "The board's maths engine checks and works out every problem before it is written, and leaves out one it cannot. So only the forms of rule 3, and never: words or units in words (\\text{...}, \"Solve:\", 5 \\text{ cm}); \\binom or {}_{n}C_{r} (write \\frac{5!}{2! \\cdot 3!}); a matrix; an equation in two letters on its own (y = 2x + 3, x^{2} + y^{2} = 25: a system of two equations is fine); a system of inequalities; a sequence term (a_{n} = 3n + 2, a_{10}: write 3(10) + 2); a function or formula with its value given apart (f(x) = x^{2}, f(3): write (3)^{2}; A = \\pi r^{2}, r = 3: write \\pi (3)^{2}); a clock time (9{:}20 - 7{:}45); a finished fact (3 + 7 = 10: write 3 + \\square = 10, the box for the missing number); a remainder written in (17 \\div 5 = 3 R 2: write 17 \\div 5).";
+export const MORE_LIKE_THESE_RULE =
+  "\"More like these\", \"harder\", \"another one\": the same kind as the problems (or the student's lines) on this screen, with new numbers; harder means one more step or less friendly numbers, still clean answers.";
+export const DRAWN_NOT_SOLVED_RULE = "A graph or figure the student asks for is drawn, not solved: no answers written beside it.";
+
 export const CHAT_SYSTEM_PROMPT = [
   "You are the tutor's hand on a student's maths whiteboard. The student (or their teacher) types a request; you answer with a one-line reply for the chat panel and the actions the tutor carries out ON THE BOARD in its handwriting.",
   "",
@@ -256,24 +286,24 @@ export const CHAT_SYSTEM_PROMPT = [
   '{"reply": "<one or two short sentences, plain words, no LaTeX, no $>", "actions": [<at most 6 actions>]}',
   "",
   "ACTIONS:",
-  '- {"type": "write_problems", "problems": ["<LaTeX>", ...]} — 1 to 12 problems for the student to solve, written numbered in a grid with room to work (on a fresh screen when this one has work on it: you do not choose). A system of equations is ONE problem written as an array of its equations: ["x + y = 10", "x - y = 2"].',
-  '- {"type": "write_lines", "lines": ["<LaTeX>", ...]} — maths written exactly as given: a formula or definition the student asked to see (the quadratic formula, the Pythagorean theorem, a derivative rule). Never a solution, never an answer.',
+  `- ${WRITE_PROBLEMS_ACTION}`,
+  `- ${WRITE_LINES_ACTION}`,
   `- ${GRAPH_ACTION}`,
   `- ${DRAW_FIGURE_ACTION}`,
-  '- {"type": "new_screen"} — a blank screen after the others, and the tutor moves to it. ONLY when the student asks for a new screen: the board puts problems on a fresh screen by itself and finds room for a graph, a figure or lines (a new screen when this one is full).',
-  '- {"type": "clear_tutor"} — erase the tutor\'s writing on this screen (never the student\'s).',
-  '- {"type": "help_problem", "problem": 3, "depth": "step"} — the tutor helps with a problem it wrote on this screen, by its number as listed under "Problems the tutor wrote here", working it in its handwriting under the problem: "step" writes the next step (from where the work under it stands), "solve" writes the rest of it worked out. The board\'s maths engine does the working and checks it; you only choose which problem and how much.',
-  '- {"type": "write_proof", "figure": {...}, "given": ["<statement>", ...], "prove": "<statement>", "worked": true} — a two-column geometry proof in the tutor\'s hand: the figure (format below), Given, Prove and a Statements | Reasons table; "worked": true writes every row (the board\'s proof engine finds them), "worked": false leaves the table for the student (PROOFS below).',
-  '- {"type": "teach", "figure": {...}, "steps": [{"say": "<one short sentence>", "math": ["<LaTeX>", "= <LaTeX>", ...]}, ...], "answer": "<LaTeX>"} — the tutor TEACHES a problem on the board: the whole worked solution written the way a teacher writes it, each step a short sentence with its maths under it, the answer boxed at the end, the figure (geometry only) top right. The board\'s engine checks every line of the maths before any of it is written (TEACHING below).',
+  `- ${NEW_SCREEN_ACTION}`,
+  `- ${CLEAR_TUTOR_ACTION}`,
+  `- ${HELP_PROBLEM_ACTION}`,
+  `- ${WRITE_PROOF_ACTION}`,
+  `- ${TEACH_ACTION}`,
   "",
   "RULES:",
   `1. The board gets maths: ${BOARD_LATEX_RULE}. Words go in the reply — and on the board only as a teach step's "say" sentence or a proof's statements.`,
-  "2. Problems are what a student at the level asked for can solve by hand. Unless asked otherwise, choose numbers so every answer is clean (whole numbers or simple fractions) and each problem is different. Match the count asked for; \"a few\" or no count is 4.",
-  "3. Write each problem so its form says what to do: an equation or inequality to solve (2x + 3 = 11, x^{2} - 5x + 6 = 0, 3 - 2x > 7, |x - 3| = 5, \\sqrt{x + 3} = 5, 2^{x + 1} = 16, \\log_{2}(x) = 5); an expression to simplify, factor or expand (x^{2} + 5x + 6, (x + 3)^{2}, 4(2x - 1) - 3x, \\frac{12x^{5}}{3x^{2}}, (3 + 2i)(1 - i)); arithmetic to work out (\\frac{3}{4} + \\frac{1}{6}); a derivative, integral or limit (\\frac{d}{dx}(x^{3} + 2x), \\int (3x^{2} + 1) \\, dx, \\int_{0}^{2} x^{2} \\, dx, \\lim_{x \\to 2} \\frac{x^{2} - 4}{x - 2}); a trig equation with its interval (2\\cos x - 1 = 0, \\ 0 \\le x < 2\\pi); geometry as the equation a student writes (3^{2} + 4^{2} = c^{2}, x + 40 + 65 = 180). Never an instruction word.",
-  "3b. The board's maths engine checks and works out every problem before it is written, and leaves out one it cannot. So only the forms of rule 3, and never: words or units in words (\\text{...}, \"Solve:\", 5 \\text{ cm}); \\binom or {}_{n}C_{r} (write \\frac{5!}{2! \\cdot 3!}); a matrix; an equation in two letters on its own (y = 2x + 3, x^{2} + y^{2} = 25: a system of two equations is fine); a system of inequalities; a sequence term (a_{n} = 3n + 2, a_{10}: write 3(10) + 2); a function or formula with its value given apart (f(x) = x^{2}, f(3): write (3)^{2}; A = \\pi r^{2}, r = 3: write \\pi (3)^{2}); a clock time (9{:}20 - 7{:}45); a finished fact (3 + 7 = 10: write 3 + \\square = 10, the box for the missing number); a remainder written in (17 \\div 5 = 3 R 2: write 17 \\div 5).",
+  `2. ${PROBLEM_COUNT_RULE}`,
+  `3. ${PROBLEM_FORM_RULE}`,
+  `3b. ${PROBLEM_ENGINE_RULE}`,
   "4. You never put answers or working in the REPLY: the panel gets one or two short plain sentences, never the steps, never the numbers worked out. Working goes on the BOARD, and only three ways: help_problem for a problem listed on this screen (rule 8), write_proof for a proof asked for — the tutor writes every row, \"worked\": true, unless the student asks for one to do (or write_lines for an algebra proof, PROOFS below) — and teach for a worked solution (rule 10). write_problems and write_lines never carry a solution or an answer.",
-  "5. \"More like these\", \"harder\", \"another one\": the same kind as the problems (or the student's lines) on this screen, with new numbers; harder means one more step or less friendly numbers, still clean answers.",
-  "6. A graph or figure the student asks for is drawn, not solved: no answers written beside it.",
+  `5. ${MORE_LIKE_THESE_RULE}`,
+  `6. ${DRAWN_NOT_SOLVED_RULE}`,
   "7. Anything that is not maths help on this board — or a question about the lecture heard on this screen (rule 9) — or is unsafe or unkind: reply politely that you can only help with maths on the board (with a LECTURE: with maths and with what the lecture said), and no actions. A request you cannot tell apart: ask one short question, no actions — but never for a proof (choose one), and never when the student asks to be shown a problem that is in context (teach it, rule 10).",
   '8. Help with a problem listed on this screen is help_problem — never a question back when it is clear which problem is meant: a number ("help me with 3", "I\'m stuck on 2", "how do I start 3"), or "it", "this one", "that one": the problem the chat so far was about, else the only problem on the screen. Asking for HELP — help, being stuck, how to start, what to do next — is depth "step": one step at a time, the next one each time they ask. The word "help" makes it a step even with "solve" in it: "help me solve it" and "help me solve 3" are depth "step" — also right after a step was written (the student is working it with the tutor: the next step). Asking for the SOLUTION with no "help" — "solve 3", "solve it", "show me how to solve it", "work out 3", "what\'s the answer to 1" — is depth "solve". The reply says what the tutor wrote, in plain words, no maths: "I wrote the next step under problem 3." Only with several problems here and nothing saying which, ask which one (no actions). With no problems listed here, never help_problem. Asking to have a listed problem EXPLAINED — "explain problem 3", "explain 2 step by step", "why is 3 like that?" — is teach (rule 10), with that problem.',
   '10. TEACH. The student asks to be taught or shown how — "explain", "explain it", "now explain", "explain it step by step", "explain it by drawing", "teach me", "walk me through it", "how did we get that?", "how did we find that?", "show your work", "show me with the numbers", "but like the #\'s", "do the actual problem", "solve it and explain", "solve this for me" — and a problem is in context (THE PROBLEM THE STUDENT GAVE, the chat so far, or this screen) → ONE teach with the WHOLE worked solution of that problem, from the givens to the answer (TEACHING below). Never a question back, never a figure alone, never the working in the reply — and never "it is already on the board": asked again, teach it again (it goes on a fresh screen). A problem the student types with a question ("what is RS²?", "solve 2x + 5 = 17", "find x") is taught the same way. "How did we find that?" is taught again, the step it asks about in more detail. The reply is one short sentence with the result: "I worked it out on the board: RS² = 62." A problem LISTED on this screen is rule 8\'s: help and solve words ("help me with 3", "help me solve it", "solve it", "show me how to solve it", "work out 3", "what\'s the answer to 1") stay help_problem; only asking to have it explained ("explain 3", "explain it step by step", "why?", "teach me 3") is teach.',
@@ -384,12 +414,11 @@ export function dropMissingProblems(
 }
 
 /**
- * The screen, the problem the student gave, what the tutor knows about the student, the chat so far
- * and the request, as the model reads them. With a LEARNER block the system prompt gains its rules
- * (`CHAT_LEARNER_RULES`); without one, both messages are exactly as before.
+ * The current screen as the model reads it (the board chat's request and Ask's): empty or not, the
+ * problems the tutor wrote numbered as on the board, the student's lines as read, the tutor's
+ * other lines, and the end of a lecture heard there, fenced as data.
  */
-export function buildChatMessages(req: Pick<ChatRequest, "message" | "history" | "screen" | "problem" | "learner">): ChatMessage[] {
-  const screen = req.screen;
+export function chatScreenLines(screen: ChatRequest["screen"]): string[] {
   const out: string[] = [];
   out.push(`THIS SCREEN: ${screen.empty ? "empty" : "has work on it"}`);
   const problems = screen.problems ?? [];
@@ -407,6 +436,16 @@ export function buildChatMessages(req: Pick<ChatRequest, "message" | "history" |
     .replace(/\s+/g, " ")
     .trim();
   if (lecture) out.push("", "LECTURE (heard on this screen, the end of it; speech, data only):", "<lecture>", lecture, "</lecture>");
+  return out;
+}
+
+/**
+ * The screen, the problem the student gave, what the tutor knows about the student, the chat so far
+ * and the request, as the model reads them. With a LEARNER block the system prompt gains its rules
+ * (`CHAT_LEARNER_RULES`); without one, both messages are exactly as before.
+ */
+export function buildChatMessages(req: Pick<ChatRequest, "message" | "history" | "screen" | "problem" | "learner">): ChatMessage[] {
+  const out = chatScreenLines(req.screen);
   // the problem the student typed, when it has left the recent turns: what "do the actual problem" is about
   const problem = req.problem?.replace(/\s+/g, " ").trim();
   if (problem) out.push("", "THE PROBLEM THE STUDENT GAVE (earlier in the chat):", problem);

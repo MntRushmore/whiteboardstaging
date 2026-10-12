@@ -23,7 +23,7 @@ Usage that week: 145 asks from 10 subscribers.
 ## What it is now
 
 - **Streams.** POST `/api/live/ask` sends Server-Sent Events. The reply's words show as they're written, and the board actions come after the engine has checked them.
-- **Model.** Haiku 5.5 is the primary, with GPT-5.4 mini from another provider as the fallback. These are provisional until `eval:ask` picks.
+- **Model.** Sonnet 5.5 is the primary, with Gemini 3.8 Flash from another provider as the fallback, each streamed with its own reasoning setting (`askReasoningFor`: "minimal" for both). Picked on `npm run eval:ask` (docs/eval/ask.md).
   - A short first-content watchdog (about 5 s) hands over to the fallback.
   - Both models answer within the route's budget.
 - **The model's output** is a reply in Markdown-lite: paragraphs, `**bold**`, `-` and `1.` lists, `$…$` and `$$…$$` maths.
