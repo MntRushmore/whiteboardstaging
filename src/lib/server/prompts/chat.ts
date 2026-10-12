@@ -16,6 +16,7 @@ import { normTex } from "@/lib/live/chat/teach";
 import { FigureSpecSchema, type FigureSpec } from "@/lib/live/figureDraw/contracts";
 import { MISTAKES, skillDef, type LearnerHint } from "@/lib/learning/contracts";
 import type { ChatMessage } from "@/lib/server/openrouter";
+import { lenientModelAction } from "./model";
 
 /**
  * System prompt for POST /api/live/chat: a typed request → a short reply for the panel and the
@@ -649,6 +650,8 @@ export function cleanChatActions(raw: readonly unknown[]): { actions: ChatAction
       if (obj.worked === null) delete candidate.worked;
     } else if (type === "teach") {
       candidate = lenientTeach(obj);
+    } else if (type === "draw_model") {
+      candidate = lenientModelAction(obj);
     }
     const parsed = ChatActionSchema.safeParse(candidate);
     if (!parsed.success) {
