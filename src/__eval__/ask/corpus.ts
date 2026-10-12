@@ -13,14 +13,14 @@
  * maths: the model chooses the numbers; the engine judges them.
  */
 import { AskRequestSchema, type AskRequestParsed, type AskTurn } from "@/lib/live/ask/contracts";
-import type { ChatActionType, ChatScreen } from "@/lib/live/chat/contracts";
+import type { ChatActionType, ChatScreen, VisualModelKind } from "@/lib/live/chat/contracts";
 import type { LearnerHint } from "@/lib/learning/hint";
 import type { CourseId } from "@/lib/onboarding/courseIds";
 import { nameWords } from "@/lib/server/ask/nameScrub";
 import type { AskLearnerContext } from "@/lib/server/ask/store";
 import type { AskImageId } from "./images";
 
-export type AskGroup = "problems" | "explain" | "fact" | "socratic" | "target" | "board" | "highschool" | "subject" | "voice" | "grade" | "safety" | "memory" | "vision";
+export type AskGroup = "problems" | "explain" | "fact" | "socratic" | "target" | "board" | "highschool" | "subject" | "voice" | "grade" | "safety" | "memory" | "vision" | "model";
 
 export interface AskExpect {
   /** "none": no board block at all; "required": a block with `types` (all) / `oneOf` (one); "optional": a block may come, only with `allow` types */
@@ -42,6 +42,8 @@ export interface AskExpect {
   helpBoard?: "step" | "solve";
   /** a worked solution whose answer is one of these (judged equal by the engine) */
   teach?: { answers: string[] };
+  /** a picture (draw_model) of one of these kinds reaches the board, its spec passing the board's check */
+  model?: VisualModelKind[];
   /** a write_proof written whole (true) or set up for the student (false) */
   worked?: boolean;
   /** write_lines as a chain of = lines, every step checked */
@@ -325,6 +327,55 @@ export const ASK_CORPUS: readonly AskCase[] = [
     expect: { board: "required", types: ["draw_figure"], near: 2, without: ["new_screen"] },
     rubric: "A triangle with angles 50°, 70° and x beside problem 2 on this screen (near 2), no new screen; doesn't solve for x unasked.",
   },
+  // ---------------------------------------------------------------- pictures: K–8 visual models (draw_model), beside their problem
+  {
+    id: "m-4-area-near",
+    group: "model",
+    grade: 4,
+    subject: "maths",
+    message: "can you show me 1 with a picture",
+    screen: { empty: false, problems: ["23 \\times 14", "36 \\times 12"] },
+    expect: { board: "required", types: ["draw_model"], model: ["area_model"], near: 1, without: ["new_screen", "help_problem"] },
+    rubric: "An area model of 23 × 14 (20 + 3 by 10 + 4) beside problem 1 on this screen; the reply says what it drew and asks one question, without listing the partial products or 322.",
+  },
+  {
+    id: "m-4-compare-near",
+    group: "model",
+    grade: 4,
+    subject: "maths",
+    message: "which one is bigger? show me",
+    screen: { empty: false, problems: ["\\frac{3}{4} \\bigcirc \\frac{5}{8}"] },
+    expect: { board: "required", types: ["draw_model"], model: ["fraction_bars", "fraction_circles"], near: 1, without: ["new_screen"] },
+    rubric: "3/4 and 5/8 drawn as bars (or circles) of the same whole beside problem 1; a question that leads them to compare, ideally without saying 3/4 is bigger outright.",
+  },
+  {
+    id: "m-2-count-back-near",
+    group: "model",
+    grade: 2,
+    subject: "maths",
+    message: "i dont get it can you draw it on a number line",
+    screen: { empty: false, problems: ["15 - 7", "12 - 5"] },
+    history: [
+      { role: "user", text: "help with 1" },
+      { role: "tutor", text: "Start at 15. What happens when you take away 7?" },
+    ],
+    expect: { board: "required", types: ["draw_model"], model: ["number_line"], near: 1, without: ["new_screen"] },
+    rubric: "A number line beside problem 1 (0–20 or so) with 15 marked, maybe the hops back; tiny words a 7-year-old reads; a question about where they land. Not the answer 8 stated in the reply.",
+  },
+  { id: "m-3-array", group: "model", grade: 3, subject: "maths", message: "draw 4 x 6", expect: { board: "required", types: ["draw_model"], model: ["array", "equal_groups", "area_model"], without: ["new_screen"] }, rubric: "4 rows of 6 as an array (or 4 groups of 6); a question that gets them counting or skip counting; doesn't just state 24." },
+  {
+    id: "m-3-tape",
+    group: "model",
+    grade: 3,
+    subject: "maths",
+    message: "draw this word problem: Sam has 3 bags with 8 apples in each bag. How many apples does he have?",
+    expect: { board: "required", types: ["draw_model"], model: ["tape", "equal_groups", "array"] },
+    rubric: "A bar model of 3 equal parts of 8 with the total as ? (or 3 groups of 8); the reply says what it drew and asks how many in all, without giving 24.",
+  },
+  { id: "m-2-clock", group: "model", grade: 2, subject: "maths", message: "what time is 3:45? show me on a clock", expect: { board: "required", types: ["draw_model"], model: ["clock"] }, rubric: "A clock at 3:45 (minute hand on 9, hour hand almost at 4); one or two tiny sentences about the hands." },
+  { id: "m-2-blocks", group: "model", grade: 2, subject: "maths", message: "show me 345 with base ten blocks", expect: { board: "required", types: ["draw_model"], model: ["base_ten"] }, rubric: "345 as 3 flats, 4 rods and 5 cubes; a question about how many tens or hundreds." },
+  { id: "m-5-place", group: "model", grade: 5, subject: "maths", message: "make a place value chart for 3,405.27", expect: { board: "required", types: ["draw_model"], model: ["place_value"] }, rubric: "A place-value chart of 3405.27; a question such as what the 2 is worth (2 tenths)." },
+  { id: "m-1-ten-frame", group: "model", grade: 1, subject: "maths", message: "show me 13 on ten frames", expect: { board: "required", types: ["draw_model"], model: ["ten_frame"] }, rubric: "13 as one full ten frame and 3 more; tiny words; a question like 'how many more to make 20?' or 'ten and how many?'." },
   { id: "b-hs-formula", group: "board", course: "algebra1", subject: "maths", message: "write the quadratic formula on my board", expect: { board: "required", types: ["write_lines"] }, rubric: "The quadratic formula written on the board, correct." },
   { id: "b-hs-proof", group: "board", course: "geometry", subject: "maths", message: "write a proof", expect: { board: "required", types: ["write_proof"], worked: true }, rubric: "A whole two-column proof written by the tutor (not a question back)." },
   { id: "b-hs-odd", group: "board", course: "algebra1", subject: "maths", message: "prove the sum of two odd numbers is even", expect: { board: "required", types: ["write_lines"], chain: true }, rubric: "An algebra proof as a chain of = lines: (2m + 1) + (2n + 1) = 2(m + n + 1)." },

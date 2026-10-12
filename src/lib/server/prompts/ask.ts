@@ -28,6 +28,7 @@ import type { CourseId } from "@/lib/onboarding/courseIds";
 import type { AskLearnerContext } from "@/lib/server/ask/store";
 import { learnerScrubber, nameScrubber } from "@/lib/server/ask/nameScrub";
 import type { ChatMessage } from "@/lib/server/openrouter";
+import { DRAW_MODEL_ACTION, MODEL_FORMAT } from "./model";
 import {
   ALGEBRA_PROOF_EXAMPLE,
   BOARD_LATEX_RULE,
@@ -102,6 +103,13 @@ export const NEAR_PROBLEM_RULE =
  */
 export const NEW_SCREEN_RULE =
   'new_screen ONLY when the student asks for a new or clean screen, or with a NEW problem set (and a set needs none: write_problems starts a fresh screen by itself when this one has work on it). NEVER new_screen with a drawing, graph, figure or picture that goes with work on this screen: use "near" with the problem\'s number (5a).';
+
+/**
+ * When to draw a K–8 visual model (`draw_model`, docs/ASK-V2.md "Drawing") and which kind: the board
+ * lays it out and works out every number in it, so a picture can be the hint as well as the answer.
+ */
+export const PICTURE_RULE =
+  'A picture of K–8 maths asked for, or one that would help them see it → draw_model (VISUAL MODELS below): "show me 3/4 vs 5/8" → fraction_bars (or fraction_circles); "draw 4 × 6" → array; "3 groups of 4" → equal_groups; "show 23 × 14" → area_model; "draw this word problem" → tape; "what time is 3:45" → clock; "show 345 in blocks" → base_ten; "what is the 4 worth in 3,405?" → place_value; counting on or back, skip counting, where a fraction sits → number_line; making ten → ten_frame. For a problem on this screen, with its "near" (5a). A picture can be the hint: for "I don\'t get 15 − 7", a number line with only the start marked, not the hops to the answer. The board writes a model\'s numbers itself: your reply says what you drew and asks one question about it, never repeating its numbers.';
 
 /** One example exchange, as the prompt shows it: the context in brackets, the student's words, the whole answer. */
 interface AskExample {
@@ -264,6 +272,36 @@ export const ASK_EXAMPLES: readonly AskExample[] = [
       },
     ],
   },
+  {
+    context: "grade 4; problems on the screen: 1. 23 \\times 14, 2. 36 \\times 12",
+    student: "can you show me 1 with a picture",
+    reply: "Sure! I drew an area model beside #1. Each box is one part of $23 \\times 14$. Which box is the biggest?",
+    actions: [{ type: "draw_model", near: 1, model: { kind: "area_model", a: 23, b: 14 } }],
+  },
+  {
+    context: "grade 4; problems on the screen: 1. \\frac{3}{4} \\bigcirc \\frac{5}{8}",
+    student: "which one is bigger? show me",
+    reply: "Let's look! I drew both as bars next to #1, each the same whole. Which bar has more shaded?",
+    actions: [{ type: "draw_model", near: 1, model: { kind: "fraction_bars", bars: [{ parts: 4, shaded: 3 }, { parts: 8, shaded: 5 }] } }],
+  },
+  {
+    context: "grade 2; problems on the screen: 1. 15 - 7",
+    student: "i dont get it can you draw it",
+    reply: "Sure! I drew a number line beside #1 with a dot on 15. Count back 7 hops. Where do you land?",
+    actions: [{ type: "draw_model", near: 1, model: { kind: "number_line", from: 0, to: 20, marks: [{ at: 15 }], jumps: [] } }],
+  },
+  {
+    context: "grade 3",
+    student: "draw this: Mia has 12 stickers and gets 5 more. how many now?",
+    reply: "Here's a bar model on your board! One part is Mia's stickers, the other is the ones she gets. What do the two parts make together?",
+    actions: [{ type: "draw_model", model: { kind: "tape", rows: [{ segments: [{ units: 12, label: "12" }, { units: 5, label: "5" }] }], total: "?" } }],
+  },
+  {
+    context: "grade 2",
+    student: "what time is 3:45? show me",
+    reply: "Here's 3:45! The long hand points to the 9. The short hand is almost at the 4.",
+    actions: [{ type: "draw_model", model: { kind: "clock", hour: 3, minute: 45 } }],
+  },
   ...TEACH_EXAMPLES.map((e) => ({ context: "high school", student: e.request, reply: `Sure! ${e.reply} Follow each step, and tell me if one doesn't make sense.`, actions: [e.action] })),
   ...PROOF_EXAMPLES.map((e) => ({ context: "geometry", student: e.request, reply: e.reply, actions: [e.action] })),
   { context: "algebra 1", student: ALGEBRA_PROOF_EXAMPLE.request, reply: ALGEBRA_PROOF_EXAMPLE.reply, actions: [{ type: "write_lines", lines: [...ALGEBRA_PROOF_EXAMPLE.lines] }] },
@@ -346,6 +384,7 @@ export const ASK_SYSTEM_PROMPT = [
   `- ${WRITE_LINES_ACTION}`,
   `- ${GRAPH_ACTION}`,
   `- ${DRAW_FIGURE_ACTION}`,
+  `- ${DRAW_MODEL_ACTION}`,
   `- ${NEW_SCREEN_ACTION}`,
   `- ${CLEAR_TUTOR_ACTION}`,
   `- ${HELP_PROBLEM_ACTION}`,
@@ -362,6 +401,7 @@ export const ASK_SYSTEM_PROMPT = [
   `4. Practice asked for → write_problems ("5 two-step equations", "some adding practice", "harder ones"). ${MORE_LIKE_THESE_RULE} Practice with no topic ("practise my weak spots", "what should I practise?", "give me practice", "help me get better") → the STUDENT block's skills still growing, weakest first, about 2 problems each, up to 3 skills; none listed → their grade, or the kind of work on this screen. The reply names the topics in a positive way, never as weaknesses.`,
   `5. A graph, a figure or a formula asked for → graph, draw_figure or write_lines. ${DRAWN_NOT_SOLVED_RULE}`,
   `5a. ${NEAR_PROBLEM_RULE}`,
+  `5b. ${PICTURE_RULE}`,
   "6. HELP WITH A PROBLEM ON THIS SCREEN. Which one:",
   '   - a problem the TUTOR wrote (listed under "Problems the tutor wrote here") → help_problem with its number: "help me with 3", "I\'m stuck on 2", "this one" (the one the chat was about, else the only one listed). A number that isn\'t listed: say there is no #N on this screen, no action. Several listed and nothing says which: ask which one.',
   '   - the student\'s OWN work (their lines, not a listed problem: "my problem", "this", "what I wrote", "the one at the bottom") → help_board. Never help_problem for their own work; never help_board for a listed problem.',
@@ -375,6 +415,8 @@ export const ASK_SYSTEM_PROMPT = [
   TEACH_SECTION,
   "",
   FIGURE_FORMAT,
+  "",
+  MODEL_FORMAT,
   "",
   PROOF_SECTION,
   "",

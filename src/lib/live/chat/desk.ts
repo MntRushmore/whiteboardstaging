@@ -4,11 +4,12 @@ import type { FigurePlanOptions, FigurePlanResult, FigureSpec } from "../figureD
 import { GRAPH, graphPaceFor, planGraph, type GraphWindowHint } from "../graphing";
 import { HAND_LINE_META, planHandwriting, placeHandPlan, placeHandPlanOnBaseline, type HandPlan } from "../handwriting";
 import { CHAT_PROBLEM_META, problemMetaOf } from "./cells";
-import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow } from "./contracts";
+import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow, DrawModelAction } from "./contracts";
 import { CHAT_LIMITS, noProblemNote } from "./contracts";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
 import { legibleBoxes, placeDrawingRect } from "./place";
 import type * as Verify from "./verify";
+import type * as Models from "./models";
 import type { LecturePageMeta } from "../lecture/contracts";
 import { LECTURE_BLOCK_META } from "../lecture/meta";
 
@@ -31,6 +32,10 @@ import { LECTURE_BLOCK_META } from "../lecture/meta";
 export const CHAT_BLOCK_META = "chatBlock";
 /** meta.lineId of everything the chat writes (no student line has it) */
 export const CHAT_LINE_ID = "chat";
+/** meta `chatModel` of a visual model's strokes: its kind (`draw_model`) */
+export const CHAT_MODEL_META = "chatModel";
+/** the chat's blocks that are drawings, not lines of maths: what they write is labels */
+const DRAWING_BLOCKS: ReadonlySet<string> = new Set(["graph", "figure", "model"]);
 
 export const CHAT_WRITE = {
   /** hand size of `write_lines`: a formula is read from across the room, like a problem */
@@ -191,6 +196,7 @@ export class ChatDesk {
   private expectedPage = "";
   private running = 0;
   private verify: Promise<typeof Verify> | null = null;
+  private models: Promise<typeof Models> | null = null;
 
   constructor(host: ChatHost) {
     this.host = host;
@@ -217,9 +223,9 @@ export class ChatDesk {
       }
       const meta = (s.meta ?? {}) as Record<string, unknown>;
       if (meta.live !== true || meta.source !== "ai") continue;
-      // marks, graphs and figures are drawings: their "lines" are labels, not maths; a lecture's
-      // heading, notes and sketches are words (the transcript below says what they were about)
-      if (meta.mark || meta.graphFor || meta[CHAT_BLOCK_META] === "graph" || meta[CHAT_BLOCK_META] === "figure" || meta[LECTURE_BLOCK_META]) continue;
+      // marks, graphs, figures and visual models are drawings: their "lines" are labels, not maths;
+      // a lecture's heading, notes and sketches are words (the transcript below says what they were about)
+      if (meta.mark || meta.graphFor || DRAWING_BLOCKS.has(String(meta[CHAT_BLOCK_META])) || meta[LECTURE_BLOCK_META]) continue;
       const latex = typeof meta[HAND_LINE_META] === "string" ? (meta[HAND_LINE_META] as string) : (s.latex ?? "");
       if (!latex || seen.has(latex)) continue;
       seen.add(latex);
@@ -305,8 +311,7 @@ export class ChatDesk {
       case "help_problem":
         return this.helpProblem(action.problem, action.depth);
       case "draw_model":
-        // CONTRACT STUB (docs/ASK-V2.md, "Drawing"): the models part draws it (planners in src/lib/live/chat/models)
-        return { type: "draw_model", ok: false, note: "I can't draw that yet." };
+        return this.drawModel(action, report);
       case "help_board":
         return this.helpBoard(action.depth);
       case "write_proof":
@@ -707,5 +712,49 @@ export class ChatDesk {
     if (!placed) return planned ? { type: "draw_figure", ok: false, note: "There's no room left for the figure." } : cannot;
     await this.writeBlock(placed, { [CHAT_BLOCK_META]: "figure" });
     return { type: "draw_figure", ok: true };
+  }
+
+  // ---------------------------------------------------------------- visual models
+
+  /**
+   * The visual models' planners (`models/`), loaded with the first one drawn, never with the board
+   * (its first load is budgeted, docs/BUNDLE.md).
+   */
+  private modelPlanners(): Promise<typeof Models> {
+    this.models ??= import("./models");
+    return this.models;
+  }
+
+  /**
+   * "Show me 3/4 vs 5/8", "draw 4 × 6", "what time is 3:45" (`draw_model`, Ask): the model is
+   * planned by the board's own planners — which work out every number in it — at the kind's sizes,
+   * largest first, and placed beside problem `near` on this screen (`placeDrawing`), shrunk to fit
+   * before a new screen is ever started. Honest about what happened: a spec that doesn't add up
+   * (the route's gate has normally sent it back already), one that cannot be drawn legibly at any
+   * size, or no room left.
+   */
+  private async drawModel(action: DrawModelAction, report: Report): Promise<ChatActionOutcome> {
+    const kind = action.model.kind;
+    if (!this.host.handwriting()) return { type: "draw_model", ok: false, note: "The tutor's handwriting is switched off, so I can't draw that.", why: "hand_off" };
+    const models = await this.modelPlanners();
+    if (models.modelProblems(action.model).length > 0) return { type: "draw_model", ok: false, note: "That picture didn't add up, so I didn't draw it.", why: "spec" };
+    const seed = this.host.seed(`chat:model:${JSON.stringify(action.model).slice(0, 400)}`);
+    await this.waitForHand();
+    let planned = false;
+    const plan = (box: { w: number; h: number }): HandPlan | null => {
+      const p = models.planModel(action.model, box, seed);
+      if (p) planned = true;
+      return p;
+    };
+    const placed = await this.placeDrawing(plan, { near: action.near, boxes: models.MODEL_BOXES[kind] }, report);
+    if (!placed) {
+      this.host.metric?.("live.chat.model.dropped", { kind, why: planned ? "no_room" : "unplannable" });
+      return planned
+        ? { type: "draw_model", ok: false, note: "There's no room left for the picture.", why: "no_room" }
+        : { type: "draw_model", ok: false, note: "I couldn't draw that picture.", why: "unplannable" };
+    }
+    await this.writeBlock(placed, { [CHAT_BLOCK_META]: "model", [CHAT_MODEL_META]: kind });
+    this.host.metric?.("live.chat.model", { kind, near: action.near ?? null });
+    return { type: "draw_model", ok: true };
   }
 }

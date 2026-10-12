@@ -3,6 +3,8 @@ import { ASK_BOARD_CLOSE, ASK_BOARD_OPEN, ASK_LIMITS, AskBoardBlockSchema, AskRe
 import { AskStreamSplitter } from "@/lib/live/ask/splitter";
 import { CHAT_ACTION_TYPES } from "@/lib/live/chat/contracts";
 import { figureProblems } from "@/lib/live/chat/figure";
+import { modelProblems } from "@/lib/live/chat/models/check";
+import { sketchModel, MODEL_BOXES } from "@/lib/live/chat/models";
 import { checkProofProposal } from "@/lib/live/chat/proof";
 import { checkTeach } from "@/lib/live/chat/teach";
 import { BOARD_PROBLEM_AVOID, BOARD_PROBLEM_FORMS } from "@/lib/live/chat/problemForms";
@@ -13,6 +15,7 @@ import { EMPTY_ASK_CONTEXT, type AskLearnerContext } from "@/lib/server/ask/stor
 import { repairJsonEscapes } from "@/lib/server/sse";
 import {
   ASK_EXAMPLES,
+  PICTURE_RULE,
   ASK_MAX_TOKENS,
   ASK_SYSTEM_PROMPT,
   askBand,
@@ -43,6 +46,7 @@ import {
   WRITE_PROBLEMS_ACTION,
   WRITE_PROOF_ACTION,
 } from "./chat";
+import { DRAW_MODEL_ACTION, MODEL_FORMAT } from "./model";
 
 const req = (over: Partial<AskRequest> = {}) => AskRequestSchema.parse({ boardId: "b1", message: "help me with 2", screen: { empty: true }, ...over });
 const ctx = (over: Partial<AskLearnerContext> = {}) => ({ learner: { ...EMPTY_ASK_CONTEXT, ...over } });
@@ -141,17 +145,37 @@ describe("ask prompt: the examples reach the board", () => {
         if (a.type === "teach") expect(checkTeach(engine, a), e.student).toMatchObject({ ok: true });
         if (a.type === "write_proof") expect(checkProofProposal(a), e.student).toMatchObject({ ok: true });
         if (a.type === "draw_figure") expect(figureProblems(a.figure), e.student).toEqual([]);
+        if (a.type === "draw_model") expect(modelProblems(a.model), e.student).toEqual([]);
       }
     }
   }, 60_000);
 
   it("shows help_board both ways, a hint with no action, a safe answer, and a reply in the old chat's place for each kind", () => {
     const types = new Set(ASK_EXAMPLES.flatMap((e) => (e.actions ?? []).map((a) => a.type)));
-    for (const t of ["write_problems", "help_problem", "help_board", "graph", "draw_figure", "teach", "write_proof", "write_lines"]) expect(types, t).toContain(t);
+    for (const t of ["write_problems", "help_problem", "help_board", "graph", "draw_figure", "draw_model", "teach", "write_proof", "write_lines"]) expect(types, t).toContain(t);
     expect(ASK_EXAMPLES.some((e) => e.actions?.some((a) => a.type === "help_board" && a.depth === "step"))).toBe(true);
     expect(ASK_EXAMPLES.some((e) => e.actions?.some((a) => a.type === "help_board" && a.depth === "solve"))).toBe(true);
     expect(ASK_EXAMPLES.filter((e) => !e.actions).length).toBeGreaterThanOrEqual(6);
     expect(ASK_EXAMPLES.some((e) => /911/.test(e.reply) && !e.actions)).toBe(true);
+  });
+
+  it("pictures: draw_model and its kinds are documented; each example's model is drawn, beside a problem the screen lists", () => {
+    expect(ASK_SYSTEM_PROMPT).toContain(`- ${DRAW_MODEL_ACTION}`);
+    expect(ASK_SYSTEM_PROMPT).toContain(MODEL_FORMAT);
+    expect(ASK_SYSTEM_PROMPT).toContain(`5b. ${PICTURE_RULE}`);
+    const pictures = ASK_EXAMPLES.filter((e) => e.actions?.some((a) => a.type === "draw_model"));
+    expect(pictures.length).toBeGreaterThanOrEqual(4);
+    expect(pictures.filter((e) => e.actions!.some((a) => a.type === "draw_model" && a.near !== undefined)).length).toBeGreaterThanOrEqual(3);
+    for (const e of pictures) {
+      for (const a of e.actions!) {
+        if (a.type !== "draw_model") continue;
+        expect(sketchModel(a.model, MODEL_BOXES[a.model.kind][0], 1), e.student).not.toBeNull();
+        // near is a problem the example's screen lists ("problems on the screen: 1. …, 2. …")
+        if (a.near !== undefined) expect(e.context, e.student).toMatch(new RegExp(`problems on the screen: .*\\b${a.near}\\. `));
+        // never a new screen for a picture of work on this one
+        expect(e.actions!.some((x) => x.type === "new_screen"), e.student).toBe(false);
+      }
+    }
   });
 });
 

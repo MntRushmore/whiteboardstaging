@@ -646,3 +646,56 @@ describe("live/ask: the request", () => {
     expect(bad.status).toBe(400);
   });
 });
+
+describe("live/ask: visual models (draw_model)", () => {
+  const BARS = { kind: "fraction_bars", bars: [{ parts: 4, shaded: 3 }, { parts: 8, shaded: 5 }] };
+  // more shaded than parts, and a label that says other than the picture
+  const WRONG = { kind: "fraction_bars", bars: [{ parts: 4, shaded: 5 }, { parts: 8, shaded: 5, label: "3/4" }] };
+
+  it("a model the spec check passes goes to the board as it is, beside its problem: no repair call", async () => {
+    scripts = [{ chunks: ["Let's compare them!", block([{ type: "draw_model", model: BARS, near: 2 }])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "show me 3/4 vs 5/8" })));
+    expect(only(out, "actions")).toEqual({ actions: [{ type: "draw_model", model: BARS, near: 2 }], notes: [] });
+    expect(chatJsonWithFallback).not.toHaveBeenCalled();
+  });
+
+  it("a model with problems gets ONE repair with them on Ask's models; the repaired one keeps its problem", async () => {
+    scripts = [{ chunks: ["Let's compare them!", block([{ type: "draw_model", model: WRONG, near: 2 }])] }];
+    vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { model: BARS }, model: LIVE_MODELS.ask } as never);
+    const out = await frames(await ask(request({ ...BODY, message: "show me 3/4 vs 5/8" })));
+    expect(only(out, "actions")).toEqual({ actions: [{ type: "draw_model", model: BARS, near: 2 }], notes: [] });
+    expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
+    const [primary, fallback, repair] = vi.mocked(chatJsonWithFallback).mock.calls[0];
+    expect([primary, fallback]).toEqual([LIVE_MODELS.ask, LIVE_MODELS.askFallback]);
+    expect(repair.title).toBe("Agathon Live - ask model");
+    const text = JSON.stringify(repair.messages);
+    expect(text).toContain("show me 3/4 vs 5/8");
+    expect(text).toContain("bar 1 has 5 of 4 parts shaded");
+    expect(text).toContain("bar 2 shows 5/8 but its label says 3/4");
+  });
+
+  it("a repair that is still wrong drops the model: with nothing else left the reply says so, and the ink comes back", async () => {
+    scripts = [{ chunks: ["Here!", block([{ type: "draw_model", model: WRONG }])] }];
+    vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { model: WRONG }, model: LIVE_MODELS.ask } as never);
+    const out = await frames(await ask(request({ ...BODY, message: "show me 3/4 vs 5/8" })));
+    expect(only(out, "reply")).toEqual({ text: "Sorry, I couldn't draw that picture." });
+    expect(only(out, "actions")).toEqual({ actions: [], notes: [] });
+    expect(only(out, "done")).toMatchObject({ refunded: true });
+    expect(calls("refund_ink_for")).toHaveLength(1);
+  });
+
+  it("at most one repair per request: a second wrong model is dropped without one, and the panel hears of it", async () => {
+    scripts = [{ chunks: ["Two pictures and a graph.", block([{ type: "draw_model", model: WRONG }, { type: "draw_model", model: WRONG }, { type: "graph", relations: ["y = x^{2}"] }])] }];
+    vi.mocked(chatJsonWithFallback).mockRejectedValueOnce(new Error("upstream down"));
+    const out = await frames(await ask(request()));
+    expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
+    expect(only(out, "actions")).toEqual({ actions: [{ type: "graph", relations: ["y = x^{2}"] }], notes: ["The picture couldn't be drawn."] });
+    expect(calls("refund_ink_for")).toEqual([]);
+  });
+
+  it("a model written loosely (its fields beside the type, near as text) is read, not dropped", async () => {
+    scripts = [{ chunks: ["Here's 3:45!", block([{ type: "draw_model", kind: "clock", hour: 3, minute: 45, near: "#1" }])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "what does 3:45 look like" })));
+    expect(only(out, "actions")).toEqual({ actions: [{ type: "draw_model", model: { kind: "clock", hour: 3, minute: 45 }, near: 1 }], notes: [] });
+  });
+});
