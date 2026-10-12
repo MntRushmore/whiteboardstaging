@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { CLOCK_SKEW_MESSAGE } from "../errorMessage";
-import { LOGIN_COPY, classifyLoginError, loginErrorField, loginErrorMessage } from "../loginErrorMessage";
+import {
+  LOGIN_COPY,
+  classifyLoginError,
+  isResendWindow,
+  loginErrorField,
+  loginErrorMessage,
+  resendWaitSeconds,
+} from "../loginErrorMessage";
 
 // Shape of @supabase/auth-js AuthApiError without importing the class.
 function authError(message: string, status: number, code?: string) {
@@ -87,6 +94,34 @@ describe("loginErrorMessage", () => {
     expect(loginErrorMessage(authError("Email rate limit exceeded", 429, "over_email_send_rate_limit"))).toBe(
       LOGIN_COPY.rateLimited,
     );
+  });
+
+  it("tells Supabase's minute between two emails to one address from the limits that stop everyone", () => {
+    const inWindow = authError("For security purposes, you can only request this after 42 seconds.", 429, "over_email_send_rate_limit");
+    expect(classifyLoginError(inWindow)).toBe("rate-limited");
+    expect(isResendWindow(inWindow)).toBe(true);
+    expect(resendWaitSeconds(inWindow)).toBe(42);
+    expect(loginErrorMessage(inWindow)).toBe(LOGIN_COPY.resendWait);
+    expect(loginErrorField(inWindow)).toBe("form");
+    expect(resendWaitSeconds(authError("For security purposes, you can only request this after 1 second.", 429))).toBe(1);
+    // the server rounds down: "after 0 seconds" still waits a beat; a silly number is held to an hour
+    expect(resendWaitSeconds(authError("For security purposes, you can only request this after 0 seconds.", 429))).toBe(1);
+    expect(resendWaitSeconds(authError("For security purposes, you can only request this after 99999 seconds.", 429))).toBe(3600);
+    // older servers say the window, not what is left of it
+    const older = authError("For security purposes, you can only request this once every 60 seconds", 429);
+    expect(isResendWindow(older)).toBe(true);
+    expect(resendWaitSeconds(older)).toBeNull();
+    // the project's hourly cap and the per-IP limit are not the window
+    for (const other of [
+      authError("Email rate limit exceeded", 429, "over_email_send_rate_limit"),
+      authError("Request rate limit reached", 429, "over_request_rate_limit"),
+    ]) {
+      expect(isResendWindow(other)).toBe(false);
+      expect(resendWaitSeconds(other)).toBeNull();
+      expect(loginErrorMessage(other)).toBe(LOGIN_COPY.rateLimited);
+    }
+    // the words alone are not a limit: a 400 that happens to say "seconds" is not a wait
+    expect(isResendWindow(authError("Token expires after 60 seconds", 400))).toBe(false);
   });
 
   it("names clock skew and falls back to the server message or a calm default", () => {
