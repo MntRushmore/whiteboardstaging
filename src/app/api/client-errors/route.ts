@@ -38,6 +38,8 @@ const ReportSchema = z.object({
   requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
   /** Vercel's x-vercel-error on the failed response (FUNCTION_INVOCATION_TIMEOUT…), in `meta` */
   vercelError: z.string().regex(/^[A-Z0-9_]{1,64}$/).optional(),
+  /** an error a student saw: machine facts about it (`key=value,…`: why a crop retry failed), in `meta` */
+  facts: z.string().regex(/^[A-Za-z0-9_.:=,+-]{1,200}$/).optional(),
 });
 
 const log = logger.child({ module: "client-error" });
@@ -136,6 +138,7 @@ export async function POST(req: Request) {
       digest: report.digest,
       requestId: report.requestId,
       vercelError: report.vercelError,
+      facts: report.facts,
       userAgent,
       userId: userId ?? undefined,
     },
@@ -156,6 +159,7 @@ export async function POST(req: Request) {
     requestId: report.requestId,
     meta: {
       ...(report.vercelError ? { vercelError: report.vercelError } : {}),
+      ...(report.facts ? { facts: report.facts } : {}),
       ...(report.digest ? { digest: report.digest } : {}),
       ...(stack ? { stack: stack.split("\n").slice(0, 4).join("\n").slice(0, STACK_HEAD) } : {}),
       ...(userAgent ? { userAgent: userAgent.slice(0, 200) } : {}),

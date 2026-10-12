@@ -2,7 +2,7 @@
  * Pure mappings for the Live error surface: a thrown failure -> LiveError fields, and a
  * LiveError -> what the pill / hint card shows. No React, no store: unit-tested directly.
  */
-import { errorTrace, isApiError, isOutOfInk } from "@/lib/api-client";
+import { errorTrace, isApiError, isBareServerError, isOutOfInk } from "@/lib/api-client";
 import type { LiveError, LiveErrorCode, LiveErrorKind } from "@/lib/live/liveStore";
 import { LIVE_COPY } from "./copy";
 
@@ -48,7 +48,7 @@ function withAttempts(message: string, attempts: number | undefined): string {
  *   ApiError 401 / unauthorized                -> unauthorized
  *   ApiError 429 / rate_limited                -> rate_limited (+ retryAfterMs)
  *   ApiError 402 / ink_empty                   -> ink (server message when it has one)
- *   ApiError 5xx, recognizer_failed, upstream  -> upstream
+ *   ApiError 5xx, recognizer_failed, upstream  -> upstream (reported `upstream:bare_<status>` when no route of ours wrote it)
  *   *TimeoutError                              -> timeout
  *   { sse: true, message }  (SSE 'error' frame) -> upstream with the server message
  *   anything else                              -> unknown
@@ -82,7 +82,9 @@ export function classifyLiveFailure(err: unknown, ctx: ClassifyContext): LiveErr
       return make("ink", humanMessage(err) ?? LIVE_COPY.errors.ink, inkNeeded !== undefined ? { inkNeeded } : {});
     }
     if (err.status >= 500 || err.code === "recognizer_failed" || err.code === "upstream_error") {
-      return make("upstream", LIVE_COPY.errors.upstream);
+      // no route of ours answered (Cloudflare's page for a 502/504, a platform error): the report
+      // says so (`upstream:bare_502`), as it carries no request id to join
+      return make("upstream", LIVE_COPY.errors.upstream, isBareServerError(err) ? { reportCode: `upstream:bare_${err.status}` } : {});
     }
     return make("unknown", LIVE_COPY.errors.unknown);
   }

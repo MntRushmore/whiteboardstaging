@@ -50,6 +50,8 @@ export interface LiveError {
    * shows): `unusable_steps:unknown-symbol` for a solve whose every step the board's guard refused.
    */
   reportCode?: string;
+  /** machine facts the admin page hears with it (`UserErrorInput.facts`): how a crop retry before it failed */
+  reportFacts?: string;
   /** the failed request's `X-Request-Id` (or its stream's `meta`), reported with the error to join the server's rows */
   requestId?: string;
   /** Vercel's `x-vercel-error` on the failed response: the platform answered, not our route */
@@ -120,6 +122,7 @@ export function setLiveError(err: Omit<LiveError, "id" | "at"> & { at?: number }
     message: full.message,
     ...(full.requestId ? { requestId: full.requestId } : {}),
     ...(full.vercelError ? { vercelError: full.vercelError } : {}),
+    ...(full.reportFacts ? { facts: full.reportFacts } : {}),
   });
   return full;
 }

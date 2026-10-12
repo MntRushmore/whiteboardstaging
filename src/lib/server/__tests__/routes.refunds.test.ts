@@ -276,9 +276,9 @@ describe("live/recognize: charge + refund", () => {
     expect(callsTo("consume_credits")[0].args).toMatchObject({ p_route: "live/recognize", p_units: 1 });
   });
 
-  it("refunds on recognizer_failed (no Mathpix, no crop -> 502)", async () => {
+  it("refunds on recognizer_failed (no Mathpix, no crop -> 503)", async () => {
     const res = await recognize(request("/api/live/recognize", body));
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ error: "recognizer_failed" });
     expect(res.headers.get("X-Request-Id")).toBe(callsTo("consume_credits")[0].args?.p_request_id);
     expectChargedAndRefunded();

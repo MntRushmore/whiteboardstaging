@@ -174,6 +174,17 @@ export function isApiError(err: unknown, code?: string): err is ApiError {
 }
 
 /**
+ * A 5xx whose body is not our error contract (no `error` code): no route of ours wrote it. Cloudflare,
+ * in front of www.agathon.app, replaces every 502 and 504 an origin answers with its own HTML page,
+ * dropping the route's JSON and its X-Request-Id; Vercel's platform errors, and a crash before a
+ * route's own answer, look the same. Whatever the route meant to say (the recognize route's hints)
+ * never arrived, so the caller cannot take its word for anything.
+ */
+export function isBareServerError(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.status >= 500 && !err.code;
+}
+
+/**
  * True when the student is out of ink: the API's `402 ink_empty` (src/lib/server/billing.ts).
  * Any 402 counts, because ink is the only thing the API answers 402 for (the provider's own
  * account running dry is a 503); `credits_exhausted` is the same answer from a server deployed

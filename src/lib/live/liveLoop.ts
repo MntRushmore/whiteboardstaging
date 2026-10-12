@@ -15,7 +15,7 @@ import type {
   TLShapeId,
   TLShapePartial,
 } from "tldraw";
-import { errorTrace, isApiError, isOutOfInk } from "@/lib/api-client";
+import { errorTrace, isApiError, isBareServerError, isOutOfInk } from "@/lib/api-client";
 import { reportUserError } from "@/lib/reportAppError";
 import { clientMetric } from "@/lib/logger";
 import {
@@ -375,7 +375,11 @@ const OFFLINE_REPLAY_MS = [2000, 4000, 8000, 15_000] as const;
 
 function transientReadFailure(err: unknown): boolean {
   if (err instanceof RecognizeTimeoutError) return true;
-  if (isApiError(err, "recognizer_failed")) return recognizeFailureHints(err).transient;
+  if (isApiError(err, "recognizer_failed")) {
+    // ink the recognizer called unreadable is never a blip: it would not read the second time either
+    const hints = recognizeFailureHints(err);
+    return hints.transient && !hints.unreadable;
+  }
   return isApiError(err) && err.status >= 500;
 }
 
@@ -386,6 +390,38 @@ function transientReadFailure(err: unknown): boolean {
  */
 function unreadableInk(err: unknown): boolean {
   return isApiError(err, "recognizer_failed") && recognizeFailureHints(err).unreadable;
+}
+
+/** What `captureCrop` made, or what it tried, for a report of the crop retry (`CropRetryNote`). */
+type CropShot = { how?: string; bytes?: number; tried?: string };
+
+/**
+ * Why the crop retry after a `needsCrop` read nothing (`recognizeWithCropFallback`), for the report
+ * that follows: `why` goes into its code (`unreadable:crop_bare_502`, `unreadable:no_crop`), `facts`
+ * into its meta (`how=drawn,bytes=41234,status=502,name=ApiError`). It rides on the error the read
+ * then fails with (`cropRetryNotes`), so it never describes another read of the line.
+ */
+type CropRetryNote = { why: string; facts: string };
+const cropRetryNotes = new WeakMap<object, CropRetryNote>();
+
+function cropRetryNoteOf(err: unknown): CropRetryNote | undefined {
+  return typeof err === "object" && err !== null ? cropRetryNotes.get(err) : undefined;
+}
+
+/** A failed crop retry's error as a code: its status (`bare_` when no route of ours answered), a timeout, a dropped request. */
+function cropRetryWhy(err: unknown): string {
+  if (err instanceof RecognizeTimeoutError) return "crop_timeout";
+  if (isApiError(err)) return `crop_${isBareServerError(err) ? "bare_" : ""}${err.status}`;
+  return err instanceof TypeError ? "crop_network" : "crop_failed";
+}
+
+/** `key=value` pairs for a report's `facts` (`FACTS`, src/lib/clientErrors.ts): empty values left out, the rest cut to its characters. */
+function reportFacts(fields: Record<string, string | number | undefined>): string {
+  return Object.entries(fields)
+    .filter(([, v]) => v !== undefined && v !== "")
+    .map(([k, v]) => `${k}=${String(v).replace(/[^\w.:+-]+/g, "_").slice(0, 60)}`)
+    .join(",")
+    .slice(0, 200);
 }
 
 /**
@@ -1148,7 +1184,10 @@ export class LiveLoop implements LiveController {
     }
     this.retryContext = retry;
     const asked = askedFor(retry);
-    return setLiveError(asked ? { ...fields, asked } : fields);
+    // a read whose crop retry failed too: how, for the report (`recognizeWithCropFallback`)
+    const crop = cropRetryNoteOf(err);
+    const facts = crop ? [`retry=${crop.why}`, crop.facts].filter(Boolean).join(",").slice(0, 200) : "";
+    return setLiveError({ ...fields, ...(asked ? { asked } : {}), ...(facts ? { reportFacts: facts } : {}) });
   }
 
   /** The call succeeded: drop its error (if it is the one showing) and its retry state. */
@@ -2079,6 +2118,16 @@ export class LiveLoop implements LiveController {
    * session so the next line attaches its crop on the FIRST attempt instead of paying a
    * failed round-trip each time. A retry that also fails is rethrown and lands in the normal
    * failure path ("Couldn't read this line — tap Retry"); there is never a second retry.
+   *
+   * Two exceptions, both from production (2026-10-12, an iPad):
+   *  - a 5xx no route of ours wrote (`isBareServerError`: Cloudflare's page in place of the route's
+   *    502) lost the hints on the way, `needsCrop` among them: the crop is still the one read that
+   *    can work, so it is tried as for `needsCrop`;
+   *  - when the server already said these strokes are `unreadable`, a crop retry that fails, or a
+   *    crop that cannot be made, leaves that answer standing: the original error is rethrown, so the
+   *    line gets its gentle "?" (`applyUnreadable`) and is never read again as a blip or shown as
+   *    "The tutor service had a hiccup" because the crop's own request failed.
+   * Why the crop retry read nothing rides on the error rethrown (`cropRetryNotes`), for its report.
    */
   private async recognizeWithCropFallback(
     line: InkLine,
@@ -2090,11 +2139,37 @@ export class LiveLoop implements LiveController {
     } catch (err) {
       const hints = recognizeFailureHints(err);
       if (hints.recognizerDown && liveStore.recognizer.get() !== "vision") liveStore.recognizer.set("vision");
-      if (!hints.needsCrop || req.crop) throw err;
-      const crop = await this.captureCrop(line.strokeIds, line.bounds);
-      if (!crop) throw err;
-      // `cropOnly`: Mathpix just read nothing from these strokes; the route goes straight to vision
-      return await this.deps.recognizer.recognize({ ...req, crop, cropOnly: true }, hash);
+      if (req.crop || !(hints.needsCrop || isBareServerError(err))) throw err;
+      const shot: CropShot = {};
+      const crop = await this.captureCrop(line.strokeIds, line.bounds, undefined, shot);
+      if (!crop) {
+        if (typeof err === "object" && err !== null) cropRetryNotes.set(err, { why: "no_crop", facts: reportFacts({ tried: shot.tried, how: shot.how, bytes: shot.bytes }) });
+        throw err;
+      }
+      try {
+        // `cropOnly`: Mathpix just read nothing from these strokes; the route goes straight to vision
+        return await this.deps.recognizer.recognize({ ...req, crop, cropOnly: true }, hash);
+      } catch (cropErr) {
+        // newer ink on the line, or the loop stopping: nobody is waiting for this read
+        if (isAbortLike(cropErr)) throw cropErr;
+        const trace = errorTrace(cropErr);
+        const note: CropRetryNote = {
+          why: cropRetryWhy(cropErr),
+          facts: reportFacts({
+            how: shot.how,
+            bytes: shot.bytes,
+            status: isApiError(cropErr) ? cropErr.status : undefined,
+            code: isApiError(cropErr) ? cropErr.code : undefined,
+            name: cropErr instanceof Error ? cropErr.name : undefined,
+            vercel: trace.vercelError,
+            rid: trace.requestId,
+          }),
+        };
+        clientMetric("live.crop.retry.failed", { lineId: line.id, why: note.why, facts: note.facts });
+        const thrown = hints.unreadable ? err : cropErr;
+        if (typeof thrown === "object" && thrown !== null) cropRetryNotes.set(thrown, note);
+        throw thrown;
+      }
     }
   }
 
@@ -2131,10 +2206,14 @@ export class LiveLoop implements LiveController {
   /**
    * A JPEG data URL of these strokes in `bounds`, about `maxWidth` px wide and ≤ `maxCropBytes`, or
    * undefined. tldraw's export first; when it fails (iPads) or is too big, a smaller export, then the
-   * strokes drawn on a canvas of our own (`captureInkCrop`, src/lib/live/inkCrop.ts).
+   * strokes drawn on a canvas of our own (`captureInkCrop`, src/lib/live/inkCrop.ts). `shot`, when
+   * given, is told how it was made and its size, or what was tried (the crop retry's report).
    */
-  private async captureCrop(ids: readonly TLShapeId[], bounds: Rect, maxWidth = 512): Promise<string | undefined> {
-    if (typeof FileReader === "undefined" || bounds.w <= 0) return undefined;
+  private async captureCrop(ids: readonly TLShapeId[], bounds: Rect, maxWidth = 512, shot?: CropShot): Promise<string | undefined> {
+    if (typeof FileReader === "undefined" || bounds.w <= 0) {
+      if (shot) shot.tried = bounds.w <= 0 ? "no-bounds" : "no-filereader";
+      return undefined;
+    }
     const toImage = this.editor.toImage;
     const want = new Set<string>(ids);
     const startedAt = this.deps.now();
@@ -2147,18 +2226,24 @@ export class LiveLoop implements LiveController {
         maxBytes: LIVE_LIMITS.maxCropBytes,
       });
       if (!res.ok) {
+        if (shot) shot.tried = res.tried.join("+");
         clientMetric("live.crop.failed", { tried: res.tried.join(","), ms: this.deps.now() - startedAt });
         return undefined;
       }
+      if (shot) Object.assign(shot, { how: res.how, bytes: res.blob.size });
       if (res.how !== "export") clientMetric("live.crop.fallback", { how: res.how, tried: res.tried.join(","), bytes: res.blob.size });
       const blob = res.blob;
       return await new Promise<string | undefined>((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : undefined);
-        reader.onerror = () => resolve(undefined);
+        reader.onerror = () => {
+          if (shot) shot.tried = "filereader";
+          resolve(undefined);
+        };
         reader.readAsDataURL(blob);
       });
     } catch {
+      if (shot) shot.tried = "threw";
       return undefined;
     }
   }
@@ -2674,7 +2759,16 @@ export class LiveLoop implements LiveController {
     this.deleteLineShapes(lineId, { keepAi: true });
     // the server answered: the network is up, and the read is done (no blip retry, no offline replay)
     this.noteSuccess("recognize", lineId);
-    reportUserError({ kind: "live.recognize", code: "unreadable", message: UNREADABLE_NOTE, level: "info", ...errorTrace(err) });
+    // and why the crop that could still have read it did not (`unreadable:crop_bare_502`, `unreadable:no_crop`)
+    const crop = cropRetryNoteOf(err);
+    reportUserError({
+      kind: "live.recognize",
+      code: crop ? `unreadable:${crop.why}` : "unreadable",
+      message: UNREADABLE_NOTE,
+      level: "info",
+      ...errorTrace(err),
+      ...(crop?.facts ? { facts: crop.facts } : {}),
+    });
     clientMetric("live.recognize.unreadable", { lineId });
     if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
     const ticket = rt.processing;
