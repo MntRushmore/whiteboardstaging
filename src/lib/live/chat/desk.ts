@@ -417,6 +417,32 @@ export class ChatDesk {
     return findFreeArea(size, this.host.screen(), this.obstacles());
   }
 
+  /**
+   * Where a drawing goes (docs/ASK-V2.md, "Drawing"): a figure, a graph or a visual model that can
+   * be planned at several sizes (`boxes`, largest first). It stays on THIS screen whenever any size
+   * fits — beside problem `near` when given — and a new screen is started only when none does.
+   * Answers the plan placed, or null when it fits nowhere (nor on a new screen). CONTRACT: the
+   * placement part makes it place beside `near` and shrink to a legible minimum; this first
+   * version tries the sizes anywhere free on the screen.
+   */
+  private async placeDrawing(
+    plan: (box: { w: number; h: number }) => HandPlan | null,
+    opts: { near?: number; boxes: readonly { w: number; h: number }[] },
+    report: Report,
+  ): Promise<HandPlan | null> {
+    const plans: HandPlan[] = [];
+    for (const box of opts.boxes) {
+      const p = plan(box);
+      if (!p) continue;
+      plans.push(p);
+      const slot = findFreeArea({ w: p.bounds.w, h: p.bounds.h }, this.host.screen(), this.obstacles());
+      if (slot) return placeHandPlan(p, { x: slot.x, y: slot.y });
+    }
+    if (plans.length === 0 || !(await this.newScreen(report))) return null;
+    const slot = findFreeArea({ w: plans[0].bounds.w, h: plans[0].bounds.h }, this.host.screen(), this.obstacles());
+    return slot ? placeHandPlan(plans[0], { x: slot.x, y: slot.y }) : null;
+  }
+
   // ---------------------------------------------------------------- problems
 
   /** The number and the problem, placed at the top of its cell, as one plan (null: the hand cannot write it). */
