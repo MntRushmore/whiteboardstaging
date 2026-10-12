@@ -34,7 +34,7 @@ export const MODEL_TEXT = {
   /** the least a label may shrink to before a smaller box is no longer legible */
   min: 28,
   /** a stacked fraction: each number is ~0.7 of the hand, so it is written a little larger */
-  fraction: 40,
+  fraction: 46,
   /** words (a row's name, a place's name, "3 groups of 4") */
   words: 34,
   wordsMin: 26,
@@ -63,6 +63,14 @@ export function fillInk(i: number): LectureInk {
 export function tinted(color: LectureInk): HandLineStyle {
   return { color, fill: "solid", closed: true };
 }
+
+/** A solid dot (a point on a number line, a clock's centre, a decimal point): filled with its own colour. */
+export function solid(color: LectureInk): HandLineStyle {
+  return { color, fill: "fill", closed: true };
+}
+
+/** The pen of a model's words: a little finer than its numbers' (letters fill in at the full pen), never faint. */
+export const MODEL_WORDS_WEIGHT = 0.8;
 
 /** A fill's own edge is a fine pen: the colour reads as coloured in, not as a second outline. */
 export const FILL_EDGE_WEIGHT = 0.4;
@@ -157,7 +165,11 @@ export function writeLabel(text: string, at: Pt, align: Align, valign: VAlign, s
     return w ? { text, strokes: w.strokes, rect: w.rect } : null;
   }
   const w = writeWords(form.text, at, align, valign, size, seed, { maxLines: 1 });
-  return w ? { text, strokes: w.strokes, rect: w.rect } : null;
+  if (!w) return null;
+  // lecture mode's words thin the pen with the writing (`wordsWeight`); beside a model's numbers,
+  // written with the full pen, they read faint: a model's words keep most of it
+  for (const s of w.strokes) s.weight = Math.max(s.weight ?? 1, MODEL_WORDS_WEIGHT);
+  return { text, strokes: w.strokes, rect: w.rect };
 }
 
 /**

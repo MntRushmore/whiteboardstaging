@@ -2,7 +2,7 @@ import type { Rect } from "../../contracts";
 import { rectsOverlap, type Pt } from "../../graphing/pen";
 import { curvedArrow } from "../../lecture/chart/sketch";
 import type { VisualModel } from "../contracts";
-import { fracLatex, measureLabel, MODEL_TEXT, ModelInk, numLatex, type LabelSize, type ModelSketch } from "./kit";
+import { counter, fracLatex, measureLabel, MODEL_TEXT, ModelInk, numLatex, solid, type LabelSize, type ModelSketch } from "./kit";
 import { autoStep, intervalsOf, MAX_TICKS, same, stepDenominator } from "./maths";
 
 /**
@@ -174,7 +174,7 @@ function attempt(spec: NumberLine, box: { w: number; h: number }, seed: number, 
   const arcs: Pt[][] = [];
   const markLabels: Array<{ part: string; text: string; x: number }> = [];
   spec.marks.forEach((m, i) => {
-    ink.draw(`mark:${i}`, (pen) => pen.disc({ x: x(m.at), y: lineY }, N.markR), { color: MARK_INK });
+    ink.draw(`mark:${i}`, (pen) => counter(pen, { x: x(m.at), y: lineY }, N.markR), solid(MARK_INK));
     if (m.label) markLabels.push({ part: `mark:${i}:label`, text: m.label, x: x(m.at) });
   });
 

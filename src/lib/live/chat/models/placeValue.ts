@@ -1,5 +1,5 @@
 import type { VisualModel } from "../contracts";
-import { fillRect, handRect, measureLabel, MODEL_TEXT, ModelInk, numLatex, type LabelSize, type ModelSketch } from "./kit";
+import { counter, fillRect, handRect, measureLabel, MODEL_INK, MODEL_TEXT, ModelInk, numLatex, solid, type LabelSize, type ModelSketch } from "./kit";
 import { decimalsOf } from "./maths";
 
 /**
@@ -115,7 +115,7 @@ function attempt(spec: PlaceValue, box: { w: number; h: number }, seed: number, 
     const ones = cols.findIndex((c) => c.decimal);
     const px = xs[ones] - P.pointW / 2;
     const baseline = y0 + headH + rowH / 2 + digitM.h / 2 - 3;
-    ink.draw("point", (pen) => pen.disc({ x: px, y: baseline }, 4.2));
+    ink.draw("point", (pen) => counter(pen, { x: px, y: baseline }, 4.5), solid(MODEL_INK));
   }
   cols.forEach((c, i) => {
     if (!c.digit) return;

@@ -89,7 +89,7 @@ export function planSvg(plan: HandPlan, dx: number, dy: number): string {
   const out: string[] = [];
   for (const line of plan.lines) {
     const c = TLDRAW[line.style?.color ?? "blue"] ?? TLDRAW.blue;
-    const fill = line.style?.closed && line.style.fill && line.style.fill !== "none" ? c.tint : "none";
+    const fill = !line.style?.closed || !line.style.fill || line.style.fill === "none" ? "none" : line.style.fill === "fill" ? c.ink : c.tint;
     for (const st of line.strokes) {
       const d = polylineToSvgD(st.points.map((p) => ({ x: +(p.x + line.x + dx).toFixed(2), y: +(p.y + line.y + dy).toFixed(2) }))) + (line.style?.closed ? " Z" : "");
       out.push(`<path d="${d}" fill="${fill}" stroke="${c.ink}" stroke-width="${(0.765 * (1 + 2.4 * (st.weight ?? 1))).toFixed(2)}"/>`);

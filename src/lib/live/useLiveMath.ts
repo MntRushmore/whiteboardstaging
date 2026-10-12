@@ -45,8 +45,20 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
     const w = window as unknown as { __agathonAskImage?: Handle };
     const handle: Handle = async (o = {}) => (o.force ? (await import("./ask/boardImage")).captureAskImage(editor, o) : ((await loopRef.current?.chatImage()) ?? null));
     w.__agathonAskImage = handle;
+    // …and `__agathonChat(actions)` runs board-chat actions as a reply's would be run — the visual
+    // models' gallery on a real board (docs/qa-screenshots/ask-v2-models) draws every kind with it.
+    type Run = (actions: unknown[]) => Promise<unknown>;
+    const c = window as unknown as { __agathonChat?: Run };
+    const run: Run = async (actions) => {
+      const loop = loopRef.current;
+      if (!loop) throw new Error("Live is not ready.");
+      const { ChatActionSchema } = await import("./chat/contracts");
+      return loop.runChatActions(actions.map((a) => ChatActionSchema.parse(a)));
+    };
+    c.__agathonChat = run;
     return () => {
       if (w.__agathonAskImage === handle) delete w.__agathonAskImage;
+      if (c.__agathonChat === run) delete c.__agathonChat;
     };
   }, [editor]);
 

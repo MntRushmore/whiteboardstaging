@@ -28,7 +28,7 @@ export const BASE_TEN = {
   /** cubes in a column */
   cubesPerColumn: 5,
   /** between two places' blocks */
-  placeGap: 28,
+  placeGap: 40,
   /** the blocks to their count */
   labelGap: 16,
   /** a grid's inner lines are drawn this fine */
