@@ -115,16 +115,14 @@ describe("boardToolbarView", () => {
     const view = toolbar();
     expect(view.simple).toBe(false);
     expect(Object.values(view.place).every((p) => p === "bar")).toBe(true);
-    // what turns the simple board's exceptions on changes nothing here
-    expect(toolbar({ tour: true }).place).toEqual(view.place);
     expect(view.kidStatus).toBe(false);
   });
 
-  it("simple board: a kid's bar is Help me (Back and the save pill are always there), the rest behind More", () => {
+  it("simple board: a kid's bar is Help me (Back and the save pill are always there), Ask is in the dock, the rest behind More", () => {
     const view = toolbar({ simple: true });
     expect(view.simple).toBe(true);
     expect(view.askButton).toBe("help");
-    expect(view.place).toEqual({ dial: "more", auto: "more", ask: "more", pill: "more", ink: "more", report: "more" });
+    expect(view.place).toEqual({ dial: "more", auto: "more", ask: "dock", pill: "more", ink: "more", report: "more" });
   });
 
   it("simple board: Auto stays on and the mode stays as it was — nothing is switched, only moved", () => {
@@ -147,9 +145,12 @@ describe("boardToolbarView", () => {
     expect(toolbar({ simple: true, liveAvailable: false }).kidStatus).toBe(false);
   });
 
-  it("simple board: Ask stays in the bar while the guided tour's coach mark points at it", () => {
-    expect(toolbar({ simple: true, tour: true }).place.ask).toBe("bar");
-    expect(toolbar({ simple: true, tour: false }).place.ask).toBe("more");
+  it("simple board: Ask is a kid's button in the dock, never a grown-up setting behind More (the tour's coach mark finds it there)", () => {
+    expect(toolbar({ simple: true }).place.ask).toBe("dock");
+    // whatever the help dial or Live say: talking to the tutor needs neither
+    expect(toolbar({ simple: true, mode: "off" }).place.ask).toBe("dock");
+    expect(toolbar({ simple: true, liveEnabled: false }).place.ask).toBe("dock");
+    expect(toolbar({ simple: false }).place.ask).toBe("bar");
   });
 
   it("names the action Help, never Draw help", () => {

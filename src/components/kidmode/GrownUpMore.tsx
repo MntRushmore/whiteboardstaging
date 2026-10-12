@@ -1,9 +1,8 @@
 "use client";
 
 import { lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
-import { BookOpen, ChevronRight, Ellipsis, MessageSquare, SlidersHorizontal, X } from "lucide-react";
+import { BookOpen, ChevronRight, Ellipsis, SlidersHorizontal, X } from "lucide-react";
 import { Root as DropdownMenu, Trigger as DropdownMenuTrigger } from "@radix-ui/react-dropdown-menu";
-import { CHAT_BUTTON_COPY, CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
 import type { BoardMenuProps } from "@/components/live/BoardMenu";
 import { LIVE_COPY } from "@/components/live/copy";
 import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
@@ -33,8 +32,8 @@ export const MORE_COPY = {
 
 /**
  * The simple board's grown-up controls, made by the board page (`controls`) and laid out here as
- * labelled rows: the help dial, Auto, Ask and New topic, the plan and what the tutor is doing, and
- * Board options.
+ * labelled rows: the help dial, Auto, New topic, the plan and what the tutor is doing, and Board
+ * options. (Ask is the kid's own: a big button in the kid dock.)
  */
 export interface MoreControls {
   /** the help dial (Off / Feedback / Suggest / Solve) */
@@ -42,9 +41,6 @@ export interface MoreControls {
   /** the Auto switch as it is set, or null where it would do nothing (`autoSwitch`) */
   auto: { on: boolean; hint: string } | null;
   onAutoChange: () => void;
-  /** Ask, the board chat: whether it is open, or null while the tour keeps it in the bar */
-  ask: boolean | null;
-  onAsk: () => void;
   onTopic: () => void;
   /** what the tutor is doing: the status pill, without its "…" (Board options is a row here) */
   status: ReactNode;
@@ -102,7 +98,7 @@ export default function GrownUpMore({
       document.removeEventListener("keydown", onKeyDown, true);
     };
   }, [open, onOpenChange]);
-  const { auto, ask } = controls;
+  const { auto } = controls;
 
   return (
     // level with the bar's 56 px Help me (the bar starts 16 px down)
@@ -150,25 +146,10 @@ export default function GrownUpMore({
 
           {auto && <SwitchRow on={auto.on} onClick={controls.onAutoChange} title={LIVE_COPY.auto.label} line={auto.on ? MORE_COPY.autoOn : MORE_COPY.autoOff} hint={auto.hint} />}
 
-          <div className="grid grid-cols-2 gap-2">
-            {ask !== null && (
-              <button
-                type="button"
-                className={TILE}
-                title={CHAT_BUTTON_COPY.buttonHint}
-                aria-expanded={ask}
-                {...{ [CHAT_TOGGLE_ATTR]: "" }}
-                onClick={controls.onAsk}
-              >
-                <MessageSquare className="size-4 text-slate-500" aria-hidden />
-                {CHAT_BUTTON_COPY.button}
-              </button>
-            )}
-            <button type="button" className={TILE} title={SCREEN_COPY.topicHint} aria-haspopup="dialog" onClick={controls.onTopic}>
-              <BookOpen className="size-4 text-slate-500" aria-hidden />
-              {KID_COPY.newTopic}
-            </button>
-          </div>
+          <button type="button" className={`${TILE} w-full`} title={SCREEN_COPY.topicHint} aria-haspopup="dialog" onClick={controls.onTopic}>
+            <BookOpen className="size-4 text-slate-500" aria-hidden />
+            {KID_COPY.newTopic}
+          </button>
 
           {controls.extras && <div className="flex flex-wrap items-center gap-2">{controls.extras}</div>}
 

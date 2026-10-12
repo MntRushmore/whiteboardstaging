@@ -61,8 +61,6 @@ describe("GrownUpMore", () => {
     dial: <span>the dial</span>,
     auto: { on: true, hint: "Auto is on" },
     onAutoChange: vi.fn(),
-    ask: false,
-    onAsk: vi.fn(),
     onTopic: vi.fn(),
     status: <span>the status pill</span>,
     ink: <span data-testid="ink-meter">∞</span>,
@@ -98,11 +96,16 @@ describe("GrownUpMore", () => {
     expect(out).not.toContain("Report a bug");
   });
 
-  it("no Auto row where Auto would do nothing, and no Ask while the tour keeps it in the bar", () => {
-    const out = render(true, { auto: null, ask: null });
+  it("no Auto row where Auto would do nothing", () => {
+    const out = render(true, { auto: null });
     expect(out.match(/role="switch"/g)).toHaveLength(1);
-    expect(out).not.toContain(">Ask<");
     expect(out).toContain("New topic");
+  });
+
+  it("never Ask: it is the kid's own, a big button in the kid dock", () => {
+    const out = render(true);
+    expect(out).not.toContain(">Ask<");
+    expect(out).not.toContain("data-chat-toggle");
   });
 
   it("every button in it is at least 44 px tall", () => {

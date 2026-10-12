@@ -213,6 +213,9 @@ interface BoardChatSlot {
   onOpenChange: (open: boolean) => void;
   /** where the page lays the panel out: beside the board on a desktop, under it on a phone */
   host: HTMLElement | null;
+  /** the bottom sheet pulled up to most of the screen (its own control; docked, it does nothing) */
+  tall: boolean;
+  onTallChange: (tall: boolean) => void;
 }
 
 function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion: number | null; chat: BoardChatSlot }) {
@@ -329,7 +332,6 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     auto: live.auto,
     hideAiShapes: live.hideAiShapes,
     simple: simpleBoard,
-    tour: guided,
   });
   const { place } = toolbar;
 
@@ -575,8 +577,6 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
                 dial,
                 auto: toolbar.autoSwitch,
                 onAutoChange: toggleAuto,
-                ask: place.ask === "more" ? chat.open : null,
-                onAsk: toggleChat,
                 onTopic: () => {
                   topicSheetOpen.set(true);
                   setMoreOpen(false);
@@ -702,7 +702,15 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         createPortal(
           <LiveErrorBoundary>
             <React.Suspense fallback={null}>
-              <BoardChatPanel boardId={id} controller={controller} onClose={() => chat.onOpenChange(false)} kickoff={kickoff} onKickoffSent={() => clearAskKickoff(id)} />
+              <BoardChatPanel
+                boardId={id}
+                controller={controller}
+                onClose={() => chat.onOpenChange(false)}
+                kickoff={kickoff}
+                onKickoffSent={() => clearAskKickoff(id)}
+                tall={chat.tall}
+                onTallChange={chat.onTallChange}
+              />
             </React.Suspense>
           </LiveErrorBoundary>,
           chat.host,
@@ -759,6 +767,8 @@ export default function BoardPage() {
     if (chatOpen) preloadChatPanel();
   }, [chatOpen]);
   const [chatHost, setChatHost] = useState<HTMLElement | null>(null);
+  // the bottom sheet pulled up to read a long answer (this session; docked, the panel is full height)
+  const [chatTall, setChatTall] = useState(false);
   // With the on-screen keyboard up for the Ask panel docked beside the board (an iPad held sideways), the root
   // is laid over the part of the screen the keyboard leaves (src/components/board/keyboardFit.ts).
   const [boardRoot, setBoardRoot] = useState<HTMLElement | null>(null);
@@ -971,7 +981,7 @@ export default function BoardPage() {
           return stopStrokeTimes;
         }}
       >
-        <BoardContent id={id} initialVersion={initialVersion} chat={{ open: chatOpen, onOpenChange: setChatOpen, host: chatHost }} />
+        <BoardContent id={id} initialVersion={initialVersion} chat={{ open: chatOpen, onOpenChange: setChatOpen, host: chatHost, tall: chatTall, onTallChange: setChatTall }} />
       </Tldraw>
       </div>
       {/* the chat panel: docked on the right on a wide screen held sideways, a bottom sheet on a
@@ -980,7 +990,7 @@ export default function BoardPage() {
         ref={setChatHost}
         className={
           chatOpen
-            ? "relative z-[1100] h-[46dvh] shrink-0 overflow-hidden border-t border-gray-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:landscape:h-auto md:landscape:w-[360px] md:landscape:border-l md:landscape:border-t-0 md:landscape:shadow-none"
+            ? `relative z-[1100] ${chatTall ? "h-[88dvh]" : "h-[46dvh]"} shrink-0 overflow-hidden transition-[height] duration-200 motion-reduce:transition-none border-t border-gray-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:landscape:h-auto md:landscape:w-[360px] md:landscape:border-l md:landscape:border-t-0 md:landscape:shadow-none`
             : "hidden"
         }
       />

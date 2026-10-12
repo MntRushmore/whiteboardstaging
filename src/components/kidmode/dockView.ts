@@ -1,6 +1,7 @@
 /**
  * Pure view logic for the simple board's dock (`KidDock`), the one row of tools a young kid gets in
- * place of tldraw's palette: Pen, Eraser, Undo, a few big colours, and the board's pages. Decided
+ * place of tldraw's palette: Pen, Eraser, Undo, a few big colours, the board's pages, and a big Ask
+ * (the tutor to talk to: a kid's button, not a grown-up setting behind More). Decided
  * here, like the bar (`boardToolbarView`), so what a 6-year-old sees is pinned by tests rather than
  * read off the JSX.
  *
@@ -31,6 +32,9 @@ export const DOCK_COPY = {
   prev: "Page before",
   next: "Next page",
   pageOf: (index: number, count: number) => `Page ${index} of ${count}`,
+  /** the tutor to talk to (the board chat): CHAT_BUTTON_COPY.button, pinned equal in the tests */
+  ask: "Ask",
+  askHint: "Ask your tutor anything",
 } as const;
 
 /**
@@ -116,9 +120,9 @@ export interface KidDockView {
    */
   pages: { arrows: boolean; label: string | null; canPrev: boolean; canNext: boolean; canAdd: boolean };
   /**
-   * A phone with several pages: the tools and the pages do not fit one row at 48 px a target, so
-   * the dock is two shelves of one width, the pages over the tools — not two odd shelves wrapped
-   * any which way. (Its Colour popover opens over the whole dock, never over the page arrows.)
+   * A phone: the tools, the pages and Ask do not fit one row at 48 px a target, so the dock is two
+   * shelves of one width — the pages and Ask over the tools — not odd shelves wrapped any which way.
+   * (Its Colour popover opens over the whole dock, never over the page arrows.)
    */
   stack: boolean;
 }
@@ -137,6 +141,6 @@ export function kidDockView(state: KidDockState): KidDockView {
       canNext: several && state.page < state.pages,
       canAdd: state.pages < state.maxPages,
     },
-    stack: state.narrow && several,
+    stack: state.narrow,
   };
 }

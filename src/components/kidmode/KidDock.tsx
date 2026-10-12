@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Eraser, FilePlus2, Pencil, Undo2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eraser, FilePlus2, MessageCircle, Pencil, Undo2 } from "lucide-react";
 import {
   DefaultColorStyle,
   DefaultSizeStyle,
@@ -15,13 +15,16 @@ import {
   type TLDefaultSizeStyle,
 } from "tldraw";
 import { screenStripSlot } from "@/components/screens/ScreenStrip";
+import { CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
+import { useChatOpen } from "@/components/chat/useChatOpen";
 import { addScreen, goToScreen, MAX_SCREENS, screenPosition } from "@/lib/screens/screens";
-import { DOCK_COPY, hitMarginFor, KID_COLORS, kidDockView, penSizeOnClose, penSizeOnOpen, type KidColor } from "./dockView";
+import { DOCK_COPY, hitMarginFor, KID_COLORS, kidDockView, penSizeOnClose, penSizeOnOpen, type KidColor, type KidDockView } from "./dockView";
 import { KID_PEN_ATTR } from "./tourAnchors";
 
 /**
  * The simple board's dock, in tldraw's toolbar slot (`BoardToolbar`): Pen, Eraser, Undo, four big
- * colours and the board's pages, each a 56 px target with a picture and one short word under it.
+ * colours and the board's pages, each a 56 px target with a picture and one short word under it,
+ * and Ask, the big blue button that opens the tutor to talk to.
  * What it shows is `kidDockView`; while it is mounted the pen is a little thicker and the eraser a
  * little wider (`useLittleHands`). Loaded lazily: only a simple board needs it.
  */
@@ -36,6 +39,8 @@ export default function KidDock() {
   const current = useValue("kid page", () => editor.getCurrentPageId(), [editor]);
   const { index, count } = screenPosition(pageIds, current);
   const view = kidDockView({ narrow, tool, color, canUndo, page: index, pages: count, maxPages: MAX_SCREENS });
+  // the board chat's open state is the page's own store, so the dock's Ask and the panel agree
+  const [chatOpen, setChatOpen] = useChatOpen();
 
   const pick = (c: KidColor) =>
     editor.run(() => {
@@ -43,6 +48,7 @@ export default function KidDock() {
       // picking a colour is picking up the pen
       if (editor.getCurrentToolId() !== "draw") editor.setCurrentTool("draw");
     });
+  const pages = <PagesShelf editor={editor} view={view} index={index} count={count} />;
 
   return (
     // `relative`: a phone's Colour popover opens over the whole dock (`ColourButton`)
@@ -75,7 +81,42 @@ export default function KidDock() {
           <ColourButton current={view.colours.current} onPick={pick} />
         )}
       </div>
-      <nav aria-label={DOCK_COPY.pages} className={`${SHELL} ${view.stack ? "order-first justify-between" : ""}`}>
+      {view.stack ? (
+        // a phone: the pages and Ask on a shelf of their own, over the tools; Ask takes the room
+        <div className="order-first flex gap-2">
+          {pages}
+          <AskShelf open={chatOpen} wide onToggle={() => setChatOpen(!chatOpen)} />
+        </div>
+      ) : (
+        <>
+          {pages}
+          <AskShelf open={chatOpen} wide={false} onToggle={() => setChatOpen(!chatOpen)} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The tutor to talk to: a big blue button (the tutor's colour on the board) with a picture and its
+ * word side by side, the one the dock's eye goes to. It opens and closes the Ask panel, and carries
+ * the marker the panel's Escape and the guided board's last coach mark find it by.
+ */
+function AskShelf({ open, wide, onToggle }: { open: boolean; wide: boolean; onToggle: () => void }) {
+  return (
+    <div className={`${SHELL} ${wide ? "flex-1" : ""}`}>
+      <button type="button" className={ASK} title={DOCK_COPY.askHint} aria-expanded={open} onClick={onToggle} {...{ [CHAT_TOGGLE_ATTR]: "" }}>
+        <MessageCircle className="size-6" strokeWidth={2.25} aria-hidden />
+        <span>{DOCK_COPY.ask}</span>
+      </button>
+    </div>
+  );
+}
+
+/** The dock's pages: ‹ n / N › once there are several, and New page. */
+function PagesShelf({ editor, view, index, count }: { editor: Editor; view: KidDockView; index: number; count: number }) {
+  return (
+      <nav aria-label={DOCK_COPY.pages} className={SHELL}>
         {view.pages.arrows && (
           <>
             <button type="button" className={ARROW} aria-label={DOCK_COPY.prev} title={DOCK_COPY.prev} disabled={!view.pages.canPrev} onClick={() => goToScreen(editor, -1)}>
@@ -93,7 +134,6 @@ export default function KidDock() {
           <FilePlus2 className="size-6" strokeWidth={2.25} aria-hidden />
         </DockButton>
       </nav>
-    </div>
   );
 }
 
@@ -103,6 +143,10 @@ const SHELL =
 
 const BUTTON =
   "flex h-14 min-w-14 shrink-0 cursor-pointer select-none flex-col items-center justify-center gap-1 rounded-2xl px-2 text-[11px] font-semibold leading-none text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 active:bg-slate-200/70 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-600 aria-pressed:bg-blue-50 aria-pressed:text-blue-700 aria-pressed:hover:bg-blue-50 motion-reduce:transition-none";
+
+/** Ask: as tall as the dock's buttons, filled blue, its word beside its picture. */
+const ASK =
+  "flex h-14 w-full shrink-0 cursor-pointer select-none items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 text-[17px] font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 active:bg-blue-800 aria-expanded:bg-blue-800 motion-reduce:transition-none";
 
 const ARROW =
   "flex h-14 w-12 shrink-0 cursor-pointer items-center justify-center rounded-2xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent motion-reduce:transition-none";
