@@ -397,7 +397,9 @@ export async function sendAsk(boardId: string, text: string, opts: AskSendOption
   const painter = frameBatcher(() => patch(where.key, tutorId, (m) => ({ text: shownReply(written), state: m.state === "writing" ? "writing" : "streaming" })));
   // the board's writing, started on `actions` (a holder: the stream's handlers set it)
   const board: { run: Promise<ChatRunReport> | null } = { run: null };
-  const follow = followTutorScreens(boardId, deps.controller, where, [userId, tutorId], () => board.run !== null);
+  // the board's actions have started (set before they run: a screen can start at their first step)
+  let acting = false;
+  const follow = followTutorScreens(boardId, deps.controller, where, [userId, tutorId], () => acting);
   // the stream reached its end (`done`): a failure after it is the board's, not the connection's
   let streamEnded = false;
   /** the exchange went with a screen the tutor started: its saved turns follow (once both are known) */
@@ -461,7 +463,10 @@ export async function sendAsk(boardId: string, text: string, opts: AskSendOption
           const writes = ev.actions.length > 0;
           patch(where.key, tutorId, () => ({ text: shownReply(written), notes: ev.notes, ...(writes ? { state: "writing" as const } : {}) }));
           // written as soon as the engine has passed them: the stream's end is not waited for
-          if (writes) board.run = runActions(ev.actions);
+          if (writes) {
+            acting = true;
+            board.run = runActions(ev.actions);
+          }
         },
         onDone(ev) {
           turnId = ev.turnId;
@@ -555,23 +560,38 @@ export function useChatScreen(boardId: string, controller: LiveController | null
     if (controller?.chatScreenId && setScreen(boardId, screenOf(controller), false)) queueMicrotask(notify);
     return null;
   });
-  useEffect(() => {
-    if (!controller?.chatScreenId) return;
-    setScreen(boardId, screenOf(controller));
-    let off: (() => void) | undefined;
-    try {
-      // the index is the controller's (its pages' order), read as the move is heard
-      off = controller.onChatScreenChange?.((id) => setScreen(boardId, { id, index: screenOf(controller).index }));
-    } catch {
-      off = undefined;
-    }
-    return () => off?.();
-  }, [boardId, controller]);
+  useEffect(() => followChatScreen(boardId, controller), [boardId, controller]);
   return useSyncExternalStore(
     subscribe,
     () => screens.get(boardId) ?? NO_SCREEN,
     () => NO_SCREEN,
   );
+}
+
+/**
+ * Keeps the store's screen for a board in step with its controller (`useChatScreen`'s effect):
+ * read now, then on every move the controller tells of. Answers the unsubscribe. A controller that
+ * does not say which screen it is on leaves the board's one thread.
+ */
+export function followChatScreen(boardId: string, controller: LiveController | null | undefined): () => void {
+  if (!controller?.chatScreenId) return () => {};
+  setScreen(boardId, screenOf(controller));
+  let off: (() => void) | undefined;
+  try {
+    // the index is the controller's (its pages' order), read as the move is heard
+    off = controller.onChatScreenChange?.((id) => setScreen(boardId, { id, index: screenOf(controller).index }));
+  } catch {
+    off = undefined;
+  }
+  return () => off?.();
+}
+
+/**
+ * The messages of a board's thread, outside React: a screen's, or without `screenId` the one of the
+ * screen the board is on (as the chat last heard: `followChatScreen`); null is the board's one thread.
+ */
+export function chatMessagesFor(boardId: string, screenId?: string | null): ChatMessage[] {
+  return histories.get(threadKey(boardId, screenId === undefined ? (screens.get(boardId)?.id ?? null) : screenId)) ?? EMPTY;
 }
 
 /**
@@ -582,7 +602,7 @@ export function useChatScreen(boardId: string, controller: LiveController | null
 export function useChatMessages(boardId: string, screenId?: string | null): ChatMessage[] {
   return useSyncExternalStore(
     subscribe,
-    () => histories.get(threadKey(boardId, screenId === undefined ? (screens.get(boardId)?.id ?? null) : screenId)) ?? EMPTY,
+    () => chatMessagesFor(boardId, screenId),
     () => EMPTY,
   );
 }
