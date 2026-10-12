@@ -67,3 +67,22 @@ export const SPEAK_STARTER_WINDOW_MS = 2 * 86_400_000;
  * starts or stops without polling and the menu's checkbox follows a change made elsewhere.
  */
 export const READ_ALOUD_EVENT = "agathon:read-aloud";
+
+// ------------------------------------------------------------------ additions (feat/ask2-voice)
+
+/**
+ * POST /api/live/transcribe's answer when it will not use ElevenLabs Scribe for this request (503,
+ * `{ error: "speech_unavailable" }`): no key on this deployment, a key ElevenLabs refuses, an
+ * account without Agathon Unlimited past its guided first board (the same rule as the voice:
+ * `speechEntitled`), or the day's seconds for everyone spent. The mic then uses the browser's own
+ * recognizer instead (`webkitSpeechRecognition`).
+ */
+export const SPEECH_UNAVAILABLE = "speech_unavailable";
+
+/**
+ * Seconds of speech sent to ElevenLabs Scribe a day (UTC) for everyone together: the backstop on
+ * the shared key's bill (`GLOBAL_BUDGETS.liveTranscribeSeconds` in src/lib/server/rate-limit.ts).
+ * Three hours is ~2,000 spoken asks of 5 s; past it every student gets the browser's recognizer
+ * until the day turns. Raise it with the ElevenLabs plan.
+ */
+export const TRANSCRIBE_GLOBAL_BUDGET = { limit: 10_800, windowMs: 86_400_000 } as const;
