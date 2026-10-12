@@ -14,13 +14,13 @@ import { ASK_BUTTON_ATTR } from "@/components/live/AskButton";
 import { CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
 // the pen in either bar (tldraw's toolbar, or a K–3 kid's simple board's dock), and the simple board's More
 import { MORE_SELECTOR as MORE, PEN_SELECTOR as PEN } from "@/components/kidmode/tourAnchors";
-import { useChatMessages } from "@/components/chat/useBoardChat";
+import { useChatMessages, useChatScreen } from "@/components/chat/useBoardChat";
 import { startersFor, type StarterProblem } from "@/lib/onboarding/courses";
 import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writeTourMarker } from "@/lib/onboarding/marker";
 import { HOME_PATH, PLAN_PATH, writePlanMarker } from "@/lib/onboarding/planMarker";
 import type { Box } from "@/lib/onboarding/placement";
 import { isTutorWork, markKindOf, questionWhyOf } from "@/lib/onboarding/marks";
-import { askProgress, COACH_COUNT, coachNumber, helpProblemFor, helpWordsFor, markerStepOf, resumeTour, tourAutoAtEnd, tourAutoBefore, tourReducer } from "@/lib/onboarding/tour";
+import { askProgress, COACH_COUNT, coachNumber, helpProblemFor, helpWordsFor, markerStepOf, resumeTour, tabMessageCount, tourAutoAtEnd, tourAutoBefore, tourReducer } from "@/lib/onboarding/tour";
 import { asOnboardingClient, saveOnboarding } from "@/lib/onboarding/storage";
 import { sendWelcomeEmail } from "@/lib/email/client";
 import { askCopy, helpCopy, MORE_LIKE_THESE, TOUR_COPY, writeCopy } from "@/lib/onboarding/tourCopy";
@@ -178,6 +178,9 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   // the starter on the board (its hint goes in the first coach mark); a resumed tour finds it on the
   // board's first screen (coach mark 2's problem may be on the screen it reloads on)
   const [starter, setStarter] = useState<StarterProblem | null>(() => matchStarter(starters, problemsOnBoard(editor)[0]));
+  // the chat of the screen the board is on (each screen has its own): followed here too, so the
+  // coach marks read the right chat with the panel closed, and after the tutor starts a new screen
+  useChatScreen(boardId, controller);
   const messages = useChatMessages(boardId);
   const mounted = useRef(false);
   const writing = useRef(false);
@@ -340,7 +343,8 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
 
   // Coach mark 3: the panel open moves on to the suggestion to tap (also when it was open already,
   // e.g. on a reload); closing it goes back to the Ask button.
-  const messageCount = messages.length;
+  // this tab's own: the saved chat may land after the panel opened (a reload), and is no new ask
+  const messageCount = tabMessageCount(messages);
   useEffect(() => {
     if (state.step === "ask" && chatOpen) dispatch({ type: "askOpened", messages: messageCount });
     if (state.step === "asking" && !chatOpen) dispatch({ type: "askClosed" });

@@ -4,10 +4,12 @@ import type { FigurePlanOptions, FigurePlanResult, FigureSpec } from "../figureD
 import { GRAPH, graphPaceFor, planGraph, type GraphWindowHint } from "../graphing";
 import { HAND_LINE_META, planHandwriting, placeHandPlan, placeHandPlanOnBaseline, type HandPlan } from "../handwriting";
 import { CHAT_PROBLEM_META, problemMetaOf } from "./cells";
-import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow } from "./contracts";
-import { CHAT_LIMITS, noProblemNote } from "./contracts";
+import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow, DrawModelAction } from "./contracts";
+import { CHAT_LIMITS, noProblemNote } from "./limits";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
-import { commonestReason, verifyLines, verifyProblem } from "./verify";
+import type * as Verify from "./verify";
+import type * as Models from "./models";
+import type * as Place from "./place";
 import type { LecturePageMeta } from "../lecture/contracts";
 import { LECTURE_BLOCK_META } from "../lecture/meta";
 
@@ -30,6 +32,10 @@ import { LECTURE_BLOCK_META } from "../lecture/meta";
 export const CHAT_BLOCK_META = "chatBlock";
 /** meta.lineId of everything the chat writes (no student line has it) */
 export const CHAT_LINE_ID = "chat";
+/** meta `chatModel` of a visual model's strokes: its kind (`draw_model`) */
+export const CHAT_MODEL_META = "chatModel";
+/** the chat's blocks that are drawings, not lines of maths: what they write is labels */
+const DRAWING_BLOCKS: ReadonlySet<string> = new Set(["graph", "figure", "model"]);
 
 export const CHAT_WRITE = {
   /** hand size of `write_lines`: a formula is read from across the room, like a problem */
@@ -38,12 +44,19 @@ export const CHAT_WRITE = {
   graphLabelSize: 34,
   /** space between a graph's equations and the graph */
   graphLabelGap: 14,
-  /** figure boxes, largest first */
+  /**
+   * figure boxes, largest first, down to the legible minimum: the drawer's labels stop shrinking at
+   * a box ~245 px on its short side (`FIGURE.textScale.min`), so the last box has the same hand as
+   * the one before it, on a smaller figure — one that fits under a problem in a grid of six
+   */
   figureBoxes: [
     { w: 460, h: 380 },
     { w: 380, h: 310 },
     { w: 300, h: 250 },
+    { w: 260, h: 215 },
   ],
+  /** graph boxes, largest first, down to the legible minimum (the graph's labels are one size at any box) */
+  graphBoxes: [GRAPH.box, ...GRAPH.fallbackBoxes],
   /** a problem set is written a little faster than a worked solution: six problems in ~8 s */
   problemPace: 1.8,
   /** how long to wait for the loop's own writing to finish before starting */
@@ -52,7 +65,30 @@ export const CHAT_WRITE = {
   /** after adding a screen, until the loop has switched to it (one frame, normally) */
   screenWaitStepMs: 20,
   screenWaitMaxMs: 2_000,
+  /**
+   * `help_board` on a line still being read: how long to wait for the read (the recognizer's own
+   * timeout and a moment, as Help me waits — `HELP_READ_WAIT_MS`)
+   */
+  readWaitMaxMs: 8_000,
 } as const;
+
+/**
+ * What the board's own Help me / Solve it did with an ask from the chat (`ChatHost.helpBoard`):
+ * `writing` — the help is going on the board; `nothing` — nothing of the student's on this screen to
+ * help with; `busy` — the tutor is writing on it already; `reading` — the line it is about is still
+ * being read (asked again in a moment); `unread` — the line could not be read as maths (it got the
+ * board's "?"); `done` — it is already worked out; `off` — the tutor (Live) is switched off.
+ */
+export type HelpBoardResult = "writing" | "nothing" | "busy" | "reading" | "unread" | "done" | "off";
+
+/** The panel's words for each `help_board` that wrote nothing (plain, for a 7-year-old). */
+export const HELP_BOARD_NOTES: Record<Exclude<HelpBoardResult, "writing" | "reading">, string> = {
+  nothing: "There's nothing of yours to help with on this screen yet.",
+  busy: "I'm still writing on your work. Ask me again when I'm done.",
+  unread: "I can't read your last line yet. Try writing it again, a little bigger.",
+  done: "That one is already solved on the board.",
+  off: "The tutor is switched off on this board, so I can't see your work.",
+};
 
 export interface ChatShape {
   id: string;
@@ -101,6 +137,11 @@ export interface ChatHost {
    * `n` here; `done`: nothing left to write; `busy`: it is being written already.
    */
   helpProblem(n: number, depth: "step" | "solve"): "writing" | "done" | "busy" | "missing";
+  /**
+   * Help me (`step`) / Solve it (`solve`) on the student's own work on this screen, as the board's
+   * button does it (`LiveLoop.chatHelpBoard`), whatever the dial says. Absent: nothing to help with.
+   */
+  helpBoard?(depth: "step" | "solve"): HelpBoardResult;
   planFigure(spec: FigureSpec, opts: FigurePlanOptions): FigurePlanResult | null;
   seed(key: string): number;
   delay(ms: number): Promise<void>;
@@ -127,6 +168,17 @@ function plural(n: number, one: string, many: string): string {
   return n === 1 ? one : many;
 }
 
+function unionRect(a: Rect, b: Rect): Rect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
+/** A drawing that goes with a problem on this screen (`near`): a graph, a figure or a visual model. */
+export function isNearDrawing(action: ChatAction): action is Extract<ChatAction, { type: "graph" | "draw_figure" | "draw_model" }> {
+  return (action.type === "graph" || action.type === "draw_figure" || action.type === "draw_model") && action.near !== undefined;
+}
+
 /** A graph intent seen through a requested window: key points outside it are left out. */
 export function windowedIntent(intent: GraphIntent, win: ChatWindow | undefined): GraphIntent {
   if (!win || intent.kind !== "plane") return intent;
@@ -143,6 +195,8 @@ export class ChatDesk {
   private tail: Promise<unknown> = Promise.resolve();
   private expectedPage = "";
   private running = 0;
+  private verify: Promise<typeof Verify> | null = null;
+  private models: Promise<typeof Models> | null = null;
 
   constructor(host: ChatHost) {
     this.host = host;
@@ -169,9 +223,9 @@ export class ChatDesk {
       }
       const meta = (s.meta ?? {}) as Record<string, unknown>;
       if (meta.live !== true || meta.source !== "ai") continue;
-      // marks, graphs and figures are drawings: their "lines" are labels, not maths; a lecture's
-      // heading, notes and sketches are words (the transcript below says what they were about)
-      if (meta.mark || meta.graphFor || meta[CHAT_BLOCK_META] === "graph" || meta[CHAT_BLOCK_META] === "figure" || meta[LECTURE_BLOCK_META]) continue;
+      // marks, graphs, figures and visual models are drawings: their "lines" are labels, not maths;
+      // a lecture's heading, notes and sketches are words (the transcript below says what they were about)
+      if (meta.mark || meta.graphFor || DRAWING_BLOCKS.has(String(meta[CHAT_BLOCK_META])) || meta[LECTURE_BLOCK_META]) continue;
       const latex = typeof meta[HAND_LINE_META] === "string" ? (meta[HAND_LINE_META] as string) : (s.latex ?? "");
       if (!latex || seen.has(latex)) continue;
       seen.add(latex);
@@ -216,10 +270,18 @@ export class ChatDesk {
     try {
       const engine = await this.host.engine();
       this.expectedPage = this.host.pageId();
+      // a drawing of a problem on this screen goes beside it: a new screen in the same reply would
+      // take the student away from that problem (the prompt says so; this holds if a model forgets)
+      const nearDrawings = actions.filter(isNearDrawing).map((a) => a.type);
       for (const action of actions) {
         if (this.host.pageId() !== this.expectedPage) {
           report.outcomes.push({ type: action.type, ok: false, note: "I stopped because you moved to another screen." });
           break;
+        }
+        if (action.type === "new_screen" && nearDrawings.length > 0) {
+          this.host.metric?.("live.chat.newScreen.ignored", { drawings: nearDrawings.join(",") });
+          report.outcomes.push({ type: "new_screen", ok: false, why: "near_drawing" });
+          continue;
         }
         report.outcomes.push(await this.runOne(action, engine, report));
       }
@@ -236,9 +298,9 @@ export class ChatDesk {
       case "write_lines":
         return this.writeLines(action.lines, engine, report);
       case "graph":
-        return this.graph(action.relations, action.window, engine, report);
+        return this.graph(action.relations, action.window, engine, report, action.near);
       case "draw_figure":
-        return this.figure(action.figure, report);
+        return this.figure(action.figure, report, action.near);
       case "new_screen":
         return (await this.newScreen(report)) ? { type: "new_screen", ok: true } : { type: "new_screen", ok: false, note: "This board already has the most screens it can hold." };
       case "clear_tutor":
@@ -248,6 +310,10 @@ export class ChatDesk {
         return { type: "clear_tutor", ok: true };
       case "help_problem":
         return this.helpProblem(action.problem, action.depth);
+      case "draw_model":
+        return this.drawModel(action, report);
+      case "help_board":
+        return this.helpBoard(action.depth);
       case "write_proof":
         return (await import("./proofWrite")).writeProof(this.writerDesk(report), action);
       case "teach":
@@ -271,6 +337,30 @@ export class ChatDesk {
     await this.waitForHand();
     this.host.metric?.("live.chat.help", { depth });
     return { type: "help_problem", ok: true };
+  }
+
+  /**
+   * "Is this right?", "help me with this", "what's next?", "solve it" about the student's OWN work
+   * (`help_board`): exactly what the board's Help me (`step`) and Solve it (`solve`) buttons do
+   * (`ChatHost.helpBoard`), after any writing already under way; a line still being read is waited
+   * for, as the button waits. Honest about what happened: written, nothing of theirs here, busy, a
+   * line it could not read, already worked out, or the tutor switched off.
+   */
+  private async helpBoard(depth: "step" | "solve"): Promise<ChatActionOutcome> {
+    await this.waitForHand();
+    const ask = (): HelpBoardResult => this.host.helpBoard?.(depth) ?? "nothing";
+    let res = ask();
+    for (let waited = 0; res === "reading" && waited < CHAT_WRITE.readWaitMaxMs; waited += CHAT_WRITE.waitStepMs) {
+      await this.host.delay(CHAT_WRITE.waitStepMs);
+      res = ask();
+    }
+    this.host.metric?.("live.chat.helpBoard", { depth, outcome: res });
+    if (res === "writing") {
+      await this.waitForHand();
+      return { type: "help_board", ok: true };
+    }
+    const why = res === "reading" ? "busy" : res;
+    return { type: "help_board", ok: false, note: HELP_BOARD_NOTES[why], why };
   }
 
   /**
@@ -336,10 +426,20 @@ export class ChatDesk {
     await this.host.write(plan, extraMeta);
   }
 
-  private canDraw = (lines: readonly string[]): boolean => {
-    if (!this.host.handwriting()) return true;
-    return planHandwriting(lines, { size: PROBLEM_GRID.size, seed: 1 }).unsupported.length === 0;
-  };
+  /**
+   * The interlock (`verify.ts`, with the worksheet blanks it reads, `engine/blanks.ts`), loaded with
+   * the first problem or line the chat writes, never with the board (its first load is budgeted,
+   * docs/BUNDLE.md); the engine it checks with is loaded then anyway.
+   */
+  private verifier(): Promise<typeof Verify> {
+    this.verify ??= import("./verify");
+    return this.verify;
+  }
+
+  /** The hand's interlock, the one the route's gate runs too (`handCanWrite`); typeset maths can say anything. */
+  private canDraw(v: typeof Verify): (lines: readonly string[]) => boolean {
+    return (lines) => !this.host.handwriting() || v.handCanWrite(lines);
+  }
 
   /** A place for a block of this size on this screen, else on a new one. */
   private async placeFor(size: { w: number; h: number }, report: Report): Promise<Rect | null> {
@@ -347,6 +447,90 @@ export class ChatDesk {
     if (here) return here;
     if (!(await this.newScreen(report))) return null;
     return findFreeArea(size, this.host.screen(), this.obstacles());
+  }
+
+  /**
+   * Where a drawing goes (docs/ASK-V2.md, "Placement"): a figure, a graph or a visual model that can
+   * be planned at several sizes (`boxes`, largest first, down to its legible minimum). It stays on
+   * THIS screen whenever any size fits anywhere (`placeDrawingRect`): beside problem `near` — right
+   * of its line in its cell, else in the cell's work room under it, else anywhere free on the
+   * screen — and without `near` anywhere free. Only when nothing fits even at the smallest size is a
+   * new screen started, the drawing at its largest there. Never over the student's ink, a problem or
+   * the tutor's writing. Answers the plan placed, or null when it fits nowhere (nor on a new
+   * screen), or `plan` planned it in no box.
+   */
+  private async placeDrawing(
+    plan: (box: { w: number; h: number }) => HandPlan | null,
+    opts: { near?: number; boxes: readonly { w: number; h: number }[] },
+    report: Report,
+  ): Promise<HandPlan | null> {
+    // the placement geometry loads with the first drawing, never with the board (docs/BUNDLE.md)
+    const { legibleBoxes, placeDrawingRect } = await this.placer();
+    const plans = legibleBoxes(opts.boxes).map((box) => {
+      try {
+        return plan(box);
+      } catch {
+        return null;
+      }
+    });
+    const largest = plans.find((p): p is HandPlan => p !== null);
+    if (!largest) return null;
+    // what is on the screen once the loop's own writing is on it
+    await this.waitForHand();
+    const near = opts.near !== undefined ? this.problemOnScreen(opts.near) : null;
+    const sizes = plans.map((p) => (p ? { w: p.bounds.w, h: p.bounds.h } : null));
+    const here = placeDrawingRect({ screen: this.host.screen(), ink: this.inkRects(), cells: this.cellRects(), near, sizes });
+    const metric = (spot: string, size: number) =>
+      this.host.metric?.("live.chat.place", { spot, size, near: opts.near !== undefined, ...(opts.near !== undefined ? { found: near !== null } : {}) });
+    if (here) {
+      metric(here.spot, here.index);
+      return placeHandPlan(plans[here.index]!, { x: here.rect.x, y: here.rect.y });
+    }
+    // nothing fits on this screen even at the smallest: a new one, the drawing at its largest
+    if (!(await this.newScreen(report))) {
+      metric("none", -1);
+      return null;
+    }
+    const slot = findFreeArea({ w: largest.bounds.w, h: largest.bounds.h }, this.host.screen(), this.obstacles());
+    metric(slot ? "new_screen" : "none", slot ? plans.indexOf(largest) : -1);
+    return slot ? placeHandPlan(largest, { x: slot.x, y: slot.y }) : null;
+  }
+
+  private place: Promise<typeof Place> | null = null;
+  private placer(): Promise<typeof Place> {
+    this.place ??= import("./place");
+    return this.place;
+  }
+
+  /** Problem `n` on this screen: its cell and where its ink is (its number and lines); null when it is not here. */
+  private problemOnScreen(n: number): { cell: Rect; head: Rect } | null {
+    let cell: Rect | null = null;
+    let head: Rect | null = null;
+    for (const s of this.host.shapes()) {
+      const p = problemMetaOf(s.meta);
+      if (!p || p.n !== n || !s.bounds) continue;
+      // one problem per number on a screen; another block of the same number (an old one) is not it
+      if (cell && (cell.x !== p.cell.x || cell.y !== p.cell.y)) continue;
+      cell ??= p.cell;
+      const b = s.bounds;
+      head = head ? unionRect(head, b) : { ...b };
+    }
+    return cell && head ? { cell, head } : null;
+  }
+
+  /** The bounds of everything on this screen: the student's ink, the problems, the tutor's writing. */
+  private inkRects(): Rect[] {
+    return this.host.shapes().flatMap((s) => (s.bounds ? [s.bounds] : []));
+  }
+
+  /** Each problem's cell on this screen, once. */
+  private cellRects(): Rect[] {
+    const cells = new Map<string, Rect>();
+    for (const s of this.host.shapes()) {
+      const p = problemMetaOf(s.meta);
+      if (p) cells.set(`${p.cell.x},${p.cell.y}`, p.cell);
+    }
+    return [...cells.values()];
   }
 
   // ---------------------------------------------------------------- problems
@@ -375,12 +559,15 @@ export class ChatDesk {
   }
 
   private async writeProblems(problems: readonly string[][], engine: LiveEngine, report: Report): Promise<ChatActionOutcome> {
+    const verify = await this.verifier();
+    const canDraw = this.canDraw(verify);
     const kept: string[][] = [];
     let unchecked = 0;
     const reasons: string[] = [];
     for (const p of problems) {
-      const v = verifyProblem(engine, p, this.canDraw);
-      if (v.ok) kept.push(p.map((l) => l.trim()));
+      const v = verify.verifyProblem(engine, p, canDraw);
+      // as checked: in the board's own form (a worksheet's blank as the box the hand draws)
+      if (v.ok) kept.push(v.lines);
       else {
         unchecked++;
         reasons.push(v.reason);
@@ -388,12 +575,18 @@ export class ChatDesk {
       }
     }
     // why, for the report (`note_write_problems_<why>`): the engine's commonest reason
-    const why = commonestReason(reasons) ?? undefined;
+    const why = verify.commonestReason(reasons) ?? undefined;
     if (kept.length === 0) {
       report.problemsDropped += unchecked;
       return { type: "write_problems", ok: false, note: `I couldn't check ${plural(problems.length, "that problem", "those problems")}, so I didn't write ${plural(problems.length, "it", "them")}.`, ...(why ? { why } : {}) };
     }
     const hand = this.host.handwriting();
+    // A problem too wide for a screen even alone, at the smallest hand, is left out by itself: the
+    // grid of its screen used to come back empty (`planGrid`: null) and every problem on it went.
+    const screen = this.host.screen();
+    const fitting = hand ? kept.filter((lines) => planGrid(screen, 1, (_, size) => this.problemWidth(lines, 99, size)) !== null) : kept;
+    const tooWide = kept.length - fitting.length;
+    kept.splice(0, kept.length, ...fitting);
     let written = 0;
     let n = 1;
     let index = 0;
@@ -431,7 +624,7 @@ export class ChatDesk {
       }
       n += items.length;
     }
-    const unplaced = kept.length - written;
+    const unplaced = kept.length - written + tooWide;
     report.problemsWritten += written;
     report.problemsDropped += unchecked + unplaced;
     if (written > 0) this.host.problemsChanged();
@@ -446,7 +639,8 @@ export class ChatDesk {
   // ---------------------------------------------------------------- lines
 
   private async writeLines(lines: readonly string[], engine: LiveEngine, report: Report): Promise<ChatActionOutcome> {
-    const v = verifyLines(engine, lines, this.canDraw);
+    const verify = await this.verifier();
+    const v = verify.verifyLines(engine, lines, this.canDraw(verify));
     if (!v.ok) {
       const note = v.reason === "false" ? "I left out lines that didn't check out." : v.reason === "unchecked" ? "I couldn't check those lines, so I didn't write them." : "I couldn't write that on the board.";
       return { type: "write_lines", ok: false, note, why: v.reason };
@@ -463,16 +657,16 @@ export class ChatDesk {
     }
     const { plan } = planHandwriting(clean, { size: CHAT_WRITE.linesSize, seed: this.host.seed(`chat:lines:${clean.join(";")}`) });
     if (!plan) return { type: "write_lines", ok: false, note: "I couldn't write that on the board." };
-    await this.waitForHand();
-    const slot = await this.placeFor({ w: plan.bounds.w, h: plan.bounds.h }, report);
-    if (!slot) return { type: "write_lines", ok: false, note: "There's no room left on this board." };
-    await this.writeBlock(placeHandPlan(plan, { x: slot.x, y: slot.y }), meta);
+    // one size (a formula is written at the size a problem is read at), anywhere free, a new screen last
+    const placed = await this.placeDrawing(() => plan, { boxes: [{ w: plan.bounds.w, h: plan.bounds.h }] }, report);
+    if (!placed) return { type: "write_lines", ok: false, note: "There's no room left on this board." };
+    await this.writeBlock(placed, meta);
     return { type: "write_lines", ok: true };
   }
 
   // ---------------------------------------------------------------- graphs
 
-  private async graph(relations: readonly string[], win: ChatWindow | undefined, engine: LiveEngine, report: Report): Promise<ChatActionOutcome> {
+  private async graph(relations: readonly string[], win: ChatWindow | undefined, engine: LiveEngine, report: Report, near?: number): Promise<ChatActionOutcome> {
     const clean = relations.map((r) => r.trim()).filter(Boolean);
     const cannot: ChatActionOutcome = { type: "graph", ok: false, note: "I couldn't graph that." };
     if (!this.host.handwriting()) return { type: "graph", ok: false, note: "The tutor's handwriting is switched off, so I can't sketch a graph." };
@@ -488,55 +682,87 @@ export class ChatDesk {
     const seed = this.host.seed(`chat:graph:${intent.key}`);
     const label = planHandwriting(clean, { size: CHAT_WRITE.graphLabelSize, seed: seed + 7 });
     const labelPlan = label.plan && label.unsupported.length === 0 ? label.plan : null;
-    await this.waitForHand();
-    const tryPlace = (): { plan: HandPlan } | null => {
-      for (const box of [GRAPH.box, ...GRAPH.fallbackBoxes]) {
-        const g = planGraph(shown, { seed, box, window: hint });
-        if (!g) return null;
-        const labelH = labelPlan ? labelPlan.bounds.h + CHAT_WRITE.graphLabelGap : 0;
-        const size = { w: Math.max(g.plan.bounds.w, labelPlan?.bounds.w ?? 0), h: g.plan.bounds.h + labelH };
-        const slot = findFreeArea(size, this.host.screen(), this.obstacles());
-        if (!slot) continue;
-        const parts = [...(labelPlan ? [placeHandPlan(labelPlan, { x: slot.x, y: slot.y })] : []), placeHandPlan(g.plan, { x: slot.x, y: slot.y + labelH })];
-        const plan = joinPlans(parts, 300, graphPaceFor);
-        return plan ? { plan } : null;
-      }
-      return null;
+    const labelH = labelPlan ? labelPlan.bounds.h + CHAT_WRITE.graphLabelGap : 0;
+    let planned = false;
+    // the equation, then the sketch under it, as one block (placed as a whole by `placeDrawing`)
+    const plan = (box: { w: number; h: number }): HandPlan | null => {
+      const g = planGraph(shown, { seed, box, window: hint });
+      if (!g) return null;
+      planned = true;
+      return joinPlans([...(labelPlan ? [placeHandPlan(labelPlan, { x: 0, y: 0 })] : []), placeHandPlan(g.plan, { x: 0, y: labelH })], 300, graphPaceFor);
     };
-    let placed = tryPlace();
-    if (!placed && planGraph(shown, { seed, window: hint }) && (await this.newScreen(report))) placed = tryPlace();
-    if (!placed) return planGraph(shown, { seed, window: hint }) ? { type: "graph", ok: false, note: "There's no room left for the graph." } : cannot;
-    await this.writeBlock(placed.plan, { [CHAT_BLOCK_META]: "graph", chatGraph: intent.key });
-    this.host.metric?.("live.chat.graph", { kind: intent.kind, window: Boolean(win) });
+    const placed = await this.placeDrawing(plan, { near, boxes: CHAT_WRITE.graphBoxes }, report);
+    if (!placed) return planned ? { type: "graph", ok: false, note: "There's no room left for the graph." } : cannot;
+    await this.writeBlock(placed, { [CHAT_BLOCK_META]: "graph", chatGraph: intent.key });
+    this.host.metric?.("live.chat.graph", { kind: intent.kind, window: Boolean(win), near: near !== undefined });
     return { type: "graph", ok: true };
   }
 
   // ---------------------------------------------------------------- figures
 
-  private async figure(spec: FigureSpec, report: Report): Promise<ChatActionOutcome> {
+  private async figure(spec: FigureSpec, report: Report, near?: number): Promise<ChatActionOutcome> {
     const cannot: ChatActionOutcome = { type: "draw_figure", ok: false, note: "I couldn't draw that figure." };
     if (!this.host.handwriting()) return { type: "draw_figure", ok: false, note: "The tutor's handwriting is switched off, so I can't draw a figure." };
     const seed = this.host.seed(`chat:figure:${JSON.stringify(spec).slice(0, 400)}`);
-    await this.waitForHand();
-    const plans: HandPlan[] = [];
-    for (const box of CHAT_WRITE.figureBoxes) {
+    let planned = false;
+    // a box the drawer cannot plan in is no reason to give up on a figure it drew in another
+    const plan = (box: { w: number; h: number }): HandPlan | null => {
       let res: FigurePlanResult | null = null;
       try {
         res = this.host.planFigure(spec, { seed, box });
       } catch {
         res = null;
       }
-      if (!res) return cannot;
-      plans.push(res.plan);
-      const slot = findFreeArea({ w: res.plan.bounds.w, h: res.plan.bounds.h }, this.host.screen(), this.obstacles());
-      if (!slot) continue;
-      await this.writeBlock(placeHandPlan(res.plan, { x: slot.x, y: slot.y }), { [CHAT_BLOCK_META]: "figure" });
-      return { type: "draw_figure", ok: true };
-    }
-    if (!(await this.newScreen(report))) return { type: "draw_figure", ok: false, note: "There's no room left for the figure." };
-    const slot = findFreeArea({ w: plans[0].bounds.w, h: plans[0].bounds.h }, this.host.screen(), this.obstacles());
-    if (!slot) return cannot;
-    await this.writeBlock(placeHandPlan(plans[0], { x: slot.x, y: slot.y }), { [CHAT_BLOCK_META]: "figure" });
+      if (res) planned = true;
+      return res?.plan ?? null;
+    };
+    const placed = await this.placeDrawing(plan, { near, boxes: CHAT_WRITE.figureBoxes }, report);
+    if (!placed) return planned ? { type: "draw_figure", ok: false, note: "There's no room left for the figure." } : cannot;
+    await this.writeBlock(placed, { [CHAT_BLOCK_META]: "figure" });
     return { type: "draw_figure", ok: true };
+  }
+
+  // ---------------------------------------------------------------- visual models
+
+  /**
+   * The visual models' planners (`models/`), loaded with the first one drawn, never with the board
+   * (its first load is budgeted, docs/BUNDLE.md).
+   */
+  private modelPlanners(): Promise<typeof Models> {
+    this.models ??= import("./models");
+    return this.models;
+  }
+
+  /**
+   * "Show me 3/4 vs 5/8", "draw 4 × 6", "what time is 3:45" (`draw_model`, Ask): the model is
+   * planned by the board's own planners — which work out every number in it — at the kind's sizes,
+   * largest first, and placed beside problem `near` on this screen (`placeDrawing`), shrunk to fit
+   * before a new screen is ever started. Honest about what happened: a spec that doesn't add up
+   * (the route's gate has normally sent it back already), one that cannot be drawn legibly at any
+   * size, or no room left.
+   */
+  private async drawModel(action: DrawModelAction, report: Report): Promise<ChatActionOutcome> {
+    const kind = action.model.kind;
+    if (!this.host.handwriting()) return { type: "draw_model", ok: false, note: "The tutor's handwriting is switched off, so I can't draw that.", why: "hand_off" };
+    const models = await this.modelPlanners();
+    if (models.modelProblems(action.model).length > 0) return { type: "draw_model", ok: false, note: "That picture didn't add up, so I didn't draw it.", why: "spec" };
+    const seed = this.host.seed(`chat:model:${JSON.stringify(action.model).slice(0, 400)}`);
+    await this.waitForHand();
+    let planned = false;
+    const plan = (box: { w: number; h: number }): HandPlan | null => {
+      const p = models.planModel(action.model, box, seed);
+      if (p) planned = true;
+      return p;
+    };
+    const placed = await this.placeDrawing(plan, { near: action.near, boxes: models.MODEL_BOXES[kind] }, report);
+    if (!placed) {
+      this.host.metric?.("live.chat.model.dropped", { kind, why: planned ? "no_room" : "unplannable" });
+      return planned
+        ? { type: "draw_model", ok: false, note: "There's no room left for the picture.", why: "no_room" }
+        : { type: "draw_model", ok: false, note: "I couldn't draw that picture.", why: "unplannable" };
+    }
+    await this.writeBlock(placed, { [CHAT_BLOCK_META]: "model", [CHAT_MODEL_META]: kind });
+    this.host.metric?.("live.chat.model", { kind, near: action.near ?? null });
+    return { type: "draw_model", ok: true };
   }
 }

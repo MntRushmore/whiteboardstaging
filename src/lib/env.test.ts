@@ -138,6 +138,10 @@ describe("getLiveModels", () => {
       lectureFallback: LIVE_MODELS.lectureFallback,
       sketch: LIVE_MODELS.sketch,
       sketchFallback: LIVE_MODELS.sketchFallback,
+      ask: LIVE_MODELS.ask,
+      askFallback: LIVE_MODELS.askFallback,
+      askMemory: LIVE_MODELS.askMemory,
+      askMemoryFallback: LIVE_MODELS.askMemoryFallback,
     });
   });
 

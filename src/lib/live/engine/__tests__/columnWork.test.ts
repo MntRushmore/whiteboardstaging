@@ -28,7 +28,18 @@ describe("which problems are arithmetic", () => {
     ["\\begin{array}{r} 16 \\\\ 9 \\longdiv { 144 } \\end{array}", true],
     ["2x + 3 = 11", false],
     ["3x = 15", false],
-    ["\\sqrt{16}", false],
+    // the K–8 forms the chat writes: money, a percent, thousands, an exact root, a GCF or LCM
+    ["\\$3.25 + \\$1.50", true],
+    ["25\\% \\times 80", true],
+    ["1{,}234 + 567", true],
+    ["\\sqrt{16}", true],
+    ["3^{2} + \\sqrt{16}", true],
+    ["\\gcd(12, 18)", true],
+    ["\\operatorname{lcm}(4, 6)", true],
+    // a root that is not whole is no arithmetic a young student finishes with a number
+    ["\\sqrt{50}", false],
+    ["\\sqrt{x}", false],
+    ["\\gcd(x, 4)", false],
     ["x", false],
   ])("%s: %s", (latex, want) => {
     expect(isArithmetic(latex)).toBe(want);
@@ -99,6 +110,32 @@ describe("the engine's own rule for a claimed decimal (`= 5.25` under a line)", 
     expect(claim("\\sqrt{50}", "= 7.1")).not.toBe("mismatch");
     expect(claim("3.45 + 2.8", "= 6.25")).toBe("ok");
     expect(claim("1.2 \\times 3", "= 3.6")).toBe("ok");
+  });
+});
+
+describe("the K–8 forms the chat writes, judged as numbers", () => {
+  it("money, a percent, thousands, an exact root, a GCF: the answer alone solves it, a wrong one is ringed", () => {
+    expect(marks({ problem: ["\\$3.25 + \\$1.50"], lines: ["4.75"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["\\$3.25 + \\$1.50"], lines: ["\\$4.85"] })).toEqual(["mismatch"]);
+    expect(marks({ problem: ["25\\% \\times 80"], lines: ["20"] })).toEqual(["ok+solved"]);
+    // the percent copied down is a wrong answer; a quarter of 80 is a step
+    expect(marks({ problem: ["25\\% \\times 80"], lines: ["25"] })).toEqual(["mismatch"]);
+    expect(marks({ problem: ["25\\% \\times 80"], lines: ["80 \\div 4 = 20"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["1{,}234 + 567"], lines: ["1{,}801"] })).toEqual(["ok+solved"]);
+    // each root a step on the way, unmarked; the sum the answer
+    expect(marks({ problem: ["3^{2} + \\sqrt{16}"], lines: ["9", "4", "13"] })).toEqual(["none", "none", "ok+solved"]);
+    expect(marks({ problem: ["\\gcd(12, 18)"], lines: ["3"] })).toEqual(["mismatch"]);
+    expect(marks({ problem: ["\\gcd(12, 18)"], lines: ["6"] })).toEqual(["ok+solved"]);
+  });
+
+  it("under a line asking for its value at the column's givens: a lone number is that value; the `3` of `x =` read apart is not", () => {
+    const previous = engine.analyzeLine("2x + 5 =", { mode: "feedback", givens: { x: "3" } });
+    expect(previous.substituted).toBeTruthy();
+    const ctx = { previous, mode: "feedback" as const };
+    expect(judgeLine(engine, "11", { ctx, arithmetic: null, above: [] })).toMatchObject({ verdict: "ok", solved: true, bareAnswer: true });
+    expect(judgeLine(engine, "13", { ctx, arithmetic: null, above: [] })).toMatchObject({ verdict: "mismatch", bareAnswer: true });
+    expect(judgeLine(engine, "6 + 5 = 11", { ctx, arithmetic: null, above: [] })).toMatchObject({ verdict: "ok", solved: true });
+    expect(judgeLine(engine, "3", { ctx, arithmetic: null, above: [], given: true }).verdict).not.toBe("mismatch");
   });
 });
 

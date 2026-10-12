@@ -51,6 +51,10 @@ import { PROOF_EXAMPLES } from "@/lib/server/prompts/chat";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
 import { POST as chat } from "@/app/api/live/chat/route";
 
+// The first test that reaches the gates cold-loads the board's engine (mathjs, ~2 MB): past the default
+// 5 s on a busy machine. Every test in this file gets room for it.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_CHAT"];
 const savedEnv: Record<string, string | undefined> = {};
 const BODY = {
@@ -176,6 +180,14 @@ describe("live/chat", () => {
     const repair = String(vi.mocked(chatJsonWithFallback).mock.calls[1][2].messages[1].content);
     expect(repair).toContain("- AB is labelled 4 but side BC is not drawn");
     expect(repair).toContain(JSON.stringify(TRIANGLE));
+  });
+
+  it("a mended figure stays beside the problem it was asked for (near)", async () => {
+    fake.drawer.check = (spec) => ((spec as { segments?: unknown[] }).segments?.length === 3 ? [] : ["AB is labelled 4 but side BC is not drawn"]);
+    const fixed = { ...TRIANGLE, segments: [...TRIANGLE.segments, { from: "A", to: "C", label: "3" }, { from: "B", to: "C", label: "x" }] };
+    modelReplies({ reply: "Here is #2 as a triangle.", actions: [{ type: "draw_figure", near: 2, figure: TRIANGLE }] }, { figure: fixed });
+    const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
+    expect(body.actions).toEqual([{ type: "draw_figure", near: 2, figure: fixed }]);
   });
 
   it("a repair that still has problems drops the figure: the panel says so and the credits come back", async () => {

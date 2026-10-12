@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ALGEBRA_PROOF_EXAMPLE,
   buildChatMessages,
@@ -29,9 +29,13 @@ import { getEngine } from "@/lib/live/engine";
 import { classifyProblem } from "@/lib/learning/skills";
 import { LearnerHintSchema } from "@/lib/learning/hint";
 
+// The examples' checks cold-load the engine (mathjs, ~2 MB): past the default 5 s under load.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 describe("chat prompt", () => {
   it("names every action and the rules that keep the board to maths", () => {
-    for (const t of CHAT_ACTION_TYPES) expect(CHAT_SYSTEM_PROMPT).toContain(`"${t}"`);
+    // help_board and draw_model are Ask's (docs/ASK-V2.md, prompts/ask.ts); the old chat never proposes it
+    for (const t of CHAT_ACTION_TYPES) if (t !== "help_board" && t !== "draw_model") expect(CHAT_SYSTEM_PROMPT).toContain(`"${t}"`);
     expect(CHAT_SYSTEM_PROMPT).toMatch(/no words/i);
     // answers and working never in the panel; on the board only three ways
     expect(CHAT_SYSTEM_PROMPT).toMatch(/You never put answers or working in the REPLY/);
@@ -364,6 +368,28 @@ describe("cleaning the model's reply", () => {
       { type: "help_problem", problem: 1, depth: "step" },
     ]);
     expect(dropped.map((d) => d.type)).toEqual(["help_problem", "help_problem", "help_problem"]);
+  });
+
+  it("a drawing's near: a number (or \"2\", \"#2\"); anything else is no near, and the drawing is kept", () => {
+    const { actions, dropped } = cleanChatActions([
+      { type: "graph", relations: ["y = 2x + 1"], near: 3 },
+      { type: "graph", relations: ["y = x"], near: "#2" },
+      { type: "draw_figure", figure: PROBE_FIGURE, near: "1" },
+      { type: "graph", relations: ["y = 3x"], near: null },
+      { type: "graph", relations: ["y = 4x"], near: "two" },
+      { type: "graph", relations: ["y = 5x"], near: 0 },
+    ]);
+    expect(dropped).toEqual([]);
+    expect(actions.map((a) => ("near" in a ? a.near : "none"))).toEqual([3, 2, 1, "none", "none", "none"]);
+  });
+
+  it("a stray {near} right after a drawing with none is that drawing's (a figure's braces closed a key early); anywhere else it is dropped", () => {
+    // as Haiku 5.5 wrote it: ...,"angles":[...]}},{"near":2}]
+    const { actions, dropped } = cleanChatActions([{ type: "draw_figure", figure: PROBE_FIGURE }, { near: 2 }, { type: "clear_tutor" }, { near: 1 }]);
+    expect(actions).toEqual([{ type: "draw_figure", figure: PROBE_FIGURE, near: 2 }, { type: "clear_tutor" }]);
+    expect(dropped).toEqual([{ type: "?", reason: "unknown action" }]);
+    // a drawing that already has one keeps it
+    expect(cleanChatActions([{ type: "graph", relations: ["y = x"], near: 1 }, { near: 3 }]).actions).toEqual([{ type: "graph", relations: ["y = x"], near: 1 }]);
   });
 
   it("help with a problem that is not on the screen is dropped, with a note for the panel", () => {

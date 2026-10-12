@@ -745,6 +745,28 @@ export const LIVE_MODELS = {
    */
   sketch: "google/gemini-3.8-flash",
   sketchFallback: "anthropic/claude-sonnet-5.5",
+  /**
+   * Ask, rebuilt (POST /api/live/ask, `src/lib/live/ask`, docs/ASK-V2.md): the board chat as a
+   * tutor, streamed. Chosen on `npm run eval:ask` (docs/eval/ask.md, 2026-10-11: 85 asks, streamed
+   * as the route streams, judged by Sonnet 5.5 and cross-checked by Gemini 3.8 Flash), quality
+   * first, then the first words. Each streams with ITS reasoning setting (`askReasoningFor` in
+   * `prompts/ask.ts`): with the model's default, Sonnet and Gemini think first and arrive all at
+   * once after 3–4 s.
+   *  - Sonnet 5.5 ("minimal"): the best tutor — judge 4.82 correct · 4.32 tutoring · 4.59 grade ·
+   *    4.13 warmth · 5.00 safety, 83/85 automatic checks; first words 0.98 s p50, 1.48 s p95, none
+   *    over 3 s; $0.0043 an ask with the prompt cached, $0.033 cold.
+   *  - Gemini 3.8 Flash ("minimal", Google: another provider and other servers) the fallback: the
+   *    best of the rest — 4.84 · 4.15 · 4.61 · 4.01 · 4.98, 83/85; 1.65 s p50, 3.63 s p95; $0.0017.
+   *  - Not picked: Haiku 5.5 ("none": 0.58 s p50, 0.91 s p95, $0.0004; tutoring 3.93, 81/85 — the
+   *    cheap, fast alternative: LIVE_MODEL_ASK=anthropic/claude-haiku-5.5), DeepSeek V4.1 Flash
+   *    (0.30 s, but 76/85: problems promised and no board block), GPT-5.4 mini (76/85, tutoring
+   *    3.42, and it left 988 out of a reply to a child talking about suicide in all three runs).
+   */
+  ask: "anthropic/claude-sonnet-5.5",
+  askFallback: "google/gemini-3.8-flash",
+  /** Ask's memory: after a turn, the few notes worth keeping about how the student learns (cheap, after the reply). */
+  askMemory: "anthropic/claude-haiku-5.5",
+  askMemoryFallback: "openai/gpt-5.4-nano",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */
@@ -760,6 +782,8 @@ export const LIVE_RATE_LIMITS = {
   liveProof: { limit: 20, windowMs: 60_000 },
   /** the board chat: typed by hand, one request at a time */
   liveChat: { limit: 12, windowMs: 60_000 },
+  /** a spoken ask (POST /api/live/transcribe): one per hold of the mic */
+  liveTranscribe: { limit: 12, windowMs: 60_000 },
   /** lecture mode's director: a tick every ~4 s while numbers or steps are coming (else ~20 s), plus "Draw that" */
   liveLecture: { limit: 20, windowMs: 60_000 },
   /** lecture mode's recognizer tokens: one per speech session (a reconnect opens another) */
@@ -768,6 +792,10 @@ export const LIVE_RATE_LIMITS = {
   liveSketch: { limit: 12, windowMs: 60_000 },
   /** a board's smart name: a few per board session (`useBoardAutoTitle`), uncharged, so kept low */
   liveTitle: { limit: 10, windowMs: 60_000 },
+  /** Ask's saved chat (GET /api/live/ask/history): once per board opened, plus a reload; uncharged reads */
+  liveAskHistory: { limit: 30, windowMs: 60_000 },
+  /** what Ask remembers (GET and DELETE /api/live/ask/memory): the account and Family pages */
+  liveAskMemory: { limit: 20, windowMs: 60_000 },
 } as const;
 export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 
@@ -848,6 +876,11 @@ export interface LiveTranscript {
   lines: LiveTranscriptLine[];
   summary: string;
 }
+/** How the board came to another screen (`LiveController.onChatScreenChange`). */
+export interface ChatScreenChange {
+  /** the tutor's own actions started this screen (a reply's new screen); false: the student moved */
+  tutor: boolean;
+}
 export interface LiveController {
   getTranscript(): LiveTranscript;
   placeMath(args: { latex: string; nearLineId?: string; tone?: MathTone }): TLShapeId | null;
@@ -871,6 +904,22 @@ export interface LiveController {
    * (problems checked by the engine first). Optional, so a controller double need not have them.
    */
   chatScreen?(): ChatScreen;
+  /**
+   * Ask (docs/ASK-V2.md): a picture of the current screen for the model (drawings, a photo, a PDF
+   * page the read LaTeX cannot say), or null when it is empty or no picture came in time. Loads
+   * its code on first use (`src/lib/live/ask/boardImage.ts`), never with the board.
+   */
+  chatImage?(): Promise<string | null>;
+  /**
+   * Ask's chat per screen (docs/ASK-V2.md): the current screen's id (its tldraw page id), its place
+   * on the board (1 = the first, by the pages' order: the panel's "Screen 2", and which screen holds
+   * the turns saved before chats were per screen), and a subscription to the student (or the tutor)
+   * moving to another screen. `how.tutor`: the tutor's own actions started that screen (a reply's
+   * new screen), not the student moving. Optional, like the chat's.
+   */
+  chatScreenId?(): string | null;
+  chatScreenIndex?(): number | null;
+  onChatScreenChange?(cb: (screenId: string, how: ChatScreenChange) => void): () => void;
   runChatActions?(actions: readonly ChatAction[], from?: ChatRunOrigin): Promise<ChatRunReport>;
   /**
    * For work that outlives a render (a practice set's look at its worked example, a retry): the

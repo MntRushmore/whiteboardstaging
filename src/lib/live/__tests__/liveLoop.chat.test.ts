@@ -186,6 +186,22 @@ describe("live loop — the board chat", () => {
       ]);
     });
 
+    /**
+     * Prod 2026-10 (`note_write_problems`): "I couldn't check those problems, so I didn't write them."
+     * for a first-grader's fill in the blank — the route had passed `1 + 2 = \square`, and the hand
+     * had no box. A worksheet's forms are written now: the box, the circle to compare in, money.
+     */
+    it("a K–2 worksheet: blanks, a comparison and money are all written, in the board's one form", async () => {
+      start();
+      const report = await run([{ type: "write_problems", problems: [["1 + 2 = \\square"], ["4 + ? = 9"], ["\\frac{3}{4} \\; ? \\; \\frac{5}{8}"], ["\\$3.25 + \\$1.50"]] }]);
+      expect(report).toMatchObject({ problemsWritten: 4, problemsDropped: 0 });
+      expect(report.outcomes).toEqual([{ type: "write_problems", ok: true }]);
+      const want = ["1 + 2 = \\square", "4 + \\square = 9", "\\frac{3}{4} \\bigcirc \\frac{5}{8}", "\\$3.25 + \\$1.50"];
+      expect(problems().map((p) => p.lines)).toEqual(want.map((l) => [l]));
+      // in the tutor's hand, each with its number (`written` is sorted: the number's ink starts lower)
+      expect(problems().map((p) => p.written)).toEqual(want.map((l, i) => [`${i + 1}.`, l].sort()));
+    });
+
     it("none checks out: nothing is written", async () => {
       start();
       const report = await run([{ type: "write_problems", problems: [["y = 2x - 5"]] }]);
@@ -259,6 +275,23 @@ describe("live loop — the board chat", () => {
       // under problem 2 (3x = 12), x = 2 is wrong
       expect(liveStore.lines.get()[wrong].analysis?.verdict).toBe("mismatch");
       await settleStable(() => String(tutor().length));
+      expect(marksOf(wrong)).toEqual(["circle"]);
+    });
+
+    it("a worksheet's blank: the number for the box is ticked and solves it, a wrong one is ringed — never a '?'", async () => {
+      start();
+      await run([{ type: "write_problems", problems: [["4 + ? = 9"], ["1 + 2 = \\square"], ["\\frac{3}{4} \\; ? \\; \\frac{5}{8}"], ["7 + \\square = 12"]] }]);
+      const right = await penLine("2", 120, 200, "5");
+      const sum = await penLine("2", 900, 200, "3");
+      const sign = await penLine("2", 120, 600, ">");
+      const wrong = await penLine("2", 900, 600, "6");
+      await settleStable(() => String(tutor().length));
+      const lines = liveStore.lines.get();
+      expect(lines[right].analysis).toMatchObject({ verdict: "ok", solved: true });
+      expect(lines[sum].analysis).toMatchObject({ verdict: "ok", solved: true });
+      expect(lines[sign].analysis).toMatchObject({ verdict: "ok", solved: true });
+      expect(lines[wrong].analysis?.verdict).toBe("mismatch");
+      expect([right, sum, sign].map(marksOf)).toEqual([["check"], ["check"], ["check"]]);
       expect(marksOf(wrong)).toEqual(["circle"]);
     });
 
@@ -478,6 +511,36 @@ describe("live loop — the board chat", () => {
       expect(tutor().some((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === "graph")).toBe(true);
     });
 
+    it("a graph and a figure of problems on the screen (near): beside each problem in its cell, on the same screen", async () => {
+      start();
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"], ["x + 8 = 12"], ["4x = 20"]] }]);
+      const before = problems();
+      const report = await run([
+        { type: "graph", relations: ["y = 2x + 1"], near: 3 },
+        { type: "draw_figure", figure: PROBE_FIGURE, near: 2 },
+      ]);
+      expect(report).toMatchObject({ screensAdded: 0, outcomes: [{ type: "graph", ok: true }, { type: "draw_figure", ok: true }] });
+      expect(editor.getPages()).toHaveLength(1);
+      expect(problems()).toEqual(before);
+      const boxOf = (kind: string) => {
+        const b = tutor()
+          .filter((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === kind)
+          .map((s) => editor.getShapePageBounds(s)!);
+        return { x: Math.min(...b.map((r) => r.x)), y: Math.min(...b.map((r) => r.y)), r: Math.max(...b.map((r) => r.maxX)), b: Math.max(...b.map((r) => r.maxY)) };
+      };
+      const inCell = (box: ReturnType<typeof boxOf>, n: number) => {
+        const c = before[n - 1].cell;
+        return box.x >= c.x && box.y >= c.y && box.r <= c.x + c.w && box.b <= c.y + c.h;
+      };
+      expect(inCell(boxOf("graph"), 3)).toBe(true);
+      expect(inCell(boxOf("figure"), 2)).toBe(true);
+      // clear of every problem's own ink
+      for (const s of tutor().filter((t) => problemMetaOf(t.meta))) {
+        const p = editor.getShapePageBounds(s)!;
+        for (const box of [boxOf("graph"), boxOf("figure")]) expect(p.x < box.r && p.maxX > box.x && p.y < box.b && p.maxY > box.y).toBe(false);
+      }
+    });
+
     it("draw_figure: the drawer's figure, true to scale, in free space beside the work", async () => {
       start();
       await penLine("2x=8", 100, 200, "2x=8");
@@ -624,5 +687,114 @@ describe("live loop — the board chat", () => {
     const metas = tutor().map((s) => (s.meta as Record<string, unknown>)[CHAT_PROBLEM_META]);
     expect(metas.length).toBeGreaterThan(3);
     for (const m of metas) expect(m).toMatchObject({ n: 1, lines: ["2x + 3 = 11"], cell: { x: expect.any(Number), w: expect.any(Number) } });
+  });
+
+  describe("Ask's chat per screen: which screen, and the board moving to another", () => {
+    /** Every screen change heard, as `id:tutor|student`, until unsubscribed. */
+    function listen(): { heard: string[]; off: () => void } {
+      const heard: string[] = [];
+      const off = loop.onChatScreenChange((id, how) => heard.push(`${id}:${how.tutor ? "tutor" : "student"}`));
+      return { heard, off };
+    }
+    const settle = () => vi.advanceTimersByTimeAsync(50);
+
+    it("the current screen's page id and its number, from 1", () => {
+      start();
+      const first = editor.getCurrentPage().id;
+      expect(loop.chatScreenId()).toBe(first);
+      expect(loop.chatScreenId()).toMatch(/^page:[A-Za-z0-9_-]{1,64}$/);
+      expect(loop.chatScreenIndex()).toBe(1);
+      const second = editor.addPage({ screen: { ...DEFAULT_SCREEN } });
+      editor.switchPage(second);
+      expect(loop.chatScreenId()).toBe(second);
+      expect(loop.chatScreenIndex()).toBe(2);
+    });
+
+    it("the student moving between screens is heard as theirs, each time; unsubscribed hears nothing", async () => {
+      start();
+      const first = editor.getCurrentPage().id;
+      const second = editor.addPage({ screen: { ...DEFAULT_SCREEN } });
+      const { heard, off } = listen();
+      editor.switchPage(second);
+      await settle();
+      editor.switchPage(first);
+      await settle();
+      expect(heard).toEqual([`${second}:student`, `${first}:student`]);
+      off();
+      editor.switchPage(second);
+      await settle();
+      expect(heard).toHaveLength(2);
+    });
+
+    it("a screen the tutor's own actions started is heard as the tutor's; coming back to it later is the student's", async () => {
+      start();
+      const first = editor.getCurrentPage().id;
+      const { heard } = listen();
+      const report = await run([{ type: "new_screen" }]);
+      expect(report.screensAdded).toBe(1);
+      const made = editor.getCurrentPage().id;
+      expect(made).not.toBe(first);
+      expect(heard).toEqual([`${made}:tutor`]);
+      expect(loop.chatScreenId()).toBe(made);
+      expect(loop.chatScreenIndex()).toBe(2);
+      editor.switchPage(first);
+      await settle();
+      editor.switchPage(made);
+      await settle();
+      expect(heard).toEqual([`${made}:tutor`, `${first}:student`, `${made}:student`]);
+    });
+
+    it("heard a frame later, as the browser's store tells its listeners: still the tutor's, and only that once", async () => {
+      const g = globalThis as { __FORCE_RAF_IN_TESTS__?: boolean; requestAnimationFrame?: unknown; cancelAnimationFrame?: unknown };
+      const had = { raf: g.requestAnimationFrame, caf: g.cancelAnimationFrame };
+      g.__FORCE_RAF_IN_TESTS__ = true;
+      g.requestAnimationFrame = (cb: () => void) => setTimeout(cb, 16);
+      g.cancelAnimationFrame = (id: ReturnType<typeof setTimeout>) => clearTimeout(id);
+      try {
+        start();
+        const first = editor.getCurrentPage().id;
+        const { heard } = listen();
+        await run([{ type: "new_screen" }]);
+        await settle();
+        const made = editor.getCurrentPage().id;
+        expect(heard).toEqual([`${made}:tutor`]);
+        editor.switchPage(first);
+        // not heard yet: the store tells its listeners on the next frame
+        expect(heard).toHaveLength(1);
+        await settle();
+        editor.switchPage(made);
+        await settle();
+        expect(heard).toEqual([`${made}:tutor`, `${first}:student`, `${made}:student`]);
+      } finally {
+        delete g.__FORCE_RAF_IN_TESTS__;
+        g.requestAnimationFrame = had.raf;
+        g.cancelAnimationFrame = had.caf;
+      }
+    });
+
+    it("more problems on a full screen start a new one: heard as the tutor's", async () => {
+      start();
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"]] }]);
+      const { heard } = listen();
+      const report = await run([{ type: "write_problems", problems: [["4x = 8"], ["5x + 1 = 11"], ["x - 3 = 4"], ["6x = 18"], ["7x - 7 = 0"], ["x + 9 = 12"], ["2x = 14"], ["9x = 81"]] }]);
+      expect(report.screensAdded).toBeGreaterThan(0);
+      expect(heard.length).toBeGreaterThan(0);
+      expect(heard.every((h) => h.endsWith(":tutor"))).toBe(true);
+      expect(heard.at(-1)).toBe(`${loop.chatScreenId()}:tutor`);
+    });
+
+    it("a listener that throws never stops the others, nor the loop", async () => {
+      start();
+      const second = editor.addPage({ screen: { ...DEFAULT_SCREEN } });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      loop.onChatScreenChange(() => {
+        throw new Error("boom");
+      });
+      const { heard } = listen();
+      editor.switchPage(second);
+      await settle();
+      expect(heard).toEqual([`${second}:student`]);
+      warn.mockRestore();
+    });
   });
 });

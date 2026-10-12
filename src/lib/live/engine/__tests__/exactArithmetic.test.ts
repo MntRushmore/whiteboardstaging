@@ -36,11 +36,22 @@ describe("reading arithmetic exactly", () => {
     ["2\\frac{1}{3} + 1\\frac{1}{2}", [23, 6]],
     ["\\frac{3 \\times 2}{4 \\times 3}", [1, 2]],
     ["\\frac{1}{2} \\div \\frac{1}{4}", [2, 1]],
+    // the K–8 problem forms (`chat/problemForms.ts`): money, percents, thousands, exact roots
+    ["\\$3.25 + \\$1.50", [19, 4]],
+    ["25\\% \\times 80", [20, 1]],
+    ["15\\% \\times \\$40", [6, 1]],
+    ["12.5\\% \\times 8", [1, 1]],
+    ["\\frac{30}{120} \\cdot 100\\%", [1, 4]],
+    ["1{,}234 + 567", [1801, 1]],
+    ["3^{2} + \\sqrt{16}", [13, 1]],
+    ["\\sqrt{144} - \\sqrt{25}", [7, 1]],
+    ["2\\sqrt{9}", [6, 1]],
+    ["\\sqrt{\\frac{4}{9}}", [2, 3]],
   ])("%s", (latex, [n, d]) => {
     expect(value(latex)).toEqual({ n, d });
   });
 
-  it.each(["x + 1", "\\sqrt{4}", "3 R 2", "", "2\\frac{x}{2}", "10 \\% of 80", "3 = 4", "9 \\longdiv { 144 }", "1 \\div 0", "2^{20}"])("not plain arithmetic: %s", (latex) => {
+  it.each(["x + 1", "\\sqrt{5}", "\\sqrt[3]{8}", "\\sqrt{x}", "3 R 2", "", "2\\frac{x}{2}", "10 \\% of 80", "3 = 4", "9 \\longdiv { 144 }", "1 \\div 0", "2^{20}"])("not plain arithmetic: %s", (latex) => {
     expect(parseArithmetic(latex)).toBeNull();
   });
 

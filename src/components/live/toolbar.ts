@@ -14,7 +14,7 @@
  *    in the menu; the pill reports what it is doing right now.
  *  - SIMPLE, the board for young kids (src/components/kidmode): the bar is Back, a big Help me and a
  *    small grown-up More; everything else here moves behind More (`place`), and tldraw's tools give
- *    way to the kid dock at the foot (`kidDockView`).
+ *    way to the kid dock at the foot (`kidDockView`), which carries a big Ask too.
  */
 import type { AssistanceMode } from "@/hooks/useAssistanceMode";
 import type { LiveStatus, RecognizerKind } from "@/lib/live/contracts";
@@ -34,12 +34,21 @@ export interface BoardToolbarState {
   hideAiShapes?: boolean;
   /** the simple board for young kids (`useSimpleBoard`): on for K–3 by default, switchable */
   simple?: boolean;
-  /** the guided first board's tour is running: its last coach mark points at Ask */
-  tour?: boolean;
+  /**
+   * The kid dock could not load (its chunk failed, or it threw): tldraw's palette stands in for it
+   * (`BoardToolbar`), and Ask, which lives in the dock, comes back to the bar so it never vanishes.
+   */
+  dockFailed?: boolean;
 }
 
 /** Where a control sits: in the bar itself, or behind the simple board's More button. */
 export type BarPlace = "bar" | "more";
+
+/**
+ * Where Ask (the board chat's button) sits: in the bar, or on the simple board a big button in the
+ * kid dock (`KidDock`): the tutor to talk to is a kid's thing, not a grown-up setting behind More.
+ */
+export type AskPlace = "bar" | "dock";
 
 /** The grown-up controls `place` decides for (Back, the ask button and the save pill are always in the bar). */
 export interface BarPlaces {
@@ -48,7 +57,7 @@ export interface BarPlaces {
   /** the Auto switch, when there is one (`autoSwitch`) */
   auto: BarPlace;
   /** Ask, the board chat's button */
-  ask: BarPlace;
+  ask: AskPlace;
   /** the status pill, and with it Board options (its "…"; More has its own Board options row) */
   pill: BarPlace;
   /** the plan's ink meter */
@@ -90,8 +99,8 @@ export interface BoardToolbarView {
   /**
    * Where each grown-up control sits. All in the bar on the ordinary board. On the simple board all
    * behind More, mounted there and hidden until it opens (the pill keeps "Hide AI shapes" applied,
-   * the ink meter keeps Live told the balance), but for Ask while the tour's last coach mark points
-   * at it.
+   * the ink meter keeps Live told the balance) — but Ask, a big button in the kid dock, where the
+   * tour's last coach mark finds it too.
    */
   place: BarPlaces;
   /**
@@ -121,7 +130,7 @@ export function boardToolbarView(state: BoardToolbarState): BoardToolbarView {
       : {
           dial: "more",
           auto: "more",
-          ask: state.tour ? "bar" : "more",
+          ask: state.dockFailed ? "bar" : "dock",
           pill: "more",
           ink: "more",
           report: "more",

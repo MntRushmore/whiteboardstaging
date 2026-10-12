@@ -162,6 +162,45 @@ describe("live/chat: write_problems checked by the engine before the board sees 
     expect(events()).toEqual([expect.objectContaining({ code: "problems_dropped_unsolved", meta: expect.objectContaining({ dropped: 2, setsDropped: 1 }) })]);
   });
 
+  /**
+   * Root cause of prod's `note_write_problems` (2026-10-04 to 10-11): the route's check ran without
+   * the board's hand. gpt-5.4-mini's "fill in the blank addition for 1st grade" — `1 + 2 = \square` —
+   * passed here, the board's hand had no box, and the board refused the whole set. The route now
+   * runs the hand's check too: what it passes, the board writes.
+   */
+  it("1st grade's fill in the blank (`1 + 2 = \\square`): passed unchanged, and the board's hand writes every one", async () => {
+    replies({ reply: "Here are 4.", actions: [{ type: "write_problems", problems: ["1 + 2 = \\square", "3 + 1 = \\square", "4 + \\square = 9", "\\square + 6 = 10"] }] });
+    const body = ChatResponseSchema.parse(await (await chat(request())).json());
+    expect(body.actions).toEqual([{ type: "write_problems", problems: [["1 + 2 = \\square"], ["3 + 1 = \\square"], ["4 + \\square = 9"], ["\\square + 6 = 10"]] }]);
+    expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
+    expect(events()).toEqual([]);
+    const { handCanWrite } = await import("@/lib/live/chat/verify");
+    for (const action of body.actions) if (action.type === "write_problems") for (const p of action.problems) expect(handCanWrite(p), p.join("; ")).toBe(true);
+  });
+
+  it("a problem the board's hand cannot write is caught HERE (one repair), never sent for the board to refuse", async () => {
+    replies({ reply: "Here are 2.", actions: [{ type: "write_problems", problems: ["5 \\bmod 3", "2x + 3 = 11"] }] }, { problems: ["5 + 3"] });
+    const body = ChatResponseSchema.parse(await (await chat(request())).json());
+    expect(body.actions).toEqual([{ type: "write_problems", problems: [["5 + 3"], ["2x + 3 = 11"]] }]);
+    const told = String((vi.mocked(chatJsonWithFallback).mock.calls[1][2].messages as ChatMessage[])[1].content);
+    expect(told).toContain("hand cannot write");
+  });
+
+  it("a worksheet's blanks go on in the board's one form; a remainder written in is sent back, told to write the division", async () => {
+    replies({ reply: "Here are 3.", actions: [{ type: "write_problems", problems: ["7 + ? = 12", "\\frac{3}{4} \\; ? \\; \\frac{5}{8}", "17 \\div 5 = 3 R 2"] }] }, { problems: ["17 \\div 5"] });
+    const body = ChatResponseSchema.parse(await (await chat(request())).json());
+    expect(body.actions).toEqual([{ type: "write_problems", problems: [["7 + \\square = 12"], ["\\frac{3}{4} \\bigcirc \\frac{5}{8}"], ["17 \\div 5"]] }]);
+    const told = String((vi.mocked(chatJsonWithFallback).mock.calls[1][2].messages as ChatMessage[])[1].content);
+    expect(told).toContain("remainder");
+  });
+
+  it("money with its dollar sign is maths, not a `$` delimiter: kept, checked and written", async () => {
+    replies({ reply: "Here are 2.", actions: [{ type: "write_problems", problems: ["\\$3.25 + \\$1.50", "$4 \\times 2$"] }] });
+    const body = ChatResponseSchema.parse(await (await chat(request())).json());
+    expect(body.actions).toEqual([{ type: "write_problems", problems: [["\\$3.25 + \\$1.50"], ["4 \\times 2"]] }]);
+    expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
+  });
+
   it("a repair the route's time does not allow is not started: left out as it was, and an event `budget`", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.mocked(chatJsonWithFallback).mockImplementationOnce(async () => {

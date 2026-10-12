@@ -171,6 +171,20 @@ describe("privacy: who gets what", () => {
     expect(privacy).toContain("Read aloud’s voice when ElevenLabs is not available");
   });
 
+  it("says Ask's microphone sends the child's recording through our server to ElevenLabs, never stored, and the browser's recognizer otherwise", () => {
+    // what you give us, the ElevenLabs row and the browser's row
+    expect(privacy).toContain("Your voice, when you use Ask’s microphone:");
+    expect(privacy).toContain("The recording goes through our server to ElevenLabs, which turns it into words for your message. We never store the recording");
+    expect(privacy).toContain("Turns what you say to Ask’s microphone into words (speech-to-text).");
+    expect(privacy).toContain("For Ask’s microphone: the recording of what you said, sent through our server without your name or email address, to get the words back; we never store the recording.");
+    expect(privacy).toContain("the recognizer for Ask’s microphone and lecture mode when ElevenLabs is not available");
+    expect(privacy).toContain("some browsers send the audio to their maker (for example Google, for Chrome)");
+    // the children's notice
+    expect(privacy).toContain("what they say to Ask’s microphone (turned into words by ElevenLabs; the recording is never stored)");
+    // still the version sign-up records: the page changed on the same unreleased branch
+    expect(TERMS_VERSION).toBe("2026-10-11");
+  });
+
   it("names the maker of every AI model the code can call", () => {
     const MAKERS: Record<string, string> = { google: "Google", openai: "OpenAI", anthropic: "Anthropic", deepseek: "DeepSeek" };
     const prefixes = new Set([...Object.values(LIVE_MODELS), ...Object.values(TEXT_MODELS)].map((id) => id.split("/")[0]));

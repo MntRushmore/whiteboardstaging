@@ -50,8 +50,11 @@
  *  - A line built on a ringed line's numbers (`70 + 54 = 124` under a ringed `8 \times 7 = 54`) was
  *    carried on from that slip: no mark of its own.
  *
- * Null when the problem or the line is not plain arithmetic this reads (letters, roots, units, a
- * line ending in `=` asking for its answer): the column's own rules judge it then.
+ * Money and percents are read as numbers (`\$3.25` is 3.25, `25\%` is 0.25: `tidyArithmetic`), and a
+ * square root that comes out exact (`\sqrt{16}`) as its value, a step on the way like any other.
+ *
+ * Null when the problem or the line is not plain arithmetic this reads (letters, other roots, units,
+ * a line ending in `=` asking for its answer): the column's own rules judge it then.
  */
 import {
   add,
@@ -502,7 +505,7 @@ interface Sinks {
 /** The tree's operations of two values each, worked as `strategies` says (outermost last). */
 function walkStrategies(n: Node, writing: Writing, s: Sinks): void {
   if (n.t === "num") return;
-  if (n.t === "neg") return walkStrategies(n.arg, writing, s);
+  if (n.t === "neg" || n.t === "root") return walkStrategies(n.arg, writing, s);
   if (n.t === "over") {
     walkStrategies(n.top, writing, s);
     walkStrategies(n.bottom, writing, s);
@@ -581,15 +584,22 @@ function readProblemLine(line: string): Problem | null {
   // a lone number to simplify or convert (`\frac{6}{8}`, `2\frac{1}{3}`): its own pieces
   if (tree.t === "num") strategies("+", answer, q(0)!, writing, k, () => undefined, r, den);
   for (const v of partials) knowns.add(v);
+  // a percent's own number alone (`25` under `25\% \times 80`) is the percent copied down, never a
+  // result on the way (100 × 0.25 is one, by chance): a wrong answer
+  for (const m of side.matchAll(/(\d+(?:\.\d+)?)\s*\\?%/g)) {
+    const copied = parseArithmetic(m[1]);
+    if (copied) partials.delete(key(valueOf(copied)));
+  }
   const ops = opsIn(tree);
   const division = tree.t === "op" && tree.op === "÷" && isWhole(valueOf(tree.left)) && isWhole(valueOf(tree.right)) && valueOf(tree.right).n > 0 ? { a: valueOf(tree.left).n, b: valueOf(tree.right).n } : null;
   return {
     squashed: squash(side),
     answer,
-    mixed: (ops.has("+") || ops.has("-")) && (ops.has("×") || ops.has("÷") || ops.has("^")),
+    mixed: (ops.has("+") || ops.has("-")) && (ops.has("×") || ops.has("÷") || ops.has("^") || ops.has("√")),
     negative: /-/.test(tidyArithmetic(side).replace(/(?<=[\d)}\]])\s*-/g, "")),
     division,
-    decimals: /\d\.\d|(?<!\d)\.\d/.test(side),
+    // read tidied: a percent is a decimal (`25\%` is 0.25)
+    decimals: /\d\.\d|(?<!\d)\.\d/.test(tidyArithmetic(side)),
     knowns,
     partials,
     results,

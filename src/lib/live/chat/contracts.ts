@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { FigureSpecSchema } from "../figureDraw/contracts";
 import { LearnerHintSchema } from "@/lib/learning/hint";
+import { CHAT_LIMITS } from "./limits";
 
 /**
  * The board chat (POST /api/live/chat): a student or teacher types a request — "5 two-step
@@ -16,38 +17,7 @@ import { LearnerHintSchema } from "@/lib/learning/hint";
  * a time (`LiveController.runChatActions`).
  */
 
-export const CHAT_LIMITS = {
-  /** the typed request */
-  message: 500,
-  /** recent turns sent with it (both sides) */
-  turns: 6,
-  turnText: 400,
-  /** lines of the screen picture, each side */
-  screenLines: 24,
-  lineLatex: 300,
-  /** actions per reply (more are dropped) */
-  actions: 6,
-  /** problems in one `write_problems` */
-  problems: 12,
-  /** lines of one problem (a system of equations is one problem of 2–3 lines) */
-  problemLines: 3,
-  /** lines of one `write_lines` */
-  lines: 8,
-  /** relations of one `graph` (a system is two or three) */
-  relations: 3,
-  reply: 280,
-  /** a `write_proof`'s Given statements, and one statement's length */
-  proofGivens: 4,
-  proofStatement: 200,
-  /** the end of a screen's lecture transcript sent with a request */
-  lecture: 3000,
-  /** a worked solution (`teach`): its steps, a step's sentence (asked for in ~90), a step's maths lines */
-  teachSteps: 8,
-  teachSay: 140,
-  teachLines: 6,
-  /** the problem the student typed earlier, sent when it has left the recent turns */
-  problem: 600,
-} as const;
+export { CHAT_LIMITS, noProblemNote } from "./limits";
 
 /**
  * Plain words as the hand writes them: letters, digits, spaces and everyday punctuation (the maths
@@ -63,13 +33,16 @@ export function plainWords(max: number, min = 1) {
     .refine((s) => !/[\\$<>{}\n\r\t]/.test(s), { message: "plain words only" });
 }
 
-/** LaTeX as the hand writes it: short, no `$` delimiters, no words (`\text{…}` is refused). */
+/**
+ * LaTeX as the hand writes it: short, no `$` delimiters, no words (`\text{…}` is refused). Money's
+ * dollar sign is maths, written escaped (`\$3.25 + \$1.50`): the hand draws it and the engine reads it.
+ */
 export const ChatLatexSchema = z
   .string()
   .trim()
   .min(1)
   .max(CHAT_LIMITS.lineLatex)
-  .refine((s) => !/\$/.test(s), { message: "no $ delimiters" })
+  .refine((s) => !/(?<!\\)\$/.test(s), { message: "no $ delimiters" })
   .refine((s) => !/\\(?:text[a-z]*|mbox|mathrm\{[A-Za-z]{3,}|operatorname\{[A-Za-z]{5,})/.test(s), { message: "no words on the board" });
 
 // ------------------------------------------------------------------ request
@@ -145,17 +118,107 @@ export const ChatWindowSchema = z
 export type ChatWindow = z.infer<typeof ChatWindowSchema>;
 
 /** One relation or a system: `y = x^{2}`, `y < 2x + 1`, `x^{2} + y^{2} = 25`, two lines. */
+/**
+ * The problem a drawing goes with, by its number on this screen ("draw problem 2", "show me 3 on
+ * a number line"): the drawing is placed beside that problem, on THIS screen, shrunk to fit before
+ * a new screen is ever started (docs/ASK-V2.md, "Drawing"). Absent: anywhere free on this screen.
+ */
+export const NearProblemSchema = z.number().int().min(1).max(999).optional();
+
 export const GraphActionSchema = z.object({
   type: z.literal("graph"),
   relations: z.array(ChatLatexSchema).min(1).max(CHAT_LIMITS.relations),
   window: ChatWindowSchema.optional(),
+  near: NearProblemSchema,
 });
 
 /** A geometry figure, true to scale (`src/lib/live/figureDraw/contracts.ts`). */
 export const DrawFigureSchema = z.object({
   type: z.literal("draw_figure"),
   figure: FigureSpecSchema,
+  near: NearProblemSchema,
 });
+
+// ------------------------------------------------------------------ visual models (Ask)
+
+/**
+ * A short label on a visual model: a number or a little maths (`\frac{3}{4}`, `12`, `?`, `x`), or
+ * a word or two as a teacher writes one on a bar model ("apples", "Sam"). One line.
+ */
+export const ModelLabelSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(24)
+  .refine((s) => !/[\n\r\t$<>{}]/.test(s.replace(/\\frac\{\d+\}\{\d+\}/g, "")), { message: "a short label" });
+
+const count = (max: number, min = 0) => z.number().int().min(min).max(max);
+
+/**
+ * A K–8 visual model the tutor draws to show a problem (docs/ASK-V2.md, "Drawing"). The model says
+ * WHAT to draw; the board's own planners lay it out and do every bit of arithmetic in it (partial
+ * products, jump ends, shaded counts), so a picture can never show wrong maths. Drawn in the tutor's
+ * hand at writing pace, clean and to scale, with light fills for shaded parts.
+ */
+export const VisualModelSchema = z.discriminatedUnion("kind", [
+  /** a number line from..to, ticks every `step`, points marked, and jumps (arcs) between values */
+  z.object({
+    kind: z.literal("number_line"),
+    from: z.number().finite(),
+    to: z.number().finite(),
+    step: z.number().positive().finite().optional(),
+    marks: z.array(z.object({ at: z.number().finite(), label: ModelLabelSchema.optional() })).max(12).default([]),
+    jumps: z.array(z.object({ from: z.number().finite(), to: z.number().finite(), label: ModelLabelSchema.optional() })).max(12).default([]),
+  }),
+  /** 1–4 fraction bars stacked to compare: each split into `parts`, `shaded` of them filled */
+  z.object({
+    kind: z.literal("fraction_bars"),
+    bars: z.array(z.object({ parts: count(24, 1), shaded: count(24), label: ModelLabelSchema.optional() })).min(1).max(4),
+  }),
+  /** 1–4 fraction circles side by side */
+  z.object({
+    kind: z.literal("fraction_circles"),
+    circles: z.array(z.object({ parts: count(16, 1), shaded: count(16), label: ModelLabelSchema.optional() })).min(1).max(4),
+  }),
+  /** rows × columns of dots (multiplication as an array) */
+  z.object({ kind: z.literal("array"), rows: count(12, 1), cols: count(12, 1), label: ModelLabelSchema.optional() }),
+  /** `groups` circles with `each` dots in every one (equal groups: multiplication and sharing) */
+  z.object({ kind: z.literal("equal_groups"), groups: count(10, 1), each: count(12), label: ModelLabelSchema.optional() }),
+  /** an area model for a × b, split by place value; the board works out every partial product */
+  z.object({ kind: z.literal("area_model"), a: count(9999, 1), b: count(9999, 1) }),
+  /** base-ten blocks for a whole number: hundreds flats, tens rods, ones cubes */
+  z.object({ kind: z.literal("base_ten"), value: count(999) }),
+  /** a place-value chart for a number (whole or with up to 3 decimal places) */
+  z.object({ kind: z.literal("place_value"), value: z.number().finite().min(0).max(9_999_999) }),
+  /** a bar (tape) model: 1–2 rows of labelled segments, lengths in `units`, with an optional total bracket */
+  z.object({
+    kind: z.literal("tape"),
+    rows: z
+      .array(
+        z.object({
+          label: ModelLabelSchema.optional(),
+          segments: z.array(z.object({ units: z.number().positive().max(1000), label: ModelLabelSchema.optional() })).min(1).max(10),
+        }),
+      )
+      .min(1)
+      .max(2),
+    total: ModelLabelSchema.optional(),
+  }),
+  /** one or two ten frames with `filled` counters */
+  z.object({ kind: z.literal("ten_frame"), filled: count(20) }),
+  /** an analogue clock showing hour:minute */
+  z.object({ kind: z.literal("clock"), hour: count(12, 1), minute: count(59) }),
+]);
+export type VisualModel = z.infer<typeof VisualModelSchema>;
+export type VisualModelKind = VisualModel["kind"];
+
+/** Draw a visual model on this screen, beside problem `near` when given (Ask only). */
+export const DrawModelSchema = z.object({
+  type: z.literal("draw_model"),
+  model: VisualModelSchema,
+  near: NearProblemSchema,
+});
+export type DrawModelAction = z.infer<typeof DrawModelSchema>;
 
 export const NewScreenSchema = z.object({ type: z.literal("new_screen") });
 /** Erase the tutor's ink on this screen (its writing, marks, graphs, figures). */
@@ -171,6 +234,18 @@ export const ClearTutorSchema = z.object({ type: z.literal("clear_tutor") });
 export const HelpProblemSchema = z.object({
   type: z.literal("help_problem"),
   problem: z.number().int().min(1).max(999),
+  depth: z.enum(["step", "solve"]),
+});
+
+/**
+ * Help with the student's OWN work on this screen (a problem they wrote, not one the chat wrote):
+ * exactly what the board's Help me (`step`) and Solve it (`solve`) buttons do
+ * (`LiveController.requestHelp`), so "is this right?", "help me with this" and "what's next?" work
+ * on anything the student is solving. Ask (docs/ASK-V2.md) uses it; a screen with nothing of the
+ * student's to help with gets a note instead.
+ */
+export const HelpBoardSchema = z.object({
+  type: z.literal("help_board"),
   depth: z.enum(["step", "solve"]),
 });
 
@@ -234,20 +309,18 @@ export const ChatActionSchema = z.discriminatedUnion("type", [
   WriteLinesSchema,
   GraphActionSchema,
   DrawFigureSchema,
+  DrawModelSchema,
   NewScreenSchema,
   ClearTutorSchema,
   HelpProblemSchema,
+  HelpBoardSchema,
   WriteProofSchema,
   TeachSchema,
 ]);
 export type ChatAction = z.infer<typeof ChatActionSchema>;
 export type ChatActionType = ChatAction["type"];
-export const CHAT_ACTION_TYPES = ["write_problems", "write_lines", "graph", "draw_figure", "new_screen", "clear_tutor", "help_problem", "write_proof", "teach"] as const satisfies readonly ChatActionType[];
+export const CHAT_ACTION_TYPES = ["write_problems", "write_lines", "graph", "draw_figure", "draw_model", "new_screen", "clear_tutor", "help_problem", "help_board", "write_proof", "teach"] as const satisfies readonly ChatActionType[];
 
-/** The note for help asked about a problem that is not on this screen (the route's, and the board's). */
-export function noProblemNote(n: number): string {
-  return `There's no problem ${n} on this screen.`;
-}
 
 // ------------------------------------------------------------------ response
 

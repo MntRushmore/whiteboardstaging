@@ -12,3 +12,9 @@ export const CHAT_BUTTON_COPY = {
 
 /** A marker the board page gives the Ask button: Esc there closes the panel too. */
 export const CHAT_TOGGLE_ATTR = "data-chat-toggle";
+
+/**
+ * The bar's Ask button's height: the bar's 32 px with a mouse on a wide screen, a finger's 44 px on
+ * a touch screen or a phone (`size="sm"` alone made it 75×32 there).
+ */
+export const CHAT_BUTTON_SIZE = "max-sm:h-11 pointer-coarse:h-11";

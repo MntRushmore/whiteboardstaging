@@ -448,3 +448,22 @@
   flex: none;
   margin-top: 1px;
 }
+
+/* What Ask remembers about a kid (AskMemoryDialog) */
+.memoryNotes {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.memoryEmpty,
+.memoryUpdated {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.memoryUpdated {
+  font-size: var(--text-xs);
+}

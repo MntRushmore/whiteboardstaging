@@ -27,6 +27,7 @@ import {
   isLiveMeta,
   type Annotation,
   type CapabilitiesResponse,
+  type ChatScreenChange,
   type CheckLine,
   type CheckRequest,
   type GraphIntent,
@@ -163,7 +164,7 @@ import {
   type ProblemState,
 } from "./chat/work";
 import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
-import { CHAT_LINE_ID, ChatDesk, type ChatHost } from "./chat/desk";
+import { CHAT_LINE_ID, ChatDesk, type ChatHost, type HelpBoardResult } from "./chat/desk";
 // lecture mode's desk (and its planners) is loaded the first time a lecture needs it (`lectureDesk`)
 import type { LectureDesk, LectureHost, LecturePlanners, LectureRunOptions, LoadLecturePlanners } from "./lecture/desk";
 import type { LectureAction, LecturePageMeta, LectureRunReport, LectureScreen, LectureSpecMeta } from "./lecture/contracts";
@@ -191,6 +192,8 @@ export interface LiveEditorLike {
   getViewportPageBounds(): Box;
   /** the board's current screen lives in its page meta (optional: test editors have no pages) */
   getCurrentPage?(): TLPage;
+  /** the board's screens in order (Ask's "Screen 2"); optional: test editors have no pages */
+  getPages?(): TLPage[];
   createShapes(shapes: TLShapePartial[]): unknown;
   updateShapes(shapes: TLShapePartial[]): unknown;
   deleteShapes(ids: TLShapeId[]): unknown;
@@ -353,6 +356,12 @@ const HELP_READ_WAIT_MS = LIVE_TIMING.recognizeTimeoutMs + 1_000;
 
 /** Recognition failures that leave a chip under the ink (the pill carries the rest). */
 const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
+
+/**
+ * A screen's id as Ask's contract takes it (`AskScreenIdSchema`, src/lib/live/ask/contracts.ts: a
+ * copy, so the board's first load never pulls in Ask's contract).
+ */
+const CHAT_SCREEN_ID = /^page:[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * A read that failed the way a blip fails (it timed out, or the server answered 5xx) is tried once
@@ -939,6 +948,16 @@ export class LiveLoop implements LiveController {
   private touchedProblem: string | null = null;
   /** the screen the loop last took in (`start` / `switchScreen`): the chat writes only once it is this one */
   private screenSeen: string | null = null;
+  /** Ask's chat per screen: who hears the board come to another screen (`onChatScreenChange`) */
+  private readonly chatScreenListeners = new Set<(screenId: string, how: ChatScreenChange) => void>();
+  /**
+   * Screens the tutor's own actions started (the chat's `addScreen`), not yet announced: the move to
+   * one is the tutor's (`ChatScreenChange.tutor`). Taken out when announced, so the student coming
+   * back to it later is the student's move.
+   */
+  private readonly tutorScreens = new Set<string>();
+  /** the tutor's screen being made right now (the chat's `addScreen`), and whether its move was heard yet */
+  private addingScreen: { announced: string | null } | null = null;
 
   /**
    * lecture mode's hand: the director's actions, one block at a time (`src/lib/live/lecture/desk.ts`),
@@ -1063,6 +1082,7 @@ export class LiveLoop implements LiveController {
     this.deps.events?.removeEventListener("offline", this.onOffline);
     this.deps.events?.removeEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
     this.resetRuntime();
+    this.tutorScreens.clear();
     // what lecture mode heard since the last write is saved with the board, not lost with the loop
     this.flushPageMeta();
     if (liveStore.retryHandler.get() === this.retryHandler) liveStore.retryHandler.set(null);
@@ -1161,10 +1181,34 @@ export class LiveLoop implements LiveController {
       if (to.typeName !== "instance" || from.typeName !== "instance") continue;
       if (from.currentPageId !== to.currentPageId) {
         this.switchScreen();
+        this.announceScreen(to.currentPageId);
         return;
       }
     }
     if (picked) this.publishHelpTarget();
+  }
+
+  /**
+   * Ask's chat per screen hears that the board is on another screen (`onChatScreenChange`), and
+   * whether the tutor's own actions started it. A listener that throws never stops the others.
+   */
+  private announceScreen(screenId: string): void {
+    let tutor: boolean;
+    if (this.addingScreen) {
+      // heard while the tutor's screen is being made
+      this.addingScreen.announced = screenId;
+      tutor = true;
+    } else {
+      tutor = this.tutorScreens.delete(screenId);
+    }
+    const how: ChatScreenChange = { tutor };
+    for (const cb of [...this.chatScreenListeners]) {
+      try {
+        cb(screenId, how);
+      } catch (err) {
+        console.warn("[live] a chat screen listener failed", err);
+      }
+    }
   }
 
   /**
@@ -3351,7 +3395,16 @@ export class LiveLoop implements LiveController {
       above: arithmetic ? this.workAbove(state) : [],
       beside: arithmetic ? this.answerBeside(state) : null,
       slip: this.slipAbove(state),
+      // only asked under a line asking for its value (`judgeLine`): the `3` of `x =` read apart is no answer
+      given: !arithmetic && Boolean(ctx.previous?.substituted) && this.givesValue(state),
     });
+  }
+
+  /** `state` is (part of) a value its column gives a letter (`givens.ts`: `x = 3`, or the `3` of `x =` read apart). */
+  private givesValue(state: LiveLineState): boolean {
+    const col = this.columnLines(state.line.column);
+    const index = col.findIndex((s) => s.line.id === state.line.id);
+    return index !== -1 && this.columnGivens(col).some((g) => g.lines.includes(index));
   }
 
   /** The student's lines above `state` in its column, as read: the working so far (a stacked sum is a problem of its own). */
@@ -6289,12 +6342,26 @@ export class LiveLoop implements LiveController {
       addScreen: () => {
         const ed = this.editor as unknown as Partial<ScreensEditor>;
         if (typeof ed.getPages !== "function" || typeof ed.createPage !== "function" || typeof ed.setCurrentPage !== "function" || typeof ed.run !== "function") return false;
-        return addScreen(ed as ScreensEditor);
+        // The tutor's own new screen: Ask's exchange that asked for it goes with it (`announceScreen`).
+        // The store tells its listeners on the next frame (at once in tests, or when something
+        // flushes it early), so the move is marked both while it is made and after.
+        const adding: { announced: string | null } = { announced: null };
+        this.addingScreen = adding;
+        let added = false;
+        try {
+          added = addScreen(ed as ScreensEditor);
+        } finally {
+          this.addingScreen = null;
+        }
+        const made = this.pageKey();
+        if (added && adding.announced !== made) this.tutorScreens.add(made);
+        return added;
       },
       screenReady: () => !this.started || this.screenSeen === this.pageKey(),
       clearTutor: () => this.clearMarks(),
       problemsChanged: () => this.refreshProblemColumns(),
       helpProblem: (n, depth) => this.chatHelp(n, depth),
+      helpBoard: (depth) => this.chatHelpBoard(depth),
       planFigure: (spec, opts) => this.deps.planFigure(spec, opts),
       seed: (key) => handSeedFor(key),
       delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
@@ -6451,6 +6518,47 @@ export class LiveLoop implements LiveController {
   /** The current screen as maths, for a chat request: what "more like these" refers to. */
   chatScreen(): ChatScreen {
     return this.chat.picture();
+  }
+
+  /**
+   * Ask's chat per screen (docs/ASK-V2.md): the current screen's id, its tldraw page id, or null on
+   * an editor without pages (or an id Ask's contract would refuse: `AskScreenIdSchema`).
+   */
+  chatScreenId(): string | null {
+    const id = this.editor.getCurrentPage?.()?.id;
+    return typeof id === "string" && CHAT_SCREEN_ID.test(id) ? id : null;
+  }
+
+  /** The current screen's place on the board, from 1 (the pages' order), or null without pages. */
+  chatScreenIndex(): number | null {
+    const id = this.editor.getCurrentPage?.()?.id;
+    const at = id ? (this.editor.getPages?.() ?? []).findIndex((p) => p.id === id) : -1;
+    return at >= 0 ? at + 1 : null;
+  }
+
+  /**
+   * Hears the board come to another screen: the student moving (the strip, a deleted screen) or the
+   * tutor's own actions starting one (`how.tutor`). Answers the unsubscribe.
+   */
+  onChatScreenChange(cb: (screenId: string, how: ChatScreenChange) => void): () => void {
+    const entry = (screenId: string, how: ChatScreenChange) => cb(screenId, how);
+    this.chatScreenListeners.add(entry);
+    return () => {
+      this.chatScreenListeners.delete(entry);
+    };
+  }
+
+  /**
+   * Ask (docs/ASK-V2.md): a picture of the current screen, sent with `chatScreen` when the screen
+   * holds something its LaTeX cannot say (`askImageWanted`: the student's ink, a drawing, a photo, a
+   * PDF page). Null for an empty screen or one with only the tutor's problems on it, which saves the
+   * student about half a second, and null when no picture came in time. Its code (the policy too)
+   * loads on first use, never with the board: this stays a few bytes of the board's first load.
+   */
+  chatImage(): Promise<string | null> {
+    // an empty screen needs no picture, nor the code that makes one
+    if (this.editor.getCurrentPageShapes().length === 0) return Promise.resolve(null);
+    return import("./ask/boardImage").then((m) => m.askImage(this.editor as Editor), () => null);
   }
 
   /**
@@ -7736,6 +7844,109 @@ export class LiveLoop implements LiveController {
     if (!built) return "busy";
     this.solveBuilt(built, fromLineId, opts);
     return "writing";
+  }
+
+  /**
+   * Ask's "is this right?", "help me with this", "what's next?", "solve it" on the student's OWN
+   * work (`help_board`, `ChatDesk.helpBoard`): what the board's Help me (`step`) and Solve it
+   * (`solve`) do (`helpNow`) on the same target — a proof, the drawing touched last, the line written
+   * in (or picked) last, else the chat's problem the student is on — with the depth asked for, not
+   * the dial's: a typed ask is answered whatever the dial says, Off included (as `chatHelp`). The
+   * ask is an ask (`noteAsked`): with Auto off its problem gets its marks first, as the button's
+   * does. `reading` while the line it is about is still being read: the desk asks again when the
+   * read lands, as the button waits for it (`helpAfterRead`).
+   */
+  private chatHelpBoard(depth: ProblemDepth): HelpBoardResult {
+    if (!this.started) return "busy";
+    // nothing is read with the tutor switched off: there is no work of theirs it can see
+    if (!this.opts.enabled) return "off";
+    const lineTarget = this.helpTargetLine();
+    if (lineTarget && this.reading.has(lineTarget.line.id)) return "reading";
+    this.noteAsked();
+    liveStore.askedAt.set(this.deps.now());
+    const result = this.helpBoardNow(depth, lineTarget);
+    // the outline is around what the ask acts on, as for the button
+    this.publishHelpTarget();
+    return result;
+  }
+
+  /** `helpNow`, with the depth asked for: see `chatHelpBoard`. */
+  private helpBoardNow(depth: ProblemDepth, lineTarget: LiveLineState | undefined): HelpBoardResult {
+    const all = depth === "solve";
+    if (this.proofs.ask(lineTarget?.line.id ?? null, this.helpTargetDiagram(), { all })) return "writing";
+    const figure = this.helpTargetDiagram();
+    if (figure) {
+      this.askAboutDrawing(figure, { lineId: figure.id, onlyFirstStep: !all });
+      return "writing";
+    }
+    const target = this.askedLine(lineTarget);
+    // the chat's problems, as `helpWithProblem`: the current one — after a right answer, the next one
+    const answered = this.onAnsweredProblem(target);
+    if (answered || !this.actsOn(target)) {
+      const pick = this.problemPick(depth);
+      if (pick && pick.kind !== "none") {
+        if (pick.kind === "busy") return "busy";
+        if (target && needsLook(target)) this.syncMark(target, "question", unjudgedReason(target) ?? "unread");
+        // "chat": this ask is the chat's own run (the desk is busy with it)
+        if (pick.kind === "tutor") return this.workProblem(pick.cell, depth, "chat");
+        const work = this.workUnder(pick.cell);
+        if (work) return this.helpBoardLine(work, depth);
+      }
+    }
+    if (!target || answered) return "nothing";
+    if (needsLook(target)) {
+      // ink it cannot read as maths: the board's "?" (write it again), not a guess at it
+      this.syncMark(target, "question", unjudgedReason(target) ?? "unread");
+      return "unread";
+    }
+    return this.helpBoardLine(target, depth);
+  }
+
+  /** One line of the student's: Solve it as `solveTarget` works it, Help me as `escalate` does — whatever the dial says. */
+  private helpBoardLine(target: LiveLineState, depth: ProblemDepth): HelpBoardResult {
+    if (target.analysis?.solved) return "done";
+    const lineId = target.line.id;
+    const column = target.line.column;
+    if (depth === "solve") {
+      if (this.stackLike(target)) {
+        this.solveStack(target);
+        return "writing";
+      }
+      // a line the student ended with `=`, finished where they left off (in Solve, as the button does)
+      if (this.answerLineNow(target)) return "writing";
+      if (this.continueOperation(target, { all: true })) return "writing";
+      const lastOk = this.columnLines(column)
+        .filter((s) => s.latex && !isOperationLine(s))
+        .reverse()
+        .find((s) => s.analysis?.verdict === "ok" || s.analysis?.solved);
+      return this.solveColumnFor(column, lastOk?.line.id ?? lineId, { lineId });
+    }
+    this.closeHintsFor(lineId);
+    if (this.stackLike(target)) {
+      this.helpStack(target);
+      return "writing";
+    }
+    const wrong = target.analysis?.verdict === "mismatch" || this.modelFlagged(target);
+    if (wrong) {
+      if (this.suggestNextStep(lineId, { now: true, typed: true })) return "writing";
+      const good = this.lastGoodLineAbove(target);
+      if (good) return this.solveColumnFor(column, good.line.id, { onlyFirstStep: true, lineId: good.line.id });
+    }
+    if (this.continueOperation(target, { all: false })) return "writing";
+    if (this.writeNextStep(target)) return "writing";
+    const graphBefore = this.graphWriter;
+    if (this.syncGraph(column, { asked: true, anchorLineId: lineId })) {
+      if (this.graphWriter && this.graphWriter !== graphBefore) this.learnHint(lineId);
+      return "writing";
+    }
+    return this.solveColumnFor(column, lineId, { onlyFirstStep: true, lineId });
+  }
+
+  /** `solveColumn`, saying so when the engine found nothing left to write (`done`). */
+  private solveColumnFor(column: number, fromLineId: string | undefined, opts: SolveOpts): "writing" | "busy" | "done" {
+    const built = this.buildCheckLines(column);
+    if (!built) return "busy";
+    return this.solveBuilt(built, fromLineId, opts) === "nothing" ? "done" : "writing";
   }
 
   dismissHint(hintId: string): void {
