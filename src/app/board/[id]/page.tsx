@@ -200,12 +200,17 @@ const hugeIconsOverrides: TLUiOverrides = {
   },
 };
 
-// Live's tool overrides (Math tool, kbd "m") layered on top of the icon overrides above.
+// Live's tool overrides (Math tool, kbd "m") layered on top of the icon overrides above. The text
+// tool is taken off the board (its toolbar button and its "t" shortcut): typed text boxes are
+// invisible to the tutor, which reads handwriting, so a kid who types an answer gets no help.
 const boardOverrides: TLUiOverrides = {
   ...hugeIconsOverrides,
   tools(editor, tools, helpers) {
     const withIcons = hugeIconsOverrides.tools ? hugeIconsOverrides.tools(editor, tools, helpers) : tools;
-    return liveUiOverrides.tools ? liveUiOverrides.tools(editor, withIcons, helpers) : withIcons;
+    const all = liveUiOverrides.tools ? liveUiOverrides.tools(editor, withIcons, helpers) : withIcons;
+    const rest = { ...all };
+    delete rest.text;
+    return rest;
   },
 };
 
