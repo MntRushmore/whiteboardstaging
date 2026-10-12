@@ -3,20 +3,26 @@ import { getLiveModels } from "@/lib/env";
 import { ASK_BOARD_OPEN, ASK_EVENTS, AskBoardBlockSchema, AskRequestSchema, type AskErrorEvent } from "@/lib/live/ask/contracts";
 import { AskStreamSplitter } from "@/lib/live/ask/splitter";
 import type { ChatAction } from "@/lib/live/chat/contracts";
+import { learnerScrubber } from "@/lib/server/ask/nameScrub";
 import { EMPTY_ASK_CONTEXT, loadAskContext, rememberFromTurn, saveAskTurns, type AskStoreCaller } from "@/lib/server/ask/store";
-import { keepExplanation } from "@/lib/server/askReply";
+import { explains, keepExplanation } from "@/lib/server/askReply";
 import { enforceInk } from "@/lib/server/billing";
 import { chatGate } from "@/lib/server/chatGate";
 import { livePreamble, runChargedStream, withRequestId } from "@/lib/server/live-route";
 import { CreditsExhaustedError, streamWithFallback, UpstreamError, WatchdogTimeoutError } from "@/lib/server/openrouter";
-import { ASK_MAX_TOKENS, askReasoningFor, buildAskMessages, cleanAskReply } from "@/lib/server/prompts/ask";
+import { ASK_MAX_TOKENS, askReasoningFor, buildAskMessages, cleanAskReply, scrubAskRequest } from "@/lib/server/prompts/ask";
 import { actionTypes, type DroppedAction } from "@/lib/server/prompts/chat";
 import { PROVIDER_UNAVAILABLE_MESSAGE, recordRouteEvent } from "@/lib/server/request";
 import { repairJsonEscapes, sseResponse } from "@/lib/server/sse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+/**
+ * Room past ASK_BUDGET_MS for what runs after the response: `after()` (the memory model, up to two
+ * MEMORY_ATTEMPT_MS attempts, then its write) shares the function's time, and at 60 s a long
+ * answer's 50 s plus saving left it too little. The stream's own budget is unchanged.
+ */
+export const maxDuration = 90;
 
 /**
  * The primary's first words. Haiku 5.5 streamed its first in 0.75 s on 2026-10-11 (GPT-5.4 mini in
@@ -31,9 +37,10 @@ const ASK_FALLBACK_WATCHDOG_MS = 10_000;
  */
 const ASK_STREAM_MS = 40_000;
 /**
- * Everything the route does ends this long after it started (maxDuration 60): the stream, then the
- * gates' repairs (`chatGate` starts none without enough left), then saving the turn. A model that
- * never finishes fails with an event and a refund, not a silent kill by the platform.
+ * Everything the response does ends this long after the route started: the stream, then the gates'
+ * repairs (`chatGate` starts none without enough left), then saving the turn. A model that never
+ * finishes fails with an event and a refund, not a silent kill by the platform. The rest of
+ * maxDuration (90) is the memory update's, in `after()`.
  */
 const ASK_BUDGET_MS = 50_000;
 /** An answer that was only a board block (the panel still says something). */
@@ -102,11 +109,16 @@ const kinds = (actions: readonly ChatAction[]) => [...new Set(actions.map((a) =>
  * none when saving failed (the chat goes on, unsaved). After the response, the memory model reads
  * the exchange (`rememberFromTurn`, with `after()`): it never holds the stream.
  *
+ * No model sees the student's display name: every word of it is taken out of what each one gets
+ * (`learnerScrubber`, `scrubAskRequest`): the answer, the gates' repairs and the memory model.
+ *
  * Charged `live/chat` (3 ink) up front, as the old chat. Out of ink, rate limited, signed out or a
  * bad body are the usual JSON errors, before any stream. Once streaming, a failure is an `error`
- * event and the ink comes back in full (the reply was cut short and nothing is saved); a reply
- * whose every proposed action was dropped is refunded too (`done.refunded`). A student who leaves
- * aborts the model call; nothing is saved, and the ink comes back unless the reply had begun.
+ * event and the ink comes back in full (the reply was cut short and nothing is saved). A reply whose
+ * every proposed action was dropped is refunded (`done.refunded`) only when the gate's failure line
+ * is all that is left of it; an explanation kept above the line keeps the charge, as any answer
+ * does. A student who leaves aborts the model call; nothing is saved, and the ink comes back unless
+ * the reply had begun.
  */
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "ask", "liveChat", AskRequestSchema);
@@ -155,7 +167,11 @@ export async function POST(req: Request) {
       const kept = () => signal.aborted && shown > 0;
       await runChargedStream({ userId: user.id, requestId }, log, kept, async () => {
         const learner = await contextPending;
-        const messages = buildAskMessages(data, { learner });
+        // The display name never reaches a model (the Privacy Policy): every word of it comes out of
+        // all the route sends to ANY model — the answer's, the gates' repairs, the memory model's.
+        const scrub = learnerScrubber(learner);
+        const safe = scrubAskRequest(data, scrub);
+        const messages = buildAskMessages(safe, { learner });
         const splitter = new AskStreamSplitter();
         /** the whole answer as the model wrote it (a few KB): whether a board block was opened at all */
         let answer = "";
@@ -210,7 +226,7 @@ export async function POST(req: Request) {
         const gate = await chatGate(
           raw,
           {
-            request: data,
+            request: safe,
             models: { primary: models.ask, fallback: models.askFallback },
             reasoningFor: askReasoning,
             route: "ask",
@@ -221,6 +237,10 @@ export async function POST(req: Request) {
             log,
             startedAt,
             deadline: startedAt + ASK_BUDGET_MS,
+            // The ink comes back only when the failure line is all the student sees: a real
+            // explanation kept above it was the answer they paid for ("explain X in detail, then
+            // put problem 99 on my board" is not a free answer when problem 99 fails).
+            refundWhen: () => !explains(reply),
           },
           unread,
         );
@@ -252,7 +272,10 @@ export async function POST(req: Request) {
         }
 
         const memory = learner.memory;
-        remember = () => rememberFromTurn(caller, { message: data.message, reply, memory });
+        // scrubbed like the rest (the reply may repeat a name the student typed); the notes as read,
+        // with their row's stamp, so a clear made meanwhile is never undone (compare-and-set)
+        const exchange = { message: safe.message, reply: scrub(reply), memory: memory.map(scrub), memoryAt: learner.memoryAt };
+        remember = () => rememberFromTurn(caller, exchange);
         if (!deferred) void rememberLater();
 
         const ms = Date.now() - startedAt;

@@ -55,6 +55,7 @@ import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rat
 import { eqOf, fakeDb, type FakeDb, type FakeQuery } from "@/lib/server/ask/__tests__/fakeDb";
 
 const BOARD = "b1000000-0000-4000-8000-000000000001";
+const hoursAgoIso = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
 const PARENT = { id: "00000000-0000-4000-8000-000000000001", email: "parent@example.com" };
 const KID = { id: "00000000-0000-4000-8000-000000000002", email: "maya@kids.agathon.app" };
 const OTHER_KID = "00000000-0000-4000-8000-000000000003";
@@ -175,7 +176,7 @@ describe("GET /api/live/ask/history", () => {
       if (q.table === "ask_messages") return { data: [] };
       if (q.table === "profiles") return { data: { display_name: "Maya", grade: 6, course: null } };
       if (q.table === "learner_memory") return { data: null };
-      return { data: [{ skill: "divide_fractions", outcome: "with_help", lines_written: 2 }] };
+      return { data: [{ skill: "divide_fractions", outcome: "with_help", lines_written: 2, board_id: "other-board", started_at: hoursAgoIso(26) }] };
     };
     const body = AskHistoryResponseSchema.parse(await (await history(req(path))).json());
     expect(body.turns).toEqual([]);
@@ -184,6 +185,35 @@ describe("GET /api/live/ask/history", () => {
       chips: ["3 more like last time", "Explain dividing fractions to me", "Quiz me on percents", "Help me with my homework"],
     });
     for (const c of userDb.calls.filter((c) => c.table !== "whiteboards" && c.table !== "ask_messages")) expect(eqOf(c, "user_id")).toBe(PARENT.id);
+  });
+
+  it("'last time' is an earlier session: an attempt on this board, or from the last half hour, is not it", async () => {
+    // e2e QA: "Last time you worked on adding to 10." for a row made 9 s earlier on the same board
+    let attempts: Array<Record<string, unknown>> = [];
+    userAnswer = (q) => {
+      if (q.table === "whiteboards") return { data: { id: BOARD } };
+      if (q.table === "ask_messages") return { data: [] };
+      if (q.table === "profiles") return { data: { display_name: "Maya", grade: 0, course: null } };
+      if (q.table === "learner_memory") return { data: null };
+      return { data: attempts };
+    };
+    // only this session's work (this board 9 s ago; another board 10 minutes ago): the first-time hello
+    attempts = [
+      { skill: "add_within_10", outcome: "first_try", lines_written: 2, board_id: BOARD, started_at: new Date(Date.now() - 9_000).toISOString() },
+      { skill: "add_within_20", outcome: "first_try", lines_written: 2, board_id: "other-board", started_at: new Date(Date.now() - 10 * 60_000).toISOString() },
+    ];
+    const fresh = AskHistoryResponseSchema.parse(await (await history(req(path))).json());
+    expect(fresh.hello?.greeting).toBe("Hi Maya! I'm your tutor. Ask me anything, or write a problem on the board.");
+    expect(fresh.hello?.chips).not.toContain("3 more like last time");
+
+    // an earlier session's skill behind this session's: that one is "last time"
+    attempts = [...attempts, { skill: "times_tables", outcome: "with_help", lines_written: 3, board_id: "older-board", started_at: hoursAgoIso(20) }];
+    const back = AskHistoryResponseSchema.parse(await (await history(req(path))).json());
+    expect(back.hello?.greeting).toBe("Welcome back, Maya! Last time you worked on times tables.");
+    // the same board an hour ago is still this board: never "last time" when it is opened again
+    attempts = [{ skill: "times_tables", outcome: "with_help", lines_written: 3, board_id: BOARD, started_at: hoursAgoIso(1) }];
+    const same = AskHistoryResponseSchema.parse(await (await history(req(path))).json());
+    expect(same.hello?.greeting).toMatch(/^Hi Maya!/);
   });
 
   it("502 when the chat could not be read", async () => {

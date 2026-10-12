@@ -86,7 +86,7 @@ suite("Ask store (live Supabase)", () => {
   it("remembers through the service role, the owner reads and clears; a grown-up's path reads and clears too", async () => {
     askStoreDeps.chatJson = (async () => ({ data: { notes: ["Gets stuck on 7 x 8", "Mom helps at night"] }, model: "fake" })) as unknown as typeof askStoreDeps.chatJson;
     try {
-      await rememberFromTurn(a(), { message: "I always forget 7 x 8", reply: "Try 7 x 4, then double it.", memory: [] });
+      await rememberFromTurn(a(), { message: "I always forget 7 x 8", reply: "Try 7 x 4, then double it.", memory: [], memoryAt: null });
     } finally {
       askStoreDeps.chatJson = real.chatJson;
     }
@@ -105,5 +105,41 @@ suite("Ask store (live Supabase)", () => {
     expect(await deleteLearnerMemory(a())).toBe(true);
     expect(await fetchLearnerMemory(a())).toEqual({ notes: [], updatedAt: null });
     expect(await deleteKidMemory(a().userId)).toBe(true);
+  });
+
+  it("compare-and-set: a clear made while a turn is in flight is never undone, and two turns never clobber each other", async () => {
+    const notesFrom = (notes: string[]) => (async () => ({ data: { notes }, model: "fake" })) as unknown as typeof askStoreDeps.chatJson;
+    const turn = (memory: string[], memoryAt: string | null) => rememberFromTurn(a(), { message: "I always forget 7 x 8 and 6 x 7", reply: "Try 7 x 4, then double it.", memory, memoryAt });
+    try {
+      askStoreDeps.chatJson = notesFrom(["Gets stuck on 7 x 8"]);
+      await turn([], null);
+      // a turn reads the notes (with their stamp)...
+      const read = await loadAskContext(a());
+      expect(read.memory).toEqual(["Gets stuck on 7 x 8"]);
+      expect(typeof read.memoryAt).toBe("string");
+      // ...a grown-up clears them while it is in flight...
+      expect(await deleteLearnerMemory(a())).toBe(true);
+      // ...and the turn's update finds no row with that stamp: nothing comes back
+      askStoreDeps.chatJson = notesFrom(["Gets stuck on 7 x 8", "Gets stuck on 6 x 7"]);
+      await turn(read.memory, read.memoryAt);
+      expect(await fetchLearnerMemory(a())).toEqual({ notes: [], updatedAt: null });
+
+      // two turns read the same row; the first to write wins, the second is skipped
+      askStoreDeps.chatJson = notesFrom(["Gets stuck on 7 x 8"]);
+      await turn([], null);
+      const both = await loadAskContext(a());
+      askStoreDeps.chatJson = notesFrom(["Gets stuck on 7 x 8", "Likes animal word problems"]);
+      await turn(both.memory, both.memoryAt);
+      askStoreDeps.chatJson = notesFrom(["Gets stuck on 7 x 8", "Gets stuck on 6 x 7"]);
+      await turn(both.memory, both.memoryAt);
+      expect((await fetchLearnerMemory(a()))?.notes).toEqual(["Gets stuck on 7 x 8", "Likes animal word problems"]);
+      // a turn that read no row never overwrites the row there now
+      askStoreDeps.chatJson = notesFrom(["Gets stuck on 6 x 7"]);
+      await turn([], null);
+      expect((await fetchLearnerMemory(a()))?.notes).toEqual(["Gets stuck on 7 x 8", "Likes animal word problems"]);
+    } finally {
+      askStoreDeps.chatJson = real.chatJson;
+      await deleteLearnerMemory(a());
+    }
   });
 });

@@ -1,8 +1,11 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { LiveEngine } from "../../contracts";
 import { getEngine } from "../../engine";
 import { chainsOf, checkTeach, linkHolds, matchTemplate, namesOf, normTex, splitRelations, substitute, tokenize, unwritableWords, type TeachInput } from "../teach";
 import { LINEAR_TEACH, OWNER_TEACH } from "./teachFixtures";
+
+// `beforeAll` cold-loads the engine (mathjs, ~2 MB): past the default 10 s hook timeout under load.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 /**
  * The engine's check of a worked solution (`checkTeach`): the owner's circle problem as a textbook

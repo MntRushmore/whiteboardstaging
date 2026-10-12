@@ -3,7 +3,7 @@
  * sentences claiming board work go, and the gate's line about what failed follows.
  */
 import { describe, expect, it } from "vitest";
-import { keepExplanation, MIN_EXPLANATION_CHARS, replySentences } from "@/lib/server/askReply";
+import { explains, keepExplanation, MIN_EXPLANATION_CHARS, replySentences } from "@/lib/server/askReply";
 
 const PROBLEMS_FAILED = "Sorry, I couldn't check those problems, so I didn't write them. Try asking for them another way.";
 const GENERIC = "Sorry, I couldn't do that on the board. Try asking another way.";
@@ -73,5 +73,17 @@ describe("keepExplanation", () => {
         .map((s) => s.text + s.gap)
         .join(""),
     ).toBe(reply);
+  });
+});
+
+describe("explains: whether Ask keeps the charge when the board part failed", () => {
+  it("true when a real explanation stays above the failure line, false when the line is all the student sees", () => {
+    const reply = "To divide fractions, keep the first, change the sign to multiply, and flip the second. I put 5 problems on your board.";
+    expect(explains(reply)).toBe(true);
+    expect(keepExplanation(reply, GENERIC)).not.toBe(GENERIC);
+    for (const short of ["Here you go — check your board!", "Sure thing! Two coming up.", "I wrote three problems for you. I put them on the board.", ""]) {
+      expect(explains(short), short).toBe(false);
+      expect(keepExplanation(short, GENERIC), short).toBe(GENERIC);
+    }
   });
 });

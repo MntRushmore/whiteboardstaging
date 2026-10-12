@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ALGEBRA_PROOF_EXAMPLE,
   buildChatMessages,
@@ -28,6 +28,9 @@ import { verifyProblem } from "@/lib/live/chat/verify";
 import { getEngine } from "@/lib/live/engine";
 import { classifyProblem } from "@/lib/learning/skills";
 import { LearnerHintSchema } from "@/lib/learning/hint";
+
+// The examples' checks cold-load the engine (mathjs, ~2 MB): past the default 5 s under load.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 describe("chat prompt", () => {
   it("names every action and the rules that keep the board to maths", () => {

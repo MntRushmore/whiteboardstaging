@@ -28,6 +28,7 @@ import { serviceClient, userClient } from "@/lib/server/billing";
 import { chatJsonWithFallback } from "@/lib/server/openrouter";
 import { AskMemoryReplySchema, askMemoryReasoning, buildAskMemoryMessages } from "@/lib/server/prompts/askMemory";
 import { cleanMemoryNotes, droppedNotes, MAX_DROPPED_PER_TURN, memoryWorthy, sameNotes } from "./memoryNotes";
+import { nameWords } from "./nameScrub";
 
 export { memoryNoteAllowed } from "./memoryNotes";
 
@@ -257,19 +258,28 @@ export async function readAskHistory(caller: AskStoreCaller, boardId: string): P
  * they worked on lately (`learning_attempts`: up to 5 recent skill names, newest first).
  *
  * `name` is the display name's first word, for the hello's greeting (built here, without a model).
- * The Privacy Policy says AI requests never carry the display name: a prompt must not send it.
+ * The Privacy Policy says AI requests never carry the display name: a prompt must not send it, and
+ * the route scrubs every word of it (`nameWords`) from whatever it sends to any model.
  */
 export interface AskLearnerContext {
   name: string | null;
+  /** every word of the display name (first, middle, last), for the scrubber only: never sent */
+  nameWords: string[];
   /** 0..8 (K–8), null for a high-school course or not chosen */
   grade: number | null;
   /** a high-school course id when chosen (`algebra1`…) */
   course: string | null;
   memory: string[];
+  /**
+   * The memory row's `updated_at` as it was read with `memory` (null: no row, or it could not be
+   * read). `rememberFromTurn` writes only while the row is still that one: a grown-up's clear, or
+   * another turn's write, since the read wins (compare-and-set).
+   */
+  memoryAt: string | null;
   recent: string[];
 }
 
-export const EMPTY_ASK_CONTEXT: AskLearnerContext = { name: null, grade: null, course: null, memory: [], recent: [] };
+export const EMPTY_ASK_CONTEXT: AskLearnerContext = { name: null, nameWords: [], grade: null, course: null, memory: [], memoryAt: null, recent: [] };
 
 /** The display name's first word when it reads as a name ("Maya Lopez" → "Maya"); null for an email, digits or nothing. */
 export function firstName(displayName: unknown): string | null {
@@ -293,7 +303,34 @@ export function recentSkillNames(rows: ReadonlyArray<{ skill?: unknown; outcome?
   return out;
 }
 
-export async function loadAskContext(caller: AskStoreCaller): Promise<AskLearnerContext> {
+/**
+ * The hello's "Last time you worked on…" means an earlier session: an attempt this recent (or on the
+ * board being opened) is this session's, not last time's.
+ */
+export const LAST_SESSION_GAP_MS = 30 * 60_000;
+
+type AttemptRow = { skill?: unknown; outcome?: unknown; lines_written?: unknown; board_id?: unknown; started_at?: unknown };
+
+/**
+ * The attempts of an earlier session than this one: not on `boardId` (the board being opened) and
+ * started at least LAST_SESSION_GAP_MS before `now`. An attempt whose time cannot be read is left out.
+ */
+export function earlierSessionAttempts<T extends AttemptRow>(rows: readonly T[], boardId: string, now: number): T[] {
+  const cutoff = now - LAST_SESSION_GAP_MS;
+  return rows.filter((r) => {
+    if (r.board_id === boardId) return false;
+    const at = typeof r.started_at === "string" ? Date.parse(r.started_at) : Number.NaN;
+    return Number.isFinite(at) && at <= cutoff;
+  });
+}
+
+/**
+ * What the tutor knows about the student (`AskLearnerContext`), read as the student. `lastSession`:
+ * for the hello on a board being opened, `recent` holds only an earlier session's skills
+ * (`earlierSessionAttempts`), so a problem worked on this board a minute ago is not "last time". The
+ * ask route reads every recent skill: what they are working on now is context for the answer.
+ */
+export async function loadAskContext(caller: AskStoreCaller, opts: { lastSession?: { boardId: string; now?: number } } = {}): Promise<AskLearnerContext> {
   try {
     const db = askStoreDeps.user(caller.token);
     const settle = async <T>(what: string, run: () => PromiseLike<{ data: T | null; error: DbError | null }>): Promise<T | null> => {
@@ -313,11 +350,13 @@ export async function loadAskContext(caller: AskStoreCaller): Promise<AskLearner
       settle<{ display_name?: unknown; grade?: unknown; course?: unknown }>("read profile for ask", () =>
         db.from("profiles").select("display_name,grade,course").eq("user_id", caller.userId).abortSignal(timeout()).maybeSingle(),
       ),
-      settle<{ notes?: unknown }>("read learner memory", () => db.from(LEARNER_MEMORY_TABLE).select("notes").eq("user_id", caller.userId).abortSignal(timeout()).maybeSingle()),
-      settle<Array<{ skill?: unknown; outcome?: unknown; lines_written?: unknown }>>("read recent skills for ask", () =>
+      settle<{ notes?: unknown; updated_at?: unknown }>("read learner memory", () =>
+        db.from(LEARNER_MEMORY_TABLE).select("notes,updated_at").eq("user_id", caller.userId).abortSignal(timeout()).maybeSingle(),
+      ),
+      settle<AttemptRow[]>("read recent skills for ask", () =>
         db
           .from("learning_attempts")
-          .select("skill,outcome,lines_written")
+          .select("skill,outcome,lines_written,board_id,started_at")
           .eq("user_id", caller.userId)
           .order("started_at", { ascending: false })
           .limit(RECENT_ATTEMPTS)
@@ -326,12 +365,16 @@ export async function loadAskContext(caller: AskStoreCaller): Promise<AskLearner
     ]);
     const grade = profile?.grade;
     const course = profile?.course;
+    const worked = Array.isArray(attempts) ? attempts : [];
+    const session = opts.lastSession;
     return {
       name: firstName(profile?.display_name),
+      nameWords: nameWords(profile?.display_name),
       grade: isGrade(grade) ? grade : null,
       course: isCourseId(course) ? course : null,
       memory: cleanMemoryNotes(strings(memory?.notes)),
-      recent: recentSkillNames(Array.isArray(attempts) ? attempts : []),
+      memoryAt: typeof memory?.updated_at === "string" ? memory.updated_at : null,
+      recent: recentSkillNames(session ? earlierSessionAttempts(worked, session.boardId, session.now ?? Date.now()) : worked),
     };
   } catch (err) {
     log.warn({ error: errorText(err) }, "load ask context threw");
@@ -347,8 +390,21 @@ export async function loadAskContext(caller: AskStoreCaller): Promise<AskLearner
  * model call for an exchange that cannot teach anything (`memoryWorthy`: "thanks", "ok", "12").
  * Written with the service role only when the cleaned notes changed, and never when one turn would
  * drop more than MAX_DROPPED_PER_TURN of them. Never throws.
+ *
+ * Compare-and-set. The notes were read before the answer (`loadAskContext`: `memory`, and the row's
+ * `updated_at` as `memoryAt`), and the model takes seconds after it. The write lands only while the
+ * row is still the one read: an update where `updated_at` is unchanged, or (no row read) an insert
+ * that does nothing when a row has appeared. A grown-up who clears the notes mid-turn (the row is
+ * gone) or another turn that wrote first (a new `updated_at`) wins, and this turn's notes are
+ * skipped: a clear is never undone by a turn in flight, and two turns never clobber each other.
+ * A memory that could not be read counts as no row, so it never overwrites notes it did not see.
+ *
+ * The message and reply come already scrubbed of the student's name (the route's `learnerScrubber`).
  */
-export async function rememberFromTurn(caller: AskStoreCaller, exchange: { message: string; reply: string; memory: readonly string[] }): Promise<void> {
+export async function rememberFromTurn(
+  caller: AskStoreCaller,
+  exchange: { message: string; reply: string; memory: readonly string[]; memoryAt: string | null },
+): Promise<void> {
   try {
     if (!memoryWorthy(exchange.message, exchange.reply)) return;
     const svc = askStoreDeps.service();
@@ -377,12 +433,20 @@ export async function rememberFromTurn(caller: AskStoreCaller, exchange: { messa
       log.warn({ model, before: prior.length, after: next.length, dropped }, "ask memory not written: the update dropped too many notes");
       return;
     }
-    const { error } = await svc
-      .from(LEARNER_MEMORY_TABLE)
-      .upsert({ user_id: caller.userId, notes: next }, { onConflict: "user_id" })
-      .abortSignal(timeout());
+    const table = svc.from(LEARNER_MEMORY_TABLE);
+    const write =
+      exchange.memoryAt === null
+        ? // no row when read: insert, or nothing when one has appeared since (ON CONFLICT DO NOTHING)
+          table.upsert({ user_id: caller.userId, notes: next }, { onConflict: "user_id", ignoreDuplicates: true })
+        : // the row read: only while its updated_at is unchanged (the trigger sets a new one on every write)
+          table.update({ notes: next }).eq("user_id", caller.userId).eq("updated_at", exchange.memoryAt);
+    const { data: written, error } = await write.select("user_id").abortSignal(timeout());
     if (error) {
       failed("write learner memory", error);
+      return;
+    }
+    if (!Array.isArray(written) || written.length === 0) {
+      log.info({ model, before: prior.length, after: next.length, had: exchange.memoryAt !== null }, "ask memory not written: it changed since it was read (cleared, or another turn wrote first)");
       return;
     }
     // counts only: the notes are about a child

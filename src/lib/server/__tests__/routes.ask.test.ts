@@ -58,7 +58,7 @@ import { resetServerEnvCache } from "@/lib/env";
 import { ASK_LIMITS, type AskRequestParsed } from "@/lib/live/ask/contracts";
 import { LIVE_MODELS } from "@/lib/live/contracts";
 import { logger } from "@/lib/logger";
-import { loadAskContext, rememberFromTurn, saveAskTurns, type AskLearnerContext } from "@/lib/server/ask/store";
+import { loadAskContext, MEMORY_ATTEMPT_MS, rememberFromTurn, saveAskTurns, STORE_TIMEOUT_MS, type AskLearnerContext } from "@/lib/server/ask/store";
 import { resetBillingWarnings } from "@/lib/server/billing";
 import { recordEvent } from "@/lib/server/events";
 import {
@@ -74,7 +74,7 @@ import {
 import { buildAskMessages } from "@/lib/server/prompts/ask";
 import { PROVIDER_UNAVAILABLE_MESSAGE } from "@/lib/server/request";
 import { resetRateLimits } from "@/lib/server/rate-limit";
-import { POST as ask } from "@/app/api/live/ask/route";
+import { POST as ask, maxDuration } from "@/app/api/live/ask/route";
 
 const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_ASK"] as const;
 const saved: Record<string, string | undefined> = {};
@@ -90,7 +90,15 @@ const BODY = {
   screen: { empty: false, student: ["2x = 8"], tutor: [], problems: ["2x + 3 = 11", "5x - 2 = 13"] },
   clientId: "msg-1",
 };
-const LEARNER: AskLearnerContext = { name: "Maya", grade: 3, course: null, memory: ["Likes word problems about animals"], recent: ["fractions.divide"] };
+const LEARNER: AskLearnerContext = {
+  name: "Maya",
+  nameWords: ["Maya", "Patel"],
+  grade: 3,
+  course: null,
+  memory: ["Likes word problems about animals"],
+  memoryAt: "2026-10-11T09:00:00.123456+00:00",
+  recent: ["fractions.divide"],
+};
 
 /** One answer from `streamWithFallback`: the models it announces, then these chunks of text, then (maybe) a failure. */
 type Script = { models?: string[]; chunks: string[]; fail?: Error };
@@ -245,7 +253,7 @@ describe("live/ask: the stream", () => {
     await runAfterTasks();
     expect(rememberFromTurn).toHaveBeenCalledWith(
       { token: fake.GOOD_TOKEN, userId: fake.USER_ID },
-      { message: BODY.message, reply: "Sure! Here is the graph of $y = x^{2}$.", memory: LEARNER.memory },
+      { message: BODY.message, reply: "Sure! Here is the graph of $y = x^{2}$.", memory: LEARNER.memory, memoryAt: LEARNER.memoryAt },
     );
   });
 
@@ -330,7 +338,9 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     expect(vi.mocked(saveAskTurns).mock.calls[0][2][1]).toEqual({ role: "tutor", text: "There's no problem 7 on this screen.", notes: [], wrote: [] });
   });
 
-  it("every action dropped after a real explanation: the explanation stays, its board claim goes, the gate's line follows; the ink back", async () => {
+  it("every action dropped after a real explanation: the explanation stays, its board claim goes, the gate's line follows; the charge is kept", async () => {
+    // "explain X in detail, then put problems on my board" with problems that fail: the student still
+    // got the explanation they asked for, so it is not a free answer
     const explanation = "To add fractions, make the bottoms the same first: $\\frac{1}{2} = \\frac{2}{4}$, so $\\frac{2}{4} + \\frac{1}{4} = \\frac{3}{4}$.";
     scripts = [{ chunks: [explanation, " I put 2 problems on your board.", block([{ type: "write_problems", problems: ["y = 2x + 3", "x^{2} + y^{2} = 25"] }])] }];
     vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { problems: ["y = 3x", "2x + y = 7"] }, model: LIVE_MODELS.ask } as never);
@@ -338,9 +348,21 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     const failure = "Sorry, I couldn't check those problems, so I didn't write them. Try asking for them another way.";
     expect(only(out, "reply")).toEqual({ text: `${explanation}\n\n${failure}` });
     expect(only(out, "actions")).toEqual({ actions: [], notes: [] });
+    expect(only(out, "done")).not.toHaveProperty("refunded");
+    expect(calls("refund_ink_for")).toEqual([]);
+    expect(vi.mocked(saveAskTurns).mock.calls[0][2][1]).toMatchObject({ text: `${explanation}\n\n${failure}`, wrote: [] });
+  });
+
+  it("every action dropped after a few words that are no explanation: the failure line alone, and the ink back", async () => {
+    // "Sure thing! Two coming up." is under MIN_EXPLANATION_CHARS: what the student sees is only the failure line
+    scripts = [{ chunks: ["Sure thing! Two coming up.", block([{ type: "write_problems", problems: ["y = 2x + 3", "x^{2} + y^{2} = 25"] }])] }];
+    vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { problems: ["y = 3x", "2x + y = 7"] }, model: LIVE_MODELS.ask } as never);
+    const out = await frames(await ask(request({ ...BODY, message: "give me 2 to try" })));
+    const failure = "Sorry, I couldn't check those problems, so I didn't write them. Try asking for them another way.";
+    expect(only(out, "reply")).toEqual({ text: failure });
     expect(only(out, "done")).toMatchObject({ refunded: true });
     expect(calls("refund_ink_for")).toHaveLength(1);
-    expect(vi.mocked(saveAskTurns).mock.calls[0][2][1]).toMatchObject({ text: `${explanation}\n\n${failure}`, wrote: [] });
+    expect(calls("refund_ink_for")[0].args?.p_request_id).toBe(calls("consume_credits")[0].args?.p_request_id);
   });
 
   it("a problem set the engine refuses gets ONE repair on Ask's models; none left: dropped, an event, the ink back", async () => {
@@ -359,6 +381,52 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     expect(modelEventKind(repair.title)).toBe("model.live.chat");
     expect(repair.deadline! - Date.now()).toBeLessThanOrEqual(50_000);
     expect(events()).toEqual([expect.objectContaining({ kind: "route.live.ask", code: "problems_dropped_unsolved", meta: expect.objectContaining({ dropped: 2, setsDropped: 1 }) })]);
+  });
+
+  it("no model sees the student's name: the answer, the gates' repairs and the memory model get it scrubbed; the saved turn keeps the kid's words", async () => {
+    // a worked solution with a slip (\sqrt{6 + 25} = \sqrt{30}): its repair carries the message, the chat, the screen and the problem
+    const STEPS = [
+      { say: "O is the center, so OR and OS are radii: OR = OS." },
+      { say: "Find OR with the distance formula.", math: ["OR = \\sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}", "= \\sqrt{(a + \\sqrt{6} - a)^2 + (b + 5 - b)^2}", "= \\sqrt{(\\sqrt{6})^2 + 5^2}", "= \\sqrt{6 + 25}", "= \\sqrt{31}"] },
+      { say: "The radii are equal.", math: ["OS = OR = \\sqrt{31}"] },
+      { say: "Angle ROS is a right angle: use the Pythagorean theorem.", math: ["RS^{2} = OR^{2} + OS^{2}", "= 2 \\cdot OR^{2}", "= 2(\\sqrt{31})^{2}", "= 2(31)", "= 62"] },
+    ];
+    const SLIP = { type: "teach", steps: STEPS.map((s, i) => (i === 1 ? { ...s, math: [...s.math!.slice(0, 4), "= \\sqrt{30}"] } : s)), answer: "RS^{2} = 62" };
+    vi.mocked(loadAskContext).mockResolvedValue({ ...LEARNER, memory: ["Maya likes animal problems"] });
+    const body = {
+      ...BODY,
+      message: "hi it's Maya Patel! draw a ray AB and then work out RS squared for maya",
+      history: [
+        { role: "user", text: "I'm Maya" },
+        { role: "tutor", text: "Hi Maya! What are we working on?" },
+      ],
+      screen: { empty: false, student: ["\\text{Maya}", "OR = \\sqrt{31}"], tutor: [], problems: [] },
+      problem: "Patel's circle: O = (a, b), R = (a + √6, b + 5), angle ROS is right. What is RS²?",
+    };
+    scripts = [{ chunks: ["Sure, Maya! Let's work it out.", block([SLIP])] }];
+    vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { steps: STEPS, answer: "RS^{2} = 62" }, model: LIVE_MODELS.ask } as never);
+    const out = await frames(await ask(request(body)));
+    expect((only(out, "actions")!.actions as Array<{ type: string }>).map((a) => a.type)).toEqual(["teach"]);
+
+    // the answer's request (what the route hands the prompt builder): every word of the name, in any
+    // case, as "[name]"; "a ray AB" is a ray
+    const asked = vi.mocked(buildAskMessages).mock.calls[0][0];
+    expect(asked.message).toBe("hi it's [name] [name]! draw a ray AB and then work out RS squared for [name]");
+    expect(JSON.stringify(asked)).not.toMatch(/maya|patel/i);
+    // the gate's repair: the message, the chat so far, the screen and the problem, all without it
+    const [, , repair] = vi.mocked(chatJsonWithFallback).mock.calls[0];
+    expect(repair.title).toBe("Agathon Live - ask teach");
+    const repairText = JSON.stringify(repair.messages);
+    expect(repairText).not.toMatch(/maya|patel/i);
+    expect(repairText).toContain("draw a ray AB");
+    expect(repairText).toContain("[name]'s circle");
+    // the memory model: the message, the reply (which repeated the name) and the notes
+    await runAfterTasks();
+    const [, exchange] = vi.mocked(rememberFromTurn).mock.calls[0];
+    expect(JSON.stringify(exchange)).not.toMatch(/maya|patel/i);
+    expect(exchange).toEqual({ message: asked.message, reply: "Sure, [name]! Let's work it out.", memory: ["[name] likes animal problems"], memoryAt: LEARNER.memoryAt });
+    // the saved chat is the kid's own (no model reads it)
+    expect(vi.mocked(saveAskTurns).mock.calls[0][2][0].text).toBe(body.message);
   });
 
   it("help_board passes the gate untouched (the board runs Help me / Solve it on the student's own work)", async () => {
@@ -502,6 +570,20 @@ describe("live/ask: the models", () => {
     await runAfterTasks();
     expect(rememberFromTurn).not.toHaveBeenCalled();
     expect(events()).toEqual([]);
+  });
+});
+
+describe("live/ask: the function's time", () => {
+  it("maxDuration leaves the memory update room after the longest response: the 50 s budget, saving, two model attempts and the write", async () => {
+    scripts = [{ chunks: ["Hi!"] }];
+    await frames(await ask(request()));
+    const [, , , , limits] = vi.mocked(streamWithFallback).mock.calls[0];
+    // the stream's own end is unchanged (40 s), well inside the response's 50 s budget
+    expect(limits!.deadline! - Date.now()).toBeLessThanOrEqual(40_000);
+    const responseMs = 50_000 + STORE_TIMEOUT_MS;
+    const memoryMs = 2 * MEMORY_ATTEMPT_MS + STORE_TIMEOUT_MS;
+    expect(maxDuration).toBe(90);
+    expect(maxDuration * 1_000).toBeGreaterThan(responseMs + memoryMs + 10_000);
   });
 });
 

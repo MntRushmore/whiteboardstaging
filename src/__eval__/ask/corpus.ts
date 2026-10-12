@@ -16,6 +16,7 @@ import { AskRequestSchema, type AskRequestParsed, type AskTurn } from "@/lib/liv
 import type { ChatActionType, ChatScreen } from "@/lib/live/chat/contracts";
 import type { LearnerHint } from "@/lib/learning/hint";
 import type { CourseId } from "@/lib/onboarding/courseIds";
+import { nameWords } from "@/lib/server/ask/nameScrub";
 import type { AskLearnerContext } from "@/lib/server/ask/store";
 import type { AskImageId } from "./images";
 
@@ -431,5 +432,5 @@ export function askRequestFor(c: AskCase, image?: string): AskRequestParsed {
 
 /** What the server knows about the student (`loadAskContext`). */
 export function learnerFor(c: AskCase): AskLearnerContext {
-  return { name: c.name ?? null, grade: c.grade ?? null, course: c.course ?? null, memory: c.memory ?? [], recent: c.recent ?? [] };
+  return { name: c.name ?? null, nameWords: nameWords(c.name), grade: c.grade ?? null, course: c.course ?? null, memory: c.memory ?? [], memoryAt: null, recent: c.recent ?? [] };
 }

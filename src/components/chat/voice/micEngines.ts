@@ -109,7 +109,14 @@ export async function startRecording(): Promise<Recording> {
   let recorder: MediaRecorder;
   try {
     const type = pickRecorderType((t) => MediaRecorder.isTypeSupported(t), prefersMp4(navigator.userAgent)) ?? "";
-    recorder = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), audioBitsPerSecond: MIC.bitsPerSecond });
+    const mime = type ? { mimeType: type } : {};
+    try {
+      // 32 kbit/s keeps a minute near 240 KB, well inside the route's cap for compressed audio
+      recorder = new MediaRecorder(stream, { ...mime, audioBitsPerSecond: MIC.bitsPerSecond });
+    } catch {
+      // a recorder that refuses the bitrate still records (at its own, which the route's cap allows)
+      recorder = new MediaRecorder(stream, mime);
+    }
   } catch (err) {
     release();
     void ctx?.close().catch(() => undefined);

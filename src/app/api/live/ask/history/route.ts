@@ -17,7 +17,8 @@ const QuerySchema = z.object({ boardId: z.string().trim().min(1).max(64) });
  * GET /api/live/ask/history?boardId=<id> — a board's saved Ask chat (`AskHistoryResponse`): its
  * newest ASK_LIMITS.storedTurns turns, oldest first, read with the student's own token (RLS). A
  * board with no turns yet answers a `hello` instead, built from what the tutor knows (name, grade,
- * the last skill worked, whether it remembers anything), without a model call.
+ * the last skill worked in an EARLIER session — not on this board, not in the last
+ * LAST_SESSION_GAP_MS — and whether it remembers anything), without a model call.
  *
  * requireUser (401) -> the `liveAskHistory` bucket (429) -> the query (400) -> the board must be the
  * caller's: anyone else's, a deleted one and none at all are the same 404 -> 502 when the chat could
@@ -43,7 +44,8 @@ export async function GET(req: Request) {
   if (read.kind === "missing") return json(404, "not_found", "No board of yours has that id.", { requestId }, { ...NO_STORE, "X-Request-Id": requestId });
   if (read.kind === "failed") return json(502, "upstream_error", "The chat couldn't be loaded. Try again in a moment.", { requestId }, { ...NO_STORE, "X-Request-Id": requestId });
 
-  const hello = read.turns.length ? null : buildAskHello(await loadAskContext(caller));
+  // "Last time" is an earlier session: not this board's attempts, nor any from the last half hour
+  const hello = read.turns.length ? null : buildAskHello(await loadAskContext(caller, { lastSession: { boardId } }));
   const parsed = AskHistoryResponseSchema.safeParse({ turns: read.turns, hello });
   if (!parsed.success) {
     log.error({ boardId, issue: parsed.error.issues[0]?.message }, "ask history: the answer did not fit the contract");

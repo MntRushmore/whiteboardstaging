@@ -42,8 +42,15 @@ export const ASK_LIMITS = {
   /** what the tutor remembers about one student, and one note's length */
   memoryNotes: 12,
   memoryNote: 160,
-  /** a spoken request: the audio's size and length */
+  /**
+   * a spoken request: the audio's size and length. A WAV (whose header says its length) may be up to
+   * `audioBytes`; a compressed recording (WebM/Opus, MP4/AAC, Ogg, MP3), whose length the route
+   * cannot read before Scribe does, up to `compressedAudioBytes`: more than 60 s at 128 kbit/s, and
+   * the mic records at 32 kbit/s (~240 KB a minute). A low-bitrate file holding many minutes in a few
+   * MB is what the smaller cap (and the true-up with Scribe's own length) is for.
+   */
   audioBytes: 4_000_000,
+  compressedAudioBytes: 1_200_000,
   audioSeconds: 60,
 } as const;
 

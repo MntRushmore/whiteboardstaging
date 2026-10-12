@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ASK_LIMITS } from "@/lib/live/ask/contracts";
 import { ASK_VOICE_COPY } from "../copy";
 import {
   MIC,
@@ -55,8 +56,11 @@ describe("the recorder's format", () => {
     expect(recordingName("")).toBe("ask.webm");
   });
 
-  it("a recording is ~240 KB a minute: well inside the route's 4 MB", () => {
-    expect((MIC.bitsPerSecond / 8) * (MIC.maxMs / 1000)).toBeLessThan(4_000_000 / 10);
+  it("a recording is ~240 KB a minute: well inside the route's 1.2 MB for compressed audio, even at 128 kbit/s", () => {
+    expect(MIC.bitsPerSecond).toBe(32_000);
+    expect((MIC.bitsPerSecond / 8) * (MIC.maxMs / 1000)).toBeLessThan(ASK_LIMITS.compressedAudioBytes / 4);
+    // a browser that ignores the asked bitrate and records at 128 kbit/s still fits
+    expect((128_000 / 8) * (MIC.maxMs / 1000)).toBeLessThan(ASK_LIMITS.compressedAudioBytes);
   });
 });
 

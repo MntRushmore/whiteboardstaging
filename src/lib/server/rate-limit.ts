@@ -17,12 +17,13 @@
  *    back to the in-memory limiter (logged once per process) — a degraded limiter, never an
  *    open gate. `RATE_LIMIT_BACKEND=memory` skips the database entirely.
  *
- * And one budget for everyone together, `spendGlobalBudget` (below): units a call spends (read
- * aloud's characters), counted for the whole app rather than per user.
+ * And budgets in units a call spends rather than hits: `spendGlobalBudget` (below) for the whole
+ * app together (read aloud's characters, Ask's seconds of speech), and `spendUserBudget` for one
+ * user (Ask's seconds of speech a day).
  */
 
 import { LIVE_RATE_LIMITS } from "@/lib/live/contracts";
-import { SPEAK_GLOBAL_BUDGET, SPEAK_RATE_LIMITS, TRANSCRIBE_GLOBAL_BUDGET } from "@/lib/speech/contracts";
+import { SPEAK_GLOBAL_BUDGET, SPEAK_RATE_LIMITS, TRANSCRIBE_GLOBAL_BUDGET, TRANSCRIBE_USER_DAY_BUDGET } from "@/lib/speech/contracts";
 import { getRateLimitBackend, type RateLimitBackend } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { serviceClient, userClient, type RpcClient } from "@/lib/server/billing";
@@ -228,6 +229,7 @@ export async function checkRateLimitDistributed(input: DistributedRateLimitInput
 export function resetRateLimitFallbackWarning(): void {
   warnedFallback = false;
   warnedBudgetFallback = false;
+  warnedUserBudgetFallback = false;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -258,17 +260,22 @@ let warnedBudgetFallback = false;
 // bucket -> this instance's own count of the current fixed window (the fallback)
 const budgetWindows = new Map<string, { start: number; used: number }>();
 
-function memoryBudget(bucket: GlobalBudget, units: number, { limit, windowMs }: RateLimitOptions, reason: string | null): DistributedRateLimitResult {
+function memoryBudget(bucket: GlobalBudget, units: number, cfg: RateLimitOptions, reason: string | null): DistributedRateLimitResult {
   if (reason !== null && !warnedBudgetFallback) {
     warnedBudgetFallback = true;
     rateLimitLogger.warn({ bucket, error: reason }, "global_budget_spend unavailable; counting the budget per instance for this process");
   }
+  return spendWindow(`global:${bucket}`, units, cfg);
+}
+
+/** Adds `units` to this instance's own fixed window for `key` (the budgets' fallback). */
+function spendWindow(key: string, units: number, { limit, windowMs }: RateLimitOptions): DistributedRateLimitResult {
   const now = Date.now();
   const start = now - (now % windowMs);
-  let w = budgetWindows.get(bucket);
+  let w = budgetWindows.get(key);
   if (!w || w.start !== start) {
     w = { start, used: 0 };
-    budgetWindows.set(bucket, w);
+    budgetWindows.set(key, w);
   }
   w.used += units;
   const ok = w.used <= limit;
@@ -294,6 +301,63 @@ export async function spendGlobalBudget(bucket: GlobalBudget, amount: number, cl
     return normalizeRateLimitHit(data, cfg) ?? memoryBudget(bucket, units, cfg, "global_budget_spend returned an unexpected shape");
   } catch (err) {
     return memoryBudget(bucket, units, cfg, `global_budget_spend threw: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/* ------------------------------------------------------------------------- */
+/* Budgets per user, in units                                                  */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Budgets for one user in units each call spends (not hits): `liveTranscribeDaySeconds`, the
+ * seconds of speech one account's mic sends to ElevenLabs Scribe in a day
+ * (TRANSCRIBE_USER_DAY_BUDGET), the per-user cap beside the whole app's `liveTranscribeSeconds`.
+ */
+export const USER_BUDGETS = {
+  liveTranscribeDaySeconds: TRANSCRIBE_USER_DAY_BUDGET,
+} as const satisfies Record<string, RateLimitOptions>;
+
+export type UserBudget = keyof typeof USER_BUDGETS;
+
+/**
+ * `rate_limit_spend(p_bucket, p_amount, p_limit, p_window_ms)`, SECURITY DEFINER, AS THE USER
+ * (supabase/migrations/20261012000000_transcribe_user_budget.sql): rate_limit_hit()'s fixed window
+ * for the caller, adding p_amount units, and answers like it.
+ */
+export const USER_BUDGET_RPC = "rate_limit_spend";
+
+let warnedUserBudgetFallback = false;
+
+function memoryUserBudget(userId: string, bucket: UserBudget, units: number, cfg: RateLimitOptions, reason: string | null): DistributedRateLimitResult {
+  if (reason !== null && !warnedUserBudgetFallback) {
+    warnedUserBudgetFallback = true;
+    rateLimitLogger.warn({ bucket, error: reason }, "rate_limit_spend unavailable; counting the user's budget per instance for this process");
+  }
+  return spendWindow(`user:${userId}:${bucket}`, units, cfg);
+}
+
+/**
+ * Spends `amount` units of one user's budget (at least 1, rounded); `ok: false` once the window's
+ * units are spent (they count even then). Across every instance as the user (their token, like
+ * `checkRateLimitDistributed`); with `RATE_LIMIT_BACKEND=memory`, or when the RPC fails (a database
+ * without the migration), each instance keeps the budget itself, logged once: a looser cap, never
+ * none. Never throws.
+ */
+export async function spendUserBudget(
+  input: { token: string; userId: string; bucket: UserBudget; amount: number },
+  client?: RpcClient,
+): Promise<DistributedRateLimitResult> {
+  const { userId, bucket } = input;
+  const cfg = USER_BUDGETS[bucket];
+  const units = Math.max(1, Math.round(input.amount));
+  if (getRateLimitBackend() === "memory") return memoryUserBudget(userId, bucket, units, cfg, null);
+  try {
+    const rpcClient = client ?? userClient(input.token);
+    const { data, error } = await rpcClient.rpc(USER_BUDGET_RPC, { p_bucket: bucket, p_amount: units, p_limit: cfg.limit, p_window_ms: cfg.windowMs });
+    if (error) return memoryUserBudget(userId, bucket, units, cfg, `rate_limit_spend failed: ${error.message}`);
+    return normalizeRateLimitHit(data, cfg) ?? memoryUserBudget(userId, bucket, units, cfg, "rate_limit_spend returned an unexpected shape");
+  } catch (err) {
+    return memoryUserBudget(userId, bucket, units, cfg, `rate_limit_spend threw: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

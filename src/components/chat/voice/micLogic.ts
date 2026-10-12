@@ -17,7 +17,11 @@ export const MIC = {
   countdownMs: 10_000,
   /** less than this is a slip of the finger: nothing is sent */
   minMs: 300,
-  /** Opus or AAC at 32 kbit/s: clear for one voice, ~240 KB a minute (the route takes 4 MB) */
+  /**
+   * Opus or AAC at 32 kbit/s: clear for one voice, ~240 KB a minute. The route takes at most
+   * ASK_LIMITS.compressedAudioBytes (1.2 MB) of compressed audio, which even a browser that ignores
+   * this and records at 128 kbit/s stays under for the mic's 60 s.
+   */
   bitsPerSecond: 32_000,
   /** after the route said `speech_unavailable`, the browser's recognizer for this long */
   routeDownMs: 10 * 60_000,
