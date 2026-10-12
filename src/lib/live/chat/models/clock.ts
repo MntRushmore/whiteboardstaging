@@ -62,6 +62,6 @@ export function planClock(spec: Clock, box: { w: number; h: number }, seed: numb
   const minuteLen = ring - size * 0.5;
   ink.draw("hand:hour", (pen) => [...pen.line(c, at(hour, hourLen)), ...pen.arrowhead(at(hour, hourLen), Math.sin(hour), -Math.cos(hour), 15)], { color: HOUR_INK }, K.weight.hour);
   ink.draw("hand:minute", (pen) => [...pen.line(c, at(minute, minuteLen)), ...pen.arrowhead(at(minute, minuteLen), Math.sin(minute), -Math.cos(minute), 13)], { color: MINUTE_INK }, K.weight.minute);
-  ink.draw("centre", (pen) => counter(pen, c, 6), solid(MODEL_INK));
+  ink.draw("centre", (pen) => counter(pen, c, 7.5), solid(MODEL_INK));
   return ink.finish(box);
 }

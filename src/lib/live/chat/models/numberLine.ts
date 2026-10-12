@@ -37,7 +37,7 @@ export const NUMBER_LINE = {
   arcFoot: 3,
   /** px from an arc's top to its label */
   arcLabelGap: 5,
-  markR: 6.5,
+  markR: 9,
 } as const;
 
 const JUMP_INK = "orange" as const;
