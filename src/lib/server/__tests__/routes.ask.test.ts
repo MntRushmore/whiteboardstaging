@@ -325,6 +325,19 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     expect(vi.mocked(saveAskTurns).mock.calls[0][2][1]).toEqual({ role: "tutor", text: "There's no problem 7 on this screen.", notes: [], wrote: [] });
   });
 
+  it("every action dropped after a real explanation: the explanation stays, its board claim goes, the gate's line follows; the ink back", async () => {
+    const explanation = "To add fractions, make the bottoms the same first: $\\frac{1}{2} = \\frac{2}{4}$, so $\\frac{2}{4} + \\frac{1}{4} = \\frac{3}{4}$.";
+    scripts = [{ chunks: [explanation, " I put 2 problems on your board.", block([{ type: "write_problems", problems: ["y = 2x + 3", "x^{2} + y^{2} = 25"] }])] }];
+    vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { problems: ["y = 3x", "2x + y = 7"] }, model: LIVE_MODELS.ask } as never);
+    const out = await frames(await ask(request({ ...BODY, message: "how do I add fractions? give me 2 to try" })));
+    const failure = "Sorry, I couldn't check those problems, so I didn't write them. Try asking for them another way.";
+    expect(only(out, "reply")).toEqual({ text: `${explanation}\n\n${failure}` });
+    expect(only(out, "actions")).toEqual({ actions: [], notes: [] });
+    expect(only(out, "done")).toMatchObject({ refunded: true });
+    expect(calls("refund_ink_for")).toHaveLength(1);
+    expect(vi.mocked(saveAskTurns).mock.calls[0][2][1]).toMatchObject({ text: `${explanation}\n\n${failure}`, wrote: [] });
+  });
+
   it("a problem set the engine refuses gets ONE repair on Ask's models; none left: dropped, an event, the ink back", async () => {
     scripts = [{ chunks: ["Here are 2 to try.", block([{ type: "write_problems", problems: ["y = 2x + 3", "x^{2} + y^{2} = 25"] }])] }];
     vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { problems: ["y = 3x", "2x + y = 7"] }, model: LIVE_MODELS.ask } as never);

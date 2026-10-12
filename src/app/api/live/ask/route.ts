@@ -4,6 +4,7 @@ import { ASK_BOARD_OPEN, ASK_EVENTS, AskBoardBlockSchema, AskRequestSchema, type
 import { AskStreamSplitter } from "@/lib/live/ask/splitter";
 import type { ChatAction } from "@/lib/live/chat/contracts";
 import { EMPTY_ASK_CONTEXT, loadAskContext, rememberFromTurn, saveAskTurns, type AskStoreCaller } from "@/lib/server/ask/store";
+import { keepExplanation } from "@/lib/server/askReply";
 import { enforceInk } from "@/lib/server/billing";
 import { chatGate } from "@/lib/server/chatGate";
 import { livePreamble, runChargedStream, withRequestId } from "@/lib/server/live-route";
@@ -94,8 +95,9 @@ const kinds = (actions: readonly ChatAction[]) => [...new Set(actions.map((a) =>
  * (`delta`, split from the block by `AskStreamSplitter`); a stuck primary hands over to the fallback
  * after ASK_WATCHDOG_MS (`model` again). Then the block's actions go through the same engine gates as
  * POST /api/live/chat (`chatGate`, repairs on Ask's models) and out as `actions`, after the final
- * `reply` (cleaned, or replaced when nothing proposed survived). A block that is not JSON is dropped
- * with a log and an event, never a crash, and counts as a proposal that did not survive.
+ * `reply` (cleaned; when nothing proposed survived, its sentences about the board taken out and the
+ * gate's line about what failed added: `keepExplanation`). A block that is not JSON is dropped with
+ * a log and an event, never a crash, and counts as a proposal that did not survive.
  *
  * The exchange is saved on the board (`saveAskTurns`: the student's turn with its `clientId`, the
  * tutor's with its notes and the kinds of action it wrote); `done` carries the tutor turn's id, or
@@ -224,7 +226,9 @@ export async function POST(req: Request) {
           },
           unread,
         );
-        if (gate.replacement) reply = gate.replacement;
+        // Nothing proposed survived: the explanation stays, its claims of board work go, and the
+        // gate's line says what failed (the line alone when little else was said).
+        if (gate.replacement) reply = keepExplanation(reply, gate.replacement);
         if (!reply) reply = BOARD_ONLY_REPLY;
 
         emit(ASK_EVENTS.reply, { text: reply });
