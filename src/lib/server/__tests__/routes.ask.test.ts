@@ -220,9 +220,14 @@ describe("live/ask: the stream", () => {
     expect(watchdogMs).toBeLessThanOrEqual(6_000);
     expect(limits).toMatchObject({ fallbackWatchdogMs: expect.any(Number), deadline: expect.any(Number) });
     expect(limits!.deadline! - Date.now()).toBeLessThan(60_000);
-    expect(opts).toMatchObject({ temperature: 0.4, maxTokens: 3500, title: "Agathon Live - ask" });
-    expect(opts.reasoningFor?.("anthropic/claude-haiku-5.5")).toBeUndefined();
-    expect(opts.reasoningFor?.("openai/gpt-5.4-mini")).toBe("minimal");
+    expect(opts).toMatchObject({ temperature: 0.4, maxTokens: 4000, title: "Agathon Live - ask" });
+    // each model streams with the reasoning eval:ask measured for it (askReasoningFor)
+    expect(opts.reasoningFor?.("anthropic/claude-sonnet-5.5")).toBe("minimal");
+    expect(opts.reasoningFor?.("anthropic/claude-haiku-5.5")).toBe("none");
+    expect(opts.reasoningFor?.("google/gemini-3.8-flash")).toBe("minimal");
+    // a model the eval never measured: "low" ("minimal" for OpenAI's)
+    expect(opts.reasoningFor?.("x-ai/unmeasured")).toBe("low");
+    expect(opts.reasoningFor?.("openai/unmeasured")).toBe("minimal");
 
     // the prompt gets the request as parsed and what the tutor knows, read on the server
     expect(loadAskContext).toHaveBeenCalledWith({ token: fake.GOOD_TOKEN, userId: fake.USER_ID });
@@ -348,7 +353,7 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     expect([primary, fallback]).toEqual([LIVE_MODELS.ask, LIVE_MODELS.askFallback]);
     expect(repair.title).toBe("Agathon Live - ask problems");
     // Anthropic's primary is sent no reasoning in a repair either; OpenAI's fallback the least
-    expect(repair.reasoningFor?.(LIVE_MODELS.ask)).toBeUndefined();
+    expect(repair.reasoningFor?.(LIVE_MODELS.ask)).toBe("minimal");
     expect(repair.reasoningFor?.(LIVE_MODELS.askFallback)).toBe("minimal");
     // its model events are the board chat's, as Ask is metered
     expect(modelEventKind(repair.title)).toBe("model.live.chat");
@@ -408,7 +413,10 @@ describe("live/ask: the models", () => {
     expect(deltas(out)).toBe("Hi! Let's work on it.");
     expect(only(out, "done")).toMatchObject({ model: LIVE_MODELS.askFallback, turnId: "turn-tutor" });
     // Anthropic's primary is sent no reasoning; OpenAI's fallback the least
-    expect(asked).toEqual([{ model: LIVE_MODELS.ask }, { model: LIVE_MODELS.askFallback, reasoning: { effort: "minimal" } }]);
+    expect(asked).toEqual([
+      { model: LIVE_MODELS.ask, reasoning: { effort: "minimal" } },
+      { model: LIVE_MODELS.askFallback, reasoning: { effort: "minimal" } },
+    ]);
     // filed with the board chat Ask is metered as; the call's own name says it was Ask
     expect(events()).toEqual([
       expect.objectContaining({ level: "warn", kind: "model.live.chat", code: "fallback", meta: expect.objectContaining({ reason: "timeout", call: "ask" }) }),

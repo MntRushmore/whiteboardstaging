@@ -549,8 +549,8 @@ export type ChatJsonOptions<S extends z.ZodTypeAny> = {
   maxTokens?: number;
   requestId?: string;
   title?: string;
-  /** OpenRouter unified reasoning control; omitted when unset (the model's default). */
-  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  /** OpenRouter unified reasoning control; omitted when unset (the model's default). "none" turns thinking off where a model can. */
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
   /** `provider.sort: latency`, as the Live streams route (the model bench measured this way). */
   latencyFirst?: boolean;
 };

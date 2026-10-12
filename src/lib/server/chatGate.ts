@@ -84,7 +84,7 @@ export interface ChatGateContext {
    * The repairs' reasoning per model ("low" for every model when unset, as the chat's always was;
    * Ask's primary is Anthropic's, which takes none: its thinking budget starts at 1024 tokens).
    */
-  reasoningFor?: (model: string) => "minimal" | "low" | undefined;
+  reasoningFor?: (model: string) => "none" | "minimal" | "low" | undefined;
   /** the route's word in the repairs' titles ("chat" → "Agathon Live - chat proof"), so their model events are the route's */
   route: string;
   /** the model that proposed the actions (in the events' meta) */

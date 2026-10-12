@@ -9,7 +9,7 @@ import { enforceInk } from "@/lib/server/billing";
 import { chatGate } from "@/lib/server/chatGate";
 import { livePreamble, runChargedStream, withRequestId } from "@/lib/server/live-route";
 import { CreditsExhaustedError, streamWithFallback, UpstreamError, WatchdogTimeoutError } from "@/lib/server/openrouter";
-import { buildAskMessages, cleanAskReply } from "@/lib/server/prompts/ask";
+import { ASK_MAX_TOKENS, askReasoningFor, buildAskMessages, cleanAskReply } from "@/lib/server/prompts/ask";
 import { actionTypes, type DroppedAction } from "@/lib/server/prompts/chat";
 import { PROVIDER_UNAVAILABLE_MESSAGE, recordRouteEvent } from "@/lib/server/request";
 import { repairJsonEscapes, sseResponse } from "@/lib/server/sse";
@@ -36,20 +36,18 @@ const ASK_STREAM_MS = 40_000;
  * never finishes fails with an event and a refund, not a silent kill by the platform.
  */
 const ASK_BUDGET_MS = 50_000;
-/** A long explanation plus a board block (a worked solution, a figure) fits; a runaway answer does not. */
-const ASK_MAX_TOKENS = 3500;
-
 /** An answer that was only a board block (the panel still says something). */
 const BOARD_ONLY_REPLY = "Take a look at your board.";
 
 /**
- * As little reasoning as each model takes: Ask is a conversation, and the student watches the first
- * words arrive. None for Anthropic's models (their thinking budget starts at 1024 tokens),
- * "minimal" for OpenAI's, "low" for the rest.
+ * As little reasoning as each model takes, measured per model on `npm run eval:ask`
+ * (`askReasoningFor`, prompts/ask.ts): Ask is a conversation, and the student watches the first
+ * words arrive. With its default, Sonnet 5.5 thinks first and its answer lands all at once after
+ * 3–4 s; at "minimal" its first words come in about a second. A model the eval did not measure
+ * gets "low" ("minimal" for OpenAI's).
  */
-function askReasoning(model: string): "minimal" | "low" | undefined {
-  if (model.startsWith("anthropic/")) return undefined;
-  return model.startsWith("openai/") ? "minimal" : "low";
+function askReasoning(model: string): "none" | "minimal" | "low" {
+  return askReasoningFor(model) ?? (model.startsWith("openai/") ? "minimal" : "low");
 }
 
 /**
