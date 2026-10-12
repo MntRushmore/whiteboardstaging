@@ -81,7 +81,7 @@ import { AskButton } from "@/components/live/AskButton";
 import { setSimpleBoard, useSimpleBoard, useSimpleBoardGrade } from "@/components/kidmode/useSimpleBoard";
 import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, KidStatus, useKidDockFailed, usePreloadKidDock } from "@/components/kidmode/slots";
 import { KID_COPY } from "@/components/kidmode/copy";
-import { CHAT_BUTTON_COPY, CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
+import { CHAT_BUTTON_COPY, CHAT_BUTTON_SIZE, CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
 import { useChatOpen } from "@/components/chat/useChatOpen";
 import { useLecture } from "@/components/lecture/useLecture";
 import { LectureBar } from "@/components/lecture/LectureBar";
@@ -416,7 +416,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     <Button
       variant={chat.open ? "secondary" : "outline"}
       size="sm"
-      className={chat.open ? "shadow-sm" : "bg-white shadow-sm"}
+      // a finger's 44 px on a touch screen or a phone; the bar's 32 px with a mouse
+      className={`${chat.open ? "shadow-sm" : "bg-white shadow-sm"} ${CHAT_BUTTON_SIZE}`}
       title={CHAT_BUTTON_COPY.buttonHint}
       aria-label={CHAT_BUTTON_COPY.button}
       aria-expanded={chat.open}
