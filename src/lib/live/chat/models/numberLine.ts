@@ -84,6 +84,22 @@ function pointsHit(pts: readonly Pt[], r: Rect, pad: number): boolean {
   return pts.some((p) => p.x >= r.x - pad && p.x <= r.x + r.w + pad && p.y >= r.y - pad && p.y <= r.y + r.h + pad);
 }
 
+/**
+ * The regular patterns a line's numbers may follow, most first (every tick, every 2nd, 5th…; a
+ * fraction step's whole numbers). Jumps of one size (skip counting by 5s) number the multiples of
+ * that size (two jumps or more) — 0, 5, 10, 15, 20 under the +5 arcs, not 0 1 2 … 20 crowding under them — and a long
+ * line with jumps (more than 12 ticks) numbers every 5th at most: the jumps' own ends are written
+ * anyway. Every tick is still drawn; only its number is left out.
+ */
+function numberLadder(spec: NumberLine, step: number, n: number, den: number): number[] {
+  const base = den > 0 ? [...new Set([1, den % 2 === 0 ? 2 : den, den, 2 * den, 5 * den, 10 * den])].sort((a, b) => a - b) : [1, 2, 5, 10, 20, 25, 50, 100];
+  if (spec.jumps.length === 0) return n > 12 ? base.filter((e) => e > 1) : base;
+  const sizes = spec.jumps.map((j) => Math.abs(j.to - j.from) / step);
+  const k = Math.round(sizes[0]);
+  if (spec.jumps.length >= 2 && k >= 2 && sizes.every((s) => Math.abs(s - k) < 1e-6)) return [...new Set([k, ...base.filter((e) => e > k && e % k === 0)])];
+  return n > 12 ? base.filter((e) => e >= 5) : base;
+}
+
 function attempt(spec: NumberLine, box: { w: number; h: number }, seed: number, size: number): ModelSketch | null {
   const N = NUMBER_LINE;
   const { from, to } = spec;
@@ -121,7 +137,7 @@ function attempt(spec: NumberLine, box: { w: number; h: number }, seed: number, 
   const priority = new Set<number>([0, n]);
   for (const j of spec.jumps) for (const v of [j.from, j.to]) if (onTick(v) >= 0) priority.add(onTick(v));
   for (const m of spec.marks) if (!m.label && onTick(m.at) >= 0) priority.add(onTick(m.at));
-  const ladder = den > 0 ? [...new Set([1, den % 2 === 0 ? 2 : den, den, 2 * den, 5 * den, 10 * den])].sort((a, b) => a - b) : [1, 2, 5, 10, 20, 25, 50, 100];
+  const ladder = numberLadder(spec, step, n, den);
   const extraLabels: Label[] = [...extra.entries()].map(([v, t]) => ({ x: x(v), text: t, size: measureLabel(t, size)! }));
   if (extraLabels.some((l) => !l.size)) return null;
   // A regular pattern (every 1st, 2nd, 5th…) is kept only whole: one that would lose a number beside

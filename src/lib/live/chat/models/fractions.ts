@@ -36,8 +36,10 @@ export const FRACTION_BARS = {
 export const FRACTION_CIRCLES = {
   maxR: 130,
   minR: 54,
-  /** the shortest a part's arc may be (px) */
-  minArc: 24,
+  /** the shortest a part's arc may be (px): thinner slices cannot be read, nor coloured in */
+  minArc: 34,
+  /** a circle of 10 or more parts is at least this big: its slices meet in a crowd at the centre */
+  minRMany: 84,
   /** between two circles */
   gap: 40,
   /** the circle to its fraction under it */
@@ -133,7 +135,7 @@ function attemptCircles(spec: Circles, box: { w: number; h: number }, seed: numb
   const labelW = Math.max(...sizes.map((s) => s!.w));
   const r = Math.min(C.maxR, (box.w - 8 - (n - 1) * C.gap) / (2 * n), (box.h - 8 - C.labelGap - labelH) / 2);
   const maxParts = Math.max(...spec.circles.map((c) => c.parts));
-  if (r < C.minR || (Math.PI * 2 * r) / maxParts < C.minArc) return null;
+  if (r < (maxParts >= 10 ? C.minRMany : C.minR) || (Math.PI * 2 * r) / maxParts < C.minArc) return null;
   const gap = Math.max(C.gap, labelW - 2 * r + 24);
   const ink = new ModelInk(seed);
   spec.circles.forEach((circle, i) => {
@@ -144,8 +146,9 @@ function attemptCircles(spec: Circles, box: { w: number; h: number }, seed: numb
       ink.draw(`circle:${i}:parts`, (pen) => {
         const rim = (a: number) => ({ x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) });
         // an even number of parts: diameters, as a hand cuts a pie; an odd one: radii from the centre
-        if (p % 2 === 0) return Array.from({ length: p / 2 }, (_, k) => pen.line(rim(edge(k, p)), rim(edge(k + p / 2, p)))).flat();
-        return Array.from({ length: p }, (_, k) => pen.line(c, rim(edge(k, p)))).flat();
+        // ruled straight (no bow), so every cut passes exactly through the centre
+        if (p % 2 === 0) return Array.from({ length: p / 2 }, (_, k) => pen.polyline([rim(edge(k, p)), c, rim(edge(k + p / 2, p))], 0.2)).flat();
+        return Array.from({ length: p }, (_, k) => pen.polyline([c, rim(edge(k, p))], 0.2)).flat();
       });
     }
     const color = fillInk(i);

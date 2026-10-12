@@ -21,7 +21,7 @@ import { MODEL_BOXES, sketchModel, type ModelSketch } from "..";
  * writing's boxes).
  */
 
-/** `big`: too big for its kind's smallest box (999 in blocks): the desk draws it in a larger one. */
+/** `big`: too big for its kind's smallest box (999 in blocks, a circle in twelfths): the desk draws it in a larger one. */
 export const GALLERY: ReadonlyArray<{ title: string; model: VisualModel; big?: boolean }> = [
   { title: "3 + 4 on a number line", model: { kind: "number_line", from: 0, to: 10, marks: [], jumps: [{ from: 3, to: 7 }] } },
   { title: "skip count by 5s", model: { kind: "number_line", from: 0, to: 20, marks: [], jumps: [{ from: 0, to: 5 }, { from: 5, to: 10 }, { from: 10, to: 15 }, { from: 15, to: 20 }] } },
@@ -34,7 +34,7 @@ export const GALLERY: ReadonlyArray<{ title: string; model: VisualModel; big?: b
   { title: "2/3 of a bar", model: { kind: "fraction_bars", bars: [{ parts: 3, shaded: 2 }] } },
   { title: "3/4 vs 5/8 circles", model: { kind: "fraction_circles", circles: [{ parts: 4, shaded: 3 }, { parts: 8, shaded: 5 }] } },
   { title: "1/3 = 2/6", model: { kind: "fraction_circles", circles: [{ parts: 3, shaded: 1 }, { parts: 6, shaded: 2 }] } },
-  { title: "7/12", model: { kind: "fraction_circles", circles: [{ parts: 12, shaded: 7 }] } },
+  { title: "7/12", model: { kind: "fraction_circles", circles: [{ parts: 12, shaded: 7 }] }, big: true },
   { title: "4 × 6 array", model: { kind: "array", rows: 4, cols: 6 } },
   { title: "3 × 4 array", model: { kind: "array", rows: 3, cols: 4 } },
   { title: "8 × 9 array", model: { kind: "array", rows: 8, cols: 9 } },
