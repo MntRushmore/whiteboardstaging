@@ -156,12 +156,28 @@ describe("a practice board (live.practice)", () => {
     expect(none.reportFailure).toHaveBeenCalledTimes(1);
     expect(none.reportFailure).toHaveBeenCalledWith("none_written", PRACTICE_COPY.failed);
 
-    const notReady = setup(async () => {
-      throw new Error("The board is not ready yet.");
-    });
-    await expect(runPracticeMarker(notReady.deps)).resolves.toBe("failed");
+    // the board's loop never came up within the ceiling (`whenReady`): not ready, and never tried
+    const notReady = setup(async () => ({ outcomes: [], problemsWritten: 1, problemsDropped: 0, screensAdded: 0 }));
+    await expect(runPracticeMarker({ ...notReady.deps, whenReady: async () => "timeout" as const })).resolves.toBe("failed");
     expect(notReady.reportFailure).toHaveBeenCalledTimes(1);
     expect(notReady.reportFailure).toHaveBeenCalledWith("board_not_ready", PRACTICE_COPY.failed);
+
+    // the run kept throwing on a board that was up
+    const throwing = setup(async () => {
+      throw new Error("Failed to fetch dynamically imported module");
+    });
+    await expect(runPracticeMarker(throwing.deps)).resolves.toBe("failed");
+    expect(throwing.reportFailure).toHaveBeenCalledTimes(1);
+    expect(throwing.reportFailure).toHaveBeenCalledWith("run_failed", PRACTICE_COPY.failed);
+  });
+
+  it("a run whose board has gone (the kid left): nothing toasted, nothing reported", async () => {
+    const left = setup(async () => {
+      throw new Error("The board is not ready yet.");
+    });
+    await expect(runPracticeMarker({ ...left.deps, whenReady: async () => "closed" as const, gone: () => true })).resolves.toBe("abandoned");
+    expect(left.toast).not.toHaveBeenCalled();
+    expect(left.reportFailure).not.toHaveBeenCalled();
   });
 
   it("problems written: nothing reported", async () => {
