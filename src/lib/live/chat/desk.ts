@@ -277,6 +277,9 @@ export class ChatDesk {
         return { type: "clear_tutor", ok: true };
       case "help_problem":
         return this.helpProblem(action.problem, action.depth);
+      case "draw_model":
+        // CONTRACT STUB (docs/ASK-V2.md, "Drawing"): the models part draws it (planners in src/lib/live/chat/models)
+        return { type: "draw_model", ok: false, note: "I can't draw that yet." };
       case "help_board":
         return this.helpBoard(action.depth);
       case "write_proof":

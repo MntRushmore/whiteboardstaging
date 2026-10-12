@@ -31,8 +31,8 @@ import { LearnerHintSchema } from "@/lib/learning/hint";
 
 describe("chat prompt", () => {
   it("names every action and the rules that keep the board to maths", () => {
-    // help_board is Ask's (docs/ASK-V2.md, prompts/ask.ts); the old chat never proposes it
-    for (const t of CHAT_ACTION_TYPES) if (t !== "help_board") expect(CHAT_SYSTEM_PROMPT).toContain(`"${t}"`);
+    // help_board and draw_model are Ask's (docs/ASK-V2.md, prompts/ask.ts); the old chat never proposes it
+    for (const t of CHAT_ACTION_TYPES) if (t !== "help_board" && t !== "draw_model") expect(CHAT_SYSTEM_PROMPT).toContain(`"${t}"`);
     expect(CHAT_SYSTEM_PROMPT).toMatch(/no words/i);
     // answers and working never in the panel; on the board only three ways
     expect(CHAT_SYSTEM_PROMPT).toMatch(/You never put answers or working in the REPLY/);

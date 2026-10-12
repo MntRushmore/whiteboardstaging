@@ -904,6 +904,12 @@ export interface LiveController {
    * its code on first use (`src/lib/live/ask/boardImage.ts`), never with the board.
    */
   chatImage?(): Promise<string | null>;
+  /**
+   * Ask's chat per screen (docs/ASK-V2.md): the current screen's id (its tldraw page id), and a
+   * subscription to the student (or the tutor) moving to another screen. Optional, like the chat's.
+   */
+  chatScreenId?(): string | null;
+  onChatScreenChange?(cb: (screenId: string) => void): () => void;
   runChatActions?(actions: readonly ChatAction[], from?: ChatRunOrigin): Promise<ChatRunReport>;
   /**
    * Lecture mode (`src/lib/live/lecture`): the current screen in words for the director, the

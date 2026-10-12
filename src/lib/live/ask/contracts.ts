@@ -21,6 +21,8 @@ import { ChatActionSchema, ChatScreenSchema } from "../chat/contracts";
 export const ASK_PATH = "/api/live/ask";
 export const ASK_HISTORY_PATH = "/api/live/ask/history";
 export const ASK_MEMORY_PATH = "/api/live/ask/memory";
+/** POST: saved turns move to another screen's chat (the tutor started a new screen for them) */
+export const ASK_MOVE_PATH = "/api/live/ask/history/move";
 export const TRANSCRIBE_PATH = "/api/live/transcribe";
 
 export const ASK_LIMITS = {
@@ -58,6 +60,9 @@ export const AskBoardBlockSchema = z.object({
 
 // ------------------------------------------------------------------ request
 
+/** A screen's id: its tldraw page id (`page:…`). */
+export const AskScreenIdSchema = z.string().regex(/^page:[A-Za-z0-9_-]{1,64}$/);
+
 export const AskTurnSchema = z.object({
   role: z.enum(["user", "tutor"]),
   text: z.string().trim().min(1).max(ASK_LIMITS.turnText),
@@ -88,6 +93,11 @@ export const AskRequestSchema = z.object({
   voice: z.boolean().optional(),
   /** the client's id for the student's message (the saved turn keeps it: a retry is not saved twice) */
   clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
+  /**
+   * The screen this ask belongs to (its tldraw page id): each screen of a board has its own chat
+   * (docs/ASK-V2.md, "A chat per screen"). Absent (an older client): the board's first screen.
+   */
+  screenId: AskScreenIdSchema.optional(),
 });
 export type AskRequest = z.input<typeof AskRequestSchema>;
 export type AskRequestParsed = z.infer<typeof AskRequestSchema>;
@@ -150,6 +160,8 @@ export const AskStoredTurnSchema = z.object({
   /** a tutor turn: the kinds of action it wrote on the board (`write_problems`, `graph`…), never their content */
   wrote: z.array(z.string()).default([]),
   at: z.string(),
+  /** the screen whose chat it is in (null: saved before chats were per screen — the first screen's) */
+  screenId: z.string().nullable().optional(),
 });
 export type AskStoredTurn = z.infer<typeof AskStoredTurnSchema>;
 
@@ -162,6 +174,18 @@ export const AskHelloSchema = z.object({
 });
 export type AskHello = z.infer<typeof AskHelloSchema>;
 
+/**
+ * POST ASK_MOVE_PATH: the tutor's own actions started a new screen (more problems on a full one),
+ * so the exchange that asked for it moves into the new screen's chat with them.
+ */
+export const AskMoveRequestSchema = z.object({
+  boardId: z.string().min(1).max(64),
+  turnIds: z.array(z.string().min(1).max(64)).min(1).max(4),
+  screenId: AskScreenIdSchema,
+});
+export type AskMoveRequest = z.infer<typeof AskMoveRequestSchema>;
+
+/** GET ASK_HISTORY_PATH?boardId=&screenId= → that screen's chat (oldest first) and, when it has none, a hello. */
 export const AskHistoryResponseSchema = z.object({
   turns: z.array(AskStoredTurnSchema).max(ASK_LIMITS.storedTurns),
   /** only for a board with no turns yet */

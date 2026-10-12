@@ -83,3 +83,60 @@ Usage that week: 145 asks from 10 subscribers.
   - Run `npx vitest run <your files>` and `npx tsc --noEmit`.
   - Lint with `npx eslint --ignore-pattern '.claude/**' <paths>` (a plain `npm run lint` crawls 40+ worktrees).
 - **Commits.** Commit on your branch with a clear message, and don't push. Finish with a short report: what works, how you checked it, and what's left.
+
+# Wave 2 (2026-10-12): drawing, and a chat per screen
+
+The owner asked for three things:
+- Ask must be able to *draw the maths out*, and "drawings need to be super high quality".
+- Asking for a drawing related to a problem must **not** start a new screen.
+- Each screen gets its own chat ("a new chat per every screen of the board").
+
+## Drawing
+
+**Visual models.** The new action is `draw_model {model, near?}`, defined as `VisualModelSchema` in `src/lib/live/chat/contracts.ts`. Its kinds:
+
+| Kind | What it draws |
+|---|---|
+| `number_line` | ticks, marked points, labelled jumps |
+| `fraction_bars` | up to 4 bars, stacked for comparing |
+| `fraction_circles` | fraction circles |
+| `array` | rows × columns of dots |
+| `equal_groups` | groups with the same count in each |
+| `area_model` | a × b split by place value, partial products worked out by the board |
+| `base_ten` | hundreds, tens and ones blocks |
+| `place_value` | a place-value chart |
+| `tape` | a bar model for word problems: 1–2 rows of segments with labels, and a total bracket |
+| `ten_frame` | one or two ten frames |
+| `clock` | a clock face |
+
+- The model says *what* to draw. The board's planners (`src/lib/live/chat/models/`) lay it out and do all the arithmetic, so a picture never shows wrong maths.
+- A spec that doesn't make sense is refused with its problems, for example shaded > parts, a jump outside the line, or tape units that disagree with a stated total. The route's gate gives one repair round-trip, as figures get.
+- **Quality bar:**
+  - Clean, to scale and neat, in the tutor's hand at writing pace.
+  - Light flat fills for shaded parts (no gradients), labels in the hand, and sizes a kid reads from across the room.
+  - Each kind is checked by eye in a gallery at real size, on a phone, an iPad and a laptop.
+
+**Placement: the same screen.**
+- `near: n` on `draw_model`, `draw_figure` and `graph` names the problem on this screen the drawing goes with.
+- The desk places it beside that problem (right of the problem's line in its cell, else in the cell's work room, else anywhere free on the screen).
+- It shrinks to fit, down to a legible minimum, **before** it would ever start a new screen.
+- A new screen only comes when the student asks for one, or when nothing fits even at the minimum.
+- The prompt never proposes `new_screen` for a drawing that goes with work on the screen. New problem sets on a screen with work still go on a fresh screen; that is unchanged.
+
+## A chat per screen
+
+- Each screen (a tldraw page) has its own chat thread.
+  - `AskRequest.screenId` and `ask_messages.screen_id` carry it.
+  - `GET history?boardId=&screenId=` returns that screen's chat.
+  - Old rows (`screen_id` null) belong to the first screen.
+- The panel follows the current screen (`LiveController.chatScreenId` and `onChatScreenChange`). Moving to another screen shows that screen's chat. A new screen opens with a short hello and chips that follow from the screen before ("More like the last screen").
+- When the tutor's own actions start a new screen (more problems on a full one), the exchange that asked for it moves with them into the new screen's chat. `POST ASK_MOVE_PATH {boardId, turnIds, screenId}` re-tags the saved turns.
+- The context the model gets is the current screen's chat only. The learner memory stays per kid.
+
+## Wave 2 parts
+
+| Part | Branch | Owns |
+|---|---|---|
+| Models | `feat/ask2-models` | `src/lib/live/chat/models/*` (planners, checks, the gallery), `draw_model` in `ChatDesk`, the gate's model check and repair (`chatGate`), and the `draw_model` and `near` docs and examples in `prompts/ask.ts`, plus eval cases. |
+| Placement | `feat/ask2-place` | `ChatDesk`'s placement for every drawing action (`near`, shrink to fit, a new screen last), and the prompt rule against `new_screen` for related drawings. |
+| Per screen | `feat/ask2-screens` | The migration (`screen_id`, the move RPC and grant), store, history and move routes, `LiveLoop.chatScreenId` and `onChatScreenChange`, the panel's per-screen threads and hello, and the tutor-made-screen move. |
