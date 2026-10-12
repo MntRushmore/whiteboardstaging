@@ -16,14 +16,16 @@
  *  1. tldraw's SVG of the shapes, drawn by us on a white canvas. tldraw's own `toImage` would fill
  *     with its theme's off-white, encode twice to get there, and wait 250 ms on every Safari export;
  *     that wait is needed only when the SVG holds a picture or a font, which WebKit draws late.
- *  2. When that fails or hangs: the shapes drawn on a canvas of our own. Ink comes out in its
- *     colours, with photos and PDF pages under it and typed maths as text (arrows and text boxes
- *     are left out).
+ *  2. When that fails or hangs, or the screen holds big pictures (`heavyPictures`: the SVG would
+ *     carry them whole, twice over in base64): the shapes drawn on a canvas of our own. Ink comes
+ *     out in its colours, with photos and PDF pages under it and typed maths as text (arrows and
+ *     text boxes are left out).
  * Each is encoded as JPEG (WebP where the browser really makes it and it comes out smaller), with
  * the quality stepped down, then the size, until the data URL fits `ASK_LIMITS.imageChars`. Never
- * throws; null when the screen is empty, nothing came in `timeoutMs`, or nothing worked.
+ * throws; null when the screen is empty, nothing came in `timeoutMs`, or nothing worked. Past the
+ * deadline nothing more is encoded, decoded or painted (an export that answers late is dropped).
  */
-import { Box, getDefaultColorTheme, STROKE_SIZES, tlenv, type Editor, type TLDefaultColorStyle, type TLDefaultSizeStyle, type TLShape, type TLShapeId } from "tldraw";
+import { Box, getDefaultColorTheme, STROKE_SIZES, tlenv, type Editor, type TLAssetId, type TLDefaultColorStyle, type TLDefaultSizeStyle, type TLShape, type TLShapeId } from "tldraw";
 import { latexToPlainText } from "@/lib/boards/boardTitle";
 import { clientMetric } from "@/lib/logger";
 import { readScreenMeta } from "@/lib/screens/screens";
@@ -47,6 +49,14 @@ export const ASK_IMAGE = {
   timeoutMs: 1200,
   /** kept back from the export for the drawn fallback, when the export hangs */
   fallbackMs: 300,
+  /**
+   * Pictures on the screen (photos, PDF pages) past which tldraw's SVG is not made: the SVG carries
+   * each one whole as base64 (a phone photo, a PDF page rendered for print), and its own data URL
+   * encodes all of that again — tens of MB per ask on an iPad. Past either, the screen is drawn by
+   * hand, each picture decoded from its URL and drawn at the picture's size.
+   */
+  exportPicturePixels: 4_000_000,
+  exportPictureBytes: 1_500_000,
 } as const;
 
 /** Quality first, then size: a smaller picture of the same screen reads better than a blotchy one. */
@@ -155,6 +165,32 @@ export function askScene(editor: AskImageEditor): AskScene | null {
   if (!bounds || !(bounds.w > 0) || !(bounds.h > 0)) return null;
   shapes.sort((a, b) => (a.index < b.index ? -1 : a.index > b.index ? 1 : 0));
   return { shapes, bounds };
+}
+
+/**
+ * The screen's pictures weigh too much for tldraw's SVG (`ASK_IMAGE.exportPicturePixels`, `…Bytes`):
+ * their sizes as the assets record them, an inline one (a data URL in the board) by its length. A
+ * picture whose asset cannot be read counts for nothing.
+ */
+export function heavyPictures(editor: AskImageEditor, scene: AskScene): boolean {
+  let pixels = 0;
+  let bytes = 0;
+  for (const shape of scene.shapes) {
+    if (shape.type !== "image") continue;
+    const assetId = (shape.props as { assetId?: unknown }).assetId;
+    if (typeof assetId !== "string" || !assetId) continue;
+    let props: { w?: unknown; h?: unknown; fileSize?: unknown; src?: unknown } | undefined;
+    try {
+      props = editor.getAsset?.(assetId as TLAssetId)?.props as typeof props;
+    } catch {
+      props = undefined;
+    }
+    if (!props) continue;
+    pixels += num(props.w) * num(props.h);
+    const src = typeof props.src === "string" ? props.src : "";
+    bytes += num(props.fileSize, src.startsWith("data:") ? Math.round(src.length * 0.75) : 0);
+  }
+  return pixels > ASK_IMAGE.exportPicturePixels || bytes > ASK_IMAGE.exportPictureBytes;
 }
 
 /** The picture's size for `bounds`: its long side at most `longSide`, blown up at most `maxScale`. */
@@ -297,10 +333,11 @@ function toBlob(canvas: AskCanvas, type: string, quality: number): Promise<Blob 
   return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
 }
 
-/** `fitAskImage` over a painted canvas: the full size from it, smaller ones drawn from it. */
-function fitCanvas(source: AskCanvas, deps: AskImageDeps): Promise<Blob | null> {
+/** `fitAskImage` over a painted canvas: the full size from it, smaller ones drawn from it (none past the deadline). */
+function fitCanvas(source: AskCanvas, deps: AskImageDeps, alive: () => boolean): Promise<Blob | null> {
   return fitAskImage(
     async (step, type) => {
+      if (!alive()) return null;
       if (step.scale === 1) return toBlob(source, type, step.quality);
       const w = Math.max(1, Math.round(source.width * step.scale));
       const h = Math.max(1, Math.round(source.height * step.scale));
@@ -351,7 +388,11 @@ async function exportCanvas(editor: AskImageEditor, scene: AskScene, deps: AskIm
   const { x, y, w: bw, h: bh } = scene.bounds;
   const svg = await editor.getSvgString(ids, { bounds: new Box(x, y, bw, bh), scale, padding: 0, background: false, darkMode: false, pixelRatio: 1 });
   if (!svg) throw new Error("no svg");
-  const img = await deps.loadImage(await blobToDataUrl(new Blob([svg.svg], { type: "image/svg+xml" })));
+  // an export that answers past its deadline is neither encoded again nor decoded: nobody waits for it
+  if (!alive()) return null;
+  const url = await blobToDataUrl(new Blob([svg.svg], { type: "image/svg+xml" }));
+  if (!alive()) return null;
+  const img = await deps.loadImage(url);
   if (!img) throw new Error("svg would not decode");
   if (deps.isSafari() && LATE_SVG_PARTS.test(svg.svg)) await new Promise((r) => setTimeout(r, 250));
   // past the deadline: nobody would release the canvas
@@ -518,7 +559,9 @@ export async function captureAskImage(editor: AskImageEditor, opts: { timeoutMs?
         tried.push(`${how}:none`);
         return null;
       }
-      const blob = await fitCanvas(canvas, deps);
+      const blob = await fitCanvas(canvas, deps, alive);
+      // past the deadline: nothing more is encoded
+      if (!alive()) return null;
       if (!blob) {
         tried.push(`${how}:big`);
         return null;
@@ -538,17 +581,22 @@ export async function captureAskImage(editor: AskImageEditor, opts: { timeoutMs?
     const scene = askScene(editor);
     if (!scene) return null;
     // 1. tldraw's SVG on white, given all but the fallback's share of the time. An export that
-    // answers after its deadline paints nothing (its canvas would never be given back).
+    // answers after its deadline paints nothing (its canvas would never be given back). Not with
+    // big pictures on the screen (`heavyPictures`): those are drawn by hand from the start.
+    const heavy = heavyPictures(editor, scene);
+    if (heavy) tried.push("export:heavy");
     const exportMs = Math.max(0, deadline - ASK_IMAGE.fallbackMs - deps.now());
     let exportLive = true;
-    const exported = await attempt("export", () =>
-      withDeadline(
-        exportCanvas(editor, scene, deps, () => exportLive && alive()),
-        exportMs,
-      ).finally(() => {
-        exportLive = false;
-      }),
-    );
+    const exported = heavy
+      ? null
+      : await attempt("export", () =>
+          withDeadline(
+            exportCanvas(editor, scene, deps, () => exportLive && alive()),
+            exportMs,
+          ).finally(() => {
+            exportLive = false;
+          }),
+        );
     if (exported || !alive()) return exported;
     // 2. drawn by hand, with whatever pictures load in half the time left
     const pictures = await loadPictures(editor, scene, deps, Math.max(0, (deadline - deps.now()) / 2));

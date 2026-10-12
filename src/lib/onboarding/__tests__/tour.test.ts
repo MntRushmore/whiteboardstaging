@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CHAT_PROBLEM_META } from "@/lib/live/chat/cells";
 import { GRADE_STARTERS, startersFor } from "../courses";
 import { isTutorWork, markKindOf, questionWhyOf } from "../marks";
-import { askProgress, COACH_COUNT, coachNumber, helpProblemFor, helpWordsFor, initialTour, markerStepOf, resumeTour, tourAutoAtEnd, tourAutoBefore, tourReducer, type TourEvent, type TourState, type TourStep } from "../tour";
+import { askProgress, COACH_COUNT, coachNumber, helpProblemFor, helpWordsFor, initialTour, markerStepOf, resumeTour, tabMessageCount, tourAutoAtEnd, tourAutoBefore, tourReducer, type TourEvent, type TourState, type TourStep } from "../tour";
 import { helpCopy } from "../tourCopy";
 
 function run(events: TourEvent[], from: TourState = initialTour()): TourState {
@@ -221,6 +221,27 @@ describe("coach mark 3: Ask", () => {
     // a failed ask (out of ink, offline) ends the wait too: the student did ask
     expect(askProgress([{ role: "user" }, { role: "tutor", state: "error" }], 0)).toBe("answered");
     expect(askProgress([{ role: "user" }], -3)).toBe("busy");
+  });
+
+  it("a reload with the panel open: the saved chat that lands after it opened is no new ask", () => {
+    // the panel opens on an empty chat (the saved chat is still being read): coach mark 3 counts 0
+    const atOpen: Array<{ role: string; state?: string; saved?: boolean }> = [];
+    const since = tabMessageCount(atOpen);
+    expect(since).toBe(0);
+    let s = tourReducer({ ...initialTour(), step: "ask" }, { type: "askOpened", messages: since });
+    expect(s).toMatchObject({ step: "asking", askFrom: 0 });
+    // ...then the saved chat lands in front, its last turn a finished answer: still waiting
+    const saved = [
+      { role: "user", saved: true },
+      { role: "tutor", state: "done", saved: true },
+    ];
+    expect(askProgress(saved, s.askFrom)).toBe("waiting");
+    // the student's own ask, after it: followed as before
+    expect(askProgress([...saved, { role: "user" }, { role: "tutor", state: "thinking" }], s.askFrom)).toBe("busy");
+    expect(askProgress([...saved, { role: "user" }, { role: "tutor", state: "done" }], s.askFrom)).toBe("answered");
+    // opened after the saved chat was in: it does not shift the count either
+    s = tourReducer({ ...initialTour(), step: "ask" }, { type: "askOpened", messages: tabMessageCount(saved) });
+    expect(askProgress(saved, s.askFrom)).toBe("waiting");
   });
 });
 

@@ -11,7 +11,7 @@
  * `18 \times 7` is a partial product.
  *
  * Pure and small: no mathjs, no DOM. Null (never a throw) for anything it does not read: letters,
- * roots, functions, relations other than `=`.
+ * roots that do not come out exact, functions, relations other than `=`.
  */
 
 /** An exact value n/d: d > 0, in lowest terms, both safe integers. */
@@ -76,14 +76,16 @@ export type Node =
   | { t: "neg"; arg: Node; value: Q }
   | { t: "op"; op: "+" | "-" | "×" | "÷" | "^"; left: Node; right: Node; value: Q }
   /** `\frac{A}{B}` of expressions (not two plain numbers): a division as written */
-  | { t: "over"; top: Node; bottom: Node; value: Q };
+  | { t: "over"; top: Node; bottom: Node; value: Q }
+  /** `\sqrt{A}` whose value is exact (`\sqrt{16}`, `\sqrt{\frac{4}{9}}`): a square root as written */
+  | { t: "root"; arg: Node; value: Q };
 
 export const valueOf = (n: Node): Q => (n.t === "num" ? n.w.value : n.value);
 
 /** Every number written in it, left to right. */
 export function numbersIn(n: Node): Written[] {
   if (n.t === "num") return [n.w];
-  if (n.t === "neg") return numbersIn(n.arg);
+  if (n.t === "neg" || n.t === "root") return numbersIn(n.arg);
   if (n.t === "over") return [...numbersIn(n.top), ...numbersIn(n.bottom)];
   return [...numbersIn(n.left), ...numbersIn(n.right)];
 }
@@ -97,7 +99,10 @@ export function opsIn(n: Node): Set<string> {
       walk(m.left);
       walk(m.right);
     } else if (m.t === "neg") walk(m.arg);
-    else if (m.t === "over") {
+    else if (m.t === "root") {
+      out.add("√");
+      walk(m.arg);
+    } else if (m.t === "over") {
       out.add("÷");
       walk(m.top);
       walk(m.bottom);
@@ -110,19 +115,33 @@ export function opsIn(n: Node): Set<string> {
 /** The value of every operation in it (its sub-expressions), innermost first. */
 export function stepValues(n: Node): Q[] {
   if (n.t === "num") return [];
-  if (n.t === "neg") return [...stepValues(n.arg), n.value];
+  if (n.t === "neg" || n.t === "root") return [...stepValues(n.arg), n.value];
   if (n.t === "over") return [...stepValues(n.top), ...stepValues(n.bottom), n.value];
   return [...stepValues(n.left), ...stepValues(n.right), n.value];
+}
+
+/** `25` (a percent, as written before `\%`) as the decimal it is: `0.25`; `5` → `0.05`, `12.5` → `0.125`, `150` → `1.5`. */
+function percentAsDecimal(n: string): string {
+  const [whole, frac = ""] = n.split(".");
+  const w = whole.padStart(3, "0");
+  const int = w.slice(0, -2).replace(/^0+(?=\d)/, "");
+  const hundredths = (w.slice(-2) + frac).replace(/0+$/, "");
+  return hundredths ? `${int}.${hundredths}` : int;
 }
 
 /**
  * The LaTeX tidied to the few things this reads: spacing, sizing and `\left`/`\right` gone, every
  * times sign `×` (`\times`, `\cdot`, `*`, an `x` between numbers), every divide sign `÷` (`\div`,
- * `/`, `:` between numbers), thousands commas dropped (`1,250`).
+ * `/`, `:` between numbers), thousands commas dropped (`1,250`, and `1{,}250` as LaTeX writes it).
+ * A K–8 problem's money and percents are numbers too (`problemForms.ts`): a dollar sign goes
+ * (`\$3.25` is 3.25), and a percent is its hundredths as a decimal (`25\%` is 0.25), so `\$3.25 +
+ * \$1.50` and `25\% \times 80` are judged as any sum and product are.
  */
 export function tidyArithmetic(latex: string): string {
   return latex
     .replace(/\\(?:left|right|displaystyle|textstyle)(?![a-zA-Z])/g, "")
+    .replace(/\\\$/g, " ")
+    .replace(/(\d+(?:\.\d+)?)\s*\\?%/g, (_m, n: string) => percentAsDecimal(n))
     .replace(/\\(?:[,;:! ]|quad|qquad)|~/g, " ")
     .replace(/\\[dt]frac(?![a-zA-Z])/g, "\\frac")
     .replace(/\\(?:times|cdot|ast)(?![a-zA-Z])|[*×·]/g, " × ")
@@ -131,12 +150,27 @@ export function tidyArithmetic(latex: string): string {
     .replace(/(?<=[\d)}\]])\s*[/:]\s*(?=[\d(\\[])/g, " ÷ ")
     .replace(/−/g, "-")
     .replace(/\\\{|\\\}/g, "")
+    .replace(/(?<=\d)\s*\{\s*,\s*\}\s*(?=\d)/g, ",")
     .replace(/(?<![\d.])(\d{1,3}(?:,\d{3})+)(?![\d,])/g, (m) => m.replace(/,/g, ""))
     .replace(/\s+/g, " ")
     .trim();
 }
 
-type Tok = { k: "num"; w: Written } | { k: "op"; v: "+" | "-" | "×" | "÷" | "^" } | { k: "(" } | { k: ")" } | { k: "frac"; top: Node; bottom: Node; plain: boolean };
+/** The exact square root of a value (both its top and bottom perfect squares), or null. */
+function exactRoot(v: Q): Q | null {
+  if (v.n < 0) return null;
+  const n = Math.round(Math.sqrt(v.n));
+  const d = Math.round(Math.sqrt(v.d));
+  return n * n === v.n && d * d === v.d ? q(n, d) : null;
+}
+
+type Tok =
+  | { k: "num"; w: Written }
+  | { k: "op"; v: "+" | "-" | "×" | "÷" | "^" }
+  | { k: "(" }
+  | { k: ")" }
+  | { k: "frac"; top: Node; bottom: Node; plain: boolean }
+  | { k: "root"; arg: Node; value: Q };
 
 /** The brace group starting at `i` (`s[i]` is `{`): its inside and the index after it, or null. */
 function group(s: string, i: number): { inside: string; end: number } | null {
@@ -195,6 +229,18 @@ function tokenize(s: string): Tok[] | null {
       i = b.end;
       continue;
     }
+    // a square root that comes out exact (`\sqrt{16}`); any other root (`\sqrt{50}`, `\sqrt[3]{8}`) is not read
+    if (s.startsWith("\\sqrt", i) && !/[a-zA-Z]/.test(s[i + 5] ?? "")) {
+      let j = i + 5;
+      while (s[j] === " ") j++;
+      const a = group(s, j);
+      const arg = a ? parseArithmetic(a.inside) : null;
+      const value = arg ? exactRoot(valueOf(arg)) : null;
+      if (!a || !arg || !value) return null;
+      out.push({ k: "root", arg, value });
+      i = a.end;
+      continue;
+    }
     if (c === "{") {
       const g = group(s, i);
       if (!g) return null;
@@ -251,7 +297,7 @@ class Reader {
       if (t?.k === "op" && (t.v === "×" || t.v === "÷")) {
         op = t.v;
         this.i++;
-      } else if (t && (t.k === "(" || t.k === "frac" || t.k === "num") && this.adjacentTimes(left, t)) op = "×";
+      } else if (t && (t.k === "(" || t.k === "frac" || t.k === "num" || t.k === "root") && this.adjacentTimes(left, t)) op = "×";
       if (!op) break;
       const right = this.unary();
       if (!right) return null;
@@ -321,6 +367,10 @@ class Reader {
         return { t: "num", w: { value, form: "frac", places: 0, top, bottom } };
       }
       return { t: "over", top: t.top, bottom: t.bottom, value };
+    }
+    if (t.k === "root") {
+      this.i++;
+      return { t: "root", arg: t.arg, value: t.value };
     }
     if (t.k === "(") {
       this.i++;

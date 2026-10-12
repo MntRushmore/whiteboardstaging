@@ -22,6 +22,7 @@ import {
   problemFor,
   runNotes,
   sendsOnKey,
+  spokenWords,
   shownReply,
   SUGGESTIONS,
   tutorStatus,
@@ -282,5 +283,22 @@ describe("a failure's words", () => {
     for (const line of lines) expect(line).not.toMatch(/\btry again[.!?]?$/i);
     // short enough for a young reader
     for (const line of lines) expect(line.split(/\s+/).length).toBeLessThanOrEqual(12);
+  });
+});
+
+describe("words said into the mic", () => {
+  it("sent as said when the tutor is free", () => {
+    expect(spokenWords({ busy: false, draft: "", said: " what is half of ten? " })).toEqual({ send: "what is half of ten?", draft: "" });
+    // anything typed stays in the box
+    expect(spokenWords({ busy: false, draft: "typed", said: "said" })).toEqual({ send: "said", draft: "typed" });
+  });
+
+  it("while the tutor is still answering: never lost, they wait in the box after anything typed", () => {
+    expect(spokenWords({ busy: true, draft: "", said: "and what about 12?" })).toEqual({ send: null, draft: "and what about 12?" });
+    expect(spokenWords({ busy: true, draft: "I think ", said: "it is 6" })).toEqual({ send: null, draft: "I think it is 6" });
+    // at most what the box holds
+    expect(spokenWords({ busy: true, draft: "", said: "a".repeat(ASK_LIMITS.message + 50) }).draft).toHaveLength(ASK_LIMITS.message);
+    // nothing said: nothing changes
+    expect(spokenWords({ busy: true, draft: "typed", said: "  " })).toEqual({ send: null, draft: "typed" });
   });
 });
