@@ -3,7 +3,7 @@
  * boxes measured on the dev server, 2026-10-08).
  */
 import { describe, expect, it } from "vitest";
-import { BIG_PILL, PILL, pillSpot } from "../pill";
+import { BIG_PILL, COMPACT_PILL, PILL, pillSpot } from "../pill";
 
 describe("pillSpot", () => {
   it("a laptop: in the bar's row, left of the pen's swatch", () => {
@@ -56,6 +56,16 @@ describe("pillSpot", () => {
       const spot = pillSpot({ width: 1440, bar: { top: 16, right: 237, bottom: 64 }, corner }, BIG_PILL);
       expect(spot).toEqual({ top: 16, right: 16 + 92 + PILL.gap, inline: true });
       expect(BIG_PILL.height).toBe(48);
+    });
+
+    it("a phone's 48 px bar: the whole pill does not fit its row, the short one (a star and 0/5) does", () => {
+      // Back, Help me (16 px sides) and its choice end at 229; More is its "…" alone, 48 px
+      const area = { width: 390, bar: { top: 16, right: 229, bottom: 64 }, corner: { left: 390 - 16 - 48, bottom: 64, right: 390 - 16 } };
+      expect(pillSpot(area, BIG_PILL).inline).toBe(false);
+      const spot = pillSpot(area, COMPACT_PILL);
+      expect(spot).toEqual({ top: 16, right: 16 + 48 + PILL.gap, inline: true });
+      // a gap either side: from Help me's choice, and (in `right`) from More
+      expect(390 - spot.right - COMPACT_PILL.width - 229).toBeGreaterThanOrEqual(PILL.gap);
     });
 
     it("under More on a phone, its right edge on More's (not 4 px off it)", () => {

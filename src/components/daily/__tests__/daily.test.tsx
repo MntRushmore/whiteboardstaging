@@ -126,6 +126,17 @@ describe("DailyBoard", () => {
     expect(html(<ProgressPill goal={5} done={0} stars={0} spot={spot} />)).not.toContain(DAILY_BOARD_COPY.pillTitle + "<");
   });
 
+  it("short on a phone's bar: one star and 2/5, read out as the whole pill is", () => {
+    const out = html(<ProgressPill goal={5} done={2} stars={1} spot={spot} big compact />);
+    expect(out).toContain('data-compact=""');
+    expect(out).toContain(">2/5<");
+    expect(out).toContain(`aria-label="${DAILY_BOARD_COPY.pillLabel(1, 2, 5)}"`);
+    expect(out).not.toContain(DAILY_BOARD_COPY.pillTitle + "<");
+    // its one star is gold once a problem was solved alone
+    expect(out).toContain('data-star="star"');
+    expect(html(<ProgressPill goal={5} done={1} stars={0} spot={spot} big compact />)).toContain('data-star="empty"');
+  });
+
   it("past the goal: 5 of 5 and the extra ones", () => {
     const out = html(<ProgressPill goal={5} done={7} stars={6} spot={spot} />);
     expect(out).toContain(">5 of 5<");

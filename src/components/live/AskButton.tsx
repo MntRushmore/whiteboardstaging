@@ -37,7 +37,7 @@ export function AskButton({ kind, glow, onAsk, big = false }: { kind: "help" | "
     <Button
       key={glow}
       size="sm"
-      className={`${big ? "h-12 gap-2 pl-5 pr-5 text-[17px] font-bold [&_svg]:size-[22px]!" : "h-8 px-3.5 font-semibold"} rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700${glow > 0 ? " ask-glow" : ""}`}
+      className={`${big ? "h-12 gap-2 px-4 text-[17px] font-bold @md/bar:px-5 [&_svg]:size-[22px]!" : "h-8 px-3.5 font-semibold"} rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700${glow > 0 ? " ask-glow" : ""}`}
       title={`${solve ? LIVE_COPY.ask.solveHint : LIVE_COPY.ask.helpHint}. ${LIVE_COPY.ask.pickHint}`}
       {...{ [ASK_BUTTON_ATTR]: kind }}
       onPointerEnter={(e) => e.pointerType === "mouse" && point({ hover: true })}

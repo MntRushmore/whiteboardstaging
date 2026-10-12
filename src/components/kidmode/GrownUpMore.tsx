@@ -109,11 +109,13 @@ export default function GrownUpMore({
         aria-controls="grown-up-more"
         {...{ [GROWN_UP_MORE_ATTR]: "" }}
         title={MORE_COPY.hint}
+        aria-label={MORE_COPY.more}
         onClick={() => onOpenChange(!open)}
-        className="flex h-12 cursor-pointer select-none items-center gap-1.5 rounded-full border border-slate-200 bg-white/95 pl-3.5 pr-4 text-sm font-medium text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-slate-100 aria-expanded:text-slate-800 motion-reduce:transition-none"
+        // a phone's bar (under 448 px) is one row of Back, Help me, the day's pill and this: its "…" alone there
+        className="flex h-12 w-12 cursor-pointer select-none items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white/95 text-sm font-medium text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-slate-100 aria-expanded:text-slate-800 @md/bar:w-auto @md/bar:pl-3.5 @md/bar:pr-4 motion-reduce:transition-none"
       >
         <Ellipsis className="size-5" aria-hidden />
-        {MORE_COPY.more}
+        <span className="hidden @md/bar:inline">{MORE_COPY.more}</span>
       </button>
       <section
         id="grown-up-more"

@@ -51,6 +51,11 @@
   padding: 0 18px 0 16px;
   font-size: 15px;
 }
+/* ...short, where the bar's row is (a phone): one star and "0/5" */
+.pill[data-compact] {
+  gap: 6px;
+  padding: 0 14px 0 12px;
+}
 .today {
   color: var(--b-secondary);
   font-weight: 600;

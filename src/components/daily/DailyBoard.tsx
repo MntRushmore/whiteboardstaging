@@ -9,7 +9,7 @@ import { BOARD_BAR_ATTR } from "@/components/live/hintPlacement";
 import type { LiveController } from "@/lib/live/contracts";
 import { clientMetric } from "@/lib/logger";
 import { DAILY_BOARD_COPY } from "@/lib/daily/copy";
-import { BIG_PILL, PILL, pillSpot, type PillSpot } from "@/lib/daily/pill";
+import { BIG_PILL, COMPACT_PILL, PILL, pillSpot, type PillSpot } from "@/lib/daily/pill";
 import { useSimpleBoard } from "@/components/kidmode/useSimpleBoard";
 import { boardProblems } from "@/lib/daily/progress";
 import { useDailyBoard, type BoardProblem } from "./useDailyBoard";
@@ -45,8 +45,8 @@ const MORE_SELECTOR = "[aria-controls=grown-up-more]";
  * Where the pill goes, measured against the board's top bar as it wraps and the board resizes, and
  * against the simple board's More as it comes and goes (lazy, and with the Simple board switch).
  */
-function usePillSpot(editor: Editor, active: boolean, big: boolean): PillSpot {
-  const [spot, setSpot] = useState<PillSpot>({ top: PILL.top, right: PILL.gap, inline: false });
+function usePillSpot(editor: Editor, active: boolean, big: boolean): PillSpot & { compact: boolean } {
+  const [spot, setSpot] = useState<PillSpot & { compact: boolean }>({ top: PILL.top, right: PILL.gap, inline: false, compact: false });
   useLayoutEffect(() => {
     if (!active) return;
     const container = editor.getContainer();
@@ -73,15 +73,18 @@ function usePillSpot(editor: Editor, active: boolean, big: boolean): PillSpot {
       const box = container.getBoundingClientRect();
       const b = bar?.getBoundingClientRect();
       const m = more?.getBoundingClientRect();
-      const next = pillSpot(
-        {
-          width: box.width,
-          bar: b ? { top: b.top - box.top, right: b.right - box.left, bottom: b.bottom - box.top } : null,
-          corner: m && m.width > 0 ? { left: m.left - box.left, bottom: m.bottom - box.top, right: m.right - box.left } : null,
-        },
-        big ? BIG_PILL : PILL,
-      );
-      setSpot((prev) => (prev.top === next.top && prev.right === next.right && prev.inline === next.inline ? prev : next));
+      const area = {
+        width: box.width,
+        bar: b ? { top: b.top - box.top, right: b.right - box.left, bottom: b.bottom - box.top } : null,
+        corner: m && m.width > 0 ? { left: m.left - box.left, bottom: m.bottom - box.top, right: m.right - box.left } : null,
+      };
+      // the simple board's: whole in the bar's row where it fits, else short there (a phone), else whole under it
+      let next = { ...pillSpot(area, big ? BIG_PILL : PILL), compact: false };
+      if (big && !next.inline) {
+        const short = pillSpot(area, COMPACT_PILL);
+        if (short.inline) next = { ...short, compact: true };
+      }
+      setSpot((prev) => (prev.top === next.top && prev.right === next.right && prev.inline === next.inline && prev.compact === next.compact ? prev : next));
     }
     ro?.observe(container);
     measure();
@@ -130,11 +133,24 @@ function Stars({ goal, done, stars, size }: { goal: number; done: number; stars:
 
 /**
  * The pill. Exported for its markup test. `big`: the simple board's, as tall as its bar's buttons and
- * level with them, saying what it counts ("Today") before the stars.
+ * level with them, saying what it counts ("Today") before the stars. `compact`: the simple board's
+ * where its bar's row is short (a phone): one star and "0/5", read out the same.
  */
-export function ProgressPill({ goal, done, stars, spot, big = false }: { goal: number; done: number; stars: number; spot: PillSpot; big?: boolean }) {
+export function ProgressPill({ goal, done, stars, spot, big = false, compact = false }: { goal: number; done: number; stars: number; spot: PillSpot; big?: boolean; compact?: boolean }) {
   const shown = Math.min(stars, goal);
   const extra = Math.max(0, done - goal);
+  if (compact) {
+    return (
+      <div className={styles.pill} data-daily-pill="" data-big="" data-compact="" data-complete={done >= goal ? "" : undefined} style={{ top: spot.top, right: spot.right }} role="img" aria-label={DAILY_BOARD_COPY.pillLabel(shown, done, goal)}>
+        <span className={styles.star} data-star={shown > 0 ? "star" : "empty"} aria-hidden>
+          <Star size={18} strokeWidth={2.2} />
+        </span>
+        <span className={styles.count} aria-hidden>
+          {DAILY_BOARD_COPY.pillShort(done, goal)}
+        </span>
+      </div>
+    );
+  }
   return (
     <div className={styles.pill} data-daily-pill="" data-big={big ? "" : undefined} data-complete={done >= goal ? "" : undefined} style={{ top: spot.top, right: spot.right }} role="img" aria-label={DAILY_BOARD_COPY.pillLabel(shown, done, goal)}>
       {big && (
@@ -224,7 +240,7 @@ export default function DailyBoard({ boardId, userId, controller }: DailyBoardPr
       <p role="status" aria-live="polite" className={styles.srOnly}>
         {celebrating ? DAILY_BOARD_COPY.announce(daily.streak) : ""}
       </p>
-      <ProgressPill goal={daily.goal} done={daily.done} stars={daily.stars} spot={spot} big={big} />
+      <ProgressPill goal={daily.goal} done={daily.done} stars={daily.stars} spot={spot} big={big} compact={spot.compact} />
       {celebrating && (
         <Celebration
           goal={daily.goal}

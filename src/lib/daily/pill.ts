@@ -50,6 +50,12 @@ export const PILL = {
 /** The simple board's pill: as tall as its bar's buttons (48 px), "Today" before the stars. */
 export const BIG_PILL = { width: 234, height: 48 } as const;
 
+/**
+ * ...and where that would not fit the bar's row (a phone): one star and "0/5", so the bar stays one
+ * row instead of the pill dropping under it (QA, 2026-10-12).
+ */
+export const COMPACT_PILL = { width: 64, height: 48 } as const;
+
 export function pillSpot(area: PillArea, size: { width: number; height: number } = PILL): PillSpot {
   const { bar, corner } = area;
   // the right edge the pill keeps clear in the bar's row: the swatch's corner, or More and a gap
@@ -60,8 +66,9 @@ export function pillSpot(area: PillArea, size: { width: number; height: number }
   const right = corner?.right !== undefined ? Math.round(area.width - corner.right) : PILL.gap;
   if (!bar) return { top: below ? Math.round(below + PILL.gap - 4) : PILL.top, right, inline: false };
   const rowHeight = bar.bottom - bar.top;
+  // the gap on the right is in `reserve` already: the room needs the pill and the gap on its left
   const room = area.width - reserve - bar.right;
-  if (rowHeight <= PILL.oneRow && room >= size.width + PILL.gap * 2) {
+  if (rowHeight <= PILL.oneRow && room >= size.width + PILL.gap) {
     return { top: Math.round(bar.top + Math.max(0, (rowHeight - size.height) / 2)), right: reserve, inline: true };
   }
   return { top: Math.round(below + PILL.gap - 4), right, inline: false };
