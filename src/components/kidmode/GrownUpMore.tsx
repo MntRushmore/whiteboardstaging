@@ -225,7 +225,7 @@ export interface LayerNode {
  * A layer over More, which takes Escape first and whose taps are not taps outside More: a menu
  * (Board options) or a modal dialog (the ink dialog, the help-mode explainer, the tour's finish
  * card). Not a non-modal dialog beside the board (`aria-modal="false"`): the guided board's coach
- * mark, up through most of a K–3 kid's first board, or the daily board's cheer. More neither waits
+ * mark, up through most of a student's first board, or the daily board's cheer. More neither waits
  * for one of those on Escape nor counts a tap on it as a tap inside.
  */
 export function layerOverMore(el: Pick<LayerNode, "getAttribute">): boolean {

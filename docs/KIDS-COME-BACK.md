@@ -64,7 +64,7 @@ Each part's own migration gets its own timestamp:
 | Part | Branch | What it is |
 |---|---|---|
 | Read aloud | `feat/kcb3-voice` | Hints and questions spoken by ElevenLabs (`/api/live/speak`), falling back to the browser's voice. On by default for K–2. |
-| Simple board | `feat/kcb3-kidmode` | A board with fewer, bigger buttons for young kids (K–3 by default, switchable). |
+| Simple board | `feat/kcb3-kidmode` | A board with fewer, bigger buttons for young kids (K–3 by default, switchable). Since 2026-10-12 (`feat/simple-for-everyone`) every student's board by default, with Select, Shapes, Picture, Redo and a Help me choice. |
 
 **Contract (Phases 2 and 3):**
 - Types:

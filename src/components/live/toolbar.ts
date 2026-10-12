@@ -12,9 +12,10 @@
  *    or only when you tap Help me / Solve it (off). A per-device preference like Live.
  *  - LIVE (typeset echo + instant checking) is a per-device preference, not a mode. It lives
  *    in the menu; the pill reports what it is doing right now.
- *  - SIMPLE, the board for young kids (src/components/kidmode): the bar is Back, a big Help me and a
- *    small grown-up More; everything else here moves behind More (`place`), and tldraw's tools give
- *    way to the kid dock at the foot (`kidDockView`), which carries a big Ask too.
+ *  - SIMPLE, every student's board by default (src/components/kidmode): the bar is Back, a big Help me
+ *    (with a choice of how much help) and a small grown-up More; everything else here moves behind
+ *    More (`place`), and tldraw's tools give way to the kid dock at the foot (`kidDockView`), which
+ *    carries a big Ask too.
  */
 import type { AssistanceMode } from "@/hooks/useAssistanceMode";
 import type { LiveStatus, RecognizerKind } from "@/lib/live/contracts";
@@ -32,7 +33,7 @@ export interface BoardToolbarState {
   auto: boolean;
   /** "Hide AI shapes" is on: Auto is paused (`autoActs`), whatever the switch says */
   hideAiShapes?: boolean;
-  /** the simple board for young kids (`useSimpleBoard`): on for K–3 by default, switchable */
+  /** the simple board (`useSimpleBoard`): on for every student by default, switchable */
   simple?: boolean;
   /**
    * The kid dock could not load (its chunk failed, or it threw): tldraw's palette stands in for it

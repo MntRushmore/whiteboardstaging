@@ -1,57 +1,54 @@
 /**
- * The simple board (2026-10-09, "kids come back" Phase 3): fewer, bigger buttons for young kids. Most
- * of prod's students are 5 to 10, and the grown-up bar (the help dial, Auto, Ask, menus, a dozen
- * tldraw tools) is a wall of words to a 6-year-old. The simple board keeps what a kid writing a sum
- * needs (pen, eraser, undo, a few colours, pages, Help me) and puts the rest behind a grown-up
- * "More" button (`boardToolbarView`, `kidDockView`).
+ * The simple board: big buttons with one word each, and the grown-up controls behind More. Built for
+ * young kids (2026-10-09, "kids come back" Phase 3), where the grown-up bar (the help dial, Auto, Ask,
+ * menus, a dozen tldraw tools) was a wall of words to a 6-year-old; since 2026-10-12 the board every
+ * student opens. Its dock (`kidDockView`) keeps what writing maths needs (select, pen, eraser, shapes,
+ * a picture, Type, undo and redo, a few colours, pages, Ask), the bar a Help me with a choice of how
+ * much help, and More the rest (`boardToolbarView`).
  *
- * Who gets it: Kindergarten to 3rd grade by default (`profiles.grade`), never a high-school course or a
- * student whose grade is not known. Anyone can switch it, in Board options or in More, and the choice
- * is remembered on the device.
+ * Who gets it: every student, by default. Every grade, a high-school course, a grade not known: the
+ * grade is no longer read for it, so a board opens simple at once instead of on the classic bar while
+ * a profile loads. A grown-up can switch it off (the classic bar, tldraw's tools) in More or Board
+ * options, and the choice is remembered on the device.
  *
  * Remembered per user ON the device, under one key (SIMPLE_BOARD_KEY): a family's kids share a tablet
- * and switch by picture (src/lib/family), and a 1st grader's simple board must not follow her brother
- * in 7th grade onto it. Each user's entry also keeps the grade's answer as last read, so a kid's next
- * board opens simple straight away instead of flashing the grown-up bar while the profile is read.
+ * and switch by picture (src/lib/family), and one kid's switch must not follow her brother onto it.
+ *
+ * The key is the second one. The first (`agathon.simpleBoard`, `LEGACY_SIMPLE_BOARD_KEYS`) also kept
+ * each user's grade as last read, off from 4th grade, for a course and for an unknown grade, and an
+ * older student's device would have kept the classic bar by it. It is ignored, and cleared on the
+ * first write: everyone lands on the simple board once, and a choice made from then on is kept.
  *
  * Pure: no React, no storage, no network (the store is `useSimpleBoard.ts`).
  */
 
 /** Device setting key (localStorage): a JSON `SimpleBoardStore`. */
-export const SIMPLE_BOARD_KEY = "agathon.simpleBoard";
+export const SIMPLE_BOARD_KEY = "agathon.simpleBoard.v2";
 
-/** The oldest grade the simple board is on for by default: 3rd grade (Kindergarten is 0). */
-export const SIMPLE_BOARD_MAX_GRADE = 3;
+/** Keys of earlier versions: never read, removed when the store is first written. */
+export const LEGACY_SIMPLE_BOARD_KEYS = ["agathon.simpleBoard"] as const;
 
 /** Users kept on one device: a family is at most a grown-up and six kids; more is just old entries. */
 export const SIMPLE_BOARD_MAX_USERS = 8;
 
 /**
- * On by default from Kindergarten to 3rd grade. A high-school student has no grade (only a course),
- * and an unknown grade is not a young kid's either: neither ever gets it by default.
+ * On by default for every student, whatever their grade or course, and with neither known. Without
+ * a switch of their own, a user's board is simple.
  */
-export function simpleBoardByDefault(grade: number | null | undefined): boolean {
-  return typeof grade === "number" && Number.isInteger(grade) && grade >= 0 && grade <= SIMPLE_BOARD_MAX_GRADE;
+export function simpleBoardByDefault(): boolean {
+  return true;
 }
 
 /** What the device remembers for one user. */
 export interface SimpleBoardMemory {
-  /** their own choice (the switch); absent: the grade decides */
+  /** their own choice (the switch); absent: the default (`simpleBoardByDefault`) */
   choice?: "on" | "off";
-  /** `simpleBoardByDefault` of their grade as last read; absent: not read on this device yet */
-  byGrade?: boolean;
 }
 
 /** The whole key: user id -> memory, oldest first (insertion order), at most SIMPLE_BOARD_MAX_USERS. */
 export type SimpleBoardStore = Record<string, SimpleBoardMemory>;
 
-function isMemory(value: unknown): value is SimpleBoardMemory {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const v = value as Record<string, unknown>;
-  return (v.choice === undefined || v.choice === "on" || v.choice === "off") && (v.byGrade === undefined || typeof v.byGrade === "boolean");
-}
-
-/** The stored value, read forgivingly: anything unreadable (or another shape) is an empty store. */
+/** The stored value, read forgivingly: anything unreadable is an empty store, an entry without a choice nothing. */
 export function parseSimpleBoardStore(raw: string | null | undefined): SimpleBoardStore {
   if (!raw) return {};
   try {
@@ -59,7 +56,9 @@ export function parseSimpleBoardStore(raw: string | null | undefined): SimpleBoa
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     const out: SimpleBoardStore = {};
     for (const [id, mem] of Object.entries(parsed as Record<string, unknown>)) {
-      if (id && isMemory(mem)) out[id] = { ...(mem.choice ? { choice: mem.choice } : {}), ...(mem.byGrade === undefined ? {} : { byGrade: mem.byGrade }) };
+      if (!id || !mem || typeof mem !== "object" || Array.isArray(mem)) continue;
+      const choice = (mem as Record<string, unknown>).choice;
+      if (choice === "on" || choice === "off") out[id] = { choice };
     }
     return out;
   } catch {
@@ -67,31 +66,10 @@ export function parseSimpleBoardStore(raw: string | null | undefined): SimpleBoa
   }
 }
 
-/**
- * Whether the board is simple for this user: their choice, else their grade's default as last read.
- * `null` while neither is known (a first board on this device, before the profile is read): the board
- * shows the grown-up bar meanwhile, the bar every older student keeps.
- */
-export function simpleBoardOn(memory: SimpleBoardMemory | undefined): boolean | null {
+/** Whether the board is simple for this user: their choice, else the default (on). */
+export function simpleBoardOn(memory: SimpleBoardMemory | undefined): boolean {
   if (memory?.choice) return memory.choice === "on";
-  return memory?.byGrade ?? null;
-}
-
-/** Does the profile still need reading? Only while no choice was made: a choice wins over any grade. */
-export function needsGrade(memory: SimpleBoardMemory | undefined): boolean {
-  return !memory?.choice;
-}
-
-/**
- * The grade a profile read says, or "unknown" when the read says nothing at all.
- * `readLearnerProfile` never throws: offline, or refused, it answers a profile of nothing but nulls —
- * the same as a student who skipped the welcome. Remembered, that would turn a 1st grader's simple
- * board off on the next board too; so a profile with no course, grade, name or picture changes nothing
- * (the grown-up bar meanwhile, as for any unknown grade). A high-school student has a course.
- */
-export function gradeFromProfile(profile: { grade: number | null; course: string | null; displayName: string | null; avatar: string | null }): number | null | "unknown" {
-  if (profile.grade === null && profile.course === null && profile.displayName === null && profile.avatar === null) return "unknown";
-  return profile.grade;
+  return simpleBoardByDefault();
 }
 
 /** `store` with `userId`'s entry replaced by `memory`, moved to the newest end and capped. */
@@ -103,12 +81,5 @@ function put(store: SimpleBoardStore, userId: string, memory: SimpleBoardMemory)
 
 /** The switch: the user's own choice, which wins from now on. */
 export function rememberChoice(store: SimpleBoardStore, userId: string, on: boolean): SimpleBoardStore {
-  return put(store, userId, { ...store[userId], choice: on ? "on" : "off" });
-}
-
-/** The profile was read: the grade's default, kept for the next board (a choice still wins). */
-export function rememberGrade(store: SimpleBoardStore, userId: string, grade: number | null | undefined): SimpleBoardStore {
-  const byGrade = simpleBoardByDefault(grade);
-  if (store[userId]?.byGrade === byGrade) return store;
-  return put(store, userId, { ...store[userId], byGrade });
+  return put(store, userId, { choice: on ? "on" : "off" });
 }

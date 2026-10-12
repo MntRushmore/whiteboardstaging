@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 /**
- * The guided first board's coach marks point at real buttons, found by selector (BoardTour). A K–3
- * kid's guided board is a simple board: tldraw's toolbar gives way to the kid dock (with its big Ask),
+ * The guided first board's coach marks point at real buttons, found by selector (BoardTour). A guided
+ * board is a simple board (every student's by default): tldraw's toolbar gives way to the kid dock (with its big Ask),
  * the bar is a big Help me, and the dial waits behind More. Each coach mark's
  * anchor must be on that board too, or the mark points at whatever is in the middle of the screen.
  */

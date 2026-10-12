@@ -78,7 +78,7 @@ import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
 import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 import { boardToolbarView } from "@/components/live/toolbar";
 import { AskButton } from "@/components/live/AskButton";
-import { setSimpleBoard, useSimpleBoard, useSimpleBoardGrade } from "@/components/kidmode/useSimpleBoard";
+import { setSimpleBoard, useSimpleBoard } from "@/components/kidmode/useSimpleBoard";
 import { BoardNavigationPanel, BoardSharePanel, BoardStylePanel, BoardToolbar, GrownUpMore, KidStatus, useKidDockFailed, usePreloadKidDock } from "@/components/kidmode/slots";
 import { KID_COPY } from "@/components/kidmode/copy";
 import { CHAT_BUTTON_COPY, CHAT_BUTTON_SIZE, CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
@@ -330,8 +330,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
 
   const narrowBoard = screenStripSlot(useBreakpoint()) === "corner";
 
-  // The simple board for young kids (src/components/kidmode): K–3 by default once the grade is read
-  // (BoardPage, beside the board's own load), the switch's choice on this device after that.
+  // The simple board (src/components/kidmode): every student's by default, a grown-up's switch in More
+  // (or Board options) brings back the classic bar; the choice is remembered on this device.
   const userId = user?.id;
   const simpleBoard = useSimpleBoard(userId) === true;
   // the kid dock could not load: its Ask comes back to the bar (`boardToolbarView`)
@@ -833,10 +833,8 @@ export default function BoardPage() {
   // known, and the tour clears it as it ends: the next board is gated).
   const guidedBoard = useMemo(() => (userId ? isGuidedBoard(onboardingStorage(), userId, id) : false), [userId, id]);
   usePlanGate({ enabled: !guidedBoard, page: "board" });
-  // The simple board: the student's grade is read (a dynamic import, one small query) beside the
-  // board's own load rather than after it, so a kid's first board seldom opens on the grown-up bar;
-  // and a kid's dock comes down while the board does. Neither holds the board up.
-  useSimpleBoardGrade(userId);
+  // The simple board (every student's unless switched off): its dock comes down while the board does,
+  // without holding it up.
   usePreloadKidDock(useSimpleBoard(userId));
 
   const retryLoad = useCallback(() => {

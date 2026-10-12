@@ -12,7 +12,7 @@ import { clientMetric } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 import { ASK_BUTTON_ATTR } from "@/components/live/AskButton";
 import { CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
-// the pen in either bar (tldraw's toolbar, or a K–3 kid's simple board's dock), and the simple board's More
+// the pen in either bar (tldraw's toolbar, or the simple board's dock), and the simple board's More
 import { MORE_SELECTOR as MORE, PEN_SELECTOR as PEN } from "@/components/kidmode/tourAnchors";
 import { useChatMessages, useChatScreen } from "@/components/chat/useBoardChat";
 import { startersFor, type StarterProblem } from "@/lib/onboarding/courses";
