@@ -339,9 +339,10 @@ async function* withWatchdog(opts: StreamChatOptions, watch: AttemptWatch): Asyn
 
 /**
  * The X-Title words that are not the route's own name: the setup route's figure read
- * ("Agathon Live - figure") and the title route's "board title".
+ * ("Agathon Live - figure"), the title route's "board title", and Ask ("Agathon Live - ask",
+ * POST /api/live/ask), which is metered as the board chat (`live/chat`) it replaces.
  */
-const MODEL_ROUTE_ALIASES: Record<string, string> = { figure: "setup", board: "title" };
+const MODEL_ROUTE_ALIASES: Record<string, string> = { figure: "setup", board: "title", ask: "chat" };
 
 /**
  * An event's `kind` for a model call: `model.<route>`, the route named like usage_events.route
@@ -451,6 +452,15 @@ export type FallbackStreamEvent = { type: "model"; model: string } | { type: "te
  */
 export type StreamLimits = { primaryThinkingMs?: number; fallbackWatchdogMs?: number; deadline?: number };
 
+export type StreamFallbackOptions = Omit<StreamChatOptions, "model"> & {
+  /**
+   * Reasoning effort per model, over `reasoningEffort` when set: a primary and a fallback from two
+   * providers rarely want the same (Anthropic's models take none: their thinking budget starts at
+   * 1024 tokens; OpenAI's take "minimal").
+   */
+  reasoningFor?: (model: string) => StreamChatOptions["reasoningEffort"];
+};
+
 /**
  * Stream from `primary`; when nothing has arrived within `watchdogMs` (or the primary fails
  * before yielding any content) abort it and retry once on `fallback`.
@@ -465,7 +475,7 @@ export type StreamLimits = { primaryThinkingMs?: number; fallbackWatchdogMs?: nu
 export async function* streamWithFallback(
   primary: string,
   fallback: string,
-  opts: Omit<StreamChatOptions, "model">,
+  { reasoningFor, ...opts }: StreamFallbackOptions,
   watchdogMs: number,
   limits: StreamLimits = {},
 ): AsyncGenerator<FallbackStreamEvent, void, undefined> {
@@ -474,7 +484,8 @@ export async function* streamWithFallback(
       ? { firstMs: watchdogMs, thinkingMs: limits.primaryThinkingMs, deadline: limits.deadline }
       : { firstMs: limits.fallbackWatchdogMs, deadline: limits.deadline };
     const plain = watch.firstMs === undefined && watch.thinkingMs === undefined && watch.deadline === undefined;
-    yield* plain ? streamChatText({ ...opts, model }) : withWatchdog({ ...opts, model }, watch);
+    const own: StreamChatOptions = reasoningFor ? { ...opts, model, reasoningEffort: reasoningFor(model) } : { ...opts, model };
+    yield* plain ? streamChatText(own) : withWatchdog(own, watch);
   };
   const call: ModelCall = { primary, fallback, title: opts.title, requestId: opts.requestId, startedAt: Date.now() };
   const callerLeft = (err: unknown) => Boolean(opts.signal?.aborted) || isAbortError(err);

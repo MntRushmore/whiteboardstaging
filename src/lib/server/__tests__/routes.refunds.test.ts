@@ -505,6 +505,7 @@ describe("static: every route that charges ink refunds through runCharged / runC
 
   it("finds the charged routes", () => {
     expect(charged).toEqual([
+      "src/app/api/live/ask/route.ts",
       "src/app/api/live/chat/route.ts",
       "src/app/api/live/check/route.ts",
       "src/app/api/live/lecture/route.ts",

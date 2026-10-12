@@ -399,7 +399,8 @@ export const ROUTE_LABELS: Record<string, { label: string; metered: boolean }> =
 
 /**
  * A route as the AI table keys it: "live.solve", "/api/live/solve" and "live/solve" are all
- * "live/solve"; the lecture sub-routes take their metered names (sketch, listen).
+ * "live/solve"; the lecture sub-routes take their metered names (sketch, listen), and Ask its own
+ * (chat).
  */
 export function normalizeRoute(route: string): string {
   const r = route
@@ -411,6 +412,8 @@ export function normalizeRoute(route: string): string {
     .replace(/\/+$/, "");
   if (r === "live/lecture/sketch") return "live/sketch";
   if (r === "live/lecture/token") return "live/listen";
+  // Ask (POST /api/live/ask) is metered as the board chat it replaces
+  if (r === "live/ask") return "live/chat";
   return r;
 }
 

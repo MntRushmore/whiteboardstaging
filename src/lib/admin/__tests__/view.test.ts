@@ -257,6 +257,9 @@ describe("errors", () => {
     expect(normalizeRoute("live/solve/")).toBe("live/solve");
     expect(normalizeRoute("live.lecture.sketch")).toBe("live/sketch");
     expect(normalizeRoute("/api/live/lecture/token")).toBe("live/listen");
+    // Ask is metered as the board chat: its events and its calls share one row
+    expect(normalizeRoute("live.ask")).toBe("live/chat");
+    expect(normalizeRoute("/api/live/ask")).toBe("live/chat");
   });
 
   it("the totals line", () => {
