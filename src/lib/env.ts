@@ -50,6 +50,7 @@ const envSchema = z.object({
   LIVE_MODEL_FIGURE: optionalString,
   LIVE_MODEL_PROOF: optionalString,
   LIVE_MODEL_CHAT: optionalString,
+  LIVE_MODEL_ASK: optionalString,
   LIVE_MODEL_LECTURE: optionalString,
   LIVE_MODEL_SKETCH: optionalString,
 
@@ -179,6 +180,12 @@ export type LiveModels = {
   /** lecture mode's illustrator (POST /api/live/lecture/sketch): a panel in words -> vector strokes */
   sketch: string;
   sketchFallback: string;
+  /** Ask, rebuilt (POST /api/live/ask): the streamed tutor chat */
+  ask: string;
+  askFallback: string;
+  /** Ask's memory notes, written after a turn */
+  askMemory: string;
+  askMemoryFallback: string;
 };
 
 /** The fallback for `primary`: never the primary itself (an override equal to the fallback swaps the two). */
@@ -187,7 +194,7 @@ function fallbackFor(primary: string, defaultPrimary: string, defaultFallback: s
 }
 
 /**
- * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION/SETUP/REREAD/TITLE/FIGURE/PROOF/CHAT/LECTURE/SKETCH`
+ * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION/SETUP/REREAD/TITLE/FIGURE/PROOF/CHAT/LECTURE/SKETCH/ASK`
  * override the primaries; the fallbacks always come from LIVE_MODELS (a fallback equal to the
  * primary would be pointless, so an override that matches a fallback swaps the two).
  */
@@ -203,6 +210,7 @@ export function getLiveModels(): LiveModels {
   const chat = env.LIVE_MODEL_CHAT || LIVE_MODELS.chat;
   const lecture = env.LIVE_MODEL_LECTURE || LIVE_MODELS.lecture;
   const sketch = env.LIVE_MODEL_SKETCH || LIVE_MODELS.sketch;
+  const ask = env.LIVE_MODEL_ASK || LIVE_MODELS.ask;
   return {
     check,
     checkFallback: fallbackFor(check, LIVE_MODELS.check, LIVE_MODELS.checkFallback),
@@ -225,6 +233,10 @@ export function getLiveModels(): LiveModels {
     lectureFallback: fallbackFor(lecture, LIVE_MODELS.lecture, LIVE_MODELS.lectureFallback),
     sketch,
     sketchFallback: fallbackFor(sketch, LIVE_MODELS.sketch, LIVE_MODELS.sketchFallback),
+    ask,
+    askFallback: fallbackFor(ask, LIVE_MODELS.ask, LIVE_MODELS.askFallback),
+    askMemory: LIVE_MODELS.askMemory,
+    askMemoryFallback: LIVE_MODELS.askMemoryFallback,
   };
 }
 

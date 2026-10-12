@@ -744,6 +744,17 @@ export const LIVE_MODELS = {
    */
   sketch: "google/gemini-3.8-flash",
   sketchFallback: "anthropic/claude-sonnet-5.5",
+  /**
+   * Ask, rebuilt (POST /api/live/ask, `src/lib/live/ask`, docs/ASK-V2.md): the board chat as a
+   * tutor, streamed. PROVISIONAL until `npm run eval:ask` (docs/eval/ask.md) picks them: on
+   * 2026-10-11 Haiku 5.5 streamed its first words in 0.75 s, GPT-5.4 mini in 1.5 s, while Sonnet
+   * 5.5 and Gemini 3.8 Flash arrived all at once after 3–4 s. A fallback from another provider.
+   */
+  ask: "anthropic/claude-haiku-5.5",
+  askFallback: "openai/gpt-5.4-mini",
+  /** Ask's memory: after a turn, the few notes worth keeping about how the student learns (cheap, after the reply). */
+  askMemory: "anthropic/claude-haiku-5.5",
+  askMemoryFallback: "openai/gpt-5.4-nano",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */
@@ -759,6 +770,8 @@ export const LIVE_RATE_LIMITS = {
   liveProof: { limit: 20, windowMs: 60_000 },
   /** the board chat: typed by hand, one request at a time */
   liveChat: { limit: 12, windowMs: 60_000 },
+  /** a spoken ask (POST /api/live/transcribe): one per hold of the mic */
+  liveTranscribe: { limit: 12, windowMs: 60_000 },
   /** lecture mode's director: a tick every ~4 s while numbers or steps are coming (else ~20 s), plus "Draw that" */
   liveLecture: { limit: 20, windowMs: 60_000 },
   /** lecture mode's recognizer tokens: one per speech session (a reconnect opens another) */
@@ -870,6 +883,12 @@ export interface LiveController {
    * (problems checked by the engine first). Optional, so a controller double need not have them.
    */
   chatScreen?(): ChatScreen;
+  /**
+   * Ask (docs/ASK-V2.md): a picture of the current screen for the model (drawings, a photo, a PDF
+   * page the read LaTeX cannot say), or null when it is empty or no picture came in time. Loads
+   * its code on first use (`src/lib/live/ask/boardImage.ts`), never with the board.
+   */
+  chatImage?(): Promise<string | null>;
   runChatActions?(actions: readonly ChatAction[], from?: ChatRunOrigin): Promise<ChatRunReport>;
   /**
    * Lecture mode (`src/lib/live/lecture`): the current screen in words for the director, the

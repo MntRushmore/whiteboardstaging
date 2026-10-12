@@ -66,6 +66,7 @@ export const LIMITS = {
   liveReread: LIVE_RATE_LIMITS.liveReread,
   liveProof: LIVE_RATE_LIMITS.liveProof,
   liveChat: LIVE_RATE_LIMITS.liveChat,
+  liveTranscribe: LIVE_RATE_LIMITS.liveTranscribe,
   liveLecture: LIVE_RATE_LIMITS.liveLecture,
   liveListen: LIVE_RATE_LIMITS.liveListen,
   liveSketch: LIVE_RATE_LIMITS.liveSketch,
