@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/AuthProvider";
 import type { LiveController } from "@/lib/live/contracts";
 import { ASK_LIMITS } from "@/lib/live/ask/contracts";
-import { canStop, CHAT_COPY, helloFor, sendsOnKey, WEAK_SPOTS_COPY } from "./chatView";
+import { canStop, CHAT_COPY, followTarget, helloFor, sendsOnKey, WEAK_SPOTS_COPY } from "./chatView";
 import { useBoardChat, type SendOptions } from "./useBoardChat";
 import { AskMessage } from "./AskMessage";
 import { AskMic } from "./voice/AskMic";
@@ -160,14 +160,14 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list || !stick.current) return;
-    let target = list.scrollHeight - list.clientHeight;
-    const last = messages[messages.length - 1];
-    if (last?.role === "tutor" && (last.state === "streaming" || last.state === "writing")) {
-      const questions = list.querySelectorAll<HTMLElement>('[data-ask-message="user"]');
-      const question = questions[questions.length - 1];
+    const questions = list.querySelectorAll<HTMLElement>('[data-ask-message="user"]');
+    const target = followTarget({
+      scrollHeight: list.scrollHeight,
+      clientHeight: list.clientHeight,
+      lastIsTutor: messages[messages.length - 1]?.role === "tutor",
       // the list is the question's offset parent (`relative`)
-      if (question) target = Math.min(target, question.offsetTop - 12);
-    }
+      questionTop: questions.length ? questions[questions.length - 1].offsetTop : null,
+    });
     if (target > list.scrollTop) list.scrollTop = target;
   }, [messages]);
   const onScroll = () => {
@@ -273,40 +273,43 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
         </HeaderButton>
       </header>
 
-      <div ref={listRef} onScroll={onScroll} className="relative min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4" aria-live="polite" aria-busy={busy}>
-        {fresh ? (
-          <div className="space-y-3" data-ask-hello="">
-            {helloReady ? (
-              <div className="flex">
-                <p className="max-w-full rounded-2xl rounded-tl-md bg-blue-50 px-4 py-3 text-[17px] leading-[1.55] text-slate-900">{first.greeting}</p>
-              </div>
-            ) : (
-              <div aria-hidden className="h-[52px] w-56 max-w-full rounded-2xl rounded-tl-md bg-slate-100 motion-safe:animate-pulse" />
-            )}
-            {helloReady && (
-              <div className="flex flex-wrap gap-2">
-                {/* the student's own record: problems on what they are learning, made on the device (no ink) */}
-                {weakSpot && (
-                  <button type="button" disabled={busy} title={WEAK_SPOTS_COPY.chipHint} onClick={() => void practiceWeakSpots()} className={cn(CHIP, "border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100")}>
-                    <Star className="size-4 shrink-0 fill-blue-500 text-blue-500" aria-hidden />
-                    {WEAK_SPOTS_COPY.chip}
-                  </button>
-                )}
-                {first.chips.map((s) => (
-                  <button key={s} type="button" disabled={busy} onClick={() => submit(s)} className={cn(CHIP, "border-slate-200 bg-white text-slate-800 hover:bg-slate-50")}>
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          messages.map((m) => <AskMessage key={m.id} message={m} busy={busy} onRetry={() => retry(m.id)} onReplay={speech.replay} />)
-        )}
+      <div ref={listRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4" aria-live="polite" aria-busy={busy}>
+        {/* one column a young reader can follow: on a wide sheet (an upright iPad) the lines stop at 640 px */}
+        <div className={cn(COLUMN, "space-y-4")}>
+          {fresh ? (
+            <div className="space-y-3" data-ask-hello="">
+              {helloReady ? (
+                <div className="flex">
+                  <p className="max-w-full rounded-2xl rounded-tl-md bg-blue-50 px-4 py-3 text-[17px] leading-[1.55] text-slate-900">{first.greeting}</p>
+                </div>
+              ) : (
+                <div aria-hidden className="h-[52px] w-56 max-w-full rounded-2xl rounded-tl-md bg-slate-100 motion-safe:animate-pulse" />
+              )}
+              {helloReady && (
+                <div className="flex flex-wrap gap-2">
+                  {/* the student's own record: problems on what they are learning, made on the device (no ink) */}
+                  {weakSpot && (
+                    <button type="button" disabled={busy} title={WEAK_SPOTS_COPY.chipHint} onClick={() => void practiceWeakSpots()} className={cn(CHIP, "border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100")}>
+                      <Star className="size-4 shrink-0 fill-blue-500 text-blue-500" aria-hidden />
+                      {WEAK_SPOTS_COPY.chip}
+                    </button>
+                  )}
+                  {first.chips.map((s) => (
+                    <button key={s} type="button" disabled={busy} onClick={() => submit(s)} className={cn(CHIP, "border-slate-200 bg-white text-slate-800 hover:bg-slate-50")}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            messages.map((m) => <AskMessage key={m.id} message={m} busy={busy} onRetry={() => retry(m.id)} onReplay={speech.replay} />)
+          )}
+        </div>
       </div>
 
       <form onSubmit={onSubmit} className="shrink-0 border-t border-slate-200 bg-white px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
-        <div className="flex items-end gap-1 rounded-[26px] border border-slate-300 bg-white py-1 pl-4 pr-1 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20">
+        <div className={cn(COLUMN, "flex items-end gap-1 rounded-[26px] border border-slate-300 bg-white py-1 pl-4 pr-1 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20")}>
           <textarea
             ref={inputRef}
             value={draft}
@@ -335,11 +338,14 @@ export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickof
             </button>
           )}
         </div>
-        {showCost && <p className="mt-1.5 px-1 text-xs text-slate-500">{CHAT_COPY.cost}</p>}
+        {showCost && <p className={cn(COLUMN, "mt-1.5 px-1 text-xs text-slate-500")}>{CHAT_COPY.cost}</p>}
       </form>
     </section>
   );
 }
+
+/** The conversation's column: the panel's width, centered at 640 px at most (about 70 letters a line). */
+const COLUMN = "mx-auto w-full max-w-[640px]";
 
 /** A first ask: a 44 px pill a finger finds. */
 const CHIP =

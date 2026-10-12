@@ -12,6 +12,7 @@ import {
   CHAT_SUGGESTIONS,
   chatErrorFor,
   gradeBand,
+  followTarget,
   helloFor,
   historyFor,
   isAbort,
@@ -260,5 +261,26 @@ describe("the hello and its chips", () => {
     const hello = { greeting: "Hi!", chips: [WEAK_SPOTS_COPY.chip, "5 adding problems"] };
     expect(helloFor({ hello, grade: 1, screenHasWork: false, weakSpot: true }).chips).toEqual(["5 adding problems"]);
     expect(helloFor({ hello, grade: 1, screenHasWork: false, weakSpot: false }).chips).toEqual([WEAK_SPOTS_COPY.chip, "5 adding problems"]);
+  });
+});
+
+describe("following the chat as it grows", () => {
+  it("to the end, but a reply (streaming or done) stops with its question at the top: a long answer is read from its start", () => {
+    // the kid just asked: the end
+    expect(followTarget({ scrollHeight: 2000, clientHeight: 400, lastIsTutor: false, questionTop: 1500 })).toBe(1600);
+    // a short reply: the end comes first
+    expect(followTarget({ scrollHeight: 2000, clientHeight: 400, lastIsTutor: true, questionTop: 1700 })).toBe(1600);
+    // a long one: its question at the top, however long it gets
+    expect(followTarget({ scrollHeight: 3000, clientHeight: 400, lastIsTutor: true, questionTop: 1500 })).toBe(1488);
+    expect(followTarget({ scrollHeight: 2000, clientHeight: 400, lastIsTutor: true, questionTop: null })).toBe(1600);
+  });
+});
+
+describe("a failure's words", () => {
+  it("never say Try again beside the Try again button (only when to: \"in a moment\")", () => {
+    const lines = [CHAT_COPY.errors.network, CHAT_COPY.errors.timeout, CHAT_COPY.errors.other, CHAT_COPY.errors.resting, CHAT_COPY.errors.board, CHAT_COPY.errors.rateLimited(10), WEAK_SPOTS_COPY.failed];
+    for (const line of lines) expect(line).not.toMatch(/\btry again[.!?]?$/i);
+    // short enough for a young reader
+    for (const line of lines) expect(line.split(/\s+/).length).toBeLessThanOrEqual(12);
   });
 });

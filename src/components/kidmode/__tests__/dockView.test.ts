@@ -62,6 +62,8 @@ describe("kidDockView", () => {
 
   it("names everything in one short word a 6-year-old reads", () => {
     for (const word of [DOCK_COPY.pen, DOCK_COPY.eraser, DOCK_COPY.undo, DOCK_COPY.colour]) expect(word).toMatch(/^[A-Z][a-z]{1,7}$/);
+    // US English, as every word a kid reads
+    expect([DOCK_COPY.colour, DOCK_COPY.colours]).toEqual(["Color", "Colors"]);
     expect(DOCK_COPY.newPage).toBe("New page");
   });
 });

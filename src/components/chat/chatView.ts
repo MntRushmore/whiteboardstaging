@@ -44,6 +44,7 @@ export const CHAT_COPY = {
   shrink: "Make the chat smaller",
   you: "You",
   tutor: "Tutor",
+  /** a failure's line sits beside a big Try again (when it can be), so the line never says it too */
   errors: {
     /**
      * OUT_OF_INK_COPY.title, the board dialog's words (pinned equal in the tests; a literal so
@@ -52,11 +53,11 @@ export const CHAT_COPY = {
     ink: "Help needs Agathon Unlimited",
     rateLimited: (seconds: number) => `That's a lot of questions. Try again in ${waitPhrase(seconds)}.`,
     unauthorized: "Please sign in again.",
-    network: "Couldn't reach your tutor. Check the internet and try again.",
-    timeout: "Your tutor took too long. Try again.",
+    network: "Couldn't reach your tutor. Check the internet.",
+    timeout: "Your tutor took too long to answer.",
     /** the tutor's model is out for a while (the provider's account, never the student's ink) */
-    resting: "Your tutor is taking a short break. Try again in a few minutes.",
-    other: "Something went wrong. Try again.",
+    resting: "Your tutor is taking a break. Try again in a few minutes.",
+    other: "Oops! Something went wrong.",
     board: "The board isn't ready yet. Try again in a moment.",
   },
 } as const;
@@ -284,6 +285,16 @@ export function retryOf(
   };
 }
 
+/**
+ * Where the list scrolls to as the chat grows (while the kid is at the bottom): the end, but for a
+ * tutor's reply never past its question at the top (12 px under it), streaming or done, so a long
+ * answer is read from its start and never jumps to its last lines when it finishes.
+ */
+export function followTarget(o: { scrollHeight: number; clientHeight: number; lastIsTutor: boolean; questionTop: number | null }): number {
+  const end = o.scrollHeight - o.clientHeight;
+  return o.lastIsTutor && o.questionTop !== null ? Math.min(end, o.questionTop - 12) : end;
+}
+
 /** Enter sends; Shift+Enter (or composing an IME character) makes a new line. */
 export function sendsOnKey(e: { key: string; shiftKey: boolean; isComposing?: boolean }): boolean {
   return e.key === "Enter" && !e.shiftKey && !e.isComposing;
@@ -317,7 +328,7 @@ export const WEAK_SPOTS_COPY = {
   reply: (n: number, skill: string) => (n === 1 ? `Here is 1 problem on ${skill} to practice.` : `Here are ${n} problems on ${skill} to practice.`),
   /** the record changed under the chip (nothing left to practice) */
   none: "Let's practice! Ask me for some problems on anything you like.",
-  failed: "I couldn't write those problems just now. Try again.",
+  failed: "I couldn't write those problems just now.",
 } as const;
 
 /** What the chip needs of `practice.ts` (loaded on demand: the board's first load never has it). */

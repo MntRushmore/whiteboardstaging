@@ -18,8 +18,8 @@ export const DOCK_COPY = {
   pen: "Pen",
   eraser: "Eraser",
   undo: "Undo",
-  colour: "Colour",
-  colours: "Colours",
+  colour: "Color",
+  colours: "Colors",
   colourName: {
     black: "Black",
     red: "Red",
