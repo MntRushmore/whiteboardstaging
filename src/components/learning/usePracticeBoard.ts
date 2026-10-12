@@ -5,6 +5,7 @@ import type { ChatRunOrigin } from "@/lib/learning/contracts";
 import { clearPracticeMarker, hasPracticeMarker, readPracticeMarker, type StorageLike } from "@/lib/learning/practiceMarker";
 import type { ChatAction, ChatRunReport, ChatScreen } from "@/lib/live/chat/contracts";
 import type { LiveController } from "@/lib/live/contracts";
+import type { LoopReadiness } from "@/lib/live/loopGate";
 import { reportUserError } from "@/lib/reportAppError";
 
 /**
@@ -24,6 +25,14 @@ import { reportUserError } from "@/lib/reportAppError";
  * A reload never writes them twice: the marker is cleared BEFORE the problems are written, a board
  * already started this visit is not started again (React's development double effects, a remount),
  * and problems already on the screen are left out.
+ *
+ * A run outlives the render that started it (the example, the look at it, the problems), and the
+ * kid can leave at any point of it. Every run waits on the board's own readiness first
+ * (`LiveController.whenReady`, event-driven, with a ceiling) rather than sleeping and guessing, and
+ * a run whose board has gone stops without a toast or a report ("abandoned"). Before, it went on
+ * against the closed board's controller: on 2026-10-12 a kid left a topic board during the look at
+ * its example, and the home page said "Now you try!", then "Couldn't write the problems for that
+ * topic" (reported as live.practice `board_not_ready` from "/").
  */
 
 export const PRACTICE_COPY = {
@@ -37,7 +46,12 @@ export const PRACTICE_COPY = {
   topicFailed: "Couldn't write the problems for that topic. Try picking it again.",
 } as const;
 
-/** Tries at the board's controller before giving up (it is there by the time this runs; a margin). */
+/**
+ * How long a run waits for the board's loop to come up before it says so. It is up in well under a
+ * second, even on an old iPad (it is made as the board mounts): this is only the ceiling.
+ */
+export const BOARD_READY_MS = 15_000;
+/** Tries at a run that throws on a board that is up (a chunk that did not load: the engine is fetched again). */
 const RUN_TRIES = 4;
 const RUN_RETRY_MS = 500;
 /** After the worked example, before the problems: a moment to look at it (the screen changes next). */
@@ -66,7 +80,8 @@ export function onPracticeRunEnd(fn: (boardId: string) => void): () => void {
   };
 }
 
-export type PracticeRunResult = "none" | "already" | "written" | "failed";
+/** "abandoned": the board went away under the run (the kid left), so nothing more was said or written. */
+export type PracticeRunResult = "none" | "already" | "written" | "failed" | "abandoned";
 
 /** What one practice or topic set writes. */
 export interface PracticeSetInput {
@@ -89,9 +104,27 @@ export interface PracticeSetDeps {
   /** a topic's worked example: the first candidate the engine works out on the device, or null (`topicExample.ts`) */
   pickExample?: (candidates: readonly string[][]) => Promise<string[] | null>;
   metric?: (name: string, fields: Record<string, unknown>) => void;
-  /** the failure toast was shown: tell the admin page (`live.practice`, src/lib/reportAppError.ts) */
-  reportFailure?: (code: "none_written" | "board_not_ready", message: string) => void;
+  /**
+   * The failure toast was shown: tell the admin page (`live.practice`, src/lib/reportAppError.ts).
+   * `none_written`: the engine kept none; `board_not_ready`: the board's loop never came up within
+   * `BOARD_READY_MS`; `run_failed`: the run kept throwing on a board that was up.
+   */
+  reportFailure?: (code: PracticeFailure, message: string) => void;
+  /** the board's loop for this board (`LiveController.whenReady`): every run waits on it */
+  whenReady?: (timeoutMs: number) => Promise<LoopReadiness>;
+  /** the board has gone (`LiveController.boardClosed`: the kid left, it unmounted): the run ends quietly */
+  gone?: () => boolean;
   wait?: (ms: number) => Promise<void>;
+}
+
+export type PracticeFailure = "none_written" | "board_not_ready" | "run_failed";
+
+/** A run's readiness and leaving, from the board's controller (`whenReady`, `boardClosed`), for `boardId`. */
+export function boardLifeDeps(boardId: string, controller: Pick<LiveController, "whenReady" | "boardClosed">): Pick<PracticeSetDeps, "whenReady" | "gone"> {
+  return {
+    whenReady: controller.whenReady ? (ms) => controller.whenReady!(boardId, ms) : undefined,
+    gone: controller.boardClosed ? () => controller.boardClosed!(boardId) : undefined,
+  };
 }
 
 /** What the board page gives a practice or topic run (`practiceDeps` in PracticeBoard.tsx). */
@@ -107,13 +140,35 @@ export interface PracticeRunDeps extends PracticeSetDeps {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** `run`, tried again while the board is not ready (the only thing that throws before anything is written). */
+/** The board went away under the run (the kid left, it unmounted): it ends without a word. */
+class BoardGone extends Error {}
+/** The board's loop did not come up within `BOARD_READY_MS`. */
+class BoardNotReady extends Error {}
+
+/**
+ * Waits for the board's loop (`deps.whenReady`: resolves the moment it is up, no polling). Throws
+ * `BoardGone` once the board has gone, `BoardNotReady` past the ceiling. A run without the gate
+ * (a test double) goes straight on.
+ */
+async function boardUp(deps: PracticeSetDeps): Promise<void> {
+  const state = deps.whenReady ? await deps.whenReady(BOARD_READY_MS) : "ready";
+  if (state === "closed" || deps.gone?.()) throw new BoardGone();
+  if (state === "timeout") throw new BoardNotReady("The board is not ready yet.");
+}
+
+/**
+ * `run` on a board that is up, tried again while it throws (a chunk that did not load), each try
+ * on the board up again — and never once the board has gone: a run cut short by the kid leaving
+ * throws as the loop stops, and that is not a failure.
+ */
 async function runWhenReady(deps: PracticeSetDeps, actions: readonly ChatAction[], from: ChatRunOrigin): Promise<ChatRunReport> {
   const wait = deps.wait ?? sleep;
   for (let i = 1; ; i++) {
+    await boardUp(deps);
     try {
       return await deps.run(actions, from);
     } catch (e) {
+      if (deps.gone?.()) throw new BoardGone();
       if (i >= RUN_TRIES) throw e;
       await wait(RUN_RETRY_MS * i);
     }
@@ -122,7 +177,11 @@ async function runWhenReady(deps: PracticeSetDeps, actions: readonly ChatAction[
 
 const NEW_SCREEN: readonly ChatAction[] = [{ type: "new_screen" }];
 
-/** The worked example, written and worked under it; true when it is on the board. Never throws. */
+/**
+ * The worked example, written and worked under it; true when it is on the board. A failure to
+ * write it leaves it out (the problems still go on); throws only when the board has gone or never
+ * came up (`boardUp`), which ends the whole set.
+ */
 async function writeExample(set: PracticeSetInput, deps: PracticeSetDeps, newScreen: boolean): Promise<boolean> {
   if (!set.examples?.length || !deps.pickExample) return false;
   let example: string[] | null = null;
@@ -133,6 +192,8 @@ async function writeExample(set: PracticeSetInput, deps: PracticeSetDeps, newScr
   }
   deps.metric?.("learning.topic.example", { skill: set.skill, local: Boolean(example) });
   if (!example) return false;
+  // the board up, and still there, before its toast: never "watch me do one!" over the home page
+  await boardUp(deps);
   deps.toast(PRACTICE_COPY.watch(deps.skillName(set.skill)));
   try {
     const report = await runWhenReady(
@@ -147,7 +208,8 @@ async function writeExample(set: PracticeSetInput, deps: PracticeSetDeps, newScr
     if (report.problemsWritten === 0) return false;
     deps.nameScreen?.(set.skill);
     return true;
-  } catch {
+  } catch (e) {
+    if (e instanceof BoardGone || e instanceof BoardNotReady) throw e;
     return false;
   }
 }
@@ -159,30 +221,42 @@ export interface PracticeSetOptions {
 
 /**
  * Writes a practice set: a topic's worked example first (when it has one the engine works out),
- * then the problems. "written" when any problem was written; else a quiet toast and "failed".
+ * then the problems. "written" when any problem was written; "abandoned", without a word, when the
+ * board went away under it (the kid left — during the look at the example, say); else a quiet
+ * toast and "failed".
  */
-export async function writePracticeSet(set: PracticeSetInput, deps: PracticeSetDeps, opts: PracticeSetOptions = {}): Promise<"written" | "failed"> {
+export async function writePracticeSet(set: PracticeSetInput, deps: PracticeSetDeps, opts: PracticeSetOptions = {}): Promise<"written" | "failed" | "abandoned"> {
   const topic = Boolean(set.examples?.length);
   const failedCopy = topic ? PRACTICE_COPY.topicFailed : PRACTICE_COPY.failed;
+  const fail = (code: PracticeFailure): "failed" => {
+    deps.toast(failedCopy);
+    deps.reportFailure?.(code, failedCopy);
+    return "failed";
+  };
   deps.prepare?.();
-  const shown = await writeExample(set, deps, Boolean(opts.newScreen));
-  if (shown) await (deps.wait ?? sleep)(TOPIC_PAUSE_MS);
-  deps.toast(shown ? PRACTICE_COPY.yourTurn : PRACTICE_COPY.start(deps.skillName(set.skill)));
+  let shown = false;
   try {
+    shown = await writeExample(set, deps, Boolean(opts.newScreen));
+    if (shown) await (deps.wait ?? sleep)(TOPIC_PAUSE_MS);
+    // after the look at the example: the board still there (and up) before "Now you try!"
+    await boardUp(deps);
+    deps.toast(shown ? PRACTICE_COPY.yourTurn : PRACTICE_COPY.start(deps.skillName(set.skill)));
     // after the example the problems go on a fresh screen anyway (the executor's rule for a screen with work)
     const fresh = opts.newScreen && !shown ? NEW_SCREEN : [];
     const report = await runWhenReady(deps, [...fresh, { type: "write_problems", problems: set.problems.map((p) => [...p]) }], { origin: "practice" });
     if (report.problemsWritten > 0) deps.nameScreen?.(set.skill);
     deps.metric?.("learning.practice.board", { skill: set.skill, written: report.problemsWritten, dropped: report.problemsDropped, topic, example: shown });
     if (report.problemsWritten > 0) return "written";
-    deps.toast(failedCopy);
-    deps.reportFailure?.("none_written", failedCopy);
-    return "failed";
+    // the hand stopped because the board went (the kid left as it wrote): not the engine's doing
+    if (deps.gone?.()) throw new BoardGone();
+    return fail("none_written");
   } catch (e) {
+    if (e instanceof BoardGone) {
+      deps.metric?.("learning.practice.board.abandoned", { skill: set.skill, topic, example: shown });
+      return "abandoned";
+    }
     deps.metric?.("learning.practice.board.failed", { skill: set.skill, error: e instanceof Error ? e.message : String(e) });
-    deps.toast(failedCopy);
-    deps.reportFailure?.("board_not_ready", failedCopy);
-    return "failed";
+    return fail(e instanceof BoardNotReady ? "board_not_ready" : "run_failed");
   }
 }
 
@@ -199,6 +273,19 @@ export async function runPracticeMarker(deps: PracticeRunDeps): Promise<Practice
     // first: a reload from here on finds no marker, whatever happens to the writing
     clearPracticeMarker(boardId, storage);
 
+    // the board up before its screen is read: a loop not up yet reads as an empty screen
+    try {
+      await boardUp(deps);
+    } catch (e) {
+      if (e instanceof BoardGone) {
+        deps.metric?.("learning.practice.board.abandoned", { skill: marker.skill, topic: Boolean(marker.examples?.length), example: false });
+        return "abandoned";
+      }
+      const copy = marker.examples?.length ? PRACTICE_COPY.topicFailed : PRACTICE_COPY.failed;
+      deps.toast(copy);
+      deps.reportFailure?.("board_not_ready", copy);
+      return "failed";
+    }
     const screen = deps.screen?.();
     const onScreen = new Set(screen?.problems ?? []);
     const problems = marker.problems.filter((p) => !onScreen.has(p.join("; "))).map((p) => [...p]);
@@ -248,6 +335,8 @@ export function usePracticeBoard(
       metric: (name, fields) => depsRef.current.metric?.(name, fields),
       reportFailure: (code, message) => reportUserError({ kind: "live.practice", code, message, boardId }),
       run: (actions, from) => controller.runChatActions!(actions, from),
+      // the run outlives this effect: it waits on the board's own readiness, and ends quietly once the board has gone
+      ...boardLifeDeps(boardId, controller),
       screen: controller.chatScreen ? () => controller.chatScreen!() : undefined,
     });
   }, [boardId, controller]);
