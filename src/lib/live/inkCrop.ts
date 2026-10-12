@@ -78,7 +78,8 @@ export type InkCropResult =
 const PAD = 8;
 const ATTEMPT_MS = 2500;
 
-function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+/** `work`, or a rejection once it has not answered in `ms` (some WebKit failures never answer). */
+export function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`no answer in ${ms} ms`)), ms);
     work.then(
