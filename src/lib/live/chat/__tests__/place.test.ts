@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Rect } from "../../contracts";
 import { FREE_AREA, gridCells } from "../layout";
-import { cellRegions, DRAWING_PLACE, legibleBoxes, placeDrawingRect, spotIn, type DrawingSize } from "../place";
+import { cellRegions, cellRoom, DRAWING_PLACE, legibleBoxes, placeDrawingRect, spotIn, type DrawingSize } from "../place";
 
 /**
  * Where a drawing goes (`placeDrawingRect`): beside the problem it is about — right of its line in
@@ -37,10 +37,7 @@ const SIX = grid(3, 2, { w: 234, h: 30 });
 
 const inside = (r: Rect, outer: Rect) => r.x >= outer.x - 1e-6 && r.y >= outer.y - 1e-6 && r.x + r.w <= outer.x + outer.w + 1e-6 && r.y + r.h <= outer.y + outer.h + 1e-6;
 const clear = (r: Rect, a: Rect, c = DRAWING_PLACE.clearance) => !(r.x - c < a.x + a.w && r.x + r.w + c > a.x && r.y - c < a.y + a.h && r.y + r.h + c > a.y);
-const innerOf = (cell: Rect) => {
-  const p = DRAWING_PLACE.cellPad;
-  return { x: cell.x + p, y: cell.y + p, w: cell.w - 2 * p, h: cell.h - 2 * p };
-};
+const innerOf = cellRoom;
 
 function place(problems: Array<{ cell: Rect; head: Rect }>, near: number | null, sizes: ReadonlyArray<DrawingSize | null>, extraInk: Rect[] = []) {
   return placeDrawingRect({
@@ -62,7 +59,9 @@ describe("placeDrawingRect: beside the problem, on this screen", () => {
     expect(at!.rect.y).toBe(head.y);
     expect(at!.rect.x).toBeGreaterThanOrEqual(head.x + head.w + DRAWING_PLACE.answerRoom);
     // as far right as the cell goes: the student's column under the problem stays wide
-    expect(at!.rect.x + at!.rect.w).toBeCloseTo(cell.x + cell.w - DRAWING_PLACE.cellPad);
+    expect(at!.rect.x + at!.rect.w).toBeCloseTo(cell.x + cell.w - DRAWING_PLACE.cellEdge);
+    // and never against the next problem, which starts the grid's pad into its own cell
+    expect(DRAWING_PLACE.cellEdge + 14).toBeGreaterThanOrEqual(40);
   });
 
   it("too wide to go beside the line in a grid of six: under it, at the right, leaving the student a column to work in", () => {
@@ -78,8 +77,8 @@ describe("placeDrawingRect: beside the problem, on this screen", () => {
   });
 
   it("a smaller size beside the line comes before the largest under it", () => {
-    // beside problem 2 of six there is ~143 px; a drawing that fits there only when small goes there
-    const at = place(SIX, 2, [{ w: 300, h: 200 }, { w: 140, h: 120 }]);
+    // beside problem 2 of six there is ~127 px; a drawing that fits there only when small goes there
+    const at = place(SIX, 2, [{ w: 300, h: 200 }, { w: 120, h: 100 }]);
     expect(at).toMatchObject({ spot: "beside", index: 1 });
   });
 
@@ -169,7 +168,8 @@ describe("the pieces", () => {
     expect(beside).toMatchObject({ spot: "beside", region: { x: head.x + head.w + DRAWING_PLACE.answerRoom, y: cell.y + 14 } });
     expect(workRight.spot).toBe("work");
     expect(workRight.region.y).toBe(head.y + head.h);
-    expect(work.region.x).toBe(cell.x + 14);
+    expect(work.region.x).toBe(cell.x + DRAWING_PLACE.cellEdge);
+    expect(work.region.y + work.region.h).toBe(cell.y + cell.h - DRAWING_PLACE.cellEdge);
     // a problem as wide as its cell leaves nothing beside it
     expect(cellRegions(cell, { ...head, w: 700 }).map((r) => r.spot)).toEqual(["work", "work"]);
   });

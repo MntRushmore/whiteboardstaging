@@ -123,8 +123,8 @@ The owner asked for three things:
 - A new screen only comes when the student asks for one, or when nothing fits even at the minimum.
 - The prompt never proposes `new_screen` for a drawing that goes with work on the screen. New problem sets on a screen with work still go on a fresh screen; that is unchanged.
 - How (`src/lib/live/chat/place.ts`, pure geometry; `ChatDesk.placeDrawing` plans the sizes and writes it):
-  - Beside the line: right of the problem in its cell, as far right as the cell goes, 96 px kept after the problem for an answer on its row (`= 4`).
-  - The work room: under the problem at the cell's right, the student keeping 40% of the cell's width at the left to work in; then anywhere in that room.
+  - Beside the line: right of the problem in its cell, level with it, as far right as the cell goes, 96 px kept after the problem for an answer on its row (`= 4`). A drawing keeps 30 px from its cell's sides and bottom, so it stands ~44 px from the next problem.
+  - The work room: under the problem at the cell's right, the student keeping 35% of the cell's width at the left to work in; then anywhere in that room.
   - Anywhere free on the screen, outside every problem's cell. Without `near`, only this.
   - Each place tries every size, largest first, before the next place. Never over the student's ink, a problem or the tutor's writing (18 px kept clear); in a cell only the room the student hasn't written in.
   - Sizes: each kind's boxes end at its legible minimum (figures 260×215, where the labels stop shrinking; graphs 264×216), and no box below half the largest is ever tried.

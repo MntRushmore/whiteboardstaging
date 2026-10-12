@@ -85,8 +85,8 @@ describe("ChatDesk.placeDrawing — a drawing of a problem stays on its screen",
     const placed = writes[0].plan.bounds;
     expect(within(placed, cellOf(shapes, 2))).toBe(true);
     expect(apart(placed, shapes[1].bounds!)).toBe(true);
-    // beside a 148 px problem in a 752 px cell there is room for the largest figure
-    expect(placed.w).toBe(CHAT_WRITE.figureBoxes[0].w);
+    // beside a 148 px problem in a 752 × 400 cell: the 460 box is too tall for the cell, the 380 box fits
+    expect(placed.w).toBe(CHAT_WRITE.figureBoxes[1].w);
     expect(placed.y).toBe(shapes[1].bounds!.y);
     expect(metrics.find((m) => m.name === "live.chat.place")?.data).toMatchObject({ spot: "beside", near: true, found: true });
   });
@@ -106,8 +106,8 @@ describe("ChatDesk.placeDrawing — a drawing of a problem stays on its screen",
     const shapes = fourProblems();
     const cell = cellOf(shapes, 1);
     // the student's working fills the cell but for a corner at the bottom right
-    const work: ChatShape = { id: "ink", type: "draw", meta: {}, bounds: { x: cell.x + 14, y: cell.y + 100, w: 430, h: 286 } };
-    const besideWork: ChatShape = { id: "ink2", type: "draw", meta: {}, bounds: { x: cell.x + 200, y: cell.y + 14, w: 538, h: 140 } };
+    const work: ChatShape = { id: "ink", type: "draw", meta: {}, bounds: { x: cell.x + 14, y: cell.y + 100, w: 420, h: 286 } };
+    const besideWork: ChatShape = { id: "ink2", type: "draw", meta: {}, bounds: { x: cell.x + 200, y: cell.y + 14, w: 538, h: 120 } };
     const { host, writes } = fakeHost({ shapes: [...shapes, work, besideWork] });
     const report = await new ChatDesk(host).run([{ type: "draw_figure", figure: PROBE_FIGURE, near: 1 }]);
     expect(report).toMatchObject({ screensAdded: 0, outcomes: [{ type: "draw_figure", ok: true }] });

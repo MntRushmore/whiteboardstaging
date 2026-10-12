@@ -22,14 +22,20 @@ import { findFreeArea, FREE_AREA, PROBLEM_GRID } from "./layout";
  * working space.
  */
 export const DRAWING_PLACE = {
-  /** kept from a cell's edges (the next problem's cell starts at its edge): the grid's own pad */
+  /** the top of the cell's room: the grid's own pad, so a drawing beside the problem is level with it */
   cellPad: PROBLEM_GRID.cellPad,
+  /**
+   * kept from the cell's other edges: the next problem starts the grid's pad past its own cell's
+   * edge, so a drawing stands ~44 px (about a problem's hand) from a neighbouring problem, never
+   * against it (seen on the board: a graph's x-axis label 28 px from the next problem's number)
+   */
+  cellEdge: 30,
   /** space kept round the student's ink, the problems and the tutor's writing */
   clearance: FREE_AREA.clearance,
   /** right of the problem's line: room kept for an answer written on its row (`= 4` after `2 + 2`) */
   answerRoom: 96,
   /** under the problem: the student keeps at least this share of the cell's width to work in, at its left */
-  workShare: 0.4,
+  workShare: 0.35,
   /** how finely positions in a cell are tried (px) */
   step: 12,
   /**
@@ -105,10 +111,16 @@ export function spotIn(region: Rect, size: DrawingSize, avoid: readonly Rect[], 
   return null;
 }
 
+/** The part of a problem's cell a drawing may use: from level with the problem, kept `cellEdge` from its other edges. */
+export function cellRoom(cell: Rect): Rect {
+  const { cellPad, cellEdge } = DRAWING_PLACE;
+  return { x: cell.x + cellEdge, y: cell.y + cellPad, w: cell.w - 2 * cellEdge, h: cell.h - cellPad - cellEdge };
+}
+
 /** The regions of the cell a drawing may go in, in the order they are tried. */
 export function cellRegions(cell: Rect, head: Rect): Array<{ spot: DrawingSpot; region: Rect }> {
-  const { cellPad, answerRoom, workShare } = DRAWING_PLACE;
-  const inner = { x: cell.x + cellPad, y: cell.y + cellPad, w: cell.w - 2 * cellPad, h: cell.h - 2 * cellPad };
+  const inner = cellRoom(cell);
+  const { answerRoom, workShare } = DRAWING_PLACE;
   const right = inner.x + inner.w;
   const bottom = inner.y + inner.h;
   const headRight = Math.max(inner.x, head.x + head.w);
