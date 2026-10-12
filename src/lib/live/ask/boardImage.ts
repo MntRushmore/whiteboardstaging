@@ -376,6 +376,11 @@ function strokeWidthOf(size: unknown, scale: unknown): number {
   return (STROKE_SIZES[size as TLDefaultSizeStyle] ?? STROKE_SIZES.m) * num(scale, 1);
 }
 
+/** A pen stroke's width as tldraw draws it (`DrawShapeUtil`: the size plus one), a little over for its pressure swell. */
+function inkWidthOf(size: unknown, scale: unknown): number {
+  return ((STROKE_SIZES[size as TLDefaultSizeStyle] ?? STROKE_SIZES.m) + 1) * num(scale, 1) * 1.25;
+}
+
 /** One shape in its own coordinates (the context already maps them onto the picture). */
 function drawShape(ctx: AskContext, shape: TLShape, theme: Theme, pictures: ReadonlyMap<TLShapeId, CanvasImageSource>): void {
   const props = shape.props as Record<string, unknown>;
@@ -390,7 +395,7 @@ function drawShape(ctx: AskContext, shape: TLShape, theme: Theme, pictures: Read
       const segments = Array.isArray(props.segments) ? (props.segments as Array<{ points?: Array<{ x: number; y: number }> }>) : [];
       const highlight = shape.type === "highlight";
       const color = highlight ? (theme[(props.color as TLDefaultColorStyle) ?? "yellow"]?.highlightSrgb ?? "#fddd00") : colorOf(theme, props.color);
-      const width = strokeWidthOf(props.size, props.scale) * (highlight ? 4 : 1.25);
+      const width = highlight ? strokeWidthOf(props.size, props.scale) * 4 : inkWidthOf(props.size, props.scale);
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
       ctx.lineWidth = width;
