@@ -8,7 +8,7 @@ import katex from "katex";
  */
 export function renderAskMath(src: string, display: boolean): string | null {
   try {
-    return katex.renderToString(src, {
+    return katex.renderToString(askMathSource(src, display), {
       displayMode: display,
       throwOnError: true,
       strict: "ignore",
@@ -21,4 +21,13 @@ export function renderAskMath(src: string, display: boolean): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * A formula as KaTeX gets it. An inline fraction is set as big as a display one: TeX's inline ½
+ * shrinks its digits to about 70%, too small for a young reader (a `\tfrac` written on purpose
+ * stays small).
+ */
+export function askMathSource(src: string, display: boolean): string {
+  return !display && /\\(?:d?frac|binom)\b/.test(src) ? `\\displaystyle ${src}` : src;
 }

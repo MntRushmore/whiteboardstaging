@@ -258,16 +258,25 @@ export async function sendAsk(boardId: string, text: string, opts: AskSendOption
   try {
     const { controller } = deps;
     if (!controller.chatScreen || !controller.runChatActions) throw new BoardNotReadyError();
-    const history = historyFor(before);
-    // the problem typed earlier, when the turns sent no longer hold it ("do the actual problem")
-    const problem = problemFor(before, history);
-    // what the tutor knows about this student (their record), once the board has loaded it
-    const learner = learningBus.learner();
     const screen = controller.chatScreen();
-    // a picture of the screen for what the read maths cannot say (drawings, a photo, a PDF page)
-    const image = screen.empty ? null : await settleWithin(controller.chatImage?.(), ASK_IMAGE_WAIT_MS);
+    // A picture of the screen for what the read maths cannot say (drawings, a photo, a PDF page),
+    // and the saved chat when it is still being read (an ask typed as the panel opens): each a
+    // moment at most, side by side, never holding the ask up for long.
+    const [image] = await Promise.all([
+      screen.empty ? null : settleWithin(controller.chatImage?.(), ASK_IMAGE_WAIT_MS),
+      settleWithin(historyLoads.get(boardId)?.then(() => true), ASK_HISTORY_WAIT_MS),
+    ]);
     if (ctrl.signal.aborted) throw new DOMException("aborted", "AbortError");
     const picture = image && AskImageSchema.safeParse(image).success ? image : null;
+    // the chat so far: everything before this ask in the store (the saved chat may have come first)
+    const now = histories.get(boardId) ?? EMPTY;
+    const at = now.findIndex((m) => m.role === "user" && m.clientId === clientId);
+    const context = at >= 0 ? now.slice(0, at) : before;
+    const history = historyFor(context);
+    // the problem typed earlier, when the turns sent no longer hold it ("do the actual problem")
+    const problem = problemFor(context, history);
+    // what the tutor knows about this student (their record), once the board has loaded it
+    const learner = learningBus.learner();
     const req: AskRequest = {
       boardId,
       message,
@@ -353,6 +362,7 @@ export function boardChatMessages(boardId: string): ChatMessage[] {
 export function resetBoardChats(): void {
   for (const c of inflight.values()) c.abort();
   histories.clear();
+  historyLoads.clear();
   inflight.clear();
   busyBoards.clear();
   hellos.clear();
@@ -388,35 +398,46 @@ function useHello(boardId: string): AskHello | null | undefined {
   );
 }
 
+/** Each board's saved chat being read (what an ask sent meanwhile waits for, a moment at most). */
+const historyLoads = new Map<string, Promise<void>>();
+
+/** How long an ask waits for the saved chat still being read: after this it goes without it. */
+export const ASK_HISTORY_WAIT_MS = 1500;
+
 /**
- * Reads the board's saved chat once per session (the first open): its turns fill a store that is
- * still empty (an ask sent meanwhile wins), and its hello is kept for the empty panel.
+ * Reads a board's saved chat once per session (the first open; again on a later open after a
+ * failure worth retrying). Its turns go BEFORE anything asked in this tab meanwhile (a kid who types
+ * at once, the topic picker's kickoff), so the chat reads in order and the next ask carries it; its
+ * hello is kept for the empty panel. Never aborted: the store outlives the panel.
  */
+export function loadSavedChat(boardId: string, fetchImpl: typeof authedFetch = authedFetch): Promise<void> {
+  const pending = historyLoads.get(boardId);
+  if (pending) return pending;
+  if (historyRead.get(boardId) === "done") return Promise.resolve();
+  historyRead.set(boardId, "loading");
+  const load = fetchAskHistory(boardId, new AbortController().signal, fetchImpl)
+    .then(({ history, retry }) => {
+      if (retry) historyRead.delete(boardId);
+      else historyRead.set(boardId, "done");
+      const cur = histories.get(boardId) ?? EMPTY;
+      if (history && history.turns.length > 0 && !cur.some((m) => m.saved)) setHistory(boardId, [...messagesFromHistory(history.turns), ...cur]);
+      hellos.set(boardId, history?.hello ?? null);
+    })
+    .catch(() => {
+      historyRead.delete(boardId);
+      hellos.set(boardId, null);
+    })
+    .finally(() => {
+      historyLoads.delete(boardId);
+      notify();
+    });
+  historyLoads.set(boardId, load);
+  return load;
+}
+
 function useSavedChat(boardId: string): void {
   useEffect(() => {
-    if (historyRead.has(boardId)) return;
-    historyRead.set(boardId, "loading");
-    const ctrl = new AbortController();
-    fetchAskHistory(boardId, ctrl.signal)
-      .then(({ history, retry }) => {
-        if (ctrl.signal.aborted) return;
-        if (retry) historyRead.delete(boardId);
-        else historyRead.set(boardId, "done");
-        if (history && history.turns.length > 0 && (histories.get(boardId) ?? EMPTY).length === 0) setHistory(boardId, messagesFromHistory(history.turns));
-        hellos.set(boardId, history?.hello ?? null);
-        notify();
-      })
-      .catch(() => {
-        if (ctrl.signal.aborted) return;
-        historyRead.delete(boardId);
-        hellos.set(boardId, null);
-        notify();
-      });
-    return () => {
-      // React's development double effects (and a panel closed at once): the next open reads it
-      ctrl.abort();
-      if (historyRead.get(boardId) === "loading") historyRead.delete(boardId);
-    };
+    void loadSavedChat(boardId);
   }, [boardId]);
 }
 

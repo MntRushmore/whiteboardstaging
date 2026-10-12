@@ -8,7 +8,7 @@ import type { AskRequest } from "@/lib/live/ask/contracts";
 import type { ChatAction, ChatRunReport, ChatScreen } from "@/lib/live/chat/contracts";
 import type { LiveController } from "@/lib/live/contracts";
 import { CHAT_COPY, messagesFromHistory, retryOf, type ChatMessage } from "../chatView";
-import { ASK_IMAGE_WAIT_MS, boardChatMessages, fetchAskHistory, resetBoardChats, sendAsk, stopAsk, type AskSpeechSink } from "../useBoardChat";
+import { ASK_HISTORY_WAIT_MS, ASK_IMAGE_WAIT_MS, boardChatMessages, fetchAskHistory, loadSavedChat, resetBoardChats, sendAsk, stopAsk, type AskSpeechSink } from "../useBoardChat";
 
 /**
  * One ask, start to end (`sendAsk`, the panel's send), against a fake stream: what the store shows,
@@ -276,5 +276,81 @@ describe("fetchAskHistory: the saved chat, read when the panel opens", () => {
       { id: "saved_a", role: "user", text: "5 two-step equations", saved: true },
       { id: "saved_b", role: "tutor", text: "Here are 5.", notes: ["1 couldn't be checked."], state: "done", saved: true },
     ]);
+  });
+});
+
+describe("the saved chat and an ask typed as the panel opens", () => {
+  const SAVED = {
+    turns: [
+      { id: "a", role: "user", text: "How do I add 1/2 and 1/4?", notes: [], wrote: [], at: "x" },
+      { id: "b", role: "tutor", text: "Make the bottoms match: 1/2 is 2/4, so 2/4 + 1/4 = 3/4.", notes: [], wrote: [], at: "y" },
+    ],
+    hello: null,
+  };
+  /** A history route that answers when told to. */
+  function slowHistory() {
+    let answer: () => void = () => {};
+    const fetchImpl = (() =>
+      new Promise<Response>((resolve) => {
+        answer = () => resolve(new Response(JSON.stringify(SAVED), { status: 200, headers: { "Content-Type": "application/json" } }));
+      })) as unknown as Parameters<typeof loadSavedChat>[1];
+    return { fetchImpl, answer: () => answer() };
+  }
+
+  beforeEach(() => {
+    resetBoardChats();
+    reports.length = 0;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("the ask waits for it (a moment): the saved turns go first in the chat and with the ask", async () => {
+    const h = slowHistory();
+    const loading = loadSavedChat(B, h.fetchImpl);
+    const s = stream([(h2) => h2.onReply?.("Yes! Now try 1/3 + 1/3."), (h2) => h2.onDone?.({ model: "m", ms: 1, turnId: "t" })]);
+    const asking = sendAsk(B, "can I have another one?", {}, { controller: controller(), speech: () => null, stream: s });
+    await Promise.resolve();
+    expect(s.requests).toHaveLength(0);
+    h.answer();
+    await loading;
+    await asking;
+    expect(s.requests[0].history).toEqual([
+      { role: "user", text: "How do I add 1/2 and 1/4?" },
+      { role: "tutor", text: "Make the bottoms match: 1/2 is 2/4, so 2/4 + 1/4 = 3/4." },
+    ]);
+    expect(boardChatMessages(B).map((m) => m.text)).toEqual([
+      "How do I add 1/2 and 1/4?",
+      "Make the bottoms match: 1/2 is 2/4, so 2/4 + 1/4 = 3/4.",
+      "can I have another one?",
+      "Yes! Now try 1/3 + 1/3.",
+    ]);
+  });
+
+  it("a saved chat slower than ASK_HISTORY_WAIT_MS: the ask goes without it, and the turns still land first", async () => {
+    vi.useFakeTimers();
+    const h = slowHistory();
+    const loading = loadSavedChat(B, h.fetchImpl);
+    const s = stream([(h2) => h2.onReply?.("Sure."), (h2) => h2.onDone?.({ model: "m", ms: 1 })]);
+    const asking = sendAsk(B, "hi", {}, { controller: controller(), speech: () => null, stream: s });
+    await vi.advanceTimersByTimeAsync(ASK_HISTORY_WAIT_MS + 10);
+    await asking;
+    expect(s.requests[0].history).toEqual([]);
+    h.answer();
+    await loading;
+    expect(boardChatMessages(B).map((m) => m.role)).toEqual(["user", "tutor", "user", "tutor"]);
+    expect(boardChatMessages(B)[0].saved).toBe(true);
+  });
+
+  it("read once a session: a second open does not read it again, nor add the turns twice", async () => {
+    let reads = 0;
+    const fetchImpl = (async () => {
+      reads++;
+      return new Response(JSON.stringify(SAVED), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as unknown as Parameters<typeof loadSavedChat>[1];
+    await Promise.all([loadSavedChat(B, fetchImpl), loadSavedChat(B, fetchImpl)]);
+    await loadSavedChat(B, fetchImpl);
+    expect(reads).toBe(1);
+    expect(boardChatMessages(B)).toHaveLength(2);
   });
 });
