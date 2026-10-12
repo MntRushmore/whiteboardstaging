@@ -3475,6 +3475,147 @@ export const ASK_CHECKS = [
   { name: "ask: a chat per screen — screen_id checked, ask_move_turns() moves only the caller's own turns on the caller's own board", run: checkAskScreens },
 ];
 
+/** The steps checkFunnelSteps records (and removes again). */
+const FUNNEL_CHECK_STEPS = ["plan_shown", "welcome_shown", "tour_problem", "tour_done", "checkout_opened"];
+
+/**
+ * The onboarding's funnel steps (migration 20261012020000_funnel_steps.sql; src/lib/funnel/record.ts
+ * sends them, admin_funnel() reads them).
+ *
+ * funnel_steps has no client grants at all: anon and a signed-in user can neither read nor write it
+ * (42501), and anon cannot call record_funnel_step(). A signed-in user records their own step with
+ * it: the first call inserts A's row (times 1, the meta given), a second counts (times 2, last_at
+ * moved, the first meta kept). B's call writes B's row and leaves A's alone. The database refuses
+ * an unknown step, a meta that is not an object, and one over 1,000 bytes (23514), also on a step
+ * already recorded; `{}`, a JSON null (what the browser sends with no details) and no meta at all
+ * are stored as null. The rows are read with the service role; without it those halves are
+ * skipped. Removes the rows it wrote.
+ *
+ * Kept out of ALL_CHECKS (the in-memory fake does not model it); scripts/verify-rls.mjs and the DB
+ * integration test run FUNNEL_STEP_CHECKS after the rest.
+ * @param {CheckContext} ctx
+ */
+export async function checkFunnelSteps({ anon, a, b, service }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const refusedWith = (/** @type {HttpResult} */ res, /** @type {string} */ want) => !isOk(res) && code(res) === want;
+  const record = (/** @type {RlsClient} */ c, /** @type {string} */ step, /** @type {unknown} */ meta) =>
+    rpc(c, "record_funnel_step", meta === undefined ? { p_step: step } : { p_step: step, p_meta: meta });
+  const rowOf = async (/** @type {string | null} */ userId, /** @type {string} */ step) =>
+    service ? (rows(await service.rest("GET", "funnel_steps", { query: { user_id: `eq.${userId}`, step: `eq.${step}`, select: "user_id,step,first_at,last_at,times,meta" } }))[0] ?? null) : null;
+  const cleanup = async () => {
+    if (service) await service.rest("DELETE", "funnel_steps", { query: { user_id: `in.(${a.userId},${b.userId})`, step: `in.(${FUNNEL_CHECK_STEPS.join(",")})` } });
+  };
+
+  await cleanup();
+  try {
+    // ---------------------------------------------------------------- anon
+    const anonSel = await anon.rest("GET", "funnel_steps", { query: { select: "*", limit: "1" } });
+    out.push(result("funnel steps: anon cannot select funnel_steps", isDenied(anonSel), describe(anonSel)));
+    const anonIns = await anon.rest("POST", "funnel_steps", { body: { user_id: a.userId, step: "plan_shown" }, prefer: "return=minimal" });
+    out.push(result("funnel steps: anon cannot insert into funnel_steps", isDenied(anonIns), describe(anonIns)));
+    const anonCall = await record(anon, "plan_shown", { view: "offer" });
+    out.push(result("funnel steps: anon cannot call record_funnel_step", isDenied(anonCall) || !isOk(anonCall), describe(anonCall)));
+
+    // ---------------------------------------------------------------- no direct access for a user
+    const aSel = await a.rest("GET", "funnel_steps", { query: { select: "*", limit: "1" } });
+    out.push(result("funnel steps: A cannot select funnel_steps, not even their own rows (42501)", refusedWith(aSel, "42501"), describe(aSel)));
+    const aIns = await a.rest("POST", "funnel_steps", { body: { user_id: a.userId, step: "checkout_opened", times: 50 }, prefer: "return=minimal" });
+    out.push(result("funnel steps: A cannot insert into funnel_steps (42501)", refusedWith(aIns, "42501"), describe(aIns)));
+    const aUpd = await a.rest("PATCH", "funnel_steps", { query: { user_id: `eq.${a.userId}` }, body: { times: 50 }, prefer: "return=representation" });
+    out.push(result("funnel steps: A cannot update funnel_steps (42501)", refusedWith(aUpd, "42501"), describe(aUpd)));
+    const aDel = await a.rest("DELETE", "funnel_steps", { query: { user_id: `eq.${a.userId}` }, prefer: "return=representation" });
+    out.push(result("funnel steps: A cannot delete from funnel_steps (42501)", refusedWith(aDel, "42501"), describe(aDel)));
+
+    // ---------------------------------------------------------------- recording, as the user
+    const first = await record(a, "plan_shown", { view: "offer" });
+    const once = await rowOf(a.userId, "plan_shown");
+    const second = await record(a, "plan_shown", { view: "restart", kid: true });
+    const twice = await rowOf(a.userId, "plan_shown");
+    out.push(result("funnel steps: A records a step with record_funnel_step()", isOk(first) && isOk(second), `${describe(first)} / ${describe(second)}`));
+    if (!service) {
+      out.push(result("funnel steps: the rows recorded (skipped: no service role client)", true));
+    } else {
+      out.push(
+        result(
+          "funnel steps: the first call inserts A's row: times 1, the meta given, first_at = last_at",
+          once?.user_id === a.userId && once.times === 1 && once.meta?.view === "offer" && Object.keys(once.meta).length === 1 && once.first_at === once.last_at,
+          JSON.stringify(once),
+        ),
+      );
+      out.push(
+        result(
+          "funnel steps: a second call counts it: times 2, last_at moved, first_at and the first meta kept",
+          twice?.times === 2 &&
+            twice.first_at === once?.first_at &&
+            twice.last_at !== once?.last_at &&
+            Date.parse(twice.last_at) >= Date.parse(once?.last_at) &&
+            JSON.stringify(twice.meta) === JSON.stringify({ view: "offer" }),
+          JSON.stringify(twice),
+        ),
+      );
+    }
+
+    const bCall = await record(b, "plan_shown", { view: "soon" });
+    const bRow = await rowOf(b.userId, "plan_shown");
+    const aAfterB = await rowOf(a.userId, "plan_shown");
+    if (!service) {
+      out.push(result("funnel steps: B's call writes B's row only", isOk(bCall), describe(bCall)));
+    } else {
+      out.push(
+        result(
+          "funnel steps: B's call writes B's row only (times 1, B's meta); A's row is untouched",
+          isOk(bCall) && bRow?.user_id === b.userId && bRow.times === 1 && bRow.meta?.view === "soon" && JSON.stringify(aAfterB) === JSON.stringify(twice),
+          `${describe(bCall)} / ${JSON.stringify(bRow)} / ${JSON.stringify(aAfterB)}`,
+        ),
+      );
+    }
+
+    // ---------------------------------------------------------------- what the database refuses
+    /** @type {Array<[string, string, unknown]>} */
+    const bad = [
+      ["an unknown step", "plan_seen", { view: "offer" }],
+      ["a meta that is a list", "tour_done", ["offer"]],
+      ["a meta that is a string", "tour_done", "offer"],
+      ["a meta over 1,000 bytes", "tour_done", { note: "x".repeat(1001) }],
+      ["a meta that is a list, on a step already recorded", "plan_shown", ["offer"]],
+    ];
+    for (const [what, step, meta] of bad) {
+      const res = await record(a, step, meta);
+      out.push(result(`funnel steps: the database refuses ${what} (23514)`, refusedWith(res, "23514"), describe(res)));
+    }
+    if (service) {
+      const kept = await rowOf(a.userId, "plan_shown");
+      const none = await rowOf(a.userId, "tour_done");
+      out.push(result("funnel steps: a refused call changes nothing (times still 2, no tour_done row)", kept?.times === 2 && none === null, `${JSON.stringify(kept)} / ${JSON.stringify(none)}`));
+    }
+
+    // ---------------------------------------------------------------- empty details
+    const empty = await record(a, "welcome_shown", {});
+    const jsonNull = await record(a, "tour_problem", null);
+    const omitted = await record(a, "checkout_opened", undefined);
+    out.push(result("funnel steps: a call with {} meta, a null meta, or none is taken", isOk(empty) && isOk(jsonNull) && isOk(omitted), `${describe(empty)} / ${describe(jsonNull)} / ${describe(omitted)}`));
+    if (!service) {
+      out.push(result("funnel steps: empty details stored as null (skipped: no service role client)", true));
+    } else {
+      const stored = await Promise.all(["welcome_shown", "tour_problem", "checkout_opened"].map((s) => rowOf(a.userId, s)));
+      out.push(result("funnel steps: {} meta, a null meta and no meta are each stored as null", stored.every((r) => r !== null && r.times === 1 && r.meta === null), JSON.stringify(stored).slice(0, 200)));
+    }
+  } finally {
+    await cleanup();
+  }
+  return out;
+}
+
+/**
+ * The funnel steps' checks, run after the rest by scripts/verify-rls.mjs and src/__tests__/db-rls.integration.test.ts.
+ * @type {CheckDef[]}
+ */
+export const FUNNEL_STEP_CHECKS = [
+  { name: "funnel steps: funnel_steps out of every client's reach; record_funnel_step() records the caller's own step, counted, with checked details", run: checkFunnelSteps },
+];
+
 /**
  * Run one check, converting a thrown error into a single failing result.
  * @param {CheckDef} check

@@ -10,6 +10,7 @@ import { describeError } from "@/lib/errorMessage";
 import { boardTitleFromLatex, DEFAULT_BOARD_TITLE } from "@/lib/boards/boardTitle";
 import { GRADES } from "@/lib/learning/grades";
 import { HEARD_FROM, type HeardFrom } from "@/lib/funnel/contracts";
+import { recordFunnelStep } from "@/lib/funnel/record";
 import { choiceKey, choiceSave, gradeTile, HIGH_SCHOOL_COURSES, parseChoiceKey, SOMETHING_ELSE, type WelcomeChoice } from "@/lib/onboarding/choice";
 import { starterBoardTitle, starterIndex, startersFor } from "@/lib/onboarding/courses";
 import type { CourseId } from "@/lib/onboarding/courseIds";
@@ -127,6 +128,7 @@ export default function Welcome({ userId, onSkip }: WelcomeProps) {
       setStarting(false);
       return;
     }
+    void recordFunnelStep("welcome_started", { course, grade });
     writeTourMarker(browserStorage(), userId, { boardId: board.value, course: own, ...(grade === null ? {} : { grade }), starter: index, step: "problem" });
     router.push(`/board/${board.value}`);
   }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { clientMetric } from "@/lib/logger";
+import { recordFunnelStep } from "@/lib/funnel/record";
 import type { CourseId } from "@/lib/onboarding/courseIds";
 import { browserStorage, readLocalDone, writeLocalDone } from "@/lib/onboarding/marker";
 import { needsProfile, welcomeDecision, type OnboardingProfile, type WelcomeDecision } from "@/lib/onboarding/state";
@@ -43,13 +44,16 @@ export function useWelcome(userId: string | undefined, boards: "loading" | "erro
   const decision = welcomeDecision({ boards, profile, localDone });
 
   useEffect(() => {
-    if (decision === "show") clientMetric("onboarding.welcome.shown", {});
+    if (decision !== "show") return;
+    clientMetric("onboarding.welcome.shown", {});
+    void recordFunnelStep("welcome_shown");
   }, [decision]);
 
   const skip = useCallback(
     (course: CourseId | null, step: number, more: Pick<OnboardingSave, "grade" | "heardFrom"> = {}) => {
       if (!userId) return;
       clientMetric("onboarding.welcome.skip", { step, course, grade: more.grade ?? null });
+      void recordFunnelStep("welcome_skipped", { step });
       writeLocalDone(browserStorage(), userId);
       setSkipped(true);
       void saveOnboarding(client, { course, ...more, complete: true }).then((res) => {
