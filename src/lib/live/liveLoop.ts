@@ -15,7 +15,7 @@ import type {
   TLShapeId,
   TLShapePartial,
 } from "tldraw";
-import { errorTrace, isApiError, isOutOfInk } from "@/lib/api-client";
+import { errorTrace, isApiError, isBareServerError, isOutOfInk } from "@/lib/api-client";
 import { reportUserError } from "@/lib/reportAppError";
 import { clientMetric } from "@/lib/logger";
 import {
@@ -27,6 +27,7 @@ import {
   isLiveMeta,
   type Annotation,
   type CapabilitiesResponse,
+  type ChatScreenChange,
   type CheckLine,
   type CheckRequest,
   type GraphIntent,
@@ -120,7 +121,7 @@ import {
   rectsIntersect,
 } from "./placement";
 import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyDecision, type UnjudgedReason } from "./policy";
-import { createSolveStepGuard, engineParsesStep, localAnswerFor, mathSymbols, stepKey, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
+import { createSolveStepJudge, engineParsesStep, localAnswerFor, mathSymbols, solveSourceLatex, stepKey, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
 import {
   RecognizeClient,
   RecognizeTimeoutError,
@@ -199,6 +200,8 @@ export interface LiveEditorLike {
   getViewportPageBounds(): Box;
   /** the board's current screen lives in its page meta (optional: test editors have no pages) */
   getCurrentPage?(): TLPage;
+  /** the board's screens in order (Ask's "Screen 2"); optional: test editors have no pages */
+  getPages?(): TLPage[];
   createShapes(shapes: TLShapePartial[]): unknown;
   updateShapes(shapes: TLShapePartial[]): unknown;
   deleteShapes(ids: TLShapeId[]): unknown;
@@ -371,10 +374,26 @@ const HELP_READ_WAIT_MS = LIVE_TIMING.recognizeTimeoutMs + 1_000;
 const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
 
 /**
+ * A screen's id as Ask's contract takes it (`AskScreenIdSchema`, src/lib/live/ask/contracts.ts: a
+ * copy, so the board's first load never pulls in Ask's contract).
+ */
+const CHAT_SCREEN_ID = /^page:[A-Za-z0-9_-]{1,64}$/;
+
+/**
  * A read that failed the way a blip fails (it timed out, or the server answered 5xx) is tried once
  * more on its own this long after, before the student is told (`retryReadSoon`).
  */
 const READ_RETRY_MS = 1500;
+
+/**
+ * GET /api/live/recognize (the capabilities, once as a board opens) dropped while the browser says
+ * online — Safari's and Brave's "Load failed" — is tried once more on its own this long after,
+ * before the student sees "Couldn't reach the tutor service". Like a dropped read (the offline
+ * queue's own replay) and the home page's board list (BOARDS_RETRY_MS). Seen on an iPhone
+ * (2026-10-05) and on the iPad that had "Couldn't load your boards" two days before (10-08), with
+ * every health check green both times: the request, not the service.
+ */
+const CAPS_RETRY_MS = 2000;
 
 /**
  * A failed read worth one more try of the same ink: a timeout or a server error. A
@@ -391,7 +410,11 @@ const OFFLINE_REPLAY_MS = [2000, 4000, 8000, 15_000] as const;
 
 function transientReadFailure(err: unknown): boolean {
   if (err instanceof RecognizeTimeoutError) return true;
-  if (isApiError(err, "recognizer_failed")) return recognizeFailureHints(err).transient;
+  if (isApiError(err, "recognizer_failed")) {
+    // ink the recognizer called unreadable is never a blip: it would not read the second time either
+    const hints = recognizeFailureHints(err);
+    return hints.transient && !hints.unreadable;
+  }
   return isApiError(err) && err.status >= 500;
 }
 
@@ -402,6 +425,38 @@ function transientReadFailure(err: unknown): boolean {
  */
 function unreadableInk(err: unknown): boolean {
   return isApiError(err, "recognizer_failed") && recognizeFailureHints(err).unreadable;
+}
+
+/** What `captureCrop` made, or what it tried, for a report of the crop retry (`CropRetryNote`). */
+type CropShot = { how?: string; bytes?: number; tried?: string };
+
+/**
+ * Why the crop retry after a `needsCrop` read nothing (`recognizeWithCropFallback`), for the report
+ * that follows: `why` goes into its code (`unreadable:crop_bare_502`, `unreadable:no_crop`), `facts`
+ * into its meta (`how=drawn,bytes=41234,status=502,name=ApiError`). It rides on the error the read
+ * then fails with (`cropRetryNotes`), so it never describes another read of the line.
+ */
+type CropRetryNote = { why: string; facts: string };
+const cropRetryNotes = new WeakMap<object, CropRetryNote>();
+
+function cropRetryNoteOf(err: unknown): CropRetryNote | undefined {
+  return typeof err === "object" && err !== null ? cropRetryNotes.get(err) : undefined;
+}
+
+/** A failed crop retry's error as a code: its status (`bare_` when no route of ours answered), a timeout, a dropped request. */
+function cropRetryWhy(err: unknown): string {
+  if (err instanceof RecognizeTimeoutError) return "crop_timeout";
+  if (isApiError(err)) return `crop_${isBareServerError(err) ? "bare_" : ""}${err.status}`;
+  return err instanceof TypeError ? "crop_network" : "crop_failed";
+}
+
+/** `key=value` pairs for a report's `facts` (`FACTS`, src/lib/clientErrors.ts): empty values left out, the rest cut to its characters. */
+function reportFacts(fields: Record<string, string | number | undefined>): string {
+  return Object.entries(fields)
+    .filter(([, v]) => v !== undefined && v !== "")
+    .map(([k, v]) => `${k}=${String(v).replace(/[^\w.:+-]+/g, "_").slice(0, 60)}`)
+    .join(",")
+    .slice(0, 200);
 }
 
 /**
@@ -752,6 +807,8 @@ export class LiveLoop implements LiveController {
   private readonly offlineQueue = new Set<string>();
   /** the queue's next replay while the browser says online (`scheduleOfflineReplay`) */
   private offlineReplayTimer: ReturnType<typeof setTimeout> | null = null;
+  /** the capabilities' one more try after a dropped request (`CAPS_RETRY_MS`); the board's, not a screen's */
+  private capsRetryTimer: ReturnType<typeof setTimeout> | null = null;
   /** how many replays in a row have found the network still unreachable (picks the next wait) */
   private offlineReplayStep = 0;
   /** lines the next flush must recognize even when their stroke set is unchanged */
@@ -918,6 +975,16 @@ export class LiveLoop implements LiveController {
   private touchedProblem: string | null = null;
   /** the screen the loop last took in (`start` / `switchScreen`): the chat writes only once it is this one */
   private screenSeen: string | null = null;
+  /** Ask's chat per screen: who hears the board come to another screen (`onChatScreenChange`) */
+  private readonly chatScreenListeners = new Set<(screenId: string, how: ChatScreenChange) => void>();
+  /**
+   * Screens the tutor's own actions started (the chat's `addScreen`), not yet announced: the move to
+   * one is the tutor's (`ChatScreenChange.tutor`). Taken out when announced, so the student coming
+   * back to it later is the student's move.
+   */
+  private readonly tutorScreens = new Set<string>();
+  /** the tutor's screen being made right now (the chat's `addScreen`), and whether its move was heard yet */
+  private addingScreen: { announced: string | null } | null = null;
 
   /**
    * lecture mode's hand: the director's actions, one block at a time (`src/lib/live/lecture/desk.ts`),
@@ -995,8 +1062,14 @@ export class LiveLoop implements LiveController {
     liveStore.status.set(this.opts.enabled ? "idle" : "paused");
   }
 
-  /** GET /api/live/recognize: recognizer kind + warmup. A failure while online is shown and retryable. */
-  private fetchCaps(): void {
+  /**
+   * GET /api/live/recognize: recognizer kind + warmup. A failure while online is shown and
+   * retryable; a request dropped while online is first tried once more on its own (`CAPS_RETRY_MS`),
+   * and only `retried` is it shown.
+   */
+  private fetchCaps(retried = false): void {
+    if (this.capsRetryTimer) clearTimeout(this.capsRetryTimer);
+    this.capsRetryTimer = null;
     void this.deps
       .fetchCapabilities()
       .then((caps) => {
@@ -1006,14 +1079,26 @@ export class LiveLoop implements LiveController {
         this.noteSuccess("capabilities");
       })
       .catch((err: unknown) => {
+        if (!this.started) return;
+        // fetch's TypeError while the browser says online (classifyLiveFailure's `network`): the
+        // request dropped, not the service
+        if (!retried && err instanceof TypeError && this.deps.isOnline()) {
+          this.capsRetryTimer = setTimeout(() => {
+            this.capsRetryTimer = null;
+            if (this.started) this.fetchCaps(true);
+          }, CAPS_RETRY_MS);
+          return;
+        }
         // offline: recognizer stays 'unknown' and nothing is shown (classify returns null)
-        if (this.started) this.fail(err, { kind: "capabilities" }, { kind: "capabilities" });
+        this.fail(err, { kind: "capabilities" }, { kind: "capabilities" });
       });
   }
 
   stop(): void {
     if (!this.started) return;
     this.started = false;
+    if (this.capsRetryTimer) clearTimeout(this.capsRetryTimer);
+    this.capsRetryTimer = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.unsubscribeRemote?.();
@@ -1024,6 +1109,7 @@ export class LiveLoop implements LiveController {
     this.deps.events?.removeEventListener("offline", this.onOffline);
     this.deps.events?.removeEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
     this.resetRuntime();
+    this.tutorScreens.clear();
     // what lecture mode heard since the last write is saved with the board, not lost with the loop
     this.flushPageMeta();
     if (liveStore.retryHandler.get() === this.retryHandler) liveStore.retryHandler.set(null);
@@ -1123,10 +1209,34 @@ export class LiveLoop implements LiveController {
       if (to.typeName !== "instance" || from.typeName !== "instance") continue;
       if (from.currentPageId !== to.currentPageId) {
         this.switchScreen();
+        this.announceScreen(to.currentPageId);
         return;
       }
     }
     if (picked) this.publishHelpTarget();
+  }
+
+  /**
+   * Ask's chat per screen hears that the board is on another screen (`onChatScreenChange`), and
+   * whether the tutor's own actions started it. A listener that throws never stops the others.
+   */
+  private announceScreen(screenId: string): void {
+    let tutor: boolean;
+    if (this.addingScreen) {
+      // heard while the tutor's screen is being made
+      this.addingScreen.announced = screenId;
+      tutor = true;
+    } else {
+      tutor = this.tutorScreens.delete(screenId);
+    }
+    const how: ChatScreenChange = { tutor };
+    for (const cb of [...this.chatScreenListeners]) {
+      try {
+        cb(screenId, how);
+      } catch (err) {
+        console.warn("[live] a chat screen listener failed", err);
+      }
+    }
   }
 
   /**
@@ -1176,7 +1286,10 @@ export class LiveLoop implements LiveController {
     }
     this.retryContext = retry;
     const asked = askedFor(retry);
-    return setLiveError(asked ? { ...fields, asked } : fields);
+    // a read whose crop retry failed too: how, for the report (`recognizeWithCropFallback`)
+    const crop = cropRetryNoteOf(err);
+    const facts = crop ? [`retry=${crop.why}`, crop.facts].filter(Boolean).join(",").slice(0, 200) : "";
+    return setLiveError({ ...fields, ...(asked ? { asked } : {}), ...(facts ? { reportFacts: facts } : {}) });
   }
 
   /** The call succeeded: drop its error (if it is the one showing) and its retry state. */
@@ -2144,6 +2257,16 @@ export class LiveLoop implements LiveController {
    * session so the next line attaches its crop on the FIRST attempt instead of paying a
    * failed round-trip each time. A retry that also fails is rethrown and lands in the normal
    * failure path ("Couldn't read this line — tap Retry"); there is never a second retry.
+   *
+   * Two exceptions, both from production (2026-10-12, an iPad):
+   *  - a 5xx no route of ours wrote (`isBareServerError`: Cloudflare's page in place of the route's
+   *    502) lost the hints on the way, `needsCrop` among them: the crop is still the one read that
+   *    can work, so it is tried as for `needsCrop`;
+   *  - when the server already said these strokes are `unreadable`, a crop retry that fails, or a
+   *    crop that cannot be made, leaves that answer standing: the original error is rethrown, so the
+   *    line gets its gentle "?" (`applyUnreadable`) and is never read again as a blip or shown as
+   *    "The tutor service had a hiccup" because the crop's own request failed.
+   * Why the crop retry read nothing rides on the error rethrown (`cropRetryNotes`), for its report.
    */
   private async recognizeWithCropFallback(
     line: InkLine,
@@ -2155,11 +2278,37 @@ export class LiveLoop implements LiveController {
     } catch (err) {
       const hints = recognizeFailureHints(err);
       if (hints.recognizerDown && liveStore.recognizer.get() !== "vision") liveStore.recognizer.set("vision");
-      if (!hints.needsCrop || req.crop) throw err;
-      const crop = await this.captureCrop(line.strokeIds, line.bounds);
-      if (!crop) throw err;
-      // `cropOnly`: Mathpix just read nothing from these strokes; the route goes straight to vision
-      return await this.deps.recognizer.recognize({ ...req, crop, cropOnly: true }, hash);
+      if (req.crop || !(hints.needsCrop || isBareServerError(err))) throw err;
+      const shot: CropShot = {};
+      const crop = await this.captureCrop(line.strokeIds, line.bounds, undefined, shot);
+      if (!crop) {
+        if (typeof err === "object" && err !== null) cropRetryNotes.set(err, { why: "no_crop", facts: reportFacts({ tried: shot.tried, how: shot.how, bytes: shot.bytes }) });
+        throw err;
+      }
+      try {
+        // `cropOnly`: Mathpix just read nothing from these strokes; the route goes straight to vision
+        return await this.deps.recognizer.recognize({ ...req, crop, cropOnly: true }, hash);
+      } catch (cropErr) {
+        // newer ink on the line, or the loop stopping: nobody is waiting for this read
+        if (isAbortLike(cropErr)) throw cropErr;
+        const trace = errorTrace(cropErr);
+        const note: CropRetryNote = {
+          why: cropRetryWhy(cropErr),
+          facts: reportFacts({
+            how: shot.how,
+            bytes: shot.bytes,
+            status: isApiError(cropErr) ? cropErr.status : undefined,
+            code: isApiError(cropErr) ? cropErr.code : undefined,
+            name: cropErr instanceof Error ? cropErr.name : undefined,
+            vercel: trace.vercelError,
+            rid: trace.requestId,
+          }),
+        };
+        clientMetric("live.crop.retry.failed", { lineId: line.id, why: note.why, facts: note.facts });
+        const thrown = hints.unreadable ? err : cropErr;
+        if (typeof thrown === "object" && thrown !== null) cropRetryNotes.set(thrown, note);
+        throw thrown;
+      }
     }
   }
 
@@ -2196,10 +2345,14 @@ export class LiveLoop implements LiveController {
   /**
    * A JPEG data URL of these strokes in `bounds`, about `maxWidth` px wide and ≤ `maxCropBytes`, or
    * undefined. tldraw's export first; when it fails (iPads) or is too big, a smaller export, then the
-   * strokes drawn on a canvas of our own (`captureInkCrop`, src/lib/live/inkCrop.ts).
+   * strokes drawn on a canvas of our own (`captureInkCrop`, src/lib/live/inkCrop.ts). `shot`, when
+   * given, is told how it was made and its size, or what was tried (the crop retry's report).
    */
-  private async captureCrop(ids: readonly TLShapeId[], bounds: Rect, maxWidth = 512): Promise<string | undefined> {
-    if (typeof FileReader === "undefined" || bounds.w <= 0) return undefined;
+  private async captureCrop(ids: readonly TLShapeId[], bounds: Rect, maxWidth = 512, shot?: CropShot): Promise<string | undefined> {
+    if (typeof FileReader === "undefined" || bounds.w <= 0) {
+      if (shot) shot.tried = bounds.w <= 0 ? "no-bounds" : "no-filereader";
+      return undefined;
+    }
     const toImage = this.editor.toImage;
     const want = new Set<string>(ids);
     const startedAt = this.deps.now();
@@ -2212,18 +2365,24 @@ export class LiveLoop implements LiveController {
         maxBytes: LIVE_LIMITS.maxCropBytes,
       });
       if (!res.ok) {
+        if (shot) shot.tried = res.tried.join("+");
         clientMetric("live.crop.failed", { tried: res.tried.join(","), ms: this.deps.now() - startedAt });
         return undefined;
       }
+      if (shot) Object.assign(shot, { how: res.how, bytes: res.blob.size });
       if (res.how !== "export") clientMetric("live.crop.fallback", { how: res.how, tried: res.tried.join(","), bytes: res.blob.size });
       const blob = res.blob;
       return await new Promise<string | undefined>((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : undefined);
-        reader.onerror = () => resolve(undefined);
+        reader.onerror = () => {
+          if (shot) shot.tried = "filereader";
+          resolve(undefined);
+        };
         reader.readAsDataURL(blob);
       });
     } catch {
+      if (shot) shot.tried = "threw";
       return undefined;
     }
   }
@@ -2739,7 +2898,16 @@ export class LiveLoop implements LiveController {
     this.deleteLineShapes(lineId, { keepAi: true });
     // the server answered: the network is up, and the read is done (no blip retry, no offline replay)
     this.noteSuccess("recognize", lineId);
-    reportUserError({ kind: "live.recognize", code: "unreadable", message: UNREADABLE_NOTE, level: "info", ...errorTrace(err) });
+    // and why the crop that could still have read it did not (`unreadable:crop_bare_502`, `unreadable:no_crop`)
+    const crop = cropRetryNoteOf(err);
+    reportUserError({
+      kind: "live.recognize",
+      code: crop ? `unreadable:${crop.why}` : "unreadable",
+      message: UNREADABLE_NOTE,
+      level: "info",
+      ...errorTrace(err),
+      ...(crop?.facts ? { facts: crop.facts } : {}),
+    });
     clientMetric("live.recognize.unreadable", { lineId });
     if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
     const ticket = rt.processing;
@@ -5486,15 +5654,18 @@ export class LiveLoop implements LiveController {
     // Every solve is asked for (Solve steps, More help, the board chat).
     const errCtx = { kind: "solve" as const, lineId: opts.lineId, userAsked: true };
     const retry: RetryContext = { kind: "solve", lineId: opts.lineId, fromLineId, opts };
-    // Nothing the model says is drawn on the student's page until the local engine has read it.
+    // Nothing the model says is drawn on the student's page until the local engine has read it —
+    // judged against the lines the model was shown (`solveSourceLatex`), the chat's problem heading
+    // the column included, exactly as the route judges what it sends. Judged against the student's
+    // lines alone, `= n^{9}` under the chat's `n^{5} \cdot n^{4}` was refused for its `n` while the
+    // route, seeing the problem, found nothing wrong to retry.
     const engine = this.engine;
-    const guard = createSolveStepGuard({
-      sourceLatex: built.states.map((s) => s.latex),
+    const judge = createSolveStepJudge({
+      sourceLatex: solveSourceLatex(req.lines),
       // No engine yet (it loads with the first recognition) means nothing to check with: the
       // step is not held back on a technicality, the symbol rule still applies.
       parses: engine ? (latex) => engineParsesStep(engine, latex) : () => true,
     });
-    const restated = new Set(built.states.map((st) => normalizeStep(st.latex)));
     liveStore.status.set("checking");
     const ended = this.solvingStarted();
     void (async () => {
@@ -5513,17 +5684,16 @@ export class LiveLoop implements LiveController {
           if (ev.event === "meta") requestId = ev.data.requestId;
           else if (ev.event === "step") {
             const latex = unwrapBoxed(ev.data.latex);
-            // The student's own line read back to them is not a step, and neither is the step
-            // before it again (the model boxes its last line as the answer, often a repeat).
-            const norm = normalizeStep(latex);
-            if (restated.has(norm)) continue;
-            restated.add(norm);
-            const verdict = guard.check(latex);
-            if (!verdict.ok) {
+            // A line the model was shown read back is not a step (the student's own, or the chat's
+            // problem), and neither is the step before it again (the model boxes its last line as
+            // the answer, often a repeat): `judge` skips them.
+            const verdict = judge.judge(latex);
+            if (!verdict.drawn) {
+              if (verdict.skipped) continue;
               discarded++;
               firstRejection ??= verdict.reason;
               console.warn("[live] solve step discarded", { reason: verdict.reason, introduced: verdict.introduced, latex: ev.data.latex });
-              clientMetric("live.solve.step.discarded", { reason: verdict.reason ?? "", lineId: opts.lineId });
+              clientMetric("live.solve.step.discarded", { reason: verdict.reason, lineId: opts.lineId });
               continue;
             }
             drawn++;
@@ -6237,7 +6407,20 @@ export class LiveLoop implements LiveController {
       addScreen: () => {
         const ed = this.editor as unknown as Partial<ScreensEditor>;
         if (typeof ed.getPages !== "function" || typeof ed.createPage !== "function" || typeof ed.setCurrentPage !== "function" || typeof ed.run !== "function") return false;
-        return addScreen(ed as ScreensEditor);
+        // The tutor's own new screen: Ask's exchange that asked for it goes with it (`announceScreen`).
+        // The store tells its listeners on the next frame (at once in tests, or when something
+        // flushes it early), so the move is marked both while it is made and after.
+        const adding: { announced: string | null } = { announced: null };
+        this.addingScreen = adding;
+        let added = false;
+        try {
+          added = addScreen(ed as ScreensEditor);
+        } finally {
+          this.addingScreen = null;
+        }
+        const made = this.pageKey();
+        if (added && adding.announced !== made) this.tutorScreens.add(made);
+        return added;
       },
       screenReady: () => !this.started || this.screenSeen === this.pageKey(),
       clearTutor: () => this.clearMarks(),
@@ -6400,6 +6583,34 @@ export class LiveLoop implements LiveController {
   /** The current screen as maths, for a chat request: what "more like these" refers to. */
   chatScreen(): ChatScreen {
     return this.chat.picture();
+  }
+
+  /**
+   * Ask's chat per screen (docs/ASK-V2.md): the current screen's id, its tldraw page id, or null on
+   * an editor without pages (or an id Ask's contract would refuse: `AskScreenIdSchema`).
+   */
+  chatScreenId(): string | null {
+    const id = this.editor.getCurrentPage?.()?.id;
+    return typeof id === "string" && CHAT_SCREEN_ID.test(id) ? id : null;
+  }
+
+  /** The current screen's place on the board, from 1 (the pages' order), or null without pages. */
+  chatScreenIndex(): number | null {
+    const id = this.editor.getCurrentPage?.()?.id;
+    const at = id ? (this.editor.getPages?.() ?? []).findIndex((p) => p.id === id) : -1;
+    return at >= 0 ? at + 1 : null;
+  }
+
+  /**
+   * Hears the board come to another screen: the student moving (the strip, a deleted screen) or the
+   * tutor's own actions starting one (`how.tutor`). Answers the unsubscribe.
+   */
+  onChatScreenChange(cb: (screenId: string, how: ChatScreenChange) => void): () => void {
+    const entry = (screenId: string, how: ChatScreenChange) => cb(screenId, how);
+    this.chatScreenListeners.add(entry);
+    return () => {
+      this.chatScreenListeners.delete(entry);
+    };
   }
 
   /**

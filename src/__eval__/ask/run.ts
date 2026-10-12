@@ -22,6 +22,7 @@
 import { AskBoardBlockSchema, type AskRequestParsed } from "@/lib/live/ask/contracts";
 import type { ChatAction, ChatActionType, TeachAction, WriteProofAction } from "@/lib/live/chat/contracts";
 import { figureProblems } from "@/lib/live/chat/figure";
+import { modelProblems } from "@/lib/live/chat/models/check";
 import { PROOF_CHECK, wantsHardProof } from "@/lib/live/chat/proof";
 import { isChain } from "@/lib/live/chat/verify";
 import { FigureSpecSchema } from "@/lib/live/figureDraw/contracts";
@@ -43,6 +44,7 @@ import {
   teachFromRepair,
   type DroppedAction,
 } from "@/lib/server/prompts/chat";
+import { buildModelRepairMessages, ModelRepairReplySchema } from "@/lib/server/prompts/model";
 import { repairJsonEscapes } from "@/lib/server/sse";
 import { scoreGraphs, scoreLines, teachAnswerRight } from "../chat/run";
 import { callModel, pool, type BenchMessage, type CallContext, type CallRecord, type ContentPart } from "../models/client";
@@ -94,6 +96,9 @@ export interface GateSummary {
   proved: number;
   figures: number;
   figuresClean: number;
+  /** visual models (draw_model), and those the board's spec check passed (after its one repair) */
+  models: number;
+  modelsClean: number;
   graphs: number;
   graphed: number;
   lines: number;
@@ -213,9 +218,11 @@ export function describeActions(actions: readonly ChatAction[]): string[] {
       case "write_lines":
         return `write_lines: ${a.lines.join(" ")}`;
       case "graph":
-        return `graph: ${a.relations.join(", ")}${a.window ? ` (x from ${a.window.xMin} to ${a.window.xMax})` : ""}`;
+        return `graph: ${a.relations.join(", ")}${a.window ? ` (x from ${a.window.xMin} to ${a.window.xMax})` : ""}${a.near !== undefined ? ` (beside problem ${a.near})` : ""}`;
       case "draw_figure":
-        return `draw_figure: points ${Object.keys(a.figure.points).join(", ")}; labels ${(a.figure.segments ?? []).map((s) => s.label).filter(Boolean).join(", ")}`;
+        return `draw_figure: points ${Object.keys(a.figure.points).join(", ")}; labels ${[...(a.figure.segments ?? []).map((s) => s.label), ...(a.figure.angles ?? []).map((g) => g.label)].filter(Boolean).join(", ")}${a.near !== undefined ? ` (beside problem ${a.near})` : ""}`;
+      case "draw_model":
+        return `draw_model: ${JSON.stringify(a.model)}${a.near !== undefined ? ` (beside problem ${a.near})` : ""}`;
       case "help_problem":
         return `help_problem: problem ${a.problem}, ${a.depth === "step" ? "the next step" : "the whole solution"} written under it`;
       case "help_board":
@@ -259,6 +266,7 @@ export function judgeAskIntent(
   if (e.window && !r.chosen.some((a) => a.type === "graph" && a.window)) return { ok: false, why: "no window for the range asked" };
   if (r.gate.graphs > r.gate.graphed) return { ok: false, why: "a graph the engine could not draw" };
   for (const a of r.chosen) {
+    if ((a.type === "graph" || a.type === "draw_figure" || a.type === "draw_model") && e.near !== undefined && a.near !== e.near) return { ok: false, why: `${a.type} ${a.near === undefined ? "with no near" : `near ${a.near}`}, not beside problem ${e.near}` };
     if (a.type === "help_problem" && e.help && (a.problem !== e.help.problem || a.depth !== e.help.depth)) return { ok: false, why: `help_problem ${a.problem} ${a.depth}, not ${e.help.problem} ${e.help.depth}` };
     if (a.type === "help_board" && e.helpBoard && a.depth !== e.helpBoard) return { ok: false, why: `help_board ${a.depth}, not ${e.helpBoard}` };
   }
@@ -267,6 +275,11 @@ export function judgeAskIntent(
   if (e.worked !== undefined && !r.final.some((a) => a.type === "write_proof" && a.worked === e.worked)) return { ok: false, why: `a proof ${e.worked ? "written whole" : "set up"} was asked for${chosen.includes("write_proof") ? " (not proved: dropped)" : ""}` };
   if (e.chain && !(r.gate.linesOk > 0 && r.final.some((a) => a.type === "write_lines" && isChain(a.lines)))) return { ok: false, why: "not a checked chain of = lines" };
   if (chosen.includes("draw_figure") && r.gate.figuresClean < r.gate.figures) return { ok: false, why: "a figure still wrong after its repair (dropped)" };
+  if (chosen.includes("draw_model") && r.gate.modelsClean < r.gate.models) return { ok: false, why: "a picture still wrong after its repair (dropped)" };
+  if (e.model) {
+    const kinds = r.final.flatMap((a) => (a.type === "draw_model" ? [a.model.kind] : []));
+    if (!kinds.some((k) => e.model!.includes(k))) return { ok: false, why: `no ${e.model.join(" / ")} picture${kinds.length ? ` (drew ${kinds.join(", ")})` : ""}` };
+  }
   return { ok: true, why: "" };
 }
 
@@ -385,7 +398,7 @@ export async function runOne(c: AskCase, cfg: AskModelConfig, opts: Omit<AskRunO
     repairs.push(rcall);
     return rc;
   };
-  const gate: GateSummary = { problems: 0, verified: 0, replaced: 0, teaches: 0, teachChecked: 0, teachRight: 0, proofs: 0, proved: 0, figures: 0, figuresClean: 0, graphs: 0, graphed: 0, lines: 0, linesOk: 0 };
+  const gate: GateSummary = { problems: 0, verified: 0, replaced: 0, teaches: 0, teachChecked: 0, teachRight: 0, proofs: 0, proved: 0, figures: 0, figuresClean: 0, models: 0, modelsClean: 0, graphs: 0, graphed: 0, lines: 0, linesOk: 0 };
   const final: ChatAction[] = [];
   const gateStarted = performance.now();
   for (const action of chosen) {
@@ -435,7 +448,23 @@ export async function runOne(c: AskCase, cfg: AskModelConfig, opts: Omit<AskRunO
       }
       if (problems.length === 0) {
         gate.figuresClean++;
-        final.push({ type: "draw_figure", figure: spec });
+        final.push({ ...action, figure: spec });
+      }
+    } else if (action.type === "draw_model") {
+      gate.models++;
+      let model = action.model;
+      let problems = modelProblems(model);
+      if (problems.length > 0) {
+        const fixed = ModelRepairReplySchema.safeParse(parseModelJson(await repairCall(buildModelRepairMessages(c.message, model, problems))) ?? {});
+        if (fixed.success) {
+          const again = modelProblems(fixed.data.model);
+          if (again.length === 0) model = fixed.data.model;
+          problems = again;
+        }
+      }
+      if (problems.length === 0) {
+        gate.modelsClean++;
+        final.push({ ...action, model });
       }
     } else if (action.type === "graph") {
       gate.graphs++;

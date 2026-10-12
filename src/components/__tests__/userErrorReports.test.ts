@@ -156,12 +156,28 @@ describe("a practice board (live.practice)", () => {
     expect(none.reportFailure).toHaveBeenCalledTimes(1);
     expect(none.reportFailure).toHaveBeenCalledWith("none_written", PRACTICE_COPY.failed);
 
-    const notReady = setup(async () => {
-      throw new Error("The board is not ready yet.");
-    });
-    await expect(runPracticeMarker(notReady.deps)).resolves.toBe("failed");
+    // the board's loop never came up within the ceiling (`whenReady`): not ready, and never tried
+    const notReady = setup(async () => ({ outcomes: [], problemsWritten: 1, problemsDropped: 0, screensAdded: 0 }));
+    await expect(runPracticeMarker({ ...notReady.deps, whenReady: async () => "timeout" as const })).resolves.toBe("failed");
     expect(notReady.reportFailure).toHaveBeenCalledTimes(1);
     expect(notReady.reportFailure).toHaveBeenCalledWith("board_not_ready", PRACTICE_COPY.failed);
+
+    // the run kept throwing on a board that was up
+    const throwing = setup(async () => {
+      throw new Error("Failed to fetch dynamically imported module");
+    });
+    await expect(runPracticeMarker(throwing.deps)).resolves.toBe("failed");
+    expect(throwing.reportFailure).toHaveBeenCalledTimes(1);
+    expect(throwing.reportFailure).toHaveBeenCalledWith("run_failed", PRACTICE_COPY.failed);
+  });
+
+  it("a run whose board has gone (the kid left): nothing toasted, nothing reported", async () => {
+    const left = setup(async () => {
+      throw new Error("The board is not ready yet.");
+    });
+    await expect(runPracticeMarker({ ...left.deps, whenReady: async () => "closed" as const, gone: () => true })).resolves.toBe("abandoned");
+    expect(left.toast).not.toHaveBeenCalled();
+    expect(left.reportFailure).not.toHaveBeenCalled();
   });
 
   it("problems written: nothing reported", async () => {
@@ -211,5 +227,24 @@ describe("sign in (live.auth)", () => {
     expect(other).toEqual({ kind: "live.auth", code: "signin_other", message: LOGIN_COPY.fallback });
     expect(loginFailureReport({ status: 400, code: "invalid_credentials", message: "Invalid login credentials" }, "signin")).toBeNull();
     expect(loginFailureReport({ status: 422, code: "weak_password", message: "Password should be at least 6 characters" }, "reset")).toBeNull();
+  });
+
+  it("Supabase's minute between two reset emails is info (never an issue); the limits that stop everyone stay warnings", () => {
+    // seen once on /login (2026-10-09, a64cddd) as a warn: "Send reset link" pressed again inside the window
+    const inWindow = { status: 429, code: "over_email_send_rate_limit", message: "For security purposes, you can only request this after 42 seconds." };
+    expect(loginFailureReport(inWindow, "forgot")).toEqual({
+      kind: "live.auth",
+      code: "forgot_rate_limited",
+      message: LOGIN_COPY.resendWait,
+      level: "info",
+    });
+    // the older servers' wording, without the seconds left
+    const older = { status: 429, message: "For security purposes, you can only request this once every 60 seconds" };
+    expect(loginFailureReport(older, "forgot")?.level).toBe("info");
+    // the project-wide email cap: nobody gets a link while it holds
+    const cap = { status: 429, code: "over_email_send_rate_limit", message: "Email rate limit exceeded" };
+    expect(loginFailureReport(cap, "forgot")).toEqual({ kind: "live.auth", code: "forgot_rate_limited", message: LOGIN_COPY.rateLimited, level: "warn" });
+    // too many sign-ins from one place
+    expect(loginFailureReport({ status: 429, code: "over_request_rate_limit", message: "Request rate limit reached" }, "signin")?.level).toBe("warn");
   });
 });

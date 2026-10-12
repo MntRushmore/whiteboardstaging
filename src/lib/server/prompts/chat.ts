@@ -16,6 +16,7 @@ import { normTex } from "@/lib/live/chat/teach";
 import { FigureSpecSchema, type FigureSpec } from "@/lib/live/figureDraw/contracts";
 import { MISTAKES, skillDef, type LearnerHint } from "@/lib/learning/contracts";
 import type { ChatMessage } from "@/lib/server/openrouter";
+import { lenientModelAction } from "./model";
 
 /**
  * System prompt for POST /api/live/chat: a typed request → a short reply for the panel and the
@@ -596,6 +597,19 @@ export function lenientTeach(obj: Record<string, unknown>): Record<string, unkno
   return out;
 }
 
+/**
+ * A drawing's `near` read leniently: `"2"`, `"#2"` or `"2."` is 2; anything else that is not a
+ * problem's number (null, 0, "two") is no `near` — the drawing still comes, placed anywhere free,
+ * never dropped over the problem it was meant to sit beside.
+ */
+export function lenientNear(obj: Record<string, unknown>): Record<string, unknown> {
+  const raw = obj.near;
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\s*#?\s*\d{1,3}\s*\.?\s*$/.test(raw) ? Number.parseInt(raw.replace(/\D/g, ""), 10) : NaN;
+  const rest = { ...obj };
+  delete rest.near;
+  return Number.isInteger(n) && n >= 1 && n <= 999 ? { ...rest, near: n } : rest;
+}
+
 /** A reply for the panel: plain, short, cut at a sentence end. */
 export function cleanReplyText(text: string): string {
   const flat = text.replace(/\$+/g, "").replace(/\s+/g, " ").trim();
@@ -617,6 +631,16 @@ export function cleanChatActions(raw: readonly unknown[]): { actions: ChatAction
   for (const item of raw) {
     const obj = item && typeof item === "object" && !Array.isArray(item) ? (item as Record<string, unknown>) : null;
     const type = typeof obj?.type === "string" ? obj.type : "";
+    // `{"near": 2}` on its own right after a drawing with none is that drawing's: a long figure's
+    // braces miscounted closed the action a key early (seen on Haiku 5.5), not an action of its own
+    const last = actions[actions.length - 1];
+    if (obj && !type && Object.keys(obj).length === 1 && "near" in obj && last && (last.type === "graph" || last.type === "draw_figure" || last.type === "draw_model") && last.near === undefined) {
+      const near = lenientNear(obj).near;
+      if (typeof near === "number") {
+        actions[actions.length - 1] = { ...last, near };
+        continue;
+      }
+    }
     if (!obj || !KNOWN.has(type)) {
       dropped.push({ type: type || "?", reason: "unknown action" });
       continue;
@@ -649,7 +673,10 @@ export function cleanChatActions(raw: readonly unknown[]): { actions: ChatAction
       if (obj.worked === null) delete candidate.worked;
     } else if (type === "teach") {
       candidate = lenientTeach(obj);
+    } else if (type === "draw_model") {
+      candidate = lenientModelAction(obj);
     }
+    if ("near" in candidate) candidate = lenientNear(candidate);
     const parsed = ChatActionSchema.safeParse(candidate);
     if (!parsed.success) {
       const issue = parsed.error.issues[0];

@@ -24,6 +24,11 @@ export const CHAT_COPY = {
   close: "Close",
   /** the hello when the tutor has nothing of its own to say yet (no saved hello) */
   hello: "Hi! I'm your tutor. Ask me anything, and I can write on your board too.",
+  /** the same on a screen after the first (the server's new-screen hello did not come): each screen has its own chat */
+  newScreen: "New screen! What should we work on?",
+  /** the header's quiet label: the chat follows the screen */
+  screen: (n: number) => `Screen ${n}`,
+  screenHint: (n: number) => `This chat is for screen ${n}`,
   placeholder: "Ask me anything…",
   send: "Send",
   stop: "Stop",
@@ -112,13 +117,40 @@ export function helloFor(opts: {
   screenHasWork: boolean;
   /** the weak-spots chip shows on its own (made on the device): not again among these */
   weakSpot?: boolean;
+  /** the screen's place on the board (a screen after the first opens on the new-screen line); null: not known */
+  screenIndex?: number | null;
 }): { greeting: string; chips: string[] } {
   const own = opts.hello && opts.hello.greeting.trim() ? opts.hello : null;
   const base = own && own.chips.length > 0 ? own.chips : SUGGESTIONS[gradeBand(opts.grade)];
-  const rest = opts.screenHasWork ? base.filter((c) => !/\bmore like\b/i.test(c)) : base;
+  const rest = opts.screenHasWork ? base.filter((c) => !/\bmore (like|on)\b/i.test(c)) : base;
   const more = opts.screenHasWork ? [MORE_LIKE_THESE_CHIP] : [];
   const chips = [...new Set([...more, ...rest].map((c) => c.trim()).filter((c) => c && !(opts.weakSpot && c === WEAK_SPOTS_COPY.chip)))].slice(0, MAX_CHIPS);
-  return { greeting: own ? own.greeting : CHAT_COPY.hello, chips };
+  const later = typeof opts.screenIndex === "number" && opts.screenIndex > 1;
+  return { greeting: own ? own.greeting : later ? CHAT_COPY.newScreen : CHAT_COPY.hello, chips };
+}
+
+// ------------------------------------------------------------------ a chat per screen
+
+/** The screen a chat is for: its tldraw page id (null: the board does not say, one chat for the board) and its number from 1. */
+export interface ChatScreenRef {
+  id: string | null;
+  index: number | null;
+}
+
+/** A thread's key in the panel's store: the board's, and the screen's when the board says which. */
+export function threadKey(boardId: string, screenId: string | null | undefined): string {
+  return screenId ? `${boardId}#${screenId}` : boardId;
+}
+
+/**
+ * An exchange moving to another screen's thread (the tutor's own actions started that screen): its
+ * messages (`ids`) leave `from`, in their order, and go after whatever `to` holds. Nothing else
+ * moves; a message already in `to` is not doubled.
+ */
+export function moveExchange(from: readonly ChatMessage[], to: readonly ChatMessage[], ids: readonly string[]): { from: ChatMessage[]; to: ChatMessage[] } {
+  const moving = new Set(ids);
+  const taken = from.filter((m) => moving.has(m.id));
+  return { from: from.filter((m) => !moving.has(m.id)), to: [...to.filter((m) => !moving.has(m.id)), ...taken] };
 }
 
 export type ChatErrorKind = "ink" | "rate_limited" | "unauthorized" | "network" | "timeout" | "other";

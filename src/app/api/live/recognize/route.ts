@@ -13,7 +13,7 @@ import { json, requireUser } from "@/lib/server/auth";
 import { enforceInk, runCharged } from "@/lib/server/billing";
 import { errorResponse, recordRouteEvent } from "@/lib/server/request";
 import { isMathpixConfigured, recognizeStrokes, type MathpixFailure } from "@/lib/server/mathpix";
-import { recognizeFailureHints } from "@/lib/server/recognizeHints";
+import { RECOGNIZER_FAILED_STATUS, recognizeFailureHints } from "@/lib/server/recognizeHints";
 import { chatJson, UpstreamError } from "@/lib/server/openrouter";
 import { buildVisionMessages, VisionTranscriptionSchema } from "@/lib/server/prompts/recognizeVision";
 import { liveDebugEnabled, liveLogger, livePreamble, withRequestId } from "@/lib/server/live-route";
@@ -164,7 +164,7 @@ export async function POST(req: Request) {
         },
         "recognizer failed",
       );
-      // Not a thrown error, so `errorResponse` never saw it: before, this 502 left no server row,
+      // Not a thrown error, so `errorResponse` never saw it: before, this answer left no server row,
       // and the student's error card (when no crop could be sent) had nothing to join. Mathpix
       // answering that it could not read the ink is `unreadable` (info: a scribble, not an
       // outage); anything else is the recognizer failing (warn: the client retries with a crop,
@@ -177,7 +177,7 @@ export async function POST(req: Request) {
           code: hints.unreadable ? "unreadable" : "recognizer_failed",
           message: hints.unreadable ? "Mathpix could not read the ink" : `The stroke recognizer read nothing (${reason})`,
           meta: {
-            status: 502,
+            status: RECOGNIZER_FAILED_STATUS,
             ms,
             reason,
             ...(mathpixFailure?.status ? { mathpixStatus: mathpixFailure.status } : {}),
@@ -187,10 +187,12 @@ export async function POST(req: Request) {
           },
         });
       }
-      // Status and `error` are unchanged; the hints (recognizeHints.ts) are additive: they let the
-      // client reach the vision fallback, and tell an unreadable line from a recognizer outage.
+      // `error` is unchanged and the hints (recognizeHints.ts) are additive: they let the client reach
+      // the vision fallback, and tell an unreadable line from a recognizer outage. A 503, not the 502
+      // it was: Cloudflare, in front of the site, swapped the 502 for its own page, hints and all
+      // (`RECOGNIZER_FAILED_STATUS`).
       return withRequestId(
-        json(502, "recognizer_failed", "Couldn't read this line right now.", { provider: null, ...hints }),
+        json(RECOGNIZER_FAILED_STATUS, "recognizer_failed", "Couldn't read this line right now.", { provider: null, ...hints }),
         requestId,
       );
     }
@@ -200,6 +202,7 @@ export async function POST(req: Request) {
     return withRequestId(Response.json(body), requestId);
   }, (err) => {
     if (req.signal.aborted) clientGone();
-    return withRequestId(errorResponse(err, log, { ms: Date.now() - startedAt }), requestId);
+    // whether it was the crop retry, on the route's own row: the board's report of it may carry no id to join
+    return withRequestId(errorResponse(err, log, { ms: Date.now() - startedAt, hadCrop: Boolean(data.crop), cropOnly: Boolean(data.cropOnly) }), requestId);
   });
 }

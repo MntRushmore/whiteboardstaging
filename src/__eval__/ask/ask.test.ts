@@ -38,7 +38,7 @@ beforeAll(async () => {
   engine = await getEngine();
 });
 
-const NO_GATE: GateSummary = { problems: 0, verified: 0, replaced: 0, teaches: 0, teachChecked: 0, teachRight: 0, proofs: 0, proved: 0, figures: 0, figuresClean: 0, graphs: 0, graphed: 0, lines: 0, linesOk: 0 };
+const NO_GATE: GateSummary = { problems: 0, verified: 0, replaced: 0, teaches: 0, teachChecked: 0, teachRight: 0, proofs: 0, proved: 0, figures: 0, figuresClean: 0, models: 0, modelsClean: 0, graphs: 0, graphed: 0, lines: 0, linesOk: 0 };
 const caseOf = (id: string) => ASK_CORPUS.find((c) => c.id === id)!;
 const intent = (id: string, chosen: ChatAction[], final: ChatAction[] = chosen, gate: Partial<GateSummary> = {}) =>
   judgeAskIntent(caseOf(id), { proposed: chosen.length, chosen, final, gate: { ...NO_GATE, ...gate }, missingHelp: false, nothingToHelp: false });
@@ -47,7 +47,7 @@ describe("eval: Ask (offline)", () => {
   it("about 70 asks over every kind, mostly K–8, with real pictures and the safety cases", () => {
     expect(ASK_CORPUS.length).toBeGreaterThanOrEqual(70);
     expect(new Set(ASK_CORPUS.map((c) => c.id)).size).toBe(ASK_CORPUS.length);
-    expect(new Set(ASK_CORPUS.map((c) => c.group))).toEqual(new Set(["problems", "explain", "fact", "socratic", "target", "board", "highschool", "subject", "voice", "grade", "safety", "memory", "vision"]));
+    expect(new Set(ASK_CORPUS.map((c) => c.group))).toEqual(new Set(["problems", "explain", "fact", "socratic", "target", "board", "highschool", "subject", "voice", "grade", "safety", "memory", "vision", "model"]));
     expect(ASK_CORPUS.filter((c) => c.grade !== undefined).length / ASK_CORPUS.length).toBeGreaterThan(0.75);
     expect(ASK_CORPUS.filter((c) => c.image).length).toBeGreaterThanOrEqual(4);
     // the same question at K, 2, 4, 7 and Algebra 1
@@ -99,6 +99,36 @@ describe("eval: Ask (offline)", () => {
     const five: ChatAction = { type: "write_problems", problems: [["1 + 1"], ["2 + 2"], ["3 + 3"], ["4 + 4"], ["5 + 5"]] };
     expect(intent("p-7-two-step", [five], [five], { problems: 5, verified: 5 }).ok).toBe(true);
     expect(intent("p-7-two-step", [five], [five], { problems: 5, verified: 4 }).why).toBe("1 of 5 problems not verified (left out)");
+  });
+
+  it("scoring a picture (draw_model): the kind asked for, beside its problem, its spec passing the board's check", () => {
+    const area: ChatAction = { type: "draw_model", model: { kind: "area_model", a: 23, b: 14 }, near: 1 };
+    expect(intent("m-4-area-near", [area], [area], { models: 1, modelsClean: 1 })).toEqual({ ok: true, why: "" });
+    const array: ChatAction = { type: "draw_model", model: { kind: "array", rows: 4, cols: 6 }, near: 1 };
+    expect(intent("m-4-area-near", [array], [array], { models: 1, modelsClean: 1 }).why).toBe("no area_model picture (drew array)");
+    expect(intent("m-4-area-near", [{ ...area, near: undefined }], [{ ...area, near: undefined }], { models: 1, modelsClean: 1 }).why).toBe("draw_model with no near, not beside problem 1");
+    expect(intent("m-4-area-near", [area], [], { models: 1, modelsClean: 0 }).why).toBe("no draw_model (chose draw_model; the board got nothing)");
+    expect(intent("m-3-array", [{ type: "draw_model", model: { kind: "equal_groups", groups: 4, each: 6 } }], undefined, { models: 1, modelsClean: 1 }).ok).toBe(true);
+    // every picture case wants a draw_model; one of a problem on the screen, beside it and never with a new screen
+    for (const c of ASK_CORPUS.filter((x) => x.group === "model")) {
+      expect(c.expect, c.id).toMatchObject({ board: "required", types: ["draw_model"] });
+      expect(c.expect.model?.length, c.id).toBeGreaterThan(0);
+      if (c.screen?.problems?.length) expect(c.expect, c.id).toMatchObject({ near: expect.any(Number), without: expect.arrayContaining(["new_screen"]) });
+    }
+    expect(ASK_CORPUS.filter((x) => x.group === "model").length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("scoring a drawing of a problem on the screen: beside that problem (near), never with a new screen", () => {
+    const graph: ChatAction = { type: "graph", relations: ["y = 2x + 1"], near: 3 };
+    expect(intent("b-8-graph-near", [graph], [graph], { graphs: 1, graphed: 1 })).toEqual({ ok: true, why: "" });
+    expect(intent("b-8-graph-near", [{ type: "new_screen" }, graph], [{ type: "new_screen" }, graph], { graphs: 1, graphed: 1 }).why).toBe("new_screen where it does not apply");
+    const loose: ChatAction = { type: "graph", relations: ["y = 2x + 1"] };
+    expect(intent("b-8-graph-near", [loose], [loose], { graphs: 1, graphed: 1 }).why).toBe("graph with no near, not beside problem 3");
+    const elsewhere: ChatAction = { type: "graph", relations: ["2x \\le 8"], near: 1 };
+    expect(intent("b-7-number-line-near", [elsewhere], [elsewhere], { graphs: 1, graphed: 1 }).why).toBe("graph near 1, not beside problem 2");
+    const figure: ChatAction = { type: "draw_figure", figure: { points: { A: { x: 0, y: 0 }, B: { x: 4, y: 0 }, C: { x: 1, y: 2 } }, segments: [], angles: [], polygons: [{ vertices: ["A", "B", "C"] }], lines: [], circles: [] }, near: 2 };
+    expect(intent("b-7-figure-near", [figure], [figure], { figures: 1, figuresClean: 1 }).ok).toBe(true);
+    for (const id of ["b-7-number-line-near", "b-8-graph-near", "b-7-figure-near"]) expect(caseOf(id).expect).toMatchObject({ board: "required", without: ["new_screen"] });
   });
 
   it("scoring the words: what it must and must never say, the length for the grade, spoken, Markdown-lite", () => {

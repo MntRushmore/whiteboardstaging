@@ -354,6 +354,15 @@ describe("POST /api/client-errors: each report is an event", () => {
     expect((await clientErrors(post({ ...REPORT, requestId: "x".repeat(65) }))).status).toBe(400);
   });
 
+  it("a report's machine facts go in meta (why a crop retry failed); words in their place refuse the report", async () => {
+    await clientErrors(
+      post({ ...REPORT, source: "live", kind: "live.recognize", code: "unreadable:crop_bare_502", level: "info", message: "Couldn't read this — tap to type it", facts: "how=drawn,bytes=41234,status=502,name=ApiError" }),
+    );
+    expect(events()[0]).toMatchObject({ kind: "live.recognize", code: "unreadable:crop_bare_502", level: "info", meta: expect.objectContaining({ facts: "how=drawn,bytes=41234,status=502,name=ApiError" }) });
+    expect((await clientErrors(post({ ...REPORT, facts: "my homework is 2x + 5 = 17" }))).status).toBe(400);
+    expect(events()).toHaveLength(1);
+  });
+
   it("a board id app_events could not store is left out; a refused report is no event", async () => {
     await clientErrors(post({ ...REPORT, boardId: "------------------------------------" }));
     expect(events()[0].boardId).toBeUndefined();

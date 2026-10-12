@@ -10,6 +10,7 @@ import { handBlockOf, handLinesOf, planHandwriting } from "../handwriting";
 import { createLiveLoop, type LiveLoop, type LiveLoopDeps } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
+import { createSolveStepJudge, engineParsesStep, solveSourceLatex } from "../solveSteps";
 import { DEFAULT_SCREEN } from "@/lib/screens/screens";
 import { CHAT_PROBLEM_META, problemMetaOf } from "../chat/cells";
 import type { ChatAction, ChatRunReport } from "../chat/contracts";
@@ -361,6 +362,100 @@ describe("live loop — the board chat", () => {
     });
   });
 
+  /**
+   * Production, 2026-10-10 (board cb442a82): the chat wrote four exponent problems; under
+   * `n^{5} \cdot n^{4}` the child wrote their answer, read as `1 A^{9}`, and pressed Solve. The
+   * request carried the problem as the column's first line, so the model answered in `n` — and the
+   * board, judging the steps against the child's lines alone, refused every one for its `n`:
+   * "Couldn't solve this one — try writing it again a bit clearer" (`unusable_steps:unknown-symbol`).
+   * The route's judge had the problem, passed the steps, and never retried or reported it.
+   */
+  describe("Solve under a problem the tutor wrote: the steps are judged against the problem too", () => {
+    let requests: Array<{ lines: Array<{ id: string; latex: string }> }>;
+    let steps: string[];
+
+    function startSolving(): void {
+      requests = [];
+      start("answer", {
+        stream: async function* (path: string, body: unknown): AsyncGenerator<LiveSseEvent, void, undefined> {
+          streamCalls.push(path);
+          if (!path.endsWith("/solve")) return;
+          requests.push(body as (typeof requests)[number]);
+          yield { event: "meta", data: { requestId: "req-1", model: "s" } };
+          for (const [i, latex] of steps.entries()) yield { event: "step", data: { index: i + 1, latex, explanation: "", final: i === steps.length - 1 } };
+          yield { event: "done", data: { count: steps.length, ms: 1 } };
+        },
+      });
+    }
+
+    /** Presses Solve on `line` and waits until the board has drawn (or refused) the model's steps. */
+    async function solveOn(line: string): Promise<void> {
+      loop.noteAsked();
+      loop.requestSolve(line);
+      await settleUntil(() => requests.length > 0);
+      await vi.advanceTimersByTimeAsync(20_000);
+      await settleStable(() => [liveStore.solving.get(), tutor().length, liveStore.lastError.get()?.reportCode ?? "-"].join("|"));
+    }
+
+    /** The tutor's ink written for this line's work (not the problems, not a mark). */
+    const workFor = (line: string) => handLinesOf(tutor().filter((s) => s.meta.lineId === line && !(s.meta as Record<string, unknown>).mark));
+
+    it("the child's misread answer under `n^{5} \\cdot n^{4}`: the model's steps in n are drawn, not refused", async () => {
+      startSolving();
+      await run([{ type: "write_problems", problems: [["n^{5} \\cdot n^{4}"], ["(2x^{2})^{3}"], ["a^{-3} \\cdot a^{7}"], ["\\frac{x^{6}y^{5}}{x^{3}y}"]] }]);
+      const line = await penLine("18", 100, 200, "1 A^{9}");
+      steps = ["n^{5} \\cdot n^{4}", "= n^{5 + 4}", "\\boxed{= n^{9}}"];
+      await solveOn(line);
+
+      // the model was shown the problem as the column's first line...
+      expect(requests[0].lines.map((l) => l.latex)).toEqual(["n^{5} \\cdot n^{4}", "1 A^{9}"]);
+      // ...so its steps are judged against it: the restated problem skipped, the rest drawn
+      expect(liveStore.lastError.get()).toBeNull();
+      expect(workFor(line)).toEqual(expect.arrayContaining(["= n^{5 + 4}", "= n^{9}"]));
+      expect(workFor(line)).not.toContain("n^{5} \\cdot n^{4}");
+      // and the route's judge, on the same request, agrees with the board
+      const judge = createSolveStepJudge({ sourceLatex: solveSourceLatex(requests[0].lines), parses: (latex) => engineParsesStep(engine, latex) });
+      for (const s of steps) judge.judge(s);
+      expect({ drawn: judge.drawn, discarded: judge.discarded }).toEqual({ drawn: 2, discarded: 0 });
+    });
+
+    it("`+ C` under the chat's `\\int 6x \\, dx`, whose `\\int` is only in the problem (board de2c9e8c, 2026-10-08)", async () => {
+      startSolving();
+      await run([{ type: "write_problems", problems: [["\\int 6x \\, dx"]] }]);
+      // the child's first step, no `\int` in it and nothing the engine finishes on its own
+      const line = await penLine("3x", 200, 300, "\\frac{6x^{2}}{2}");
+      steps = ["\\int 6x \\, dx = \\frac{6x^{2}}{2} + C", "\\boxed{= 3x^{2} + C}"];
+      await solveOn(line);
+
+      expect(requests[0].lines[0].latex).toBe("\\int 6x \\, dx");
+      expect(liveStore.lastError.get()).toBeNull();
+      expect(workFor(line)).toEqual(expect.arrayContaining(["= 3x^{2} + C"]));
+    });
+
+    it("a line the recognizer garbled under `2(x - 1) = 10`: the steps in x come from the problem (board 27f7e42d, 2026-10-06)", async () => {
+      startSolving();
+      await run([{ type: "write_problems", problems: [["2(x - 1) = 10"]] }]);
+      const line = await penLine("1", 200, 300, "\\wedge");
+      steps = ["2x - 2 = 10", "2x = 12", "\\boxed{x = 6}"];
+      await solveOn(line);
+
+      expect(requests[0].lines.map((l) => l.latex)).toEqual(["2(x - 1) = 10", "\\wedge"]);
+      expect(liveStore.lastError.get()).toBeNull();
+      expect(workFor(line)).toEqual(expect.arrayContaining(["2x = 12", "x = 6"]));
+    });
+
+    it("a name from nowhere is still refused under a problem: the ordinary failure, reported as before", async () => {
+      startSolving();
+      await run([{ type: "write_problems", problems: [["n^{5} \\cdot n^{4}"]] }]);
+      const line = await penLine("18", 200, 300, "1 A^{9}");
+      steps = ["= r + 9\\varepsilon", "\\boxed{= r + 9\\varepsilon}"];
+      await solveOn(line);
+
+      expect(workFor(line)).toEqual([]);
+      expect(liveStore.lastError.get()?.reportCode).toBe("unusable_steps:unknown-symbol");
+    });
+  });
+
   describe("lines, graphs, figures, screens", () => {
     it("write_lines: the formula in the tutor's hand in free space; a false step is left out", async () => {
       start();
@@ -414,6 +509,36 @@ describe("live loop — the board chat", () => {
       expect(editor.getPages()).toHaveLength(2);
       expect(problems()).toEqual([]);
       expect(tutor().some((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === "graph")).toBe(true);
+    });
+
+    it("a graph and a figure of problems on the screen (near): beside each problem in its cell, on the same screen", async () => {
+      start();
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"], ["x + 8 = 12"], ["4x = 20"]] }]);
+      const before = problems();
+      const report = await run([
+        { type: "graph", relations: ["y = 2x + 1"], near: 3 },
+        { type: "draw_figure", figure: PROBE_FIGURE, near: 2 },
+      ]);
+      expect(report).toMatchObject({ screensAdded: 0, outcomes: [{ type: "graph", ok: true }, { type: "draw_figure", ok: true }] });
+      expect(editor.getPages()).toHaveLength(1);
+      expect(problems()).toEqual(before);
+      const boxOf = (kind: string) => {
+        const b = tutor()
+          .filter((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === kind)
+          .map((s) => editor.getShapePageBounds(s)!);
+        return { x: Math.min(...b.map((r) => r.x)), y: Math.min(...b.map((r) => r.y)), r: Math.max(...b.map((r) => r.maxX)), b: Math.max(...b.map((r) => r.maxY)) };
+      };
+      const inCell = (box: ReturnType<typeof boxOf>, n: number) => {
+        const c = before[n - 1].cell;
+        return box.x >= c.x && box.y >= c.y && box.r <= c.x + c.w && box.b <= c.y + c.h;
+      };
+      expect(inCell(boxOf("graph"), 3)).toBe(true);
+      expect(inCell(boxOf("figure"), 2)).toBe(true);
+      // clear of every problem's own ink
+      for (const s of tutor().filter((t) => problemMetaOf(t.meta))) {
+        const p = editor.getShapePageBounds(s)!;
+        for (const box of [boxOf("graph"), boxOf("figure")]) expect(p.x < box.r && p.maxX > box.x && p.y < box.b && p.maxY > box.y).toBe(false);
+      }
     });
 
     it("draw_figure: the drawer's figure, true to scale, in free space beside the work", async () => {
@@ -562,5 +687,114 @@ describe("live loop — the board chat", () => {
     const metas = tutor().map((s) => (s.meta as Record<string, unknown>)[CHAT_PROBLEM_META]);
     expect(metas.length).toBeGreaterThan(3);
     for (const m of metas) expect(m).toMatchObject({ n: 1, lines: ["2x + 3 = 11"], cell: { x: expect.any(Number), w: expect.any(Number) } });
+  });
+
+  describe("Ask's chat per screen: which screen, and the board moving to another", () => {
+    /** Every screen change heard, as `id:tutor|student`, until unsubscribed. */
+    function listen(): { heard: string[]; off: () => void } {
+      const heard: string[] = [];
+      const off = loop.onChatScreenChange((id, how) => heard.push(`${id}:${how.tutor ? "tutor" : "student"}`));
+      return { heard, off };
+    }
+    const settle = () => vi.advanceTimersByTimeAsync(50);
+
+    it("the current screen's page id and its number, from 1", () => {
+      start();
+      const first = editor.getCurrentPage().id;
+      expect(loop.chatScreenId()).toBe(first);
+      expect(loop.chatScreenId()).toMatch(/^page:[A-Za-z0-9_-]{1,64}$/);
+      expect(loop.chatScreenIndex()).toBe(1);
+      const second = editor.addPage({ screen: { ...DEFAULT_SCREEN } });
+      editor.switchPage(second);
+      expect(loop.chatScreenId()).toBe(second);
+      expect(loop.chatScreenIndex()).toBe(2);
+    });
+
+    it("the student moving between screens is heard as theirs, each time; unsubscribed hears nothing", async () => {
+      start();
+      const first = editor.getCurrentPage().id;
+      const second = editor.addPage({ screen: { ...DEFAULT_SCREEN } });
+      const { heard, off } = listen();
+      editor.switchPage(second);
+      await settle();
+      editor.switchPage(first);
+      await settle();
+      expect(heard).toEqual([`${second}:student`, `${first}:student`]);
+      off();
+      editor.switchPage(second);
+      await settle();
+      expect(heard).toHaveLength(2);
+    });
+
+    it("a screen the tutor's own actions started is heard as the tutor's; coming back to it later is the student's", async () => {
+      start();
+      const first = editor.getCurrentPage().id;
+      const { heard } = listen();
+      const report = await run([{ type: "new_screen" }]);
+      expect(report.screensAdded).toBe(1);
+      const made = editor.getCurrentPage().id;
+      expect(made).not.toBe(first);
+      expect(heard).toEqual([`${made}:tutor`]);
+      expect(loop.chatScreenId()).toBe(made);
+      expect(loop.chatScreenIndex()).toBe(2);
+      editor.switchPage(first);
+      await settle();
+      editor.switchPage(made);
+      await settle();
+      expect(heard).toEqual([`${made}:tutor`, `${first}:student`, `${made}:student`]);
+    });
+
+    it("heard a frame later, as the browser's store tells its listeners: still the tutor's, and only that once", async () => {
+      const g = globalThis as { __FORCE_RAF_IN_TESTS__?: boolean; requestAnimationFrame?: unknown; cancelAnimationFrame?: unknown };
+      const had = { raf: g.requestAnimationFrame, caf: g.cancelAnimationFrame };
+      g.__FORCE_RAF_IN_TESTS__ = true;
+      g.requestAnimationFrame = (cb: () => void) => setTimeout(cb, 16);
+      g.cancelAnimationFrame = (id: ReturnType<typeof setTimeout>) => clearTimeout(id);
+      try {
+        start();
+        const first = editor.getCurrentPage().id;
+        const { heard } = listen();
+        await run([{ type: "new_screen" }]);
+        await settle();
+        const made = editor.getCurrentPage().id;
+        expect(heard).toEqual([`${made}:tutor`]);
+        editor.switchPage(first);
+        // not heard yet: the store tells its listeners on the next frame
+        expect(heard).toHaveLength(1);
+        await settle();
+        editor.switchPage(made);
+        await settle();
+        expect(heard).toEqual([`${made}:tutor`, `${first}:student`, `${made}:student`]);
+      } finally {
+        delete g.__FORCE_RAF_IN_TESTS__;
+        g.requestAnimationFrame = had.raf;
+        g.cancelAnimationFrame = had.caf;
+      }
+    });
+
+    it("more problems on a full screen start a new one: heard as the tutor's", async () => {
+      start();
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"]] }]);
+      const { heard } = listen();
+      const report = await run([{ type: "write_problems", problems: [["4x = 8"], ["5x + 1 = 11"], ["x - 3 = 4"], ["6x = 18"], ["7x - 7 = 0"], ["x + 9 = 12"], ["2x = 14"], ["9x = 81"]] }]);
+      expect(report.screensAdded).toBeGreaterThan(0);
+      expect(heard.length).toBeGreaterThan(0);
+      expect(heard.every((h) => h.endsWith(":tutor"))).toBe(true);
+      expect(heard.at(-1)).toBe(`${loop.chatScreenId()}:tutor`);
+    });
+
+    it("a listener that throws never stops the others, nor the loop", async () => {
+      start();
+      const second = editor.addPage({ screen: { ...DEFAULT_SCREEN } });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      loop.onChatScreenChange(() => {
+        throw new Error("boom");
+      });
+      const { heard } = listen();
+      editor.switchPage(second);
+      await settle();
+      expect(heard).toEqual([`${second}:student`]);
+      warn.mockRestore();
+    });
   });
 });

@@ -19,7 +19,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getLiveModels } from "@/lib/env";
-import { ASK_LIMITS, type AskStoredTurn, type LearnerMemory } from "@/lib/live/ask/contracts";
+import { ASK_LIMITS, AskScreenIdSchema, type AskStoredTurn, type LearnerMemory } from "@/lib/live/ask/contracts";
 import { skillDef } from "@/lib/learning/contracts";
 import { isGrade } from "@/lib/learning/grades";
 import { logger } from "@/lib/logger";
@@ -57,6 +57,10 @@ export const TUTOR_CLIENT_SUFFIX = ":tutor";
 
 /** The table is not there (the migration is not applied), or a column it should have. */
 const MISSING = new Set(["PGRST205", "PGRST204", "42P01", "42703"]);
+/** A column is not there: `screen_id` before 20261012010000_ask_screens.sql (the table itself is). */
+const NO_COLUMN = new Set(["PGRST204", "42703"]);
+/** The function is not there (`ask_move_turns` before 20261012010000_ask_screens.sql). */
+const NO_FUNCTION = new Set(["PGRST202", "42883"]);
 
 export const askStoreDeps = {
   /** a client that acts as the student (RLS applies) */
@@ -66,6 +70,11 @@ export const askStoreDeps = {
   chatJson: chatJsonWithFallback,
   models: () => getLiveModels(),
 };
+
+/** A screen's id as the database takes it (`page:…`, AskScreenIdSchema), or null for anything else. */
+export function screenIdOf(value: unknown): string | null {
+  return AskScreenIdSchema.safeParse(value).success ? (value as string) : null;
+}
 
 /** Who is asking, as the route knows them: the signed-in user's access token and id. */
 export interface AskStoreCaller {
@@ -109,6 +118,8 @@ interface TurnRow {
   notes: string[];
   wrote: string[];
   client_id: string | null;
+  /** the screen whose chat it is in (only when the ask said: absent is null, the first screen's) */
+  screen_id?: string;
 }
 
 const clipText = (text: string, max: number) => (text.length > max ? text.slice(0, max) : text);
@@ -116,9 +127,12 @@ const clipText = (text: string, max: number) => (text.length > max ? text.slice(
 /**
  * The rows as the database takes them: text trimmed and cut to its caps, notes and action kinds
  * cleaned and capped, a tutor turn without a client id filed under the student's message before it
- * (`<id>:tutor`), so a retried exchange is saved once. A turn with no text is left out.
+ * (`<id>:tutor`), so a retried exchange is saved once. A turn with no text is left out. `screenId`
+ * (a page id) files every row in that screen's chat; without one (or one that is not a page id)
+ * the rows carry no screen and are the board's first screen's.
  */
-export function turnRows(boardId: string, turns: readonly AskSaveTurn[]): TurnRow[] {
+export function turnRows(boardId: string, turns: readonly AskSaveTurn[], screenId?: string | null): TurnRow[] {
+  const screen = screenIdOf(screenId);
   const out: TurnRow[] = [];
   let lastUserId: string | null = null;
   for (const turn of turns) {
@@ -132,7 +146,7 @@ export function turnRows(boardId: string, turns: readonly AskSaveTurn[]): TurnRo
       .filter((n) => n.length > 0)
       .slice(0, TURN_LIMITS.notes);
     const wrote = [...new Set((turn.wrote ?? []).filter((k) => typeof k === "string" && ACTION_KIND.test(k)))].slice(0, TURN_LIMITS.wrote);
-    out.push({ board_id: boardId, role: turn.role === "tutor" ? "tutor" : "user", body, notes, wrote, client_id: clientId });
+    out.push({ board_id: boardId, role: turn.role === "tutor" ? "tutor" : "user", body, notes, wrote, client_id: clientId, ...(screen ? { screen_id: screen } : {}) });
   }
   return out;
 }
@@ -140,20 +154,28 @@ export function turnRows(boardId: string, turns: readonly AskSaveTurn[]): TurnRo
 /**
  * Saves a finished exchange on a board, as the student. Answers the saved rows' ids in order (a turn
  * already saved under its client id answers the id it was saved with; a turn with no text is left
- * out), or null when saving failed.
+ * out), or null when saving failed. `opts.screenId`: the screen whose chat it is in (absent: the
+ * first screen's). Before 20261012010000_ask_screens.sql the table has no `screen_id`: the rows are
+ * saved once more without it (the first screen's, as every turn was then), never lost.
  */
-export async function saveAskTurns(caller: AskStoreCaller, boardId: string, turns: readonly AskSaveTurn[]): Promise<string[] | null> {
+export async function saveAskTurns(caller: AskStoreCaller, boardId: string, turns: readonly AskSaveTurn[], opts: { screenId?: string | null } = {}): Promise<string[] | null> {
   try {
     if (!UUID.test(boardId)) return null;
-    const rows = turnRows(boardId, turns);
+    let rows = turnRows(boardId, turns, opts.screenId);
     if (!rows.length) return [];
     const db = askStoreDeps.user(caller.token);
     // ON CONFLICT (board_id, client_id) DO NOTHING: only the rows it inserted come back
-    const { data, error } = await db
-      .from(ASK_TURNS_TABLE)
-      .upsert(rows, { onConflict: "board_id,client_id", ignoreDuplicates: true })
-      .select("id,client_id")
-      .abortSignal(timeout());
+    const insert = () => db.from(ASK_TURNS_TABLE).upsert(rows, { onConflict: "board_id,client_id", ignoreDuplicates: true }).select("id,client_id").abortSignal(timeout());
+    let { data, error } = await insert();
+    if (error && NO_COLUMN.has(codeOf(error)) && rows.some((r) => r.screen_id)) {
+      failed("save ask turns with a screen", error, { boardId });
+      rows = rows.map((row) => {
+        const plain = { ...row };
+        delete plain.screen_id;
+        return plain;
+      });
+      ({ data, error } = await insert());
+    }
     if (error) {
       failed("save ask turns", error, { boardId, turns: rows.length });
       return null;
@@ -190,6 +212,7 @@ export async function saveAskTurns(caller: AskStoreCaller, boardId: string, turn
 // ------------------------------------------------------------------ the history
 
 const TURN_SELECT = "id,role,body,notes,wrote,created_at";
+const SCREEN_TURN_SELECT = "id,role,body,notes,wrote,created_at,screen_id";
 
 interface StoredRow {
   id: string;
@@ -198,6 +221,7 @@ interface StoredRow {
   notes: unknown;
   wrote: unknown;
   created_at: string;
+  screen_id?: string | null;
 }
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -211,7 +235,27 @@ export function toStoredTurn(row: StoredRow): AskStoredTurn {
     notes: strings(row.notes),
     wrote: strings(row.wrote),
     at: String(row.created_at),
+    ...(row.screen_id !== undefined ? { screenId: typeof row.screen_id === "string" ? row.screen_id : null } : {}),
   };
+}
+
+/**
+ * Which screen's chat to read: its page id, and whether it is the board's first screen (by the
+ * pages' order, which only the client knows). The first screen's chat also holds every turn saved
+ * without a screen (`screen_id` null: before chats were per screen, or an older client's).
+ */
+export interface AskHistoryScreen {
+  id: string;
+  first: boolean;
+}
+
+/**
+ * The PostgREST `or` filter for one screen's turns: its own, and for the first screen the ones with
+ * no screen. The id is quoted (a page id holds a `:`, which PostgREST's filter syntax reserves).
+ */
+export function screenFilter(screen: AskHistoryScreen): string {
+  const own = `screen_id.eq."${screen.id}"`;
+  return screen.first ? `${own},screen_id.is.null` : own;
 }
 
 export type AskHistoryRead =
@@ -223,29 +267,85 @@ export type AskHistoryRead =
 
 /**
  * A board's saved chat for the history route: the board must be the caller's (their token, RLS),
- * then its newest ASK_LIMITS.storedTurns, oldest first. Without the table, no turns.
+ * then its newest ASK_LIMITS.storedTurns, oldest first. With `screen`, one screen's chat: its own
+ * turns, and for the board's first screen the ones saved without a screen too (`screenFilter`).
+ * Without one (an older client), the whole board's, as before. Without the table, no turns; without
+ * the `screen_id` column (20261012010000_ask_screens.sql not applied) every turn is the first
+ * screen's: the first reads the whole board, any other none.
  */
-export async function readAskHistory(caller: AskStoreCaller, boardId: string): Promise<AskHistoryRead> {
+export async function readAskHistory(caller: AskStoreCaller, boardId: string, screen?: AskHistoryScreen | null): Promise<AskHistoryRead> {
   try {
     if (!UUID.test(boardId)) return { kind: "missing" };
     const db = askStoreDeps.user(caller.token);
-    const [board, turns] = await Promise.all([
-      db.from("whiteboards").select("id").eq("id", boardId).abortSignal(timeout()).maybeSingle(),
-      db.from(ASK_TURNS_TABLE).select(TURN_SELECT).eq("board_id", boardId).order("seq", { ascending: false }).limit(ASK_LIMITS.storedTurns).abortSignal(timeout()),
-    ]);
+    const one = screen && screenIdOf(screen.id) ? screen : null;
+    const read = (byScreen: AskHistoryScreen | null) => {
+      // the columns as a plain string: one read shape whichever is asked for (`toStoredTurn` reads both)
+      const columns: string = byScreen ? SCREEN_TURN_SELECT : TURN_SELECT;
+      const q = db.from(ASK_TURNS_TABLE).select(columns).eq("board_id", boardId);
+      return (byScreen ? q.or(screenFilter(byScreen)) : q).order("seq", { ascending: false }).limit(ASK_LIMITS.storedTurns).abortSignal(timeout());
+    };
+    const [board, firstRead] = await Promise.all([db.from("whiteboards").select("id").eq("id", boardId).abortSignal(timeout()).maybeSingle(), read(one)]);
+    let turns = firstRead;
     if (board.error) {
       failed("read board for ask history", board.error, { boardId });
       return { kind: "failed" };
     }
     if (!board.data) return { kind: "missing" };
+    if (turns.error && one && NO_COLUMN.has(codeOf(turns.error))) {
+      // no screen_id yet: every saved turn is the first screen's
+      failed("read ask history by screen", turns.error, { boardId });
+      if (!one.first) return { kind: "turns", turns: [] };
+      turns = await read(null);
+    }
     if (turns.error) {
       failed("read ask history", turns.error, { boardId });
       return missing(turns.error) ? { kind: "turns", turns: [] } : { kind: "failed" };
     }
-    const rows = (Array.isArray(turns.data) ? turns.data : []) as StoredRow[];
+    const rows = (Array.isArray(turns.data) ? turns.data : []) as unknown as StoredRow[];
     return { kind: "turns", turns: rows.map(toStoredTurn).reverse() };
   } catch (err) {
     log.warn({ boardId, error: errorText(err) }, "read ask history threw");
+    return { kind: "failed" };
+  }
+}
+
+// ------------------------------------------------------------------ moving turns to another screen
+
+/** The function that re-tags turns (20261012010000_ask_screens.sql). */
+export const ASK_MOVE_FUNCTION = "ask_move_turns";
+
+export type AskMoveResult =
+  /** how many of the turns moved (0: none of them is the caller's on this board) */
+  | { kind: "moved"; moved: number }
+  /** not a board of the caller's (another's, a deleted one, none at all: the same answer) */
+  | { kind: "missing" }
+  /** the function is not there (the migration is not applied): the turns stay where they were saved */
+  | { kind: "unavailable" }
+  | { kind: "failed" };
+
+/**
+ * Moves up to 4 of the caller's own saved turns on a board of theirs into another screen's chat
+ * (`ask_move_turns`, as the student: the function acts only as them, on their board). The tutor's
+ * own actions started a new screen, so the exchange that asked for it goes with them. Never throws.
+ */
+export async function moveAskTurns(caller: AskStoreCaller, boardId: string, turnIds: readonly string[], screenId: string): Promise<AskMoveResult> {
+  try {
+    if (!UUID.test(boardId)) return { kind: "missing" };
+    const screen = screenIdOf(screenId);
+    const ids = [...new Set(turnIds)].filter((id) => UUID.test(id)).slice(0, 4);
+    if (!screen || ids.length === 0) return { kind: "moved", moved: 0 };
+    const db = askStoreDeps.user(caller.token);
+    const { data, error } = await db.rpc(ASK_MOVE_FUNCTION, { p_board_id: boardId, p_turn_ids: ids, p_screen_id: screen }).abortSignal(timeout());
+    if (error) {
+      const code = codeOf(error);
+      if (code === "42501") return { kind: "missing" };
+      failed("move ask turns", error, { boardId, turns: ids.length });
+      return NO_FUNCTION.has(code) ? { kind: "unavailable" } : { kind: "failed" };
+    }
+    const moved = typeof data === "number" && Number.isInteger(data) ? data : Number(data);
+    return { kind: "moved", moved: Number.isFinite(moved) && moved >= 0 ? moved : 0 };
+  } catch (err) {
+    log.warn({ boardId, error: errorText(err) }, "move ask turns threw");
     return { kind: "failed" };
   }
 }
@@ -329,8 +429,10 @@ export function earlierSessionAttempts<T extends AttemptRow>(rows: readonly T[],
  * for the hello on a board being opened, `recent` holds only an earlier session's skills
  * (`earlierSessionAttempts`), so a problem worked on this board a minute ago is not "last time". The
  * ask route reads every recent skill: what they are working on now is context for the answer.
+ * `onBoard`: for a new screen's hello, `recent` holds only the skills worked on that board (the
+ * screen before is what the new one follows on from), newest first.
  */
-export async function loadAskContext(caller: AskStoreCaller, opts: { lastSession?: { boardId: string; now?: number } } = {}): Promise<AskLearnerContext> {
+export async function loadAskContext(caller: AskStoreCaller, opts: { lastSession?: { boardId: string; now?: number }; onBoard?: string } = {}): Promise<AskLearnerContext> {
   try {
     const db = askStoreDeps.user(caller.token);
     const settle = async <T>(what: string, run: () => PromiseLike<{ data: T | null; error: DbError | null }>): Promise<T | null> => {
@@ -367,6 +469,8 @@ export async function loadAskContext(caller: AskStoreCaller, opts: { lastSession
     const course = profile?.course;
     const worked = Array.isArray(attempts) ? attempts : [];
     const session = opts.lastSession;
+    const board = opts.onBoard;
+    const scoped = session ? earlierSessionAttempts(worked, session.boardId, session.now ?? Date.now()) : board ? worked.filter((r) => r.board_id === board) : worked;
     return {
       name: firstName(profile?.display_name),
       nameWords: nameWords(profile?.display_name),
@@ -374,7 +478,7 @@ export async function loadAskContext(caller: AskStoreCaller, opts: { lastSession
       course: isCourseId(course) ? course : null,
       memory: cleanMemoryNotes(strings(memory?.notes)),
       memoryAt: typeof memory?.updated_at === "string" ? memory.updated_at : null,
-      recent: recentSkillNames(session ? earlierSessionAttempts(worked, session.boardId, session.now ?? Date.now()) : worked),
+      recent: recentSkillNames(scoped),
     };
   } catch (err) {
     log.warn({ error: errorText(err) }, "load ask context threw");

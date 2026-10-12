@@ -215,7 +215,7 @@ describe("live/ask: the stream", () => {
     expect(deltas(out)).toBe("Sure! Here is the graph of $y = x^{2}$.\n");
     expect(only(out, "reply")).toEqual({ text: "Sure! Here is the graph of $y = x^{2}$." });
     expect(only(out, "actions")).toEqual({ actions: [{ type: "graph", relations: ["y = x^{2}"] }], notes: [] });
-    expect(only(out, "done")).toEqual({ model: LIVE_MODELS.ask, ms: expect.any(Number), turnId: "turn-tutor" });
+    expect(only(out, "done")).toEqual({ model: LIVE_MODELS.ask, ms: expect.any(Number), turnId: "turn-tutor", userTurnId: "turn-user" });
 
     // charged as the old chat, and kept
     expect(calls("consume_credits")[0].args).toMatchObject({ p_route: "live/chat", p_units: 3, p_model: LIVE_MODELS.ask });
@@ -243,10 +243,16 @@ describe("live/ask: the stream", () => {
     expect(vi.mocked(buildAskMessages).mock.calls[0][1]).toEqual({ learner: LEARNER });
 
     // the exchange, saved: the student's turn with its client id, the tutor's with the kinds it wrote
-    expect(saveAskTurns).toHaveBeenCalledWith({ token: fake.GOOD_TOKEN, userId: fake.USER_ID }, "board-1", [
-      { role: "user", text: BODY.message, clientId: "msg-1" },
-      { role: "tutor", text: "Sure! Here is the graph of $y = x^{2}$.", notes: [], wrote: ["graph"] },
-    ]);
+    // (no screen named: the first screen's chat)
+    expect(saveAskTurns).toHaveBeenCalledWith(
+      { token: fake.GOOD_TOKEN, userId: fake.USER_ID },
+      "board-1",
+      [
+        { role: "user", text: BODY.message, clientId: "msg-1" },
+        { role: "tutor", text: "Sure! Here is the graph of $y = x^{2}$.", notes: [], wrote: ["graph"] },
+      ],
+      { screenId: null },
+    );
 
     // the memory model runs after the response, never during it
     expect(rememberFromTurn).not.toHaveBeenCalled();
@@ -626,6 +632,70 @@ describe("live/ask: the request", () => {
     const second = await frames(await ask(request()));
     expect(names(second)).toEqual(["model", "delta", "reply", "actions", "done"]);
     expect(only(second, "done")).not.toHaveProperty("turnId");
+    expect(only(second, "done")).not.toHaveProperty("userTurnId");
     expect(calls("refund_ink_for")).toEqual([]);
+  });
+
+  it("a chat per screen: the exchange is saved in the chat of the screen it was asked from; `done` names both turns", async () => {
+    scripts = [{ chunks: ["Here are 5 more."] }];
+    const out = await frames(await ask(request({ ...BODY, screenId: "page:k2Hq_9-x" })));
+    expect(vi.mocked(saveAskTurns).mock.calls[0][3]).toEqual({ screenId: "page:k2Hq_9-x" });
+    expect(only(out, "done")).toMatchObject({ turnId: "turn-tutor", userTurnId: "turn-user" });
+    // a screen id that is not a page id is a bad request, before any charge
+    const bad = await ask(request({ ...BODY, screenId: "screen 2" }));
+    expect(bad.status).toBe(400);
+  });
+});
+
+describe("live/ask: visual models (draw_model)", () => {
+  const BARS = { kind: "fraction_bars", bars: [{ parts: 4, shaded: 3 }, { parts: 8, shaded: 5 }] };
+  // more shaded than parts, and a label that says other than the picture
+  const WRONG = { kind: "fraction_bars", bars: [{ parts: 4, shaded: 5 }, { parts: 8, shaded: 5, label: "3/4" }] };
+
+  it("a model the spec check passes goes to the board as it is, beside its problem: no repair call", async () => {
+    scripts = [{ chunks: ["Let's compare them!", block([{ type: "draw_model", model: BARS, near: 2 }])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "show me 3/4 vs 5/8" })));
+    expect(only(out, "actions")).toEqual({ actions: [{ type: "draw_model", model: BARS, near: 2 }], notes: [] });
+    expect(chatJsonWithFallback).not.toHaveBeenCalled();
+  });
+
+  it("a model with problems gets ONE repair with them on Ask's models; the repaired one keeps its problem", async () => {
+    scripts = [{ chunks: ["Let's compare them!", block([{ type: "draw_model", model: WRONG, near: 2 }])] }];
+    vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { model: BARS }, model: LIVE_MODELS.ask } as never);
+    const out = await frames(await ask(request({ ...BODY, message: "show me 3/4 vs 5/8" })));
+    expect(only(out, "actions")).toEqual({ actions: [{ type: "draw_model", model: BARS, near: 2 }], notes: [] });
+    expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
+    const [primary, fallback, repair] = vi.mocked(chatJsonWithFallback).mock.calls[0];
+    expect([primary, fallback]).toEqual([LIVE_MODELS.ask, LIVE_MODELS.askFallback]);
+    expect(repair.title).toBe("Agathon Live - ask model");
+    const text = JSON.stringify(repair.messages);
+    expect(text).toContain("show me 3/4 vs 5/8");
+    expect(text).toContain("bar 1 has 5 of 4 parts shaded");
+    expect(text).toContain("bar 2 shows 5/8 but its label says 3/4");
+  });
+
+  it("a repair that is still wrong drops the model: with nothing else left the reply says so, and the ink comes back", async () => {
+    scripts = [{ chunks: ["Here!", block([{ type: "draw_model", model: WRONG }])] }];
+    vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { model: WRONG }, model: LIVE_MODELS.ask } as never);
+    const out = await frames(await ask(request({ ...BODY, message: "show me 3/4 vs 5/8" })));
+    expect(only(out, "reply")).toEqual({ text: "Sorry, I couldn't draw that picture." });
+    expect(only(out, "actions")).toEqual({ actions: [], notes: [] });
+    expect(only(out, "done")).toMatchObject({ refunded: true });
+    expect(calls("refund_ink_for")).toHaveLength(1);
+  });
+
+  it("at most one repair per request: a second wrong model is dropped without one, and the panel hears of it", async () => {
+    scripts = [{ chunks: ["Two pictures and a graph.", block([{ type: "draw_model", model: WRONG }, { type: "draw_model", model: WRONG }, { type: "graph", relations: ["y = x^{2}"] }])] }];
+    vi.mocked(chatJsonWithFallback).mockRejectedValueOnce(new Error("upstream down"));
+    const out = await frames(await ask(request()));
+    expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
+    expect(only(out, "actions")).toEqual({ actions: [{ type: "graph", relations: ["y = x^{2}"] }], notes: ["The picture couldn't be drawn."] });
+    expect(calls("refund_ink_for")).toEqual([]);
+  });
+
+  it("a model written loosely (its fields beside the type, near as text) is read, not dropped", async () => {
+    scripts = [{ chunks: ["Here's 3:45!", block([{ type: "draw_model", kind: "clock", hour: 3, minute: 45, near: "#1" }])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "what does 3:45 look like" })));
+    expect(only(out, "actions")).toEqual({ actions: [{ type: "draw_model", model: { kind: "clock", hour: 3, minute: 45 }, near: 1 }], notes: [] });
   });
 });

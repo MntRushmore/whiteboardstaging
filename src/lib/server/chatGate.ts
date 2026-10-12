@@ -1,6 +1,7 @@
 import type pino from "pino";
-import type { ChatAction, ChatRequest, TeachAction, WriteProofAction } from "@/lib/live/chat/contracts";
+import type { ChatAction, ChatRequest, DrawModelAction, TeachAction, WriteProofAction } from "@/lib/live/chat/contracts";
 import { figureProblems } from "@/lib/live/chat/figure";
+import { modelProblems } from "@/lib/live/chat/models/check";
 import { PROOF_CHECK, wantsHardProof } from "@/lib/live/chat/proof";
 import { commonestReason } from "@/lib/live/chat/verify";
 import type { LiveEngine } from "@/lib/live/contracts";
@@ -26,6 +27,7 @@ import {
   TeachRepairReplySchema,
   type DroppedAction,
 } from "@/lib/server/prompts/chat";
+import { buildModelRepairMessages, ModelRepairReplySchema } from "@/lib/server/prompts/model";
 
 /**
  * The board chat's engine gates, shared by POST /api/live/chat and POST /api/live/ask: what the
@@ -41,6 +43,9 @@ import {
  *  - a `write_proof` goes on only when the engine's planner proves it (`gateChatProof`), with ONE
  *    repair round-trip; "the hardest proof ever" is held to it;
  *  - a `draw_figure` the drawer reports problems with gets ONE repair round-trip, else it is dropped;
+ *  - a `draw_model` (Ask's visual models) the board's spec check refuses (`modelProblems`: more
+ *    shaded than parts, a jump off its line, a label that says other than the picture) gets ONE repair
+ *    round-trip, else it is dropped with a note;
  *  - a `help_problem` about a number the screen does not have is dropped with a note;
  *  - everything else (`graph`, `write_lines`, `new_screen`, `clear_tutor`, Ask's `help_board`) goes
  *    on as it came: the board runs it.
@@ -67,6 +72,7 @@ export const PROBLEMS_NOT_WRITTEN = "I couldn't check those problems, so I didn'
 const problemsLeftOut = (n: number, of: number) => `${n} of ${of} problems couldn't be checked, so I left ${n === 1 ? "it" : "them"} out.`;
 
 export const FIGURE_NOT_DRAWN = "The figure couldn't be drawn.";
+export const MODEL_NOT_DRAWN = "The picture couldn't be drawn.";
 
 /** The maths engine the teach and problem checks run on, loaded on the first one (mathjs, ~2 MB). */
 let enginePromise: Promise<LiveEngine> | null = null;
@@ -119,6 +125,8 @@ export interface ChatGateStats {
   problemsDropped: number;
   problemsReplaced: number;
   repairsSkipped: number;
+  modelRepairs: number;
+  modelsDropped: number;
 }
 
 export interface ChatGateResult {
@@ -233,6 +241,40 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
     }
   };
 
+  // Visual models: checked by the board's spec check (`modelProblems`); ONE repair round-trip per
+  // request when there is time, else dropped with a note.
+  let modelRepairs = 0;
+  let modelsDropped = 0;
+  const gateModel = async (action: DrawModelAction): Promise<DrawModelAction | null> => {
+    let problems = modelProblems(action.model);
+    if (problems.length > 0 && modelRepairs === 0 && repairTime()) {
+      modelRepairs++;
+      try {
+        const { data: fixed } = await chatJsonWithFallback(models.primary, models.fallback, {
+          messages: buildModelRepairMessages(data.message, action.model, problems),
+          schema: ModelRepairReplySchema,
+          signal,
+          requestId,
+          maxTokens: 1500,
+          reasoningFor,
+          latencyFirst: true,
+          attemptTimeoutMs: REPAIR_ATTEMPT_MS,
+          deadline,
+          title: title("model"),
+        });
+        problems = modelProblems(fixed.model);
+        // the repaired model keeps the problem it goes with
+        if (problems.length === 0) return { ...action, model: fixed.model };
+      } catch (err) {
+        log.warn({ err: err instanceof Error ? err.message : String(err) }, `${route} model repair failed`);
+      }
+    }
+    if (problems.length === 0) return action;
+    modelsDropped++;
+    dropped.push({ type: "draw_model", reason: problems.slice(0, 3).join("; ").slice(0, 160) });
+    return null;
+  };
+
   // Figures: checked by the drawer; one repair round-trip when it stays cheap, else dropped.
   const actions: ChatAction[] = [];
   let repairs = 0;
@@ -291,6 +333,11 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
       }
       continue;
     }
+    if (action.type === "draw_model") {
+      const gated = await gateModel(action);
+      if (gated) actions.push(gated);
+      continue;
+    }
     if (action.type !== "draw_figure") {
       // graph, write_lines, new_screen, clear_tutor, help_problem (checked below), help_board: the board runs them
       actions.push(action);
@@ -315,7 +362,8 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
         const spec = FigureSpecSchema.parse(fixed.figure);
         problems = figureProblems(spec);
         if (problems.length === 0) {
-          actions.push({ type: "draw_figure", figure: spec });
+          // mended, still beside the problem it was asked for (`near`)
+          actions.push({ ...action, figure: spec });
           continue;
         }
       } catch (err) {
@@ -330,14 +378,15 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
     dropped.push({ type: "draw_figure", reason: problems.slice(0, 3).join("; ").slice(0, 160) });
   }
   if (figuresDropped > 0 && !notes.includes(FIGURE_NOT_DRAWN)) notes.push(FIGURE_NOT_DRAWN);
+  if (modelsDropped > 0) notes.push(MODEL_NOT_DRAWN);
   if (proofsDropped > 0) notes.push(PROOF_NOT_WRITTEN);
   if (teachesDropped > 0) notes.push(TEACH_NOT_WRITTEN);
   if (problemSetsDropped > 0) notes.push(PROBLEMS_NOT_WRITTEN);
 
-  // A screen added (or the tutor's ink cleared) only to make room for a figure, a proof or a
+  // A screen added (or the tutor's ink cleared) only to make room for a figure, a picture, a proof or a
   // worked solution that could not be written is not something the student asked for: with
   // nothing else left, nothing is done.
-  if (figuresDropped + proofsDropped + teachesDropped + problemSetsDropped > 0 && actions.every((a) => a.type === "new_screen" || a.type === "clear_tutor")) actions.length = 0;
+  if (figuresDropped + modelsDropped + proofsDropped + teachesDropped + problemSetsDropped > 0 && actions.every((a) => a.type === "new_screen" || a.type === "clear_tutor")) actions.length = 0;
 
   // Help with a problem that is not on this screen: dropped, and the panel says there is none.
   const present = dropMissingProblems(actions, data.screen);
@@ -357,11 +406,13 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
           ? "Sorry, I couldn't check that proof, so I didn't write it. Try asking for another one."
           : figuresDropped > 0
             ? "Sorry, I couldn't draw that figure."
-            : problemSetsDropped > 0
-              ? "Sorry, I couldn't check those problems, so I didn't write them. Try asking for them another way."
-              : present.notes.length > 0
-                ? present.notes[0]
-                : "Sorry, I couldn't do that on the board. Try asking another way.";
+            : modelsDropped > 0
+              ? "Sorry, I couldn't draw that picture."
+              : problemSetsDropped > 0
+                ? "Sorry, I couldn't check those problems, so I didn't write them. Try asking for them another way."
+                : present.notes.length > 0
+                  ? present.notes[0]
+                  : "Sorry, I couldn't do that on the board. Try asking another way.";
     notes.length = 0;
     if (ctx.refundWhen?.(replacement) ?? true) {
       const r = await refundInk({ userId, requestId }, log);
@@ -408,6 +459,8 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
       problemsDropped: problemDrops.length,
       problemsReplaced,
       repairsSkipped,
+      modelRepairs,
+      modelsDropped,
     },
   };
 }

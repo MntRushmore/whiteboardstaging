@@ -3357,12 +3357,122 @@ export async function checkAskBudgetAndMemoryCas({ a, b, anon, service }) {
 }
 
 /**
+ * Ask's chat per screen (migration 20261012010000_ask_screens.sql; src/lib/server/ask/store.ts):
+ * ask_messages.screen_id and ask_move_turns().
+ *
+ * A saves turns with a screen id and reads one screen's chat by it; the database refuses a screen
+ * id that is not a page id (23514). A moves their own turns to another screen with
+ * ask_move_turns() (it answers how many), and nothing else of the turn changes. A cannot move B's
+ * turns: on B's board the call is refused (42501) and B's turn stays where it was; with A's own board
+ * and B's turn id it moves nothing. A's turn named with another of A's boards moves nothing (the
+ * wrong board). More than 4 ids, none, or a screen id that is not a page id are refused (22023).
+ * There is still no update grant: A cannot PATCH a turn's screen_id. anon cannot call the function,
+ * and B cannot read A's turns by screen. Removes everything it wrote.
+ * @param {CheckContext} ctx
+ */
+export async function checkAskScreens({ anon, a, b }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const refusedWith = (/** @type {HttpResult} */ res, /** @type {string} */ want) => !isOk(res) && code(res) === want;
+  const save = (/** @type {RlsClient} */ c, /** @type {unknown} */ body) => c.rest("POST", "ask_messages", { ...ASK_INSERT, body });
+  const move = (/** @type {RlsClient} */ c, /** @type {string} */ boardId, /** @type {string[]} */ ids, /** @type {string} */ screenId) =>
+    rpc(c, "ask_move_turns", { p_board_id: boardId, p_turn_ids: ids, p_screen_id: screenId });
+  const screenOf = async (/** @type {RlsClient} */ c, /** @type {string} */ id) => rows(await c.rest("GET", "ask_messages", { query: { id: `eq.${id}`, select: "id,screen_id,body,role" } }))[0] ?? null;
+
+  const S1 = "page:rlsScreen1";
+  const S2 = "page:rlsScreen2";
+  const boardA = await createBoard(a, "rls-verify ask screens");
+  const boardA2 = await createBoard(a, "rls-verify ask screens 2");
+  const boardB = await createBoard(b, "rls-verify ask screens B");
+  try {
+    // ---------------------------------------------------------------- saving and reading by screen
+    const pair = await save(a, [
+      askRow(boardA.id, { body: "rls-verify: 5 more problems", screen_id: S1 }),
+      askRow(boardA.id, { role: "tutor", body: "rls-verify: here are 5, on a new screen", screen_id: S1 }),
+    ]);
+    const [u, t] = rows(pair);
+    out.push(result("ask screens: A saves turns with a screen id on own board", isOk(pair) && u?.screen_id === S1 && t?.screen_id === S1, describe(pair)));
+    const legacy = await save(a, askRow(boardA.id, { body: "rls-verify: an older turn, no screen" }));
+    out.push(result("ask screens: a turn without a screen id is still saved (the first screen's)", isOk(legacy) && rows(legacy)[0]?.screen_id === null, describe(legacy)));
+    const byScreen = rows(await a.rest("GET", "ask_messages", { query: { board_id: `eq.${boardA.id}`, screen_id: `eq.${S1}`, select: "id" } }));
+    out.push(result("ask screens: A reads one screen's chat by its id", byScreen.length === 2, JSON.stringify(byScreen).slice(0, 200)));
+    /** @type {Array<[string, string]>} */
+    const badIds = [
+      ["a screen id that is not a page id", "screen 2"],
+      ["a page id with a space", "page:a b"],
+      ["a page id over 64 characters", `page:${"x".repeat(65)}`],
+      ["an empty page id", "page:"],
+    ];
+    for (const [what, screen_id] of badIds) {
+      const res = await save(a, askRow(boardA.id, { screen_id }));
+      out.push(result(`ask screens: the database refuses ${what} (23514)`, refusedWith(res, "23514"), describe(res)));
+    }
+
+    // ---------------------------------------------------------------- moving A's own turns
+    const ids = [String(u?.id ?? ZERO_UUID), String(t?.id ?? ZERO_UUID)];
+    const moved = await move(a, boardA.id, ids, S2);
+    const afterU = await screenOf(a, ids[0]);
+    const afterT = await screenOf(a, ids[1]);
+    out.push(
+      result(
+        "ask screens: A moves own turns to another screen of the board (answers 2; only screen_id changes)",
+        isOk(moved) && moved.body === 2 && afterU?.screen_id === S2 && afterT?.screen_id === S2 && afterU?.body === "rls-verify: 5 more problems" && afterT?.role === "tutor",
+        `${describe(moved)} / ${JSON.stringify([afterU, afterT]).slice(0, 160)}`,
+      ),
+    );
+    const again = await move(a, boardA.id, ids, S2);
+    out.push(result("ask screens: moving them again to the same screen is harmless", isOk(again) && again.body === 2, describe(again)));
+    const wrongBoard = await move(a, boardA2.id, [ids[0]], S1);
+    out.push(result("ask screens: A's turn named with another of A's boards moves nothing (the wrong board)", isOk(wrongBoard) && wrongBoard.body === 0 && (await screenOf(a, ids[0]))?.screen_id === S2, describe(wrongBoard)));
+    const ghost = await move(a, boardA.id, [uuid()], S1);
+    out.push(result("ask screens: a turn id that is not there moves nothing", isOk(ghost) && ghost.body === 0, describe(ghost)));
+
+    // ---------------------------------------------------------------- never B's
+    const bSave = await save(b, askRow(boardB.id, { body: "rls-verify: B's own question", screen_id: S1 }));
+    const bId = String(rows(bSave)[0]?.id ?? ZERO_UUID);
+    const onB = await move(a, boardB.id, [bId], S2);
+    out.push(result("ask screens: A cannot move B's turns on B's board (42501)", refusedWith(onB, "42501") && (await screenOf(b, bId))?.screen_id === S1, describe(onB)));
+    const smuggled = await move(a, boardA.id, [bId, ids[0]], S1);
+    out.push(
+      result(
+        "ask screens: B's turn id named with A's own board is not moved (only A's own is)",
+        isOk(smuggled) && smuggled.body === 1 && (await screenOf(b, bId))?.screen_id === S1,
+        describe(smuggled),
+      ),
+    );
+    const ghostBoard = await move(a, uuid(), [ids[0]], S1);
+    out.push(result("ask screens: a board that does not exist is refused like another's (42501)", refusedWith(ghostBoard, "42501"), describe(ghostBoard)));
+    const bRead = await b.rest("GET", "ask_messages", { query: { board_id: `eq.${boardA.id}`, screen_id: `eq.${S1}`, select: "id" } });
+    out.push(result("ask screens: B cannot read A's chat by screen", affectedNoRows(bRead), describe(bRead)));
+
+    // ---------------------------------------------------------------- what the function refuses
+    const five = await move(a, boardA.id, [uuid(), uuid(), uuid(), uuid(), uuid()], S1);
+    const none = await move(a, boardA.id, [], S1);
+    const notPage = await move(a, boardA.id, [ids[0]], "screen-2");
+    out.push(
+      result("ask screens: more than 4 ids, none, or a screen id that is not a page id are refused (22023)", [five, none, notPage].every((r) => refusedWith(r, "22023")), `${describe(five)} / ${describe(none)} / ${describe(notPage)}`),
+    );
+    const patch = await a.rest("PATCH", "ask_messages", { query: { id: `eq.${ids[0]}` }, body: { screen_id: S2 }, prefer: "return=representation" });
+    out.push(result("ask screens: A cannot PATCH a turn's screen_id (still no update grant: only the function moves)", refusedWith(patch, "42501"), describe(patch)));
+    const anonMove = await move(anon, boardA.id, [ids[0]], S2);
+    out.push(result("ask screens: anon cannot call ask_move_turns", isDenied(anonMove) || !isOk(anonMove), describe(anonMove)));
+  } finally {
+    await deleteBoard(a, boardA.id);
+    await deleteBoard(a, boardA2.id);
+    await deleteBoard(b, boardB.id);
+  }
+  return out;
+}
+
+/**
  * Ask's checks, run after the rest by scripts/verify-rls.mjs and src/__tests__/db-rls.integration.test.ts.
  * @type {CheckDef[]}
  */
 export const ASK_CHECKS = [
   { name: "ask: ask_messages own rows on own boards, saved once, checked values, 400 a board; learner_memory the server's to write, the owner's to read and clear", run: checkAsk },
   { name: "ask: rate_limit_spend() a user's units a day, as the user; learner_memory's compare-and-set write", run: checkAskBudgetAndMemoryCas },
+  { name: "ask: a chat per screen — screen_id checked, ask_move_turns() moves only the caller's own turns on the caller's own board", run: checkAskScreens },
 ];
 
 /**

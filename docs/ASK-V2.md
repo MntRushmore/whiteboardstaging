@@ -122,6 +122,14 @@ The owner asked for three things:
 - It shrinks to fit, down to a legible minimum, **before** it would ever start a new screen.
 - A new screen only comes when the student asks for one, or when nothing fits even at the minimum.
 - The prompt never proposes `new_screen` for a drawing that goes with work on the screen. New problem sets on a screen with work still go on a fresh screen; that is unchanged.
+- How (`src/lib/live/chat/place.ts`, pure geometry; `ChatDesk.placeDrawing` plans the sizes and writes it):
+  - Beside the line: right of the problem in its cell, level with it, as far right as the cell goes, 96 px kept after the problem for an answer on its row (`= 4`). A drawing keeps 30 px from its cell's sides and bottom, so it stands ~44 px from the next problem.
+  - The work room: under the problem at the cell's right, the student keeping 35% of the cell's width at the left to work in; then anywhere in that room.
+  - Anywhere free on the screen, outside every problem's cell. Without `near`, only this.
+  - Each place tries every size, largest first, before the next place. Never over the student's ink, a problem or the tutor's writing (18 px kept clear); in a cell only the room the student hasn't written in.
+  - Sizes: each kind's boxes end at its legible minimum (figures 260×215, where the labels stop shrinking; graphs 264×216), and no box below half the largest is ever tried.
+  - `write_lines` goes through it too (one size, no `near`). A figure mended by the gate keeps its `near`; a stray `{"near": n}` right after a drawing is read as that drawing's.
+- The desk skips a `new_screen` sent in the same reply as a `near` drawing (`live.chat.newScreen.ignored`); `live.chat.place` says where each drawing went (`beside`, `work`, `free`, `new_screen`).
 
 ## A chat per screen
 
@@ -132,6 +140,13 @@ The owner asked for three things:
 - The panel follows the current screen (`LiveController.chatScreenId` and `onChatScreenChange`). Moving to another screen shows that screen's chat. A new screen opens with a short hello and chips that follow from the screen before ("More like the last screen").
 - When the tutor's own actions start a new screen (more problems on a full one), the exchange that asked for it moves with them into the new screen's chat. `POST ASK_MOVE_PATH {boardId, turnIds, screenId}` re-tags the saved turns.
 - The context the model gets is the current screen's chat only. The learner memory stays per kid.
+
+**How it is built (`feat/ask2-screens`).**
+- **Which screen is first.** Only the client knows the board's pages, so it says: `GET history?boardId=&screenId=&first=1` for the screen that is first by the pages' order now. The first screen's chat is its own turns plus every turn with `screen_id` null. No `screenId` at all (an older client) reads the whole board's chat, as before. A board whose first screen was deleted hands the null turns to the screen that is first now.
+- **The hello.** The first screen (or no screen named) gets today's hello ("Welcome back, Maya!…"). Any other empty screen gets "New screen! What should we work on?" with chips naming the newest skill worked on this board ("3 more on dividing fractions", `buildNewScreenHello`): the chip carries the topic, because the model sees only this screen's chat.
+- **The move.** The board marks a screen its own chat actions started (`LiveLoop`'s chat `addScreen`) and tells the panel `onChatScreenChange(id, {tutor: true})`. While an ask's actions run, that moves the exchange into the new screen's thread at once. If it is not heard, `report.screensAdded > 0` moves it after the run to the screen the board is on. A screen the student moves to never takes it. `done.userTurnId` and `done.turnId` then go to the move route.
+- **The database.** Migration `20261012010000_ask_screens.sql`: `ask_messages.screen_id` (a checked page id), an index `(board_id, screen_id, seq desc)`, and `ask_move_turns()`. The move is a security-definer function rather than an update grant: at most 4 of the caller's own turns, on a board the caller owns, and only `screen_id` changes. Deploy it any time. Before it is applied, turns are saved without a screen, every turn reads as the first screen's, and the move answers 503.
+- **The panel.** Threads are keyed by board and screen (`threadKey`). The header shows a quiet "Screen 2". `useChatMessages(boardId)` follows the screen the board is on (`useChatScreen`), for `BoardTour`.
 
 ## Wave 2 parts
 

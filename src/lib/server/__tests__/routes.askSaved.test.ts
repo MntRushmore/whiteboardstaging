@@ -46,13 +46,14 @@ vi.mock("@/lib/family/server/store", async (importOriginal) => {
   };
 });
 
+import { POST as move } from "@/app/api/live/ask/history/move/route";
 import { GET as history } from "@/app/api/live/ask/history/route";
 import { DELETE as memoryDelete, GET as memoryGet } from "@/app/api/live/ask/memory/route";
 import { resetServerEnvCache } from "@/lib/env";
-import { AskHistoryResponseSchema, AskMemoryResponseSchema } from "@/lib/live/ask/contracts";
+import { AskHistoryResponseSchema, AskMemoryResponseSchema, AskMoveResponseSchema } from "@/lib/live/ask/contracts";
 import { askStoreDeps } from "@/lib/server/ask/store";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
-import { eqOf, fakeDb, type FakeDb, type FakeQuery } from "@/lib/server/ask/__tests__/fakeDb";
+import { eqOf, fakeDb, orOf, type FakeDb, type FakeQuery } from "@/lib/server/ask/__tests__/fakeDb";
 
 const BOARD = "b1000000-0000-4000-8000-000000000001";
 const hoursAgoIso = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
@@ -219,6 +220,135 @@ describe("GET /api/live/ask/history", () => {
   it("502 when the chat could not be read", async () => {
     userAnswer = (q) => (q.table === "whiteboards" ? { data: { id: BOARD } } : { error: { code: "57014", message: "statement timeout" } });
     const res = await history(req(path));
+    expect(res.status).toBe(502);
+    expectPrivate(res);
+  });
+});
+
+describe("GET /api/live/ask/history: a chat per screen", () => {
+  const S1 = "page:page";
+  const S2 = "page:k2Hq_9-x";
+  const at = (s: string) => `/api/live/ask/history?boardId=${BOARD}&screenId=${encodeURIComponent(s)}`;
+  const row = (id: string, screen: string | null) => ({ id, role: "user", body: `turn ${id}`, notes: [], wrote: [], created_at: "2026-10-12T10:00:00Z", screen_id: screen });
+
+  it("a screen's own turns: the filter names that screen only", async () => {
+    userAnswer = (q) => (q.table === "whiteboards" ? { data: { id: BOARD } } : { data: [row("t2", S2)] });
+    const res = await history(req(`${at(S2)}&first=0`));
+    expect(res.status).toBe(200);
+    expectPrivate(res);
+    const body = AskHistoryResponseSchema.parse(await res.json());
+    expect(body.turns).toEqual([expect.objectContaining({ id: "t2", screenId: S2 })]);
+    expect(orOf(userDb.calls.find((c) => c.table === "ask_messages")!)).toBe(`screen_id.eq."${S2}"`);
+  });
+
+  it("the first screen (first=1): its own turns and the ones saved without a screen", async () => {
+    userAnswer = (q) => (q.table === "whiteboards" ? { data: { id: BOARD } } : { data: [row("t1", S1), row("t0", null)] });
+    const body = AskHistoryResponseSchema.parse(await (await history(req(`${at(S1)}&first=1`))).json());
+    expect(body.turns.map((t) => [t.id, t.screenId])).toEqual([
+      ["t0", null],
+      ["t1", S1],
+    ]);
+    expect(orOf(userDb.calls.find((c) => c.table === "ask_messages")!)).toBe(`screen_id.eq."${S1}",screen_id.is.null`);
+  });
+
+  it("an empty first screen gets today's hello; an empty later screen the new screen's, following this board's work", async () => {
+    userAnswer = (q) => {
+      if (q.table === "whiteboards") return { data: { id: BOARD } };
+      if (q.table === "ask_messages") return { data: [] };
+      if (q.table === "profiles") return { data: { display_name: "Maya", grade: 5, course: null } };
+      if (q.table === "learner_memory") return { data: null };
+      return {
+        data: [
+          // this board, a minute ago (the screen before): what a new screen follows from
+          { skill: "divide_fractions", outcome: "with_help", lines_written: 2, board_id: BOARD, started_at: new Date(Date.now() - 60_000).toISOString() },
+          // another board, yesterday: "last time" for the first screen
+          { skill: "times_tables", outcome: "first_try", lines_written: 2, board_id: "other-board", started_at: hoursAgoIso(26) },
+        ],
+      };
+    };
+    const firstHello = AskHistoryResponseSchema.parse(await (await history(req(`${at(S1)}&first=1`))).json()).hello;
+    expect(firstHello?.greeting).toBe("Welcome back, Maya! Last time you worked on times tables.");
+    const nextHello = AskHistoryResponseSchema.parse(await (await history(req(`${at(S2)}&first=0`))).json()).hello;
+    expect(nextHello).toEqual({
+      greeting: "New screen! What should we work on?",
+      chips: ["3 more on dividing fractions", "Explain dividing fractions to me", "Quiz me on fractions", "Help me with my homework"],
+    });
+    // never the kid's name on a new screen's quick line
+    expect(JSON.stringify(nextHello)).not.toContain("Maya");
+  });
+
+  it("400 for a screen id that is not a page id; 404 for another's board, whatever the screen", async () => {
+    expect((await history(req(at("screen-2")))).status).toBe(400);
+    expect((await history(req(at("page:a b")))).status).toBe(400);
+    userAnswer = (q) => (q.table === "whiteboards" ? { data: null } : { data: [row("t9", S2)] });
+    expect((await history(req(`${at(S2)}&first=0`))).status).toBe(404);
+  });
+});
+
+describe("POST /api/live/ask/history/move", () => {
+  const S2 = "page:k2Hq_9-x";
+  const T1 = "c1000000-0000-4000-8000-000000000001";
+  const T2 = "c1000000-0000-4000-8000-000000000002";
+  const post = (body: unknown, token: string | null = TOKENS.kid) =>
+    move(new Request("http://localhost/api/live/ask/history/move", { method: "POST", headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+
+  it("401 without a token, before the rate limit or any write", async () => {
+    const res = await post({ boardId: BOARD, turnIds: [T1], screenId: S2 }, null);
+    expect(res.status).toBe(401);
+    expect(fake.buckets).toEqual([]);
+    expect(userDb.calls).toEqual([]);
+  });
+
+  it("429 from its own bucket", async () => {
+    fake.rateLimit = { allowed: false, remaining: 0, retry_after_ms: 900, backend: "db" };
+    const res = await post({ boardId: BOARD, turnIds: [T1], screenId: S2 });
+    expect(res.status).toBe(429);
+    expect(fake.buckets).toEqual(["liveAskMove"]);
+    expect(userDb.calls).toEqual([]);
+  });
+
+  it("moves the caller's own turns with their token, and says how many", async () => {
+    userAnswer = () => ({ data: 2 });
+    const res = await post({ boardId: BOARD, turnIds: [T1, T2], screenId: S2 });
+    expect(res.status).toBe(200);
+    expectPrivate(res);
+    expect(AskMoveResponseSchema.parse(await res.json())).toEqual({ moved: 2 });
+    expect(userDb.calls).toEqual([expect.objectContaining({ table: "rpc:ask_move_turns", rows: { p_board_id: BOARD, p_turn_ids: [T1, T2], p_screen_id: S2 } })]);
+    expect(serviceDb.calls).toEqual([]);
+  });
+
+  it("someone else's turns move nothing (0); someone else's board is 404 (the function refuses it)", async () => {
+    userAnswer = () => ({ data: 0 });
+    expect(await (await post({ boardId: BOARD, turnIds: [T1], screenId: S2 })).json()).toEqual({ moved: 0 });
+    userAnswer = () => ({ error: { code: "42501", message: "not a board of yours" } });
+    const res = await post({ boardId: BOARD, turnIds: [T1], screenId: S2 });
+    expect(res.status).toBe(404);
+    expectPrivate(res);
+    // a board id that is not one at all: the same 404, nothing asked
+    userDb.calls.length = 0;
+    expect((await post({ boardId: "demo", turnIds: [T1], screenId: S2 })).status).toBe(404);
+    expect(userDb.calls).toEqual([]);
+  });
+
+  it("400 for a body the contract refuses: no ids, more than 4, an id that is no saved turn's, a screen that is not a page id", async () => {
+    for (const body of [
+      { boardId: BOARD, turnIds: [], screenId: S2 },
+      { boardId: BOARD, turnIds: [T1, T2, T1, T2, T1], screenId: S2 },
+      { boardId: BOARD, turnIds: ["saved_t1"], screenId: S2 },
+      { boardId: BOARD, turnIds: [T1], screenId: "screen-2" },
+      { turnIds: [T1], screenId: S2 },
+    ]) {
+      const res = await post(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    expect(userDb.calls).toEqual([]);
+  });
+
+  it("503 before the migration (no function: the turns stay where they were asked); 502 when it fails", async () => {
+    userAnswer = () => ({ error: { code: "PGRST202", message: "Could not find the function public.ask_move_turns" } });
+    expect((await post({ boardId: BOARD, turnIds: [T1], screenId: S2 })).status).toBe(503);
+    userAnswer = () => ({ error: { code: "57014", message: "timeout" } });
+    const res = await post({ boardId: BOARD, turnIds: [T1], screenId: S2 });
     expect(res.status).toBe(502);
     expectPrivate(res);
   });
