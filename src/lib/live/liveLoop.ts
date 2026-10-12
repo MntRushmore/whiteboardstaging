@@ -118,7 +118,7 @@ import {
   rectsIntersect,
 } from "./placement";
 import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyDecision, type UnjudgedReason } from "./policy";
-import { createSolveStepGuard, engineParsesStep, localAnswerFor, mathSymbols, stepKey, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
+import { createSolveStepJudge, engineParsesStep, localAnswerFor, mathSymbols, solveSourceLatex, stepKey, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
 import {
   RecognizeClient,
   RecognizeTimeoutError,
@@ -5506,15 +5506,18 @@ export class LiveLoop implements LiveController {
     // Every solve is asked for (Solve steps, More help, the board chat).
     const errCtx = { kind: "solve" as const, lineId: opts.lineId, userAsked: true };
     const retry: RetryContext = { kind: "solve", lineId: opts.lineId, fromLineId, opts };
-    // Nothing the model says is drawn on the student's page until the local engine has read it.
+    // Nothing the model says is drawn on the student's page until the local engine has read it —
+    // judged against the lines the model was shown (`solveSourceLatex`), the chat's problem heading
+    // the column included, exactly as the route judges what it sends. Judged against the student's
+    // lines alone, `= n^{9}` under the chat's `n^{5} \cdot n^{4}` was refused for its `n` while the
+    // route, seeing the problem, found nothing wrong to retry.
     const engine = this.engine;
-    const guard = createSolveStepGuard({
-      sourceLatex: built.states.map((s) => s.latex),
+    const judge = createSolveStepJudge({
+      sourceLatex: solveSourceLatex(req.lines),
       // No engine yet (it loads with the first recognition) means nothing to check with: the
       // step is not held back on a technicality, the symbol rule still applies.
       parses: engine ? (latex) => engineParsesStep(engine, latex) : () => true,
     });
-    const restated = new Set(built.states.map((st) => normalizeStep(st.latex)));
     liveStore.status.set("checking");
     const ended = this.solvingStarted();
     void (async () => {
@@ -5533,17 +5536,16 @@ export class LiveLoop implements LiveController {
           if (ev.event === "meta") requestId = ev.data.requestId;
           else if (ev.event === "step") {
             const latex = unwrapBoxed(ev.data.latex);
-            // The student's own line read back to them is not a step, and neither is the step
-            // before it again (the model boxes its last line as the answer, often a repeat).
-            const norm = normalizeStep(latex);
-            if (restated.has(norm)) continue;
-            restated.add(norm);
-            const verdict = guard.check(latex);
-            if (!verdict.ok) {
+            // A line the model was shown read back is not a step (the student's own, or the chat's
+            // problem), and neither is the step before it again (the model boxes its last line as
+            // the answer, often a repeat): `judge` skips them.
+            const verdict = judge.judge(latex);
+            if (!verdict.drawn) {
+              if (verdict.skipped) continue;
               discarded++;
               firstRejection ??= verdict.reason;
               console.warn("[live] solve step discarded", { reason: verdict.reason, introduced: verdict.introduced, latex: ev.data.latex });
-              clientMetric("live.solve.step.discarded", { reason: verdict.reason ?? "", lineId: opts.lineId });
+              clientMetric("live.solve.step.discarded", { reason: verdict.reason, lineId: opts.lineId });
               continue;
             }
             drawn++;
