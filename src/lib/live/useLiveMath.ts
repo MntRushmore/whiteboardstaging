@@ -5,6 +5,7 @@ import type { Editor } from "tldraw";
 import type { ChatScreenChange, LiveController, UseLiveMathOptions } from "./contracts";
 import { createLiveLoop, type LiveLoop } from "./liveLoop";
 import { resetLiveStore } from "./liveStore";
+import { createLoopGate } from "./loopGate";
 
 /**
  * Board-page entry point of the Live layer (spec §6). Subscribes once to the editor
@@ -14,6 +15,8 @@ import { resetLiveStore } from "./liveStore";
  */
 export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveController {
   const loopRef = useRef<LiveLoop | null>(null);
+  // whether the loop is up, not yet, or gone with the board: for runs that outlive a render (`whenReady`)
+  const [gate] = useState(createLoopGate);
   const optsRef = useRef(opts);
   // Ask's chat per screen: whoever listens through the controller hears whichever loop is current
   const [screenListeners] = useState(() => new Set<(screenId: string, how: ChatScreenChange) => void>());
@@ -29,13 +32,15 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
     loopRef.current = loop;
     loop.start();
     const offScreens = loop.onChatScreenChange((screenId, how) => screenListeners.forEach((cb) => cb(screenId, how)));
+    gate.open(boardId);
     return () => {
       offScreens();
       loop.stop();
       if (loopRef.current === loop) loopRef.current = null;
       resetLiveStore();
+      gate.close();
     };
-  }, [editor, boardId, screenListeners]);
+  }, [editor, boardId, screenListeners, gate]);
 
   useEffect(() => {
     loopRef.current?.setOptions({ boardId, mode, enabled, auto });
@@ -103,6 +108,8 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
         if (!loop) throw new Error("The board is not ready yet.");
         return loop.runChatActions(actions, from);
       },
+      whenReady: (id, timeoutMs) => gate.whenReady(id, timeoutMs),
+      boardClosed: (id) => gate.closed(id),
       // Lecture mode: the loop runs whatever the Live switch and the help mode say (see `lectureHost`)
       lectureScreen: () => loopRef.current?.lectureScreen() ?? { empty: true, topic: null, drawn: [], room: 1, active: [] },
       runLectureActions: async (actions, opts) => {
@@ -112,5 +119,5 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
       },
       saveLectureTranscript: (text) => loopRef.current?.saveLectureTranscript(text),
     };
-  }, [screenListeners]);
+  }, [screenListeners, gate]);
 }

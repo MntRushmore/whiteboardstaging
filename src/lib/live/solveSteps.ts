@@ -36,6 +36,33 @@ const GREEK_SYMBOLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Two spellings of one letter: a problem's `\epsilon` answered with `\varepsilon` (or `\theta`
+ * with `\vartheta`) is the same quantity in another font, not a name from nowhere. Compared in
+ * this form only — a refusal still names the letter as the model wrote it.
+ */
+const GREEK_VARIANTS: Readonly<Record<string, string>> = {
+  varepsilon: "epsilon", vartheta: "theta", varphi: "phi", varrho: "rho", varsigma: "sigma",
+};
+
+/**
+ * Greek typed as a character (a typed line, a chat problem pasted in): `θ` on the page is the
+ * `\theta` a model writes. Only the source is read this way (`sourceSymbols`) — what it adds is
+ * names the problem has, never one a step may introduce. `π` is the constant, so it is absent.
+ */
+const UNICODE_GREEK: Readonly<Record<string, string>> = {
+  "α": "alpha", "β": "beta", "γ": "gamma", "δ": "delta", "ε": "epsilon", "ϵ": "epsilon", "ζ": "zeta",
+  "η": "eta", "θ": "theta", "ϑ": "theta", "ι": "iota", "κ": "kappa", "λ": "lambda", "μ": "mu",
+  "ν": "nu", "ξ": "xi", "ρ": "rho", "σ": "sigma", "τ": "tau", "υ": "upsilon", "φ": "phi", "ϕ": "phi",
+  "χ": "chi", "ψ": "psi", "ω": "omega", "Γ": "Gamma", "Δ": "Delta", "Θ": "Theta", "Λ": "Lambda",
+  "Ξ": "Xi", "Σ": "Sigma", "Φ": "Phi", "Ψ": "Psi", "Ω": "Omega",
+};
+
+/** The form two spellings of a name are compared in (`GREEK_VARIANTS`). */
+function canonicalSymbol(name: string): string {
+  return GREEK_VARIANTS[name] ?? name;
+}
+
+/**
  * Letters that are never a free variable: mathjs reads `e` and `i` as constants, and a step
  * is not "introducing" them. Keeping them out of the symbol set only ever makes the guard
  * more permissive, which is the safe direction for a name that carries no information.
@@ -51,8 +78,11 @@ const RELATIONS = [
   "\\geq", "\\ge", "\\to", "=", "<", ">",
 ];
 
-/** Drops `\text{…}` / `\mathrm{…}` and their argument, brace-balanced, leaving the maths. */
-function stripTextMacros(latex: string): string {
+/**
+ * Drops `\text{…}` / `\mathrm{…}` and their argument, brace-balanced, leaving the maths. Each one
+ * leaves `gap` behind: a space for the symbols, a clause break for `clausesOf` (`\text{Let } u = x`).
+ */
+function stripTextMacros(latex: string, gap = " "): string {
   let out = "";
   for (let i = 0; i < latex.length; i++) {
     if (latex[i] !== "\\") {
@@ -77,7 +107,7 @@ function stripTextMacros(latex: string): string {
       if (latex[j] === "{") depth++;
       else if (latex[j] === "}" && --depth === 0) break;
     }
-    out += " ";
+    out += gap;
     i = j;
   }
   return out;
@@ -194,6 +224,121 @@ export function definedSymbol(latex: string): string | null {
   return CONSTANT_LETTERS.has(m[2]) ? null : m[2];
 }
 
+/** Macro spellings that end one clause of a step and start the next (`u = x, \quad dv = e^{x}\,dx`). */
+const CLAUSE_MACROS = ["qquad", "quad", "implies", "Longrightarrow", "Rightarrow", "therefore"];
+
+/**
+ * A step cut into its clauses: at a top-level `,` `;` `:` (not `:=`), `\quad`, `\implies` / `\Rightarrow`,
+ * `\\`, and wherever prose stood (`\text{Let } u = x^{2}` is the clause `u = x^{2}`). Commas inside
+ * braces, parentheses or brackets stay put — `(x, y) = (3, 9)` is one clause, and so is `[1, 4)`.
+ */
+function clausesOf(latex: string): string[] {
+  const src = stripTextMacros(latex, ";");
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  const cut = (at: number, length: number) => {
+    out.push(src.slice(start, at));
+    start = at + length;
+  };
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === "\\") {
+      if (src[i + 1] === "\\") {
+        if (depth === 0) cut(i, 2);
+        i++;
+        continue;
+      }
+      const name = /^[a-zA-Z]+/.exec(src.slice(i + 1))?.[0];
+      // `\,` `\;` `\{`: an escaped character is never a break (the `,` of `2x\,dx` included)
+      if (!name) {
+        i++;
+        continue;
+      }
+      if (depth === 0 && CLAUSE_MACROS.includes(name)) cut(i, name.length + 1);
+      i += name.length;
+      continue;
+    }
+    if (ch === "{" || ch === "(" || ch === "[") depth++;
+    else if (ch === "}" || ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
+    else if (depth === 0 && (ch === "," || ch === ";" || (ch === ":" && src[i + 1] !== "="))) cut(i, 1);
+  }
+  out.push(src.slice(start));
+  // the spacing a clause is set off with (`u = x, \ dv = …`) is not part of its left-hand side
+  return out.map((c) => c.replace(/^(?:\\[ ,;:!]|~|\s)+|(?:\\[ ,;:!]|~|\s)+$/g, "")).filter(Boolean);
+}
+
+/**
+ * Every name a step defines (`definedSymbol`, clause by clause): an integration by parts sets up
+ * `u = x, \ dv = e^{x}\,dx` in one step, and its `v` was refused as a name from nowhere — then
+ * `\int u \, dv = uv - \int v \, du` after it, for both. The general term of a sequence defines
+ * its index with it: `a_n = a_1 + (n - 1)d` is true for every `n`, which no step had to name.
+ */
+export function definedSymbols(latex: string): string[] {
+  const out: string[] = [];
+  const add = (name: string) => {
+    if (!out.includes(name)) out.push(name);
+  };
+  for (const clause of clausesOf(latex)) {
+    const name = definedSymbol(clause);
+    if (!name) continue;
+    add(name);
+    const rel = topLevelRelation(clause);
+    const index = /_\s*(?:\{\s*([a-zA-Z])\s*\}|([a-zA-Z]))$/.exec(rel ? clause.slice(0, rel.at).trim() : "");
+    const letter = index?.[1] ?? index?.[2];
+    if (letter && !CONSTANT_LETTERS.has(letter)) add(letter);
+  }
+  return out;
+}
+
+/** `\lim_{h \to 0}`, `\sum_{k=1}^{n}`: the dummy variable a limit, sum or product binds. */
+const BOUND_VARIABLE = /\\(?:lim|liminf|limsup|sum|prod)(?:\\limits)?\s*_\s*\{\s*(?:\\([a-zA-Z]+)|([a-zA-Z]))\s*(?:\\to(?![a-zA-Z])|\\rightarrow(?![a-zA-Z])|=)/g;
+
+/**
+ * The names a step binds itself: the variable of a limit (`\lim_{b \to \infty}` turning an
+ * improper integral into a proper one, `\lim_{h \to 0}` from first principles) and the index of a
+ * sum or product. A dummy variable is not a free one: it means the same whatever it is called.
+ */
+export function boundSymbols(latex: string): string[] {
+  const out: string[] = [];
+  for (const m of latex.matchAll(BOUND_VARIABLE)) {
+    const name = m[1] ? (GREEK_SYMBOLS.has(m[1]) ? m[1] : null) : m[2];
+    if (name && !CONSTANT_LETTERS.has(name) && !out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+/**
+ * Single letters in a problem's prose (`\text{The angles are x, 2x and 3x}` names `x`): a word
+ * problem read as prose has no maths for its names to come from. "a", "A" and "I" are words, a
+ * letter beside an apostrophe is half of one (`it's`), and one beside a slash is a unit (`km/h`).
+ */
+function proseLetters(latex: string): string[] {
+  const out: string[] = [];
+  for (const m of latex.matchAll(/\\(?:text|textrm|mbox)\s*\{([^{}]*)\}/g)) {
+    for (const l of m[1].matchAll(/(?<![A-Za-z'’/])([A-Za-z])(?![A-Za-z'’/])/g)) {
+      if (l[1] !== "a" && l[1] !== "A" && l[1] !== "I" && !out.includes(l[1])) out.push(l[1]);
+    }
+  }
+  return out;
+}
+
+/**
+ * The names a line a solve is judged against has (`createSolveStepGuard`'s source): its maths
+ * (`mathSymbols`), Greek typed as a character (`θ` is the `\theta` a model writes), and the letters
+ * its prose names. Wider than `mathSymbols` only on this side: it can only ever add names the
+ * problem itself has, never let a step bring one.
+ */
+export function sourceSymbols(latex: string): string[] {
+  const out = mathSymbols(latex);
+  const add = (name: string) => {
+    if (!out.includes(name)) out.push(name);
+  };
+  for (const ch of latex ?? "") if (UNICODE_GREEK[ch]) add(UNICODE_GREEK[ch]);
+  for (const l of proseLetters(latex ?? "")) if (!CONSTANT_LETTERS.has(l)) add(l);
+  return out;
+}
+
 /** Leading `= …` / `\approx …`: a step that continues the line above rather than restating it. */
 function stripLeadingRelation(latex: string): string {
   const s = latex.trimStart();
@@ -232,17 +377,19 @@ export interface SolveStepContext {
  *  - it must PARSE with the local engine (so `\text{Sorry, I can't}` and a dropped `\frac`
  *    never land), and
  *  - it must introduce no free variable that neither the student's work nor an earlier step
- *    contains, unless the step is the assignment that defines it.
+ *    contains, unless the step itself defines it (an assignment, one per clause: `definedSymbols`)
+ *    or binds it (a limit's or a sum's dummy variable: `boundSymbols`). Two spellings of one Greek
+ *    letter are one name (`\varepsilon` for a problem's `\epsilon`).
  */
 export function checkSolveStep(latex: string, ctx: SolveStepContext): SolveStepVerdict {
   const body = unwrapBoxed(latex ?? "");
   if (!body) return { ok: false, reason: "empty", symbols: [], introduced: [] };
   if (!ctx.parses(latex ?? "")) return { ok: false, reason: "unparseable", symbols: [], introduced: [] };
 
-  const known = new Set(ctx.known);
-  const defined = definedSymbol(body);
+  const known = new Set([...ctx.known].map(canonicalSymbol));
+  const own = new Set([...definedSymbols(body), ...boundSymbols(body)].map(canonicalSymbol));
   const symbols = mathSymbols(body);
-  const introduced = symbols.filter((s) => !known.has(s) && s !== defined);
+  const introduced = symbols.filter((s) => !known.has(canonicalSymbol(s)) && !own.has(canonicalSymbol(s)));
   if (introduced.length > 0) return { ok: false, reason: "unknown-symbol", symbols: [], introduced };
   return { ok: true, symbols, introduced: [] };
 }
@@ -255,21 +402,42 @@ export interface SolveStepGuard {
 }
 
 /**
+ * Maths whose answer carries a constant of integration: an integral, or a differential equation
+ * (`\frac{dy}{dx} = 2x`, `y' = 3y`, `f^{\prime}(x) = 6x`). Read with the prose taken out, so the
+ * apostrophe of a word is no prime.
+ */
+const ANTIDERIVATIVE_MATHS = /\\int(?![a-zA-Z])|\\frac\s*\{\s*d\s*[a-zA-Z]\s*\}\s*\{\s*d\s*[a-zA-Z]\s*\}|(?<![a-zA-Z\\])[a-zA-Z]\s*(?:'|\^\s*\{?\s*\\prime)/;
+/** ...or the words for one, in a problem read as prose. */
+const ANTIDERIVATIVE_WORDS = /antideriv|integra/i;
+/** The names a constant of integration is written with (`C_1` reads as `C`). */
+const INTEGRATION_CONSTANTS = ["C", "c", "K"];
+/** `f(x)`, `g^{-1}(x)`, `h'(x)`: function notation, whose value a solution may call `y`. */
+const FUNCTION_NOTATION = /(?<![a-zA-Z\\])[fgh]\s*(?:\^\s*\{?\s*-\s*1\s*\}?|'|\^\s*\{?\s*\\prime\s*\}?)?\s*(?:\\left\s*)?\(/;
+
+/**
  * The streaming form of `checkSolveStep`: steps arrive one at a time and each one may hand
  * its names to the next, so the known-symbol set grows as the solution is accepted.
+ *
+ * `sourceLatex` is everything the model was shown (`solveSourceLatex`): the student's lines AND a
+ * problem the chat wrote at the top of their column. The names a solution legitimately brings
+ * with it are known from the start too:
+ *  - the constant of integration of an antiderivative or a differential equation (`+ C`, `+ c`,
+ *    `+ K`: every one was refused once);
+ *  - the integer of a periodic solution in trigonometry (`x = 30^\circ + 360^\circ k`, `x = n\pi`);
+ *  - `y` for the value of a function the problem writes as `f(x)` — finding `f^{-1}` starts at
+ *    `y = \frac{2x + 1}{x - 3}`, or at `x = \frac{2y + 1}{y - 3}` with the letters already swapped.
  */
 export function createSolveStepGuard(opts: { sourceLatex: readonly string[]; parses: (latex: string) => boolean }): SolveStepGuard {
   const known = new Set<string>();
-  for (const latex of opts.sourceLatex) for (const s of mathSymbols(latex)) known.add(s);
+  for (const latex of opts.sourceLatex) for (const s of sourceSymbols(latex)) known.add(s);
   const source = opts.sourceLatex.join(" ");
-  // The names a solution legitimately brings with it: the constant of integration of an
-  // antiderivative (every `+ C` was refused before), and the integer of a periodic solution
-  // (`x = 30^\circ + 360^\circ k`, `x = n\pi`) in trigonometry.
-  if (/\\int/.test(source)) known.add("C");
-  if (/\\(?:sin|cos|tan|sec|csc|cot)(?![a-zA-Z])/.test(source)) {
+  const maths = stripTextMacros(source);
+  if (ANTIDERIVATIVE_MATHS.test(maths) || ANTIDERIVATIVE_WORDS.test(source)) for (const c of INTEGRATION_CONSTANTS) known.add(c);
+  if (/\\(?:sin|cos|tan|sec|csc|cot)(?![a-zA-Z])/.test(maths)) {
     known.add("k");
     known.add("n");
   }
+  if (FUNCTION_NOTATION.test(maths)) known.add("y");
   return {
     check(latex: string): SolveStepVerdict {
       const verdict = checkSolveStep(latex, { known, parses: opts.parses });
@@ -345,11 +513,29 @@ export interface SolveStepJudge {
 }
 
 /**
+ * What a solve's steps are judged against: the lines the model was shown (`SolveRequest.lines`),
+ * the chat's problem at the top of the column included. The board and the route both take it from
+ * the request, so they cannot disagree about which names the problem has.
+ *
+ * They did (2026-10-10): the board judged against the student's lines alone. Under the chat's
+ * `n^{5} \cdot n^{4}` a child wrote their answer, read as `1 A^{9}`, and pressed Solve; the model,
+ * shown the problem, answered `= n^{5 + 4}`, `= n^{9}`. The route's judge (which had the problem)
+ * passed it — no retry, no event — and the board refused every step for its `n`: "Couldn't solve
+ * this one — try writing it again a bit clearer". So too every `+ C` under the chat's `\int 6x\,dx`
+ * (the `\int` was only in the problem) and every `x` under its `2(x - 1) = 10` when the child's own
+ * line had not been read.
+ */
+export function solveSourceLatex(lines: readonly { latex: string }[]): string[] {
+  return lines.map((l) => l.latex);
+}
+
+/**
  * The board's reading of a solve stream, step by step, exactly as `openSolveStream` (liveLoop.ts)
- * reads it: a step that restates the student's own line or a step before it is skipped; every
+ * reads it: a step that restates a line the model was shown or a step before it is skipped; every
  * other step goes through the interlock (`createSolveStepGuard`), and only an accepted one is drawn.
- * The solve route runs the same judge on the steps it sends, so it knows when the board will draw
- * nothing ("Couldn't solve this one") and can ask once more before the student sees that.
+ * The solve route runs the same judge on the same lines (`solveSourceLatex`), so it knows when the
+ * board will draw nothing ("Couldn't solve this one") and can ask once more before the student sees
+ * that.
  */
 export function createSolveStepJudge(opts: { sourceLatex: readonly string[]; parses: (latex: string) => boolean }): SolveStepJudge {
   const guard = createSolveStepGuard(opts);

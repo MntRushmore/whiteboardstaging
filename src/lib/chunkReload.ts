@@ -1,14 +1,12 @@
 import { useEffect } from "react";
+import { CHUNK_FAILED_CODE, isChunkLoadError } from "@/lib/chunkError";
 import type { UserErrorInput } from "@/lib/clientErrors";
 import { reportUserErrorBeforeLeaving } from "@/lib/reportAppError";
 
 /**
- * A chunk of the release the page was loaded with could not be fetched: a deploy since (the new
- * release no longer has the old one's files; Vercel Skew Protection would keep them), or the
- * connection dropped as it was fetched. Webpack's and Turbopack's words (`ChunkLoadError`, "Loading
- * chunk 12 failed", "Failed to load chunk /_next/static/chunks/….js"), and each browser's for a
- * failed `import()`: Chrome "Failed to fetch dynamically imported module", Safari "Importing a
- * module script failed", Firefox "error loading dynamically imported module".
+ * A chunk of the release the page was loaded with could not be fetched (`isChunkLoadError`,
+ * src/lib/chunkError.ts): a deploy since (the new release no longer has the old one's files; Vercel
+ * Skew Protection would keep them), or the connection dropped as it was fetched.
  *
  * Not a bug in the app, and a reload fixes it: the error boundaries (src/app/error.tsx,
  * src/app/global-error.tsx, the board's BoardCrashed) reload the page once instead of showing
@@ -18,8 +16,7 @@ import { reportUserErrorBeforeLeaving } from "@/lib/reportAppError";
  * live release, or the connection is down), the boundary shows its error screen and reports the
  * crash as before, rather than reloading in a loop.
  */
-export const CHUNK_LOAD_ERROR =
-  /ChunkLoadError|Loading chunk|Failed to load chunk|dynamically imported module|Importing a module script failed|error loading dynamically imported module/i;
+export { CHUNK_LOAD_ERROR, isChunkLoadError } from "@/lib/chunkError";
 
 /** One reload per page (path) in this long; a stale chunk again within it is a real failure. */
 export const CHUNK_RELOAD_WINDOW_MS = 60_000;
@@ -38,21 +35,10 @@ export const CHUNK_RELOAD_REPORT: UserErrorInput = { kind: "live.app", code: "ch
  */
 export const CHUNK_FAILED_REPORT: UserErrorInput = {
   kind: "live.app",
-  code: "chunk_failed",
+  code: CHUNK_FAILED_CODE,
   message: "A part of the app could not load (a new release, or the connection dropped)",
   level: "warn",
 };
-
-export function isChunkLoadError(error: unknown): boolean {
-  try {
-    const e = error as { name?: unknown; message?: unknown } | null | undefined;
-    const name = typeof e?.name === "string" ? e.name : "";
-    const message = typeof e?.message === "string" ? e.message : typeof error === "string" ? error : "";
-    return CHUNK_LOAD_ERROR.test(`${name}: ${message}`);
-  } catch {
-    return false;
-  }
-}
 
 export type ReloadMemory = Pick<Storage, "getItem" | "setItem">;
 

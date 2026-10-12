@@ -3,9 +3,13 @@ import { TERMS_VERSION } from "@/lib/legal";
 import {
   FORM_COPY,
   NEW_PASSWORD_MIN_LENGTH,
+  RESET_RESEND_MS,
   afterSignInPath,
   hasFieldErrors,
   hashHasAuthError,
+  resendLabel,
+  resendSecondsLeft,
+  resendWaitFrom,
   signInPath,
   signUpRequest,
   validateEmail,
@@ -164,5 +168,40 @@ describe("signInPath", () => {
     expect(signInPath("/report?week=soon")).toBe("/login");
     expect(signInPath("//evil.example")).toBe("/login");
     expect(signInPath("/account")).toBe("/login");
+  });
+});
+
+describe("the reset link's wait (resendWaitFrom / resendSecondsLeft)", () => {
+  const sentAt = 1_000_000;
+
+  it("rests a minute after a link went out, counting whole seconds down to 0", () => {
+    const wait = resendWaitFrom("parent@example.com", sentAt);
+    expect(RESET_RESEND_MS).toBe(60_000);
+    expect(resendSecondsLeft(wait, "parent@example.com", sentAt)).toBe(60);
+    expect(resendSecondsLeft(wait, "parent@example.com", sentAt + 500)).toBe(60);
+    expect(resendSecondsLeft(wait, "parent@example.com", sentAt + 59_001)).toBe(1);
+    expect(resendSecondsLeft(wait, "parent@example.com", sentAt + 60_000)).toBe(0);
+    expect(resendSecondsLeft(wait, "parent@example.com", sentAt + 600_000)).toBe(0);
+  });
+
+  it("takes the server's own seconds when a 429 named them", () => {
+    const wait = resendWaitFrom("parent@example.com", sentAt, 17);
+    expect(resendSecondsLeft(wait, "parent@example.com", sentAt)).toBe(17);
+    expect(resendSecondsLeft(wait, "parent@example.com", sentAt + 17_000)).toBe(0);
+    // no number (or a nonsense one): the minute
+    expect(resendSecondsLeft(resendWaitFrom("parent@example.com", sentAt, null), "parent@example.com", sentAt)).toBe(60);
+    expect(resendSecondsLeft(resendWaitFrom("parent@example.com", sentAt, 0), "parent@example.com", sentAt)).toBe(60);
+  });
+
+  it("is per address, as Supabase's limit is: a mistyped email fixed is never held back", () => {
+    const wait = resendWaitFrom("  Parent@Example.com ", sentAt);
+    expect(resendSecondsLeft(wait, "parent@example.com", sentAt + 1000)).toBe(59);
+    expect(resendSecondsLeft(wait, "PARENT@example.com  ", sentAt + 1000)).toBe(59);
+    expect(resendSecondsLeft(wait, "parent2@example.com", sentAt + 1000)).toBe(0);
+    expect(resendSecondsLeft(null, "parent@example.com", sentAt)).toBe(0);
+  });
+
+  it("the resting button says how long is left", () => {
+    expect(resendLabel(42)).toBe("Send again in 42s");
   });
 });

@@ -10,6 +10,7 @@ import { handBlockOf, handLinesOf, planHandwriting } from "../handwriting";
 import { createLiveLoop, type LiveLoop, type LiveLoopDeps } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
+import { createSolveStepJudge, engineParsesStep, solveSourceLatex } from "../solveSteps";
 import { DEFAULT_SCREEN } from "@/lib/screens/screens";
 import { CHAT_PROBLEM_META, problemMetaOf } from "../chat/cells";
 import type { ChatAction, ChatRunReport } from "../chat/contracts";
@@ -358,6 +359,100 @@ describe("live loop — the board chat", () => {
       start();
       await settleUntil(() => Boolean(liveStore.lines.get()[line]?.analysis));
       expect(liveStore.lines.get()[line].analysis?.verdict).toBe("ok");
+    });
+  });
+
+  /**
+   * Production, 2026-10-10 (board cb442a82): the chat wrote four exponent problems; under
+   * `n^{5} \cdot n^{4}` the child wrote their answer, read as `1 A^{9}`, and pressed Solve. The
+   * request carried the problem as the column's first line, so the model answered in `n` — and the
+   * board, judging the steps against the child's lines alone, refused every one for its `n`:
+   * "Couldn't solve this one — try writing it again a bit clearer" (`unusable_steps:unknown-symbol`).
+   * The route's judge had the problem, passed the steps, and never retried or reported it.
+   */
+  describe("Solve under a problem the tutor wrote: the steps are judged against the problem too", () => {
+    let requests: Array<{ lines: Array<{ id: string; latex: string }> }>;
+    let steps: string[];
+
+    function startSolving(): void {
+      requests = [];
+      start("answer", {
+        stream: async function* (path: string, body: unknown): AsyncGenerator<LiveSseEvent, void, undefined> {
+          streamCalls.push(path);
+          if (!path.endsWith("/solve")) return;
+          requests.push(body as (typeof requests)[number]);
+          yield { event: "meta", data: { requestId: "req-1", model: "s" } };
+          for (const [i, latex] of steps.entries()) yield { event: "step", data: { index: i + 1, latex, explanation: "", final: i === steps.length - 1 } };
+          yield { event: "done", data: { count: steps.length, ms: 1 } };
+        },
+      });
+    }
+
+    /** Presses Solve on `line` and waits until the board has drawn (or refused) the model's steps. */
+    async function solveOn(line: string): Promise<void> {
+      loop.noteAsked();
+      loop.requestSolve(line);
+      await settleUntil(() => requests.length > 0);
+      await vi.advanceTimersByTimeAsync(20_000);
+      await settleStable(() => [liveStore.solving.get(), tutor().length, liveStore.lastError.get()?.reportCode ?? "-"].join("|"));
+    }
+
+    /** The tutor's ink written for this line's work (not the problems, not a mark). */
+    const workFor = (line: string) => handLinesOf(tutor().filter((s) => s.meta.lineId === line && !(s.meta as Record<string, unknown>).mark));
+
+    it("the child's misread answer under `n^{5} \\cdot n^{4}`: the model's steps in n are drawn, not refused", async () => {
+      startSolving();
+      await run([{ type: "write_problems", problems: [["n^{5} \\cdot n^{4}"], ["(2x^{2})^{3}"], ["a^{-3} \\cdot a^{7}"], ["\\frac{x^{6}y^{5}}{x^{3}y}"]] }]);
+      const line = await penLine("18", 100, 200, "1 A^{9}");
+      steps = ["n^{5} \\cdot n^{4}", "= n^{5 + 4}", "\\boxed{= n^{9}}"];
+      await solveOn(line);
+
+      // the model was shown the problem as the column's first line...
+      expect(requests[0].lines.map((l) => l.latex)).toEqual(["n^{5} \\cdot n^{4}", "1 A^{9}"]);
+      // ...so its steps are judged against it: the restated problem skipped, the rest drawn
+      expect(liveStore.lastError.get()).toBeNull();
+      expect(workFor(line)).toEqual(expect.arrayContaining(["= n^{5 + 4}", "= n^{9}"]));
+      expect(workFor(line)).not.toContain("n^{5} \\cdot n^{4}");
+      // and the route's judge, on the same request, agrees with the board
+      const judge = createSolveStepJudge({ sourceLatex: solveSourceLatex(requests[0].lines), parses: (latex) => engineParsesStep(engine, latex) });
+      for (const s of steps) judge.judge(s);
+      expect({ drawn: judge.drawn, discarded: judge.discarded }).toEqual({ drawn: 2, discarded: 0 });
+    });
+
+    it("`+ C` under the chat's `\\int 6x \\, dx`, whose `\\int` is only in the problem (board de2c9e8c, 2026-10-08)", async () => {
+      startSolving();
+      await run([{ type: "write_problems", problems: [["\\int 6x \\, dx"]] }]);
+      // the child's first step, no `\int` in it and nothing the engine finishes on its own
+      const line = await penLine("3x", 200, 300, "\\frac{6x^{2}}{2}");
+      steps = ["\\int 6x \\, dx = \\frac{6x^{2}}{2} + C", "\\boxed{= 3x^{2} + C}"];
+      await solveOn(line);
+
+      expect(requests[0].lines[0].latex).toBe("\\int 6x \\, dx");
+      expect(liveStore.lastError.get()).toBeNull();
+      expect(workFor(line)).toEqual(expect.arrayContaining(["= 3x^{2} + C"]));
+    });
+
+    it("a line the recognizer garbled under `2(x - 1) = 10`: the steps in x come from the problem (board 27f7e42d, 2026-10-06)", async () => {
+      startSolving();
+      await run([{ type: "write_problems", problems: [["2(x - 1) = 10"]] }]);
+      const line = await penLine("1", 200, 300, "\\wedge");
+      steps = ["2x - 2 = 10", "2x = 12", "\\boxed{x = 6}"];
+      await solveOn(line);
+
+      expect(requests[0].lines.map((l) => l.latex)).toEqual(["2(x - 1) = 10", "\\wedge"]);
+      expect(liveStore.lastError.get()).toBeNull();
+      expect(workFor(line)).toEqual(expect.arrayContaining(["2x = 12", "x = 6"]));
+    });
+
+    it("a name from nowhere is still refused under a problem: the ordinary failure, reported as before", async () => {
+      startSolving();
+      await run([{ type: "write_problems", problems: [["n^{5} \\cdot n^{4}"]] }]);
+      const line = await penLine("18", 200, 300, "1 A^{9}");
+      steps = ["= r + 9\\varepsilon", "\\boxed{= r + 9\\varepsilon}"];
+      await solveOn(line);
+
+      expect(workFor(line)).toEqual([]);
+      expect(liveStore.lastError.get()?.reportCode).toBe("unusable_steps:unknown-symbol");
     });
   });
 

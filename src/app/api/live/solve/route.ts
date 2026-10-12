@@ -1,5 +1,5 @@
 import { LIVE_LIMITS, SolveRequestSchema, SolveStepSchema, type LiveEngine, type SolveStep } from "@/lib/live/contracts";
-import { createSolveStepJudge, engineParsesStep, type SolveStepJudge } from "@/lib/live/solveSteps";
+import { createSolveStepJudge, engineParsesStep, solveSourceLatex, type SolveStepJudge } from "@/lib/live/solveSteps";
 import { getLiveModels } from "@/lib/env";
 import { enforceInk, refundInk } from "@/lib/server/billing";
 import { streamWithFallback, type ChatMessage, type FallbackStreamEvent, type StreamLimits } from "@/lib/server/openrouter";
@@ -100,7 +100,8 @@ export async function POST(req: Request) {
       const judged = async (steps: readonly SolveStep[]) => {
         const engine = await enginePending;
         if (!engine) return;
-        judge ??= createSolveStepJudge({ sourceLatex: data.lines.map((l) => l.latex), parses: (latex) => engineParsesStep(engine, latex) });
+        // the lines the model is shown, as the board judges them (`solveSourceLatex`): the two must agree
+        judge ??= createSolveStepJudge({ sourceLatex: solveSourceLatex(data.lines), parses: (latex) => engineParsesStep(engine, latex) });
         for (const step of steps) judge.judge(step.latex);
       };
       await runChargedStream({ userId: user.id, requestId }, log, () => sent > 0, async () => {

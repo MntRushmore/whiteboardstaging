@@ -451,6 +451,16 @@ describe("createUserReporter", () => {
     expect(sent[1]).not.toHaveProperty("vercelError");
   });
 
+  it("sends machine facts (`key=value,…`) when they have their shape, and never words", () => {
+    const { sent, report } = userReporter();
+    report({ ...SOLVE_ERR, facts: "how=drawn,bytes=41234,status=502,name=ApiError,tried=export:no_answer+drawn:none" });
+    report({ ...SOLVE_ERR, code: "words", facts: "solve 2x + 5 = 17 for my homework" });
+    report({ ...SOLVE_ERR, code: "long", facts: `a=${"x".repeat(300)}` });
+    expect(sent[0]).toMatchObject({ facts: "how=drawn,bytes=41234,status=502,name=ApiError,tried=export:no_answer+drawn:none" });
+    expect(sent[1]).not.toHaveProperty("facts");
+    expect(sent[2]).not.toHaveProperty("facts");
+  });
+
   it("takes a board id that is a uuid, else the one in the path, else none", () => {
     const other = "11111111-2222-4333-8444-555555555555";
     const onBoard = userReporter();

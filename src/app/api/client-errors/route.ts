@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { EVENT_KIND, EVENT_LEVELS } from "@/lib/admin/contracts";
+import { CHUNK_FAILED_CODE, isChunkLoadError } from "@/lib/chunkError";
 import { isNoise, MAX_MESSAGE, MAX_REPORT_BYTES, MAX_STACK, stripUrlQueries, userErrorLevel } from "@/lib/clientErrors";
 import { logger } from "@/lib/logger";
+import { isOtherRelease, RELEASE } from "@/lib/release";
 import { identifyUser, json } from "@/lib/server/auth";
 import { recordEvent } from "@/lib/server/events";
 import { checkRateLimit, clientIp, rateLimitedResponse } from "@/lib/server/rate-limit";
@@ -38,6 +40,8 @@ const ReportSchema = z.object({
   requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
   /** Vercel's x-vercel-error on the failed response (FUNCTION_INVOCATION_TIMEOUT…), in `meta` */
   vercelError: z.string().regex(/^[A-Z0-9_]{1,64}$/).optional(),
+  /** an error a student saw: machine facts about it (`key=value,…`: why a crop retry failed), in `meta` */
+  facts: z.string().regex(/^[A-Za-z0-9_.:=,+-]{1,200}$/).optional(),
 });
 
 const log = logger.child({ module: "client-error" });
@@ -68,6 +72,23 @@ async function readCapped(req: Request, max: number): Promise<string | null> {
 }
 
 /**
+ * A stale chunk from a tab on another build than this deployment (`isOtherRelease`: the report's
+ * release against RELEASE, the commit this build was made from, as the browser's is): a deploy
+ * since that page loaded took the chunk it asked for. A crash report saying so (a tab from before
+ * src/lib/chunkReload.ts, whose error screen showed instead of a reload: 2342d69's, still
+ * reporting on 2026-10-10) or the `chunk_failed` warning a newer tab sends. Expected after every
+ * deploy and nothing to fix, so `info`: kept, never an issue (those read error and warn), never the
+ * alert, and an issue marked fixed is not re-opened by an old tab. From this very build (a chunk
+ * missing from the live release, the connection down), or with either release unknown, it keeps
+ * its level.
+ */
+function staleChunk(report: { kind?: string; code?: string; release: string }, message: string): boolean {
+  if (!isOtherRelease(report.release, RELEASE)) return false;
+  if (report.kind === undefined) return isChunkLoadError(message);
+  return report.kind === "live.app" && report.code === CHUNK_FAILED_CODE;
+}
+
+/**
  * POST /api/client-errors — a crash in the browser, or an error a student saw on the board
  * (src/lib/clientErrors.ts), becomes one structured log line, `module: "client-error"`
  * (docs/RUNBOOK-ops.md says where to find it), and one app event for the /admin page
@@ -78,7 +99,7 @@ async function readCapped(req: Request, max: number): Promise<string | null> {
  * PUBLIC BY DESIGN (allow-listed in scripts/lib/routes.mjs): errors happen signed out too, and a
  * beacon cannot carry a token. Per-IP rate limit -> 16 KB body cap (413) -> JSON + zod (400) ->
  * noise (`isNoise`, for tabs on an older release) is only a debug line -> one log line and one
- * event -> 204 with no body. A bearer token, when sent, only names the user in
+ * event (a stale chunk from another build at info, `staleChunk`) -> 204 with no body. A bearer token, when sent, only names the user in
  * the line and the event (`identifyUser`: the user id, never the token); a missing or bad one is
  * not an error. Query
  * strings and hashes are stripped from the path and from every URL in the message and stack again
@@ -121,7 +142,7 @@ export async function POST(req: Request) {
     const mine = checkRateLimit(`user:${userId}:clientErrors`, CLIENT_ERRORS_USER_LIMIT);
     if (!mine.ok) return rateLimitedResponse(mine.retryAfterMs);
   }
-  const level = shown ? (report.level ?? userErrorLevel(report.code)) : "error";
+  const level = staleChunk(report, message) ? "info" : shown ? (report.level ?? userErrorLevel(report.code)) : "error";
   log[level](
     {
       source: report.source,
@@ -136,6 +157,7 @@ export async function POST(req: Request) {
       digest: report.digest,
       requestId: report.requestId,
       vercelError: report.vercelError,
+      facts: report.facts,
       userAgent,
       userId: userId ?? undefined,
     },
@@ -156,6 +178,7 @@ export async function POST(req: Request) {
     requestId: report.requestId,
     meta: {
       ...(report.vercelError ? { vercelError: report.vercelError } : {}),
+      ...(report.facts ? { facts: report.facts } : {}),
       ...(report.digest ? { digest: report.digest } : {}),
       ...(stack ? { stack: stack.split("\n").slice(0, 4).join("\n").slice(0, STACK_HEAD) } : {}),
       ...(userAgent ? { userAgent: userAgent.slice(0, 200) } : {}),

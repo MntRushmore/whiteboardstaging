@@ -3,8 +3,10 @@
  * tutor service had a hiccup" that left no server row (production, 2026-10-01..07: 12 of them, 4
  * kids, mostly iPads). With fakes for supabase-js, Mathpix, the vision model and the app events:
  *
- *  - Mathpix answering that it could not read the ink is `unreadable` on the 502 and an `info`
+ *  - Mathpix answering that it could not read the ink is `unreadable` on the answer and an `info`
  *    event, never a `recognizer_failed` warn; a Mathpix timeout is `transient` and a warn;
+ *  - that answer is a 503, never a 502 or 504: Cloudflare, in front of the site, replaces those with
+ *    its own page, and the hints and the request id never reached the board (production, 2026-10-12);
  *  - the crop retry (`cropOnly`) goes straight to vision: Mathpix is not asked about the same
  *    strokes twice;
  *  - a vision read slower than the client's 6 s is the server's 504 (an event), not a client that
@@ -89,10 +91,11 @@ afterEach(() => {
 });
 
 describe("live/recognize: a read that read nothing is an event, and says why", () => {
-  it("Mathpix could not read the ink: 502 with `unreadable` (+ needsCrop), an info event `unreadable`", async () => {
+  it("Mathpix could not read the ink: 503 with `unreadable` (+ needsCrop), an info event `unreadable`", async () => {
     fake.mathpix = { ok: false, reason: "api_error", status: 200, detail: "image_no_content" };
     const res = await recognize(request(BODY));
-    expect(res.status).toBe(502);
+    // not 502: Cloudflare would put its own page in place of this body
+    expect(res.status).toBe(503);
     const body = await res.json();
     expect(body).toMatchObject({ error: "recognizer_failed", needsCrop: true, unreadable: true });
     expect(body).not.toHaveProperty("transient");
@@ -106,15 +109,15 @@ describe("live/recognize: a read that read nothing is an event, and says why", (
         route: "/api/live/recognize",
         userId: fake.USER_ID,
         requestId,
-        meta: expect.objectContaining({ status: 502, reason: "api_error", detail: "image_no_content", hadCrop: false, needsCrop: true, unreadable: true }),
+        meta: expect.objectContaining({ status: 503, reason: "api_error", detail: "image_no_content", hadCrop: false, needsCrop: true, unreadable: true }),
       }),
     ]);
   });
 
-  it("Mathpix timed out: 502 with `transient`, a warn event `recognizer_failed` (the Mathpix event is its own)", async () => {
+  it("Mathpix timed out: 503 with `transient`, a warn event `recognizer_failed` (the Mathpix event is its own)", async () => {
     fake.mathpix = { ok: false, reason: "timeout" };
     const res = await recognize(request(BODY));
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ error: "recognizer_failed", needsCrop: true, transient: true });
     expect(events()).toEqual([expect.objectContaining({ level: "warn", kind: "route.live.recognize", code: "recognizer_failed", meta: expect.objectContaining({ reason: "timeout" }) })]);
   });
@@ -196,6 +199,9 @@ describe("live/recognize: the crop retry", () => {
     spy.mockRestore();
     expect(res.status).toBe(502);
     expect(await res.json()).toMatchObject({ error: "upstream_error" });
-    expect(events()).toEqual([expect.objectContaining({ level: "error", kind: "route.live.recognize", code: "timeout", meta: expect.objectContaining({ upstreamStatus: 504 }) })]);
+    // the crop retry's own row says it was one: the board's report of it may have no request id to join
+    expect(events()).toEqual([
+      expect.objectContaining({ level: "error", kind: "route.live.recognize", code: "timeout", meta: expect.objectContaining({ upstreamStatus: 504, hadCrop: true, cropOnly: true }) }),
+    ]);
   });
 });
