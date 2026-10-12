@@ -41,10 +41,11 @@ like a written one.
  kid types ──► plainToLatex (lazy chunk) ──► preview (layoutMath → SVG)
                        │ Enter
                        ▼
- controller.writeTyped({ text, latex })            (LiveLoop, main bundle)
+ controller.writeTyped({ text, latex })            (typedWriter.ts: lazy, loaded with the bar)
    1. spot   = typedSpot(): the current problem's next line (or a new problem)
    2. layout = layoutMath(latex, { size, seed })    (unsupported → refuse, the bar says so)
-   3. ONE user history mark: N draw shapes, one per stroke, kid's colour,
+   3. LiveLoop.writeInk (main bundle; a phone pen will write with it too):
+      ONE user history mark: N draw shapes, one per stroke, kid's colour,
       no `live` meta (it IS student ink), meta.typedId on each,
       typedLatex / typedText / typedCount on the first
    4. flush now (no quiet-gate wait)
@@ -68,22 +69,28 @@ like a written one.
   steps' gap (`layoutSteps`). No room before the screen's bottom → the next column. A new
   problem → a new column, or below with a gap of at least 2.5× the line height (the
   new-problem rule, f911cac). Never under the bar: the camera keeps the new line in view.
-- **Bundle.** The board page has about 10 KB gzip of headroom (docs/BUNDLE.md). The bar,
-  the parser and the preview are one lazy chunk. Only `writeTyped`/`typedSpot`/
-  `typedLines` and the typed-group check live in the loop.
+- **Bundle.** The board page had about 2 KB gzip of headroom when Type it began (docs/BUNDLE.md,
+  2026-10-12). The bar, the parser and the preview are one lazy chunk, and the writer (where a
+  typed line goes, how big, a rewrite: `src/lib/live/typedWriter.ts`) is another, which the bar
+  loads before it shows (`prepareTyped`). In the board's first load: the bar's state and the Type
+  buttons, and what must work with no bar on the board: reading a typed line (the typed-group
+  check in `flush` / `processLine`, `lineGroupsOf`), its readback, `writeInk` and `retypeLine`.
 
 ## Contract (`src/lib/typeMath/contracts.ts`)
 
 - `plainToLatex(text): TypedParse` and `latexToPlain(latex): string` in
   `src/lib/typeMath/parse.ts`: pure, no DOM, lazy-loaded by the bar only.
 - `LiveController.writeTyped?(args)`, `typedSpot?(opts)`, `typedLines?()`: optional, like
-  the chat's methods.
+  the chat's methods, and synchronous. `prepareTyped?()` loads the writer once; the bar awaits it
+  before Enter, the caret and ↑ (the board page starts it beside the bar's chunk). Before it
+  resolves, a write is refused as `off`, there is no spot and no line.
 - Stroke meta keys `typedId`, `typedLatex`, `typedText`, `typedCount`.
 
 ## Analytics
 
 `clientMetric("type.write" | "type.edit" | "type.refused" | "type.open", …)`, so /admin
-shows who types and how often a typed line is refused.
+shows who types and how often a typed line is refused. The bar counts them (`typeBarModel.ts`);
+the writer does not, so nothing is counted twice.
 
 ## Status (2026-10-12)
 

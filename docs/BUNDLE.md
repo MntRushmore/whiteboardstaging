@@ -56,6 +56,23 @@ lines in the page, `MathShapeUtil` and `LiveHintLayer`. Lazy: the bar itself, it
 preview and its keys (`src/components/typeMath/TypeBar.tsx`, one chunk loaded while it shows). The
 writer's part in the Live loop (`writeTyped`, `typedSpot`, `typedLines`) is not in this number.
 
+**Type it writer, 2026-10-12** (`feat/type-math`, `npx next build` then `node scripts/check-bundle.mjs`).
+With the parser, the writer and the bar merged (`1b5ed87`), `/board/[id]` measured 1,102,023 B: 2,023 B
+over the budget. Type it cost 4,072 B over the contract commit (1,097,951 B): the bar's 1,204 B (above)
+and the writer's 2,868 B. Where a typed line goes, how big it is written, a rewrite and the pan that
+keeps it in view (`writeTyped`, `typedSpot`, `typedLines`) are only ever asked for by the bar, so they
+moved to a lazy chunk of their own, `src/lib/live/typedWriter.ts` (4.8 KB raw / 2.3 KB gzip), which the
+bar loads before it shows (`LiveController.prepareTyped`; the page starts it beside the bar's chunk).
+The loop hands it a host of three closures. After: **1,100,646 B (−1,377 B), still 646 B over the
+budget.** In the first load still: what has to work with no bar on the board (an iPad with the bar
+closed, a reload, another tab): reading a typed line (the typed-group check in `flush` and
+`processLine`, `lineGroupsOf`), its readback kept hidden, `writeInk` (also the phone pen's seam) and
+`retypeLine`, about 1.5 KB; with the bar's 1.2 KB, Type it now costs 2,695 B. Getting 3 KB back would
+need all of Type it in about 1 KB, less than the bar's own share, so moving Type it code cannot reach
+it. The large lever is older code: the engine's LaTeX translator (`src/lib/live/engine/latex.ts`,
+27.8 KB raw) is in the first load through static imports (`liveLoop.ts` → `engine/domain.ts`,
+`graphing/plan.ts` → `engine/graphIntent.ts`), although the engine itself loads after the board.
+
 **Sync follow-ups, 2026-10-03** (`fix/sync-followups`, measured against a build of
 `release/ink-and-board` `ce2b2f7`, which itself measured 1,054,882 B): `/board/[id]` 1,056,203 B
 (+1,321, 3,797 B under the budget). In the first load: the per-tab backup key and its Web Lock, the
