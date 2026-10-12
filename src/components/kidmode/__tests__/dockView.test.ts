@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TUTOR_INK_COLOR } from "@/lib/live/answer";
+import { CHAT_BUTTON_COPY } from "@/components/chat/askButton";
 import { DOCK_COPY, hitMarginFor, isKidColor, KID_COLORS, kidDockView, LITTLE_HANDS, penSizeOnClose, penSizeOnOpen, type KidDockState } from "../dockView";
 
 /** What the simple board's dock shows a young kid, and the little-hands rules behind it. */
@@ -9,10 +10,17 @@ function dock(partial: Partial<KidDockState> = {}) {
 }
 
 describe("kidDockView", () => {
-  it("a phone with several pages stacks two even shelves (the pages over the tools); one page or a wide board, one row", () => {
+  it("a phone stacks two even shelves (the pages and Ask over the tools); a wide board, one row", () => {
     expect(dock({ narrow: true, pages: 2, page: 2 }).stack).toBe(true);
-    expect(dock({ narrow: true, pages: 1 }).stack).toBe(false);
+    // one page too: the tools, New page and Ask are more than a phone's row at 48 px a target
+    expect(dock({ narrow: true, pages: 1 }).stack).toBe(true);
     expect(dock({ narrow: false, pages: 3 }).stack).toBe(false);
+    expect(dock({ narrow: false, pages: 1 }).stack).toBe(false);
+  });
+
+  it("Ask is named as the board's Ask button names it, with a hint a kid understands", () => {
+    expect(DOCK_COPY.ask).toBe(CHAT_BUTTON_COPY.button);
+    expect(DOCK_COPY.askHint).toMatch(/tutor/i);
   });
 
   it("shows which of Pen and Eraser is in hand, and neither for a grown-up's tool", () => {
@@ -54,6 +62,8 @@ describe("kidDockView", () => {
 
   it("names everything in one short word a 6-year-old reads", () => {
     for (const word of [DOCK_COPY.pen, DOCK_COPY.eraser, DOCK_COPY.undo, DOCK_COPY.colour]) expect(word).toMatch(/^[A-Z][a-z]{1,7}$/);
+    // US English, as every word a kid reads
+    expect([DOCK_COPY.colour, DOCK_COPY.colours]).toEqual(["Color", "Colors"]);
     expect(DOCK_COPY.newPage).toBe("New page");
   });
 });

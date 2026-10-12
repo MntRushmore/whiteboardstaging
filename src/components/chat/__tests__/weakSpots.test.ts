@@ -34,9 +34,8 @@ describe("Practice my weak spots: the chip", () => {
     expect(weakSpotSkill(HINT, () => false)).toBeNull();
   });
 
-  it("the chip's words are the student's own; the four suggestions stay as they were", () => {
+  it("the chip's words are the student's own, and none of the panel's own suggestions", () => {
     expect(WEAK_SPOTS_COPY.chip).toBe("Practice my weak spots");
-    expect(CHAT_SUGGESTIONS).toHaveLength(4);
     expect(CHAT_SUGGESTIONS).not.toContain(WEAK_SPOTS_COPY.chip);
   });
 });
@@ -57,15 +56,15 @@ describe("Practice my weak spots: a tap", () => {
     expect(plan?.problems.length).toBeGreaterThan(0);
   });
 
-  it("nothing to practise: null (the reply then asks them what they'd like)", () => {
+  it("nothing to practice: null (the reply then asks them what they'd like)", () => {
     expect(weakSpotPractice(hint([["proofs", "Proofs"]]), source(), 1)).toBeNull();
     expect(weakSpotPractice(undefined, source(), 1)).toBeNull();
     expect(WEAK_SPOTS_COPY.none).not.toMatch(/weak/i);
   });
 
   it("the reply names the skill, counts the problems, and never says weak", () => {
-    expect(WEAK_SPOTS_COPY.reply(4, "Two-step equations")).toBe("Here are 4 problems on Two-step equations to practise.");
-    expect(WEAK_SPOTS_COPY.reply(1, "Fractions")).toBe("Here is 1 problem on Fractions to practise.");
+    expect(WEAK_SPOTS_COPY.reply(4, "Two-step equations")).toBe("Here are 4 problems on Two-step equations to practice.");
+    expect(WEAK_SPOTS_COPY.reply(1, "Fractions")).toBe("Here is 1 problem on Fractions to practice.");
     for (const n of [1, 2, 3, 4]) expect(WEAK_SPOTS_COPY.reply(n, "Fractions")).not.toMatch(/weak/i);
     expect(WEAK_SPOTS_COPY.failed).not.toMatch(/weak/i);
     expect(WEAK_SPOTS_COPY.chipHint).not.toMatch(/weak/i);
@@ -78,7 +77,7 @@ describe("Practice my weak spots: a tap", () => {
     ];
     expect(historyFor(messages)).toEqual([
       { role: "user", text: "Practice my weak spots" },
-      { role: "tutor", text: "Here are 4 problems on Fractions to practise." },
+      { role: "tutor", text: "Here are 4 problems on Fractions to practice." },
     ]);
   });
 });

@@ -5,8 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 /**
  * The guided first board's coach marks point at real buttons, found by selector (BoardTour). A K–3
- * kid's guided board is a simple board: tldraw's toolbar gives way to the kid dock, the bar is a big
- * Help me (and Ask, while the tour points at it), and the dial waits behind More. Each coach mark's
+ * kid's guided board is a simple board: tldraw's toolbar gives way to the kid dock (with its big Ask),
+ * the bar is a big Help me, and the dial waits behind More. Each coach mark's
  * anchor must be on that board too, or the mark points at whatever is in the middle of the screen.
  */
 
@@ -30,6 +30,7 @@ const { default: GrownUpMore } = await import("@/components/kidmode/GrownUpMore"
 const { MORE_SELECTOR, PEN_SELECTOR } = await import("@/components/kidmode/tourAnchors");
 const { ASK_BUTTON_ATTR, AskButton } = await import("@/components/live/AskButton");
 const { boardToolbarView } = await import("@/components/live/toolbar");
+const { CHAT_TOGGLE_ATTR } = await import("@/components/chat/askButton");
 
 /** Does this opening tag match one of the selector's alternatives (`[name]` or `[name="value"]`)? */
 function matches(tag: string, selector: string): boolean {
@@ -67,7 +68,7 @@ describe("the guided board's coach marks on the simple board", () => {
 
   it("2, without Help me: the dial is behind More, so it points at More", () => {
     // the dial is in More (hidden while it is closed): the help fallback goes on to More
-    expect(boardToolbarView({ mode: "feedback", liveEnabled: false, liveAvailable: true, auto: true, simple: true, tour: true }).place.dial).toBe("more");
+    expect(boardToolbarView({ mode: "feedback", liveEnabled: false, liveAvailable: true, auto: true, simple: true }).place.dial).toBe("more");
     const more = renderToStaticMarkup(
       <GrownUpMore
         open={false}
@@ -78,8 +79,6 @@ describe("the guided board's coach marks on the simple board", () => {
           dial: null,
           auto: null,
           onAutoChange: () => {},
-          ask: null,
-          onAsk: () => {},
           onTopic: () => {},
           status: null,
           ink: null,
@@ -93,8 +92,15 @@ describe("the guided board's coach marks on the simple board", () => {
     expect(found[0]).toMatch(/^<button\b[^>]*aria-controls="grown-up-more"/);
   });
 
-  it("3: “Tap Ask” finds Ask in the bar, which stays out of More while the tour runs", () => {
-    expect(boardToolbarView({ mode: "feedback", liveEnabled: true, liveAvailable: true, auto: true, simple: true, tour: true }).place.ask).toBe("bar");
+  it("3: “Tap Ask” finds the kid dock's big Ask, the only Ask on the simple board", () => {
+    expect(boardToolbarView({ mode: "feedback", liveEnabled: true, liveAvailable: true, auto: true, simple: true }).place.ask).toBe("dock");
+    const dock = renderToStaticMarkup(<KidDock />);
+    const ask = openingTags(dock).filter((t) => matches(t, `[${CHAT_TOGGLE_ATTR}]`));
+    expect(ask).toHaveLength(1);
+    expect(matches(buttonTag(dock, "Ask"), `[${CHAT_TOGGLE_ATTR}]`)).toBe(true);
+    // the tour finds Ask by the same marker
+    const source = fs.readFileSync(path.join(__dirname, "../BoardTour.tsx"), "utf8");
+    expect(source).toContain("const ASK = `[${CHAT_TOGGLE_ATTR}]`");
   });
 
   it("the tour looks for the pen and More with these selectors", () => {
