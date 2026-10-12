@@ -90,7 +90,15 @@ const BODY = {
   screen: { empty: false, student: ["2x = 8"], tutor: [], problems: ["2x + 3 = 11", "5x - 2 = 13"] },
   clientId: "msg-1",
 };
-const LEARNER: AskLearnerContext = { name: "Maya", grade: 3, course: null, memory: ["Likes word problems about animals"], recent: ["fractions.divide"] };
+const LEARNER: AskLearnerContext = {
+  name: "Maya",
+  nameWords: ["Maya", "Patel"],
+  grade: 3,
+  course: null,
+  memory: ["Likes word problems about animals"],
+  memoryAt: "2026-10-11T09:00:00.123456+00:00",
+  recent: ["fractions.divide"],
+};
 
 /** One answer from `streamWithFallback`: the models it announces, then these chunks of text, then (maybe) a failure. */
 type Script = { models?: string[]; chunks: string[]; fail?: Error };
@@ -245,7 +253,7 @@ describe("live/ask: the stream", () => {
     await runAfterTasks();
     expect(rememberFromTurn).toHaveBeenCalledWith(
       { token: fake.GOOD_TOKEN, userId: fake.USER_ID },
-      { message: BODY.message, reply: "Sure! Here is the graph of $y = x^{2}$.", memory: LEARNER.memory },
+      { message: BODY.message, reply: "Sure! Here is the graph of $y = x^{2}$.", memory: LEARNER.memory, memoryAt: LEARNER.memoryAt },
     );
   });
 
@@ -373,6 +381,52 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     expect(modelEventKind(repair.title)).toBe("model.live.chat");
     expect(repair.deadline! - Date.now()).toBeLessThanOrEqual(50_000);
     expect(events()).toEqual([expect.objectContaining({ kind: "route.live.ask", code: "problems_dropped_unsolved", meta: expect.objectContaining({ dropped: 2, setsDropped: 1 }) })]);
+  });
+
+  it("no model sees the student's name: the answer, the gates' repairs and the memory model get it scrubbed; the saved turn keeps the kid's words", async () => {
+    // a worked solution with a slip (\sqrt{6 + 25} = \sqrt{30}): its repair carries the message, the chat, the screen and the problem
+    const STEPS = [
+      { say: "O is the center, so OR and OS are radii: OR = OS." },
+      { say: "Find OR with the distance formula.", math: ["OR = \\sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}", "= \\sqrt{(a + \\sqrt{6} - a)^2 + (b + 5 - b)^2}", "= \\sqrt{(\\sqrt{6})^2 + 5^2}", "= \\sqrt{6 + 25}", "= \\sqrt{31}"] },
+      { say: "The radii are equal.", math: ["OS = OR = \\sqrt{31}"] },
+      { say: "Angle ROS is a right angle: use the Pythagorean theorem.", math: ["RS^{2} = OR^{2} + OS^{2}", "= 2 \\cdot OR^{2}", "= 2(\\sqrt{31})^{2}", "= 2(31)", "= 62"] },
+    ];
+    const SLIP = { type: "teach", steps: STEPS.map((s, i) => (i === 1 ? { ...s, math: [...s.math!.slice(0, 4), "= \\sqrt{30}"] } : s)), answer: "RS^{2} = 62" };
+    vi.mocked(loadAskContext).mockResolvedValue({ ...LEARNER, memory: ["Maya likes animal problems"] });
+    const body = {
+      ...BODY,
+      message: "hi it's Maya Patel! draw a ray AB and then work out RS squared for maya",
+      history: [
+        { role: "user", text: "I'm Maya" },
+        { role: "tutor", text: "Hi Maya! What are we working on?" },
+      ],
+      screen: { empty: false, student: ["\\text{Maya}", "OR = \\sqrt{31}"], tutor: [], problems: [] },
+      problem: "Patel's circle: O = (a, b), R = (a + √6, b + 5), angle ROS is right. What is RS²?",
+    };
+    scripts = [{ chunks: ["Sure, Maya! Let's work it out.", block([SLIP])] }];
+    vi.mocked(chatJsonWithFallback).mockResolvedValueOnce({ data: { steps: STEPS, answer: "RS^{2} = 62" }, model: LIVE_MODELS.ask } as never);
+    const out = await frames(await ask(request(body)));
+    expect((only(out, "actions")!.actions as Array<{ type: string }>).map((a) => a.type)).toEqual(["teach"]);
+
+    // the answer's request (what the route hands the prompt builder): every word of the name, in any
+    // case, as "[name]"; "a ray AB" is a ray
+    const asked = vi.mocked(buildAskMessages).mock.calls[0][0];
+    expect(asked.message).toBe("hi it's [name] [name]! draw a ray AB and then work out RS squared for [name]");
+    expect(JSON.stringify(asked)).not.toMatch(/maya|patel/i);
+    // the gate's repair: the message, the chat so far, the screen and the problem, all without it
+    const [, , repair] = vi.mocked(chatJsonWithFallback).mock.calls[0];
+    expect(repair.title).toBe("Agathon Live - ask teach");
+    const repairText = JSON.stringify(repair.messages);
+    expect(repairText).not.toMatch(/maya|patel/i);
+    expect(repairText).toContain("draw a ray AB");
+    expect(repairText).toContain("[name]'s circle");
+    // the memory model: the message, the reply (which repeated the name) and the notes
+    await runAfterTasks();
+    const [, exchange] = vi.mocked(rememberFromTurn).mock.calls[0];
+    expect(JSON.stringify(exchange)).not.toMatch(/maya|patel/i);
+    expect(exchange).toEqual({ message: asked.message, reply: "Sure, [name]! Let's work it out.", memory: ["[name] likes animal problems"], memoryAt: LEARNER.memoryAt });
+    // the saved chat is the kid's own (no model reads it)
+    expect(vi.mocked(saveAskTurns).mock.calls[0][2][0].text).toBe(body.message);
   });
 
   it("help_board passes the gate untouched (the board runs Help me / Solve it on the student's own work)", async () => {

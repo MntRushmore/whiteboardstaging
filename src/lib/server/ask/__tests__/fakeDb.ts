@@ -1,6 +1,6 @@
 /**
  * Just enough of supabase-js's query builder for the Ask store's tests: `from(table)` with select,
- * upsert, delete, eq, in, order, limit, abortSignal and maybeSingle, awaited like the real one.
+ * upsert, update, delete, eq, in, order, limit, abortSignal and maybeSingle, awaited like the real one.
  * Every request is recorded as a `FakeQuery`, and `answer` decides what it gets back (rows, an
  * error, or a thrown Error).
  */
@@ -8,7 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface FakeQuery {
   table: string;
-  op: "select" | "upsert" | "delete";
+  op: "select" | "upsert" | "update" | "delete";
   select?: string;
   filters: Array<[column: string, op: "eq" | "in", value: unknown]>;
   order?: { column: string; ascending: boolean };
@@ -43,6 +43,11 @@ export function fakeDb(answer: (q: FakeQuery) => FakeAnswer | Promise<FakeAnswer
           q.op = "upsert";
           q.rows = rows;
           q.options = options;
+          return builder;
+        },
+        update(rows: unknown) {
+          q.op = "update";
+          q.rows = rows;
           return builder;
         },
         delete() {

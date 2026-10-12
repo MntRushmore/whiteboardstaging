@@ -200,10 +200,20 @@ describe("loadAskContext", () => {
   it("name, grade, course, notes and recent skills, read in parallel as the student", async () => {
     useDbs((q) => {
       if (q.table === "profiles") return { data: { display_name: "Maya Lopez", grade: 6, course: null } };
-      if (q.table === "learner_memory") return { data: { notes: ["Likes shorter hints", "Mom helps at night", 7] } };
+      if (q.table === "learner_memory") return { data: { notes: ["Likes shorter hints", "Mom helps at night", 7], updated_at: "2026-10-11T09:00:00.123456+00:00" } };
       return { data: attempts };
     });
-    expect(await loadAskContext(caller)).toEqual({ name: "Maya", grade: 6, course: null, memory: ["Likes shorter hints"], recent: ["Dividing fractions", "Times tables"] });
+    expect(await loadAskContext(caller)).toEqual({
+      name: "Maya",
+      nameWords: ["Maya", "Lopez"],
+      grade: 6,
+      course: null,
+      memory: ["Likes shorter hints"],
+      memoryAt: "2026-10-11T09:00:00.123456+00:00",
+      recent: ["Dividing fractions", "Times tables"],
+    });
+    // the notes with their row's stamp: the memory write's compare-and-set
+    expect(userDb.calls.find((c) => c.table === "learner_memory")?.select).toBe("notes,updated_at");
     expect(userDb.calls.map((c) => c.table).sort()).toEqual(["learner_memory", "learning_attempts", "profiles"]);
     for (const c of userDb.calls) expect(eqOf(c, "user_id")).toBe(USER);
     expect(userDb.calls.find((c) => c.table === "learning_attempts")?.order).toEqual({ column: "started_at", ascending: false });
@@ -215,7 +225,7 @@ describe("loadAskContext", () => {
       if (q.table === "learner_memory") return { error: { code: "PGRST205", message: "no table" } };
       return new Error("timeout");
     });
-    expect(await loadAskContext(caller)).toEqual({ name: null, grade: null, course: "algebra1", memory: [], recent: [] });
+    expect(await loadAskContext(caller)).toEqual({ name: null, nameWords: [], grade: null, course: "algebra1", memory: [], memoryAt: null, recent: [] });
   });
 
   it("never throws: the empty context", async () => {
@@ -238,9 +248,11 @@ describe("loadAskContext", () => {
 // ------------------------------------------------------------------ remembering
 
 describe("rememberFromTurn", () => {
-  const exchange = { message: "I always mix up the bottom numbers when I add fractions", reply: "Let's find a common denominator first.", memory: ["Likes shorter hints"] };
+  const AT = "2026-10-11T09:00:00.123456+00:00";
+  const exchange = { message: "I always mix up the bottom numbers when I add fractions", reply: "Let's find a common denominator first.", memory: ["Likes shorter hints"], memoryAt: AT };
 
-  it("asks the memory models, then writes the cleaned notes with the service role", async () => {
+  it("asks the memory models, then writes the cleaned notes with the service role, only over the row it read", async () => {
+    useDbs(() => ({ data: [] }), () => ({ data: [{ user_id: USER }] }));
     chatJson.mockResolvedValue({ data: { notes: ["Likes shorter hints", "Mixes up the bottom numbers when adding fractions", "Their teacher Mrs. Lee says so"] }, model: LIVE_MODELS.askMemory });
     await rememberFromTurn(caller, exchange);
     expect(chatJson).toHaveBeenCalledTimes(1);
@@ -252,12 +264,41 @@ describe("rememberFromTurn", () => {
     // written by the server, never as the student
     expect(userDb.calls).toEqual([]);
     expect(serviceDb!.calls).toHaveLength(1);
+    // compare-and-set: an update of A's row only while its updated_at is the one read
+    expect(serviceDb!.calls[0]).toMatchObject({
+      table: "learner_memory",
+      op: "update",
+      select: "user_id",
+      signal: true,
+      rows: { notes: ["Likes shorter hints", "Mixes up the bottom numbers when adding fractions"] },
+    });
+    expect(eqOf(serviceDb!.calls[0], "user_id")).toBe(USER);
+    expect(eqOf(serviceDb!.calls[0], "updated_at")).toBe(AT);
+  });
+
+  it("no row when read: an insert that does nothing when a row has appeared since (never an overwrite)", async () => {
+    useDbs(() => ({ data: [] }), () => ({ data: [{ user_id: USER }] }));
+    chatJson.mockResolvedValue({ data: { notes: ["Mixes up the bottom numbers when adding fractions"] }, model: LIVE_MODELS.askMemory });
+    await rememberFromTurn(caller, { ...exchange, memory: [], memoryAt: null });
+    expect(serviceDb!.calls).toHaveLength(1);
     expect(serviceDb!.calls[0]).toMatchObject({
       table: "learner_memory",
       op: "upsert",
-      options: { onConflict: "user_id" },
-      rows: { user_id: USER, notes: ["Likes shorter hints", "Mixes up the bottom numbers when adding fractions"] },
+      select: "user_id",
+      options: { onConflict: "user_id", ignoreDuplicates: true },
+      rows: { user_id: USER, notes: ["Mixes up the bottom numbers when adding fractions"] },
     });
+  });
+
+  it("the row changed since it was read (a grown-up cleared it, or another turn wrote first): nothing written, nothing retried", async () => {
+    // the update matched no row (cleared: gone; another turn: a new updated_at)
+    useDbs(() => ({ data: [] }), () => ({ data: [] }));
+    chatJson.mockResolvedValue({ data: { notes: ["Likes shorter hints", "Mixes up the bottom numbers when adding fractions"] }, model: LIVE_MODELS.askMemory });
+    await expect(rememberFromTurn(caller, exchange)).resolves.toBeUndefined();
+    expect(serviceDb!.calls.map((c) => c.op)).toEqual(["update"]);
+    // and with no row read, a row there now: the insert does nothing, and that is the end of it
+    await expect(rememberFromTurn(caller, { ...exchange, memory: [], memoryAt: null })).resolves.toBeUndefined();
+    expect(serviceDb!.calls.map((c) => c.op)).toEqual(["update", "upsert"]);
   });
 
   it("a trivial exchange asks no model and writes nothing", async () => {

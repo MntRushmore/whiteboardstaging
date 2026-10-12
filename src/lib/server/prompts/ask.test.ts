@@ -8,6 +8,7 @@ import { checkTeach } from "@/lib/live/chat/teach";
 import { BOARD_PROBLEM_AVOID, BOARD_PROBLEM_FORMS } from "@/lib/live/chat/problemForms";
 import { verifyForBoard } from "@/lib/server/chatProblems";
 import { getEngine } from "@/lib/live/engine";
+import { learnerScrubber } from "@/lib/server/ask/nameScrub";
 import { EMPTY_ASK_CONTEXT, type AskLearnerContext } from "@/lib/server/ask/store";
 import { repairJsonEscapes } from "@/lib/server/sse";
 import {
@@ -19,6 +20,7 @@ import {
   buildAskMessages,
   cleanAskReply,
   nameScrubber,
+  scrubAskRequest,
   gradeLine,
   studentBlock,
 } from "./ask";
@@ -202,7 +204,7 @@ describe("ask prompt: who the tutor is talking to", () => {
 
   it("the STUDENT block: grade, memory, recent work, the record — never the name, never 'weak'", () => {
     const block = studentBlock(
-      { name: "Maya Patel", grade: 3, course: null, memory: ["Gets stuck on borrowing across a zero", "Likes animal word problems"], recent: ["Subtracting with regrouping"] },
+      { ...EMPTY_ASK_CONTEXT, name: "Maya", nameWords: ["Maya", "Patel"], grade: 3, memory: ["Gets stuck on borrowing across a zero", "Likes animal word problems"], recent: ["Subtracting with regrouping"] },
       { weakSkills: [{ id: "two_step_equations", name: "x" }], strongSkills: [], recurringMistakes: [{ kind: "sign", count: 3 }] },
     );
     expect(block).not.toMatch(/Maya|Patel|name/i);
@@ -222,7 +224,8 @@ describe("ask prompt: who the tutor is talking to", () => {
   });
 
   it("the display name is in no message: not the system prompt, the STUDENT block, the notes, the chat, the screen or the message", () => {
-    const learner = { name: "Maya Patel", grade: 3, course: null, memory: ["Maya gets stuck on borrowing across a zero", "Likes when MAYA's dog is in a problem"], recent: ["Patel family maths night"] };
+    // as the store reads it: the first name for the hello, every word of the display name for the scrubber
+    const learner = { ...EMPTY_ASK_CONTEXT, name: "Maya", nameWords: ["Maya", "Patel"], grade: 3, memory: ["Maya gets stuck on borrowing across a zero", "Likes when MAYA's dog is in a problem"], recent: ["Patel family maths night"] };
     const messages = buildAskMessages(
       req({
         message: "hi its maya, can you help me",
@@ -244,13 +247,34 @@ describe("ask prompt: who the tutor is talking to", () => {
     expect(ASK_SYSTEM_PROMPT).not.toMatch(/first name/);
   });
 
-  it("the name is taken out as whole words in any case, and a LaTeX command is left alone", () => {
+  it("the name is taken out as whole words, capitalised always and lowercase unless it is a common word; a LaTeX command is left alone", () => {
     const scrub = nameScrubber("Max O'Neil-Smith");
-    expect(scrub("max and MAX and Maximum")).toBe("[name] and [name] and Maximum");
+    // "max" in lowercase is the word (the max of a list); capitalised, it is the kid
+    expect(scrub("max and MAX and Max and Maximum")).toBe("max and [name] and [name] and Maximum");
     expect(scrub("\\max(a, b) = 3")).toBe("\\max(a, b) = 3");
-    expect(scrub("Ask O'Neil-Smith")).toBe("Ask [name]");
+    // every word of the name: first and last, each side of a hyphen, in any case when not a word
+    expect(scrub("Ask O'Neil-Smith")).toBe("Ask [name]-[name]");
+    expect(scrub("smith and o'neil")).toBe("[name] and [name]");
     expect(nameScrubber(null)("Maya")).toBe("Maya");
     expect(nameScrubber("A")("A cat")).toBe("A cat");
+  });
+
+  it("the route's request scrub: message, chat, problem and screen lines; nothing else changes", () => {
+    const scrub = learnerScrubber({ name: "Ray", nameWords: ["Ray", "Okafor"] });
+    const r = req({
+      message: "Ray says hi! draw a ray AB for okafor",
+      problem: "Ray has 3 bags",
+      history: [{ role: "user", text: "I'm Ray Okafor" }],
+      screen: { empty: false, student: ["\\text{Ray}", "x = 2"], tutor: ["ray AB"], problems: ["2x + 3 = 11"], lecture: "Ray asked about rays" },
+    });
+    const safe = scrubAskRequest(r, scrub);
+    expect(safe.message).toBe("[name] says hi! draw a ray AB for [name]");
+    expect(safe.problem).toBe("[name] has 3 bags");
+    expect(safe.history).toEqual([{ role: "user", text: "I'm [name] [name]" }]);
+    expect(safe.screen).toMatchObject({ student: ["\\text{[name]}", "x = 2"], tutor: ["ray AB"], problems: ["2x + 3 = 11"], lecture: "[name] asked about rays" });
+    expect(safe.boardId).toBe(r.boardId);
+    // scrubbing twice changes nothing more
+    expect(scrubAskRequest(safe, scrub)).toEqual(safe);
   });
 });
 

@@ -3,13 +3,14 @@ import { getLiveModels } from "@/lib/env";
 import { ASK_BOARD_OPEN, ASK_EVENTS, AskBoardBlockSchema, AskRequestSchema, type AskErrorEvent } from "@/lib/live/ask/contracts";
 import { AskStreamSplitter } from "@/lib/live/ask/splitter";
 import type { ChatAction } from "@/lib/live/chat/contracts";
+import { learnerScrubber } from "@/lib/server/ask/nameScrub";
 import { EMPTY_ASK_CONTEXT, loadAskContext, rememberFromTurn, saveAskTurns, type AskStoreCaller } from "@/lib/server/ask/store";
 import { explains, keepExplanation } from "@/lib/server/askReply";
 import { enforceInk } from "@/lib/server/billing";
 import { chatGate } from "@/lib/server/chatGate";
 import { livePreamble, runChargedStream, withRequestId } from "@/lib/server/live-route";
 import { CreditsExhaustedError, streamWithFallback, UpstreamError, WatchdogTimeoutError } from "@/lib/server/openrouter";
-import { ASK_MAX_TOKENS, askReasoningFor, buildAskMessages, cleanAskReply } from "@/lib/server/prompts/ask";
+import { ASK_MAX_TOKENS, askReasoningFor, buildAskMessages, cleanAskReply, scrubAskRequest } from "@/lib/server/prompts/ask";
 import { actionTypes, type DroppedAction } from "@/lib/server/prompts/chat";
 import { PROVIDER_UNAVAILABLE_MESSAGE, recordRouteEvent } from "@/lib/server/request";
 import { repairJsonEscapes, sseResponse } from "@/lib/server/sse";
@@ -108,6 +109,9 @@ const kinds = (actions: readonly ChatAction[]) => [...new Set(actions.map((a) =>
  * none when saving failed (the chat goes on, unsaved). After the response, the memory model reads
  * the exchange (`rememberFromTurn`, with `after()`): it never holds the stream.
  *
+ * No model sees the student's display name: every word of it is taken out of what each one gets
+ * (`learnerScrubber`, `scrubAskRequest`): the answer, the gates' repairs and the memory model.
+ *
  * Charged `live/chat` (3 ink) up front, as the old chat. Out of ink, rate limited, signed out or a
  * bad body are the usual JSON errors, before any stream. Once streaming, a failure is an `error`
  * event and the ink comes back in full (the reply was cut short and nothing is saved). A reply whose
@@ -163,7 +167,11 @@ export async function POST(req: Request) {
       const kept = () => signal.aborted && shown > 0;
       await runChargedStream({ userId: user.id, requestId }, log, kept, async () => {
         const learner = await contextPending;
-        const messages = buildAskMessages(data, { learner });
+        // The display name never reaches a model (the Privacy Policy): every word of it comes out of
+        // all the route sends to ANY model — the answer's, the gates' repairs, the memory model's.
+        const scrub = learnerScrubber(learner);
+        const safe = scrubAskRequest(data, scrub);
+        const messages = buildAskMessages(safe, { learner });
         const splitter = new AskStreamSplitter();
         /** the whole answer as the model wrote it (a few KB): whether a board block was opened at all */
         let answer = "";
@@ -218,7 +226,7 @@ export async function POST(req: Request) {
         const gate = await chatGate(
           raw,
           {
-            request: data,
+            request: safe,
             models: { primary: models.ask, fallback: models.askFallback },
             reasoningFor: askReasoning,
             route: "ask",
@@ -264,7 +272,10 @@ export async function POST(req: Request) {
         }
 
         const memory = learner.memory;
-        remember = () => rememberFromTurn(caller, { message: data.message, reply, memory });
+        // scrubbed like the rest (the reply may repeat a name the student typed); the notes as read,
+        // with their row's stamp, so a clear made meanwhile is never undone (compare-and-set)
+        const exchange = { message: safe.message, reply: scrub(reply), memory: memory.map(scrub), memoryAt: learner.memoryAt };
+        remember = () => rememberFromTurn(caller, exchange);
         if (!deferred) void rememberLater();
 
         const ms = Date.now() - startedAt;
