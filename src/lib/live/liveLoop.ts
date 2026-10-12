@@ -6328,6 +6328,25 @@ export class LiveLoop implements LiveController {
   }
 
   /**
+   * Ask (docs/ASK-V2.md): a picture of the current screen, sent with `chatScreen` when the screen
+   * holds something its LaTeX cannot say (`askImageWanted`: the student's ink, a drawing, a photo, a
+   * PDF page). Null for an empty screen or one with only the tutor's problems on it, which saves the
+   * student about half a second, and null when no picture came in time. Its code loads on first
+   * use, never with the board.
+   */
+  async chatImage(): Promise<string | null> {
+    if (this.editor.getCurrentPageShapes().length === 0) return null;
+    try {
+      const { askImageWanted, askScene, captureAskImage } = await import("./ask/boardImage");
+      const editor = this.editor as Editor;
+      if (!askImageWanted(askScene(editor)?.shapes ?? [])) return null;
+      return await captureAskImage(editor);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * A chat reply's actions, written one block at a time; resolves when the last is on the page.
    * `from`: where the problems it writes come from, for the learning record (the board chat's own by
    * default; the onboarding's starter, a practice board, Now you try say so).

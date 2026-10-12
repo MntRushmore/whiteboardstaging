@@ -37,6 +37,19 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
     loopRef.current?.setOptions({ boardId, mode, enabled, auto });
   }, [boardId, mode, enabled, auto]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    // Dev-only QA handle: `__agathonAskImage()` is what an ask would send (`chatImage`, policy and
+    // all); `__agathonAskImage({ force: true })` captures whatever the screen holds.
+    type Handle = (o?: { force?: boolean; timeoutMs?: number }) => Promise<string | null>;
+    const w = window as unknown as { __agathonAskImage?: Handle };
+    const handle: Handle = async (o = {}) => (o.force ? (await import("./ask/boardImage")).captureAskImage(editor, o) : ((await loopRef.current?.chatImage()) ?? null));
+    w.__agathonAskImage = handle;
+    return () => {
+      if (w.__agathonAskImage === handle) delete w.__agathonAskImage;
+    };
+  }, [editor]);
+
   return useMemo<LiveController>(() => {
     // Every ask from the UI says so first (`LiveLoop.noteAsked`): its failures are shown, and with
     // Auto off its problem gets the marks Auto would have drawn. Auto's own actions skip this.
@@ -56,6 +69,8 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
       clearMarks: () => loopRef.current?.clearMarks(),
       retypeLine: (lineId, latex) => loopRef.current?.retypeLine(lineId, latex),
       chatScreen: () => loopRef.current?.chatScreen() ?? { empty: true, student: [], tutor: [], problems: [] },
+      // Ask's picture of the screen (null when the LaTeX says it all); its code loads on first use
+      chatImage: async () => (await loopRef.current?.chatImage()) ?? null,
       // `from`: where the problems it writes come from, for the learning record (the chat's own by default)
       runChatActions: async (actions, from) => {
         const loop = loopRef.current;
