@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
 import { AppHeader } from "@/components/app/AppHeader";
 import { clientMetric } from "@/lib/logger";
+import { recordFunnelStep } from "@/lib/funnel/record";
 import { trialEndsOn, unlimitedCheckoutUrl } from "@/lib/billing/unlimited";
 import { planCheckoutUrl, referralApplies, trialDaysOf } from "@/lib/billing/planChoice";
 import { useReferred } from "@/lib/billing/useReferred";
@@ -15,6 +16,13 @@ import { HOME_PATH, writePlanMarker } from "@/lib/onboarding/planMarker";
 import { chargeDateText, planView } from "@/lib/onboarding/plan";
 import { PlanOffer } from "./PlanOffer";
 import styles from "./plan.module.css";
+
+/**
+ * Start the free trial records `checkout_opened` before the page leaves for Stripe (the request
+ * outlives the page: keepalive), but never waits longer than this for it: a slow session read must
+ * not hold the student on the plan screen.
+ */
+const CHECKOUT_RECORD_WAIT_MS = 400;
 
 /**
  * /welcome/plan: the plan screen the guided board's finish card opens, once, before the home.
@@ -54,6 +62,8 @@ export function PlanScreen() {
   const choice = { referred: referral.referred && view === "offer" };
   const checkout = payer ? planCheckoutUrl(payer, choice) : null;
   const userId = user?.id;
+  // a kid profile shares the grown-up's plan and never sees billing (src/lib/family)
+  const kid = isKidEmail(user?.email);
 
   useEffect(() => {
     if (!authLoading && !user && !authError) router.replace("/login");
@@ -67,7 +77,8 @@ export function PlanScreen() {
       return;
     }
     clientMetric("onboarding.plan.shown", { view });
-  }, [userId, view, router]);
+    void recordFunnelStep("plan_shown", kid ? { view, kid: true } : { view });
+  }, [userId, view, kid, router]);
 
   if (!user && authError) {
     return (
@@ -86,16 +97,17 @@ export function PlanScreen() {
         {view === "offer" || view === "restart" || view === "soon" ? (
           <PlanOffer
             view={view}
-            // a kid profile shares the grown-up's plan and never sees billing (src/lib/family)
-            kid={isKidEmail(user?.email)}
+            kid={kid}
             chargeDate={chargeDateText(trialEndsOn(now, trialDaysOf(choice)))}
             friendMonth={referralApplies(choice)}
             starting={starting}
             onStart={() => {
               if (!checkout) return;
               setStarting(true);
-              clientMetric("onboarding.plan.start", { view, referred: referralApplies(choice) });
-              window.location.assign(checkout);
+              const referred = referralApplies(choice);
+              clientMetric("onboarding.plan.start", { view, referred });
+              const waited = new Promise<void>((resolve) => setTimeout(resolve, CHECKOUT_RECORD_WAIT_MS));
+              void Promise.race([recordFunnelStep("checkout_opened", { view, referred }), waited]).then(() => window.location.assign(checkout));
             }}
             onContinue={() => {
               clientMetric("onboarding.plan.continue", { view });

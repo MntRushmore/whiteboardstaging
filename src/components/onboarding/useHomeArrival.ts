@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { clientMetric } from "@/lib/logger";
+import { recordFunnelStep } from "@/lib/funnel/record";
 import { isUnlimitedReturn, unlimitedLink } from "@/lib/billing/unlimited";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { browserStorage } from "@/lib/onboarding/marker";
@@ -36,6 +37,7 @@ export function useHomeArrival(userId: string | undefined): boolean {
     returned.current = isUnlimitedReturn(window.location.search);
     if (!returned.current) return;
     clientMetric("onboarding.plan.returned", {});
+    void recordFunnelStep("checkout_returned");
     const { pathname, search, hash } = window.location;
     window.history.replaceState(window.history.state, "", `${pathname}${withoutUnlimitedReturn(search)}${hash}`);
     toast.success(ARRIVAL_COPY.started, { description: ARRIVAL_COPY.startedHint, duration: 6000 });
