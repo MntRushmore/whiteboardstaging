@@ -144,6 +144,11 @@ export const AskDoneEventSchema = z.object({
   refunded: z.boolean().optional(),
   /** the saved tutor turn's id (absent when saving failed: the chat goes on, unsaved) */
   turnId: z.string().optional(),
+  /**
+   * the saved student turn's id, with `turnId`: what moves with the exchange when the tutor's own
+   * actions start a new screen (POST ASK_MOVE_PATH)
+   */
+  userTurnId: z.string().optional(),
 });
 export const AskErrorEventSchema = z.object({
   /** an `errorResponse` code (`upstream`, `credits_exhausted`, `timeout`, …) */
@@ -191,6 +196,9 @@ export const AskMoveRequestSchema = z.object({
   screenId: AskScreenIdSchema,
 });
 export type AskMoveRequest = z.infer<typeof AskMoveRequestSchema>;
+/** POST ASK_MOVE_PATH → how many of the turns moved (0: none of them is the caller's on that board). */
+export const AskMoveResponseSchema = z.object({ moved: z.number().int().min(0) });
+export type AskMoveResponse = z.infer<typeof AskMoveResponseSchema>;
 
 /** GET ASK_HISTORY_PATH?boardId=&screenId= → that screen's chat (oldest first) and, when it has none, a hello. */
 export const AskHistoryResponseSchema = z.object({

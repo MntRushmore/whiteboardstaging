@@ -105,7 +105,9 @@ const kinds = (actions: readonly ChatAction[]) => [...new Set(actions.map((a) =>
  * a log and an event, never a crash, and counts as a proposal that did not survive.
  *
  * The exchange is saved on the board (`saveAskTurns`: the student's turn with its `clientId`, the
- * tutor's with its notes and the kinds of action it wrote); `done` carries the tutor turn's id, or
+ * tutor's with its notes and the kinds of action it wrote), in the chat of the screen it was asked
+ * from (`screenId`; none named is the first screen's); `done` carries the tutor turn's id and the
+ * student's (`userTurnId`: what moves with them when the tutor's actions start a new screen), or
  * none when saving failed (the chat goes on, unsaved). After the response, the memory model reads
  * the exchange (`rememberFromTurn`, with `after()`): it never holds the stream.
  *
@@ -259,13 +261,21 @@ export async function POST(req: Request) {
         }
 
         let turnId: string | undefined;
+        let userTurnId: string | undefined;
         try {
-          const ids = await saveAskTurns(caller, data.boardId, [
-            { role: "user", text: data.message, ...(data.clientId ? { clientId: data.clientId } : {}) },
-            { role: "tutor", text: reply, notes: gate.notes, wrote: kinds(gate.actions) },
-          ]);
-          // the tutor's turn is the last saved
+          // in the chat of the screen it was asked from (none named: the first screen's)
+          const ids = await saveAskTurns(
+            caller,
+            data.boardId,
+            [
+              { role: "user", text: data.message, ...(data.clientId ? { clientId: data.clientId } : {}) },
+              { role: "tutor", text: reply, notes: gate.notes, wrote: kinds(gate.actions) },
+            ],
+            { screenId: data.screenId ?? null },
+          );
+          // the tutor's turn is the last saved, the student's the one before it (both always have words)
           turnId = ids?.at(-1);
+          userTurnId = ids && ids.length === 2 ? ids[0] : undefined;
           if (!ids) log.warn({ boardId: data.boardId }, "ask: the exchange was not saved");
         } catch (err) {
           log.warn({ boardId: data.boardId, err: err instanceof Error ? err.message : String(err) }, "ask: the exchange was not saved");
@@ -298,6 +308,7 @@ export async function POST(req: Request) {
             history: data.history.length,
             voice: Boolean(data.voice),
             screenEmpty: data.screen.empty,
+            screenNamed: Boolean(data.screenId),
             problemSent: Boolean(data.problem),
             learnerWeak: data.learner?.weakSkills.length ?? 0,
             memoryNotes: memory.length,
@@ -305,7 +316,7 @@ export async function POST(req: Request) {
           },
           "ask completed",
         );
-        emit(ASK_EVENTS.done, { model, ms, ...(gate.refunded ? { refunded: true } : {}), ...(turnId ? { turnId } : {}) });
+        emit(ASK_EVENTS.done, { model, ms, ...(gate.refunded ? { refunded: true } : {}), ...(turnId ? { turnId } : {}), ...(turnId && userTurnId ? { userTurnId } : {}) });
       }).catch((err: unknown) => {
         // the model call was aborted with the student; nothing is saved
         if (signal.aborted) log.info({ model, ms: Date.now() - startedAt, shown, chargeKept: shown > 0 }, "ask abandoned by the client");
