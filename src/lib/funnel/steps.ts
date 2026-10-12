@@ -53,11 +53,20 @@ export type FunnelStepMeta = Record<string, string | number | boolean | null>;
 const META_KEY = /^[a-z][a-zA-Z0-9_]{0,31}$/;
 const MAX_META_KEYS = 8;
 const MAX_META_TEXT = 80;
+/** the table's limit on `meta` (`funnel_steps_meta_shape`): octet_length of the jsonb's text */
+const MAX_META_BYTES = 1000;
+
+/** The jsonb's text in UTF-8 bytes: JSON's, plus the space Postgres writes after each ':' and ','. */
+function metaBytes(meta: FunnelStepMeta): number {
+  const n = Object.keys(meta).length;
+  return new TextEncoder().encode(JSON.stringify(meta)).length + Math.max(0, 2 * n - 1);
+}
 
 /**
  * `meta` as the database takes it (a flat object under 1,000 bytes), or null when nothing is
  * left: at most 8 keys named like identifiers, finite numbers, booleans, null, and strings cut to
- * 80 characters. Anything else (nested values, undefined) is dropped, not refused.
+ * 80 characters. Anything else (nested values, undefined) is dropped, not refused, and so are the
+ * last keys while the whole is still over 1,000 bytes (long non-ASCII text could be).
  */
 export function cleanMeta(meta: Record<string, unknown> | null | undefined): FunnelStepMeta | null {
   if (!meta || typeof meta !== "object") return null;
@@ -72,5 +81,7 @@ export function cleanMeta(meta: Record<string, unknown> | null | undefined): Fun
     else continue;
     n += 1;
   }
-  return n > 0 ? out : null;
+  const keys = Object.keys(out);
+  while (keys.length > 0 && metaBytes(out) > MAX_META_BYTES) delete out[keys.pop() as string];
+  return keys.length > 0 ? out : null;
 }

@@ -80,4 +80,12 @@ describe("cleanMeta", () => {
     const asJsonbText = JSON.stringify(out).length + 2 * Object.keys(out).length;
     expect(asJsonbText).toBeLessThanOrEqual(1000);
   });
+
+  it("drops the last keys while long non-ASCII text would still be over the table's 1,000 bytes", () => {
+    const wide = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`k${i}`, "数".repeat(80)]));
+    const out = cleanMeta(wide) ?? {};
+    // Postgres measures four of these at exactly 1,000 bytes (allowed) and five over it
+    expect(Object.keys(out)).toEqual(["k0", "k1", "k2", "k3"]);
+    expect(cleanMeta({ ...wide, k0: `${"数".repeat(79)}x` })).toHaveProperty("k3");
+  });
 });
