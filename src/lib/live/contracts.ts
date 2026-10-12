@@ -780,6 +780,10 @@ export const LIVE_RATE_LIMITS = {
   liveSketch: { limit: 12, windowMs: 60_000 },
   /** a board's smart name: a few per board session (`useBoardAutoTitle`), uncharged, so kept low */
   liveTitle: { limit: 10, windowMs: 60_000 },
+  /** Ask's saved chat (GET /api/live/ask/history): once per board opened, plus a reload; uncharged reads */
+  liveAskHistory: { limit: 30, windowMs: 60_000 },
+  /** what Ask remembers (GET and DELETE /api/live/ask/memory): the account and Family pages */
+  liveAskMemory: { limit: 20, windowMs: 60_000 },
 } as const;
 export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 

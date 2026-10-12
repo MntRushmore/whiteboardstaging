@@ -12,6 +12,7 @@ import { switchProfile } from "@/lib/family/client";
 import type { FamilyMember } from "@/lib/family/contracts";
 import { FAMILY_COPY } from "@/lib/family/copy";
 import { addKidBlock } from "@/lib/family/forms";
+import { ASK_MEMORY_COPY } from "@/lib/askMemory/copy";
 import { PLAN_PATH } from "@/lib/onboarding/planMarker";
 import { openProfilePicker } from "@/lib/family/picker";
 import { REPORT_MENU } from "@/lib/report/menu";
@@ -22,6 +23,7 @@ import { Alert } from "@/registry/components/alert/alert";
 import { Button } from "@/registry/components/button/button";
 import { EmptyState } from "@/registry/components/empty-state/empty-state";
 import { Skeleton } from "@/registry/components/skeleton/skeleton";
+import { AskMemoryDialog } from "./AskMemoryDialog";
 import { KidCard } from "./KidCard";
 import { KidDialog } from "./KidDialog";
 import { ReferralCard } from "@/components/referral/ReferralCard";
@@ -33,7 +35,8 @@ import styles from "./familyPage.module.css";
 /**
  * /family: the grown-up's page for their kids. Set the PIN (first), add a kid (name, grade,
  * picture), and for each kid this week's numbers, "Switch to <name>", "See <name>'s week" (the
- * weekly report at that kid: the grown-up stays on their own profile), edit and remove. A kid who lands here is told it is for grown-ups, with a way to switch profile. Signed-in
+ * weekly report at that kid: the grown-up stays on their own profile), what Ask remembers about
+ * them (with Clear), edit and remove. A kid who lands here is told it is for grown-ups, with a way to switch profile. Signed-in
  * only (signed out goes to /login), never paywalled: a grown-up sets the PIN before or after the
  * plan, but adds kids only with Agathon Unlimited on (kids share it and have no ink of their own;
  * the server refuses otherwise), so without it the Kids section's main button is "Start free trial"
@@ -47,6 +50,7 @@ export function FamilyScreen() {
   const plan = useUnlimited();
   const [dialog, setDialog] = useState<{ kid: FamilyMember | null } | null>(null);
   const [removing, setRemoving] = useState<FamilyMember | null>(null);
+  const [memoryOf, setMemoryOf] = useState<FamilyMember | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
@@ -150,6 +154,7 @@ export function FamilyScreen() {
                   locked={busy !== null && busy !== kid.userId}
                   onSwitch={() => void become(kid)}
                   onWeek={() => router.push(reportFocusPath(kid.userId))}
+                  onMemory={() => setMemoryOf(kid)}
                   onEdit={() => setDialog({ kid })}
                   onRemove={() => setRemoving(kid)}
                 />
@@ -198,6 +203,7 @@ export function FamilyScreen() {
           if (!dialog?.kid) toast.success(FAMILY_COPY.addKidAdded(name));
         }}
       />
+      <AskMemoryDialog kid={memoryOf} onOpenChange={(open) => !open && setMemoryOf(null)} onCleared={() => toast.success(ASK_MEMORY_COPY.cleared)} />
       <RemoveKidDialog kid={removing} onOpenChange={(open) => !open && setRemoving(null)} onRemoved={(name) => toast.success(FAMILY_COPY.removed(name))} />
     </div>
   );

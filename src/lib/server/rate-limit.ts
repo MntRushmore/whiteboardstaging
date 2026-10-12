@@ -71,6 +71,8 @@ export const LIMITS = {
   liveListen: LIVE_RATE_LIMITS.liveListen,
   liveSketch: LIVE_RATE_LIMITS.liveSketch,
   liveTitle: LIVE_RATE_LIMITS.liveTitle,
+  liveAskHistory: LIVE_RATE_LIMITS.liveAskHistory,
+  liveAskMemory: LIVE_RATE_LIMITS.liveAskMemory,
   // Read aloud (POST /api/live/speak): a minute's budget and a day's cap (src/lib/speech/contracts.ts).
   liveSpeak: SPEAK_RATE_LIMITS.perMinute,
   liveSpeakDay: SPEAK_RATE_LIMITS.perDay,

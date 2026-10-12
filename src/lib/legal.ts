@@ -93,9 +93,10 @@ export const LEGAL = {
  * now says the trial is the length checkout showed; accepted_terms_at tells the two texts apart);
  * 2026-10-08, the Privacy Policy says our staff may look at a student's boards and bug reports to fix
  * problems and improve the tutor, that each look is logged (admin_audit, kept 180 days), and that
- * nothing they see is shared.
+ * nothing they see is shared; 2026-10-11, Ask's chats are saved with each board and Ask keeps up to 12
+ * notes about how a student learns (a grown-up can clear them), which go to the AI with each chat.
  */
-export const TERMS_VERSION = "2026-10-08";
+export const TERMS_VERSION = "2026-10-11";
 
 /** True for a value still in [square brackets]. */
 export function isPlaceholder(value: string): boolean {

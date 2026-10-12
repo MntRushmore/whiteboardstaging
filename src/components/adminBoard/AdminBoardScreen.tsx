@@ -13,6 +13,8 @@ import { ADMIN_PAGES } from "@/lib/admin/contracts";
 import { ADMIN_COPY } from "@/lib/admin/view";
 import { Button } from "@/registry/components/button/button";
 import { EmptyState } from "@/registry/components/empty-state/empty-state";
+import SegmentedControl from "@/registry/components/segmented-control/segmented-control";
+import { AdminAskTab } from "./AdminAskTab";
 import { useAdminBoard } from "./useAdminBoard";
 import { ADMIN_BOARD_COPY, boardMetaParts, liveAgo } from "./view";
 import styles from "./adminBoard.module.css";
@@ -55,6 +57,14 @@ export function AdminBoardScreen({ id, notFound }: { id: string; notFound: React
   const hint = useIsAdmin(user?.id, { lazy: false });
   const { data, follow, setFollow, retry } = useAdminBoard(id, user && hint !== false ? user.id : undefined, fixture);
   const now = useNow(follow ? 1_000 : 15_000);
+  // the board, or its Ask chat (read the first time the tab is opened, then kept)
+  const [tab, setTab] = useState<"board" | "ask">("board");
+  const [askOpened, setAskOpened] = useState(false);
+  const showTab = (next: string) => {
+    const t = next === "ask" ? "ask" : "board";
+    if (t === "ask") setAskOpened(true);
+    setTab(t);
+  };
 
   const hidden = !fixture && (hint === false || data.notFound);
   const signedOut = !fixture && ((!authLoading && !user && !authError) || data.signedOut);
@@ -123,8 +133,27 @@ export function AdminBoardScreen({ id, notFound }: { id: string; notFound: React
           {data.followError && <p className={styles.followError}>{data.followError}</p>}
         </header>
 
+        {data.doc && (
+          <SegmentedControl
+            className={styles.tabs}
+            label={ADMIN_BOARD_COPY.tabsLabel}
+            options={[
+              { value: "board", label: ADMIN_BOARD_COPY.tabBoard },
+              { value: "ask", label: ADMIN_BOARD_COPY.tabAsk },
+            ]}
+            value={tab}
+            onValueChange={showTab}
+          />
+        )}
+        {data.doc && askOpened && (
+          <div hidden={tab !== "ask"}>
+            <AdminAskTab id={id} now={now} fixture={Boolean(fixture)} />
+          </div>
+        )}
         {data.doc ? (
-          <AdminBoardBody doc={data.doc} now={now} />
+          <div hidden={tab !== "board"}>
+            <AdminBoardBody doc={data.doc} now={now} />
+          </div>
         ) : data.loading ? (
           <div className={styles.bodySkeleton} aria-hidden />
         ) : (

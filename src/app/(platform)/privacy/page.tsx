@@ -26,12 +26,14 @@ const plan = UNLIMITED_PLAN.name;
  *  - ElevenLabs text-to-speech (src/app/api/live/speak/route.ts) and the browser's speechSynthesis
  *    (src/lib/speech/speaker.ts): read aloud, the tutor's words only (src/lib/speech/tutorWords.ts)
  *  - tldraw's CDN (fonts, icons) and unpkg (the PDF.js worker, src/lib/pdf.ts)
+ *  - Ask's saved chat and memory notes (ask_messages, learner_memory: 20261011000000_ask_v2.sql,
+ *    src/lib/server/ask/store.ts): Supabase, and the memory model through OpenRouter
  */
 const PROVIDERS = [
   {
     name: "Supabase",
     role: "Database, sign-in and file storage, in the United States.",
-    data: "Your account, boards and their recent history, images and PDFs you add, your learning record, purchases, your plan, ink and AI usage, the email log, bug reports.",
+    data: "Your account, boards and their recent history, images and PDFs you add, your chats with Ask and the notes it keeps, your learning record, purchases, your plan, ink and AI usage, the email log, bug reports.",
   },
   {
     name: "Vercel",
@@ -143,6 +145,12 @@ export default function PrivacyPage() {
             with your account, and it is never sold or used to train AI models.
           </li>
           <li>
+            <strong>Ask’s chat and notes:</strong> we save your chat with Ask on each board, so it is still there next
+            time, and Ask keeps up to 12 short notes about how you learn (what is tricky, what helps, what you like), never
+            who you are. A grown-up can clear the notes on the Account page (for a kid profile, on the Family page); a
+            board’s chat is deleted with the board.
+          </li>
+          <li>
             <strong>Ink purchases:</strong> which ink pack, the amount, the date, refunds, and the Stripe customer and
             payment ids.
           </li>
@@ -205,11 +213,11 @@ export default function PrivacyPage() {
         </p>
         <h3 id="staff">When our staff look</h3>
         <p>
-          A few people at {LEGAL.productName} can look at a student’s boards (and their recent history), learning
-          record and bug reports, including a bug report’s screenshot. We look to fix problems and to make the tutor
-          better: to see what went wrong when something breaks, or how the tutor helped on a hard problem. Each look is
-          logged: who looked, at what, and when. What our staff see stays with {LEGAL.productName}: it is never shared,
-          sold or used for advertising.
+          A few people at {LEGAL.productName} can look at a student’s boards (and their recent history and chat with
+          Ask), learning record and bug reports, including a bug report’s screenshot. We look to fix problems and to
+          make the tutor better: to see what went wrong when something breaks, or how the tutor helped on a hard
+          problem. Each look is logged: who looked, at what, and when. What our staff see stays with{" "}
+          {LEGAL.productName}: it is never shared, sold or used for advertising.
         </p>
       </LegalSection>
 
@@ -231,7 +239,8 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Chat:</strong> the messages you type to the tutor and its recent replies, with the maths on the
-            board.
+            board and the notes Ask keeps about how you learn. After a chat message, the message, the reply and those
+            notes go to an AI model that updates the notes.
           </li>
           <li>
             <strong>Naming a board:</strong> the lines of maths on it.
@@ -328,7 +337,8 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>What we collect from a child:</strong> their handwriting and drawings, the maths on their boards,
-            what they type to the tutor, images and PDFs they add, a record of the problems they work and how they went
+            what they type to the tutor (their chat with Ask, saved with each board, and Ask’s notes about how they
+            learn), images and PDFs they add, a record of the problems they work and how they went
             (their learning record), and bug reports if they send one; the email address
             and password used to sign in, the course they pick and an optional display name; and how they use the
             tutor (see <a href="#collect">What we collect</a>). Only what the tutor needs. We do not ask a child for
@@ -361,8 +371,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Deleting a child’s data:</strong> a parent can delete the account at any time from the Account
-            page (Delete account; if {plan} is on, cancel it first), which deletes the boards, the learning record, ink,
-            usage records, profile, email log and bug reports, or email us and we will delete it. A parent can also
+            page (Delete account; if {plan} is on, cancel it first), which deletes the boards and their chats, Ask’s
+            notes, the learning record, ink, usage records, profile, email log and bug reports, or email us and we will
+            delete it. A parent can clear Ask’s notes about their child at any time on the Family page. A parent can also
             tell us to stop collecting the child’s information; the account then has to be closed.
           </li>
           <li>
@@ -393,6 +404,11 @@ export default function PrivacyPage() {
             <strong>Your learning record:</strong> while your account is open, so the Progress page can show how you
             have done over time, and deleted with your account. Deleting a board keeps the record of the problems worked
             on it. Ask us and we will delete the record sooner.
+          </li>
+          <li>
+            <strong>Your chats with Ask:</strong> a board’s newest 400 messages, until the board or your account is
+            deleted. <strong>Ask’s notes about how you learn:</strong> until they are cleared (Account page) or your
+            account is deleted.
           </li>
           <li>
             <strong>Ink, usage, the fair-use record, ink purchases and the email log:</strong> deleted with your
