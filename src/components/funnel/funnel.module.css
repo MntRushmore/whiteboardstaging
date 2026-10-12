@@ -1,6 +1,19 @@
 /* The admin Funnel page (src/components/funnel/FunnelScreen.tsx). Builds on the console's own
-   styles (admin.module.css, console.module.css): this file only adds the stage bars and the two
-   tables' sticky first column. Arc tokens only. Desktop first, readable on a phone. */
+   styles (admin.module.css, console.module.css): this file only adds the cohort switch, the stage
+   bars and the tables' sticky first column. Arc tokens only. Desktop first, readable on a phone. */
+
+/* ---- Which sign-ups ------------------------------------------------------------------------------ */
+.cohort {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  margin-top: var(--space-4);
+}
+.cohortHint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
 
 /* ---- The stage bars ----------------------------------------------------------------------------- */
 .bars {
@@ -27,7 +40,7 @@
   }
   .bar {
     grid-template-areas: "label track count share";
-    grid-template-columns: minmax(10rem, 13rem) minmax(0, 1fr) 3.5rem minmax(9rem, 11rem);
+    grid-template-columns: minmax(10rem, 15rem) minmax(0, 1fr) 3.5rem minmax(9rem, 12rem);
     gap: var(--space-4);
   }
 }
@@ -80,6 +93,14 @@
   margin: var(--space-4) 0 0;
   color: var(--text-muted);
   font-size: var(--text-xs);
+}
+.note + .note {
+  margin-top: var(--space-1);
+}
+.empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
 }
 
 /* ---- The tables ---------------------------------------------------------------------------------- */
