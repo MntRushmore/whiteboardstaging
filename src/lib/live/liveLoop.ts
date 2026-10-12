@@ -145,6 +145,7 @@ import {
   type WriteTypedArgs,
   type WriteTypedResult,
 } from "@/lib/typeMath/contracts";
+import { typeBarInset } from "@/lib/typeMath/barLink";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { captureInkCrop } from "./inkCrop";
 import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, leadingSigns, ownTicks, readYoungHand } from "./youngHand";
@@ -223,6 +224,8 @@ export interface LiveEditorLike {
   getCamera?: Editor["getCamera"];
   setCamera?: Editor["setCamera"];
   getZoomLevel?(): number;
+  /** one transaction: the bar's reactive reads never see a typed line half written */
+  run?(fn: () => void): unknown;
 }
 
 export type StreamFn = (path: string, body: unknown, opts?: StreamOptions) => AsyncGenerator<LiveSseEvent, void, undefined>;
@@ -7954,17 +7957,23 @@ export class LiveLoop implements LiveController {
     // the line it replaces coming back is Undo, not the pen
     for (const id of replace) this.goneStrokeIds.add(id);
     this.editor.markHistoryStoppingPoint?.("type it");
-    if (replace.length > 0) this.editor.deleteShapes([...replace]);
-    this.editor.createShapes(shapes);
-    // the student wrote (Auto's pending answers stop, as for the pen); the typed line's read ends it
-    this.markUnsettled();
-    this.typedFresh = typedId;
-    if (this.quietTimer) clearTimeout(this.quietTimer);
-    this.quietTimer = null;
-    this.pendingRewrite = false;
-    this.wrote(ids[0]);
-    for (const id of ids) this.dirtyStrokeIds.add(id);
-    this.flush();
+    // the shapes and the lines they make land together: the bar reads `typedLines`/`typedSpot` in a
+    // reactive computation, and a read between the two showed the line above as the last one
+    const write = () => {
+      if (replace.length > 0) this.editor.deleteShapes([...replace]);
+      this.editor.createShapes(shapes);
+      // the student wrote (Auto's pending answers stop, as for the pen); the typed line's read ends it
+      this.markUnsettled();
+      this.typedFresh = typedId;
+      if (this.quietTimer) clearTimeout(this.quietTimer);
+      this.quietTimer = null;
+      this.pendingRewrite = false;
+      this.wrote(ids[0]);
+      for (const id of ids) this.dirtyStrokeIds.add(id);
+      this.flush();
+    };
+    if (this.editor.run) this.editor.run(write);
+    else write();
     return ids;
   }
 
@@ -8069,7 +8078,9 @@ export class LiveLoop implements LiveController {
     const view = this.editor.getViewportPageBounds();
     const z = this.editor.getZoomLevel?.() || 1;
     const pad = 24 / z;
-    const dy = Math.max(0, rectMaxY(r) + pad - (view.y + view.h - TYPED.barPx / z)) || Math.min(0, r.y - pad - view.y);
+    // the open bar's real height (it grows with the keys row and an on-screen keyboard), else its usual one
+    const bar = typeBarInset.get() || TYPED.barPx;
+    const dy = Math.max(0, rectMaxY(r) + pad - (view.y + view.h - bar / z)) || Math.min(0, r.y - pad - view.y);
     const dx = Math.max(0, rectMaxX(r) + pad - (view.x + view.w)) || Math.min(0, r.x - pad - view.x);
     if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
     this.editor.setCamera({ x: cam.x - dx, y: cam.y - dy, z: cam.z }, this.deps.reducedMotion() ? undefined : { animation: { duration: 320 } });
