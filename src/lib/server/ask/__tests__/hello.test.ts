@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { AskHelloSchema } from "@/lib/live/ask/contracts";
 import { GRADE_IDS } from "@/lib/learning/grades";
 import { COURSE_IDS } from "@/lib/onboarding/courseIds";
-import { buildAskHello, HELLO_CHIPS, quizChip, skillInSentence } from "../hello";
+import { buildAskHello, buildNewScreenHello, HELLO_CHIPS, NEW_SCREEN_GREETING, quizChip, skillInSentence } from "../hello";
 import { EMPTY_ASK_CONTEXT, type AskLearnerContext } from "../store";
 
 const ctx = (over: Partial<AskLearnerContext>): AskLearnerContext => ({ ...EMPTY_ASK_CONTEXT, ...over });
@@ -89,5 +89,32 @@ describe("buildAskHello: always within the contract", () => {
       // US English: math, never maths
       expect(JSON.stringify(hello)).not.toMatch(/\bmaths\b/i);
     }
+  });
+});
+
+describe("buildNewScreenHello: a new screen's chat", () => {
+  it("a short line, and chips that name what the board was just working on (the tutor sees only this screen's chat)", () => {
+    const hello = buildNewScreenHello(ctx({ name: "Maya", grade: 5, recent: ["Dividing fractions", "Percents"] }));
+    expect(hello.greeting).toBe(NEW_SCREEN_GREETING);
+    expect(hello.greeting).toBe("New screen! What should we work on?");
+    expect(hello.chips).toEqual(["3 more on dividing fractions", "Explain dividing fractions to me", "Quiz me on fractions", "Help me with my homework"]);
+    // never "like last time" or "like the last screen": the words carry the topic
+    expect(hello.chips.join(" ")).not.toMatch(/\blast (time|screen)\b/i);
+  });
+
+  it("no skill known for the board: the general first asks", () => {
+    expect(buildNewScreenHello(ctx({ grade: 3 })).chips).toEqual(["Quiz me on times tables", HELLO_CHIPS.homework, HELLO_CHIPS.whatCanYouDo, HELLO_CHIPS.funFact]);
+    expect(buildNewScreenHello(ctx({})).chips).toEqual([HELLO_CHIPS.homework, HELLO_CHIPS.whatCanYouDo, HELLO_CHIPS.funFact]);
+  });
+
+  it("never the kid's name (a quick line, not a welcome), always within the contract", () => {
+    const hello = buildNewScreenHello(ctx({ name: "Alexandria", course: "geometry", recent: ["Pythagorean theorem"] }));
+    expect(JSON.stringify(hello)).not.toContain("Alexandria");
+    expect(hello.chips[0]).toBe("3 more on the Pythagorean theorem");
+    expect(AskHelloSchema.safeParse(hello).success).toBe(true);
+    // a skill name too long for a chip is left out, not cut
+    const long = buildNewScreenHello(ctx({ grade: 4, recent: ["x".repeat(70)] }));
+    for (const chip of long.chips) expect(chip.length).toBeLessThanOrEqual(60);
+    expect(long.chips[0]).toBe("Quiz me on long division");
   });
 });

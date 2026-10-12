@@ -24,6 +24,8 @@ const CHIPS_MAX = 4;
 
 export const HELLO_CHIPS = {
   moreLikeLast: "3 more like last time",
+  /** a new screen's first chip: more of what the board was just working on, named (the model sees only this screen's chat) */
+  moreOn: (skill: string) => `3 more on ${skill}`,
   explain: (skill: string) => `Explain ${skill} to me`,
   homework: "Help me with my homework",
   whatCanYouDo: "What can you help me with?",
@@ -69,6 +71,41 @@ export function quizChip(ctx: Pick<AskLearnerContext, "grade" | "course">): stri
   return null;
 }
 
+/** A new screen's greeting: short, the student already met the tutor on the screen before. */
+export const NEW_SCREEN_GREETING = "New screen! What should we work on?";
+
+/** Up to four chips, each once and within the contract's length, topped up from the general ones. */
+function pickChips(candidates: ReadonlyArray<string | null>): string[] {
+  const chips: string[] = [];
+  for (const chip of candidates) {
+    if (!chip || chip.length > CHIP_MAX || chips.includes(chip)) continue;
+    chips.push(chip);
+    if (chips.length >= CHIPS_MAX) break;
+  }
+  // a hello without a quiz (no grade or course) still offers four
+  for (const chip of [HELLO_CHIPS.homework, HELLO_CHIPS.whatCanYouDo, HELLO_CHIPS.funFact]) {
+    if (chips.length >= CHIPS_MAX) break;
+    if (!chips.includes(chip)) chips.push(chip);
+  }
+  return chips;
+}
+
+/**
+ * The hello for a screen with no chat that is not the board's first (docs/ASK-V2.md, "A chat per
+ * screen"): a short line, and chips that follow from the screen before when the board's learning
+ * record names what was worked on there (`ctx.recent`, read with `onBoard`: this board's skills,
+ * newest first). The chip names the skill, because the tutor sees only this screen's chat: "3 more
+ * on dividing fractions", not "more like the last screen".
+ */
+export function buildNewScreenHello(ctx: Pick<AskLearnerContext, "recent" | "grade" | "course">): AskHello {
+  const last = ctx.recent.find((s) => s.trim().length > 0)?.trim() ?? null;
+  const quiz = quizChip(ctx);
+  const candidates = last
+    ? [HELLO_CHIPS.moreOn(skillInSentence(last)), HELLO_CHIPS.explain(skillInSentence(last)), quiz, HELLO_CHIPS.homework]
+    : [quiz, HELLO_CHIPS.homework, HELLO_CHIPS.whatCanYouDo, HELLO_CHIPS.funFact];
+  return AskHelloSchema.parse({ greeting: NEW_SCREEN_GREETING, chips: pickChips(candidates) });
+}
+
 /** The hello for a board with no chat yet. */
 export function buildAskHello(ctx: AskLearnerContext): AskHello {
   const name = ctx.name?.trim() || null;
@@ -92,18 +129,5 @@ export function buildAskHello(ctx: AskLearnerContext): AskHello {
   const candidates = last
     ? [HELLO_CHIPS.moreLikeLast, HELLO_CHIPS.explain(skillInSentence(last)), quiz, HELLO_CHIPS.homework]
     : [quiz, HELLO_CHIPS.homework, HELLO_CHIPS.whatCanYouDo, HELLO_CHIPS.funFact];
-  const chips: string[] = [];
-  for (const chip of candidates) {
-    if (!chip || chip.length > CHIP_MAX || chips.includes(chip)) continue;
-    chips.push(chip);
-    if (chips.length >= CHIPS_MAX) break;
-  }
-  // a hello without a quiz (no grade or course) still offers four
-  if (chips.length < CHIPS_MAX) {
-    for (const chip of [HELLO_CHIPS.homework, HELLO_CHIPS.whatCanYouDo, HELLO_CHIPS.funFact]) {
-      if (chips.length >= CHIPS_MAX) break;
-      if (!chips.includes(chip)) chips.push(chip);
-    }
-  }
-  return AskHelloSchema.parse({ greeting, chips });
+  return AskHelloSchema.parse({ greeting, chips: pickChips(candidates) });
 }

@@ -25,14 +25,17 @@ import {
   firstName,
   LAST_SESSION_GAP_MS,
   loadAskContext,
+  moveAskTurns,
   readAskHistory,
   readLearnerMemory,
   recentSkillNames,
   rememberFromTurn,
   saveAskTurns,
+  screenFilter,
+  screenIdOf,
   turnRows,
 } from "../store";
-import { eqOf, fakeDb, type FakeAnswer, type FakeDb, type FakeQuery } from "./fakeDb";
+import { eqOf, fakeDb, orOf, type FakeAnswer, type FakeDb, type FakeQuery } from "./fakeDb";
 
 const BOARD = "b1000000-0000-4000-8000-000000000001";
 const USER = "00000000-0000-4000-8000-000000000001";
@@ -184,6 +187,138 @@ describe("readAskHistory", () => {
     expect(await readAskHistory(caller, BOARD)).toEqual({ kind: "failed" });
     useDbs(() => new Error("boom"));
     expect(await readAskHistory(caller, BOARD)).toEqual({ kind: "failed" });
+  });
+});
+
+// ------------------------------------------------------------------ a chat per screen
+
+describe("a chat per screen: saving, reading and moving by screen", () => {
+  const S1 = "page:first";
+  const S2 = "page:Ab3_x-9";
+  const exchange = [
+    { role: "user" as const, text: "5 more problems", clientId: "m9" },
+    { role: "tutor" as const, text: "Here are 5, on a new screen.", wrote: ["write_problems", "new_screen"] },
+  ];
+
+  it("turnRows files every row in the screen's chat; no screen, or one that is not a page id, files none", () => {
+    expect(turnRows(BOARD, exchange, S2).map((r) => r.screen_id)).toEqual([S2, S2]);
+    for (const none of [undefined, null, "", "screen 2", "page:", `page:${"x".repeat(65)}`, "page:a b"]) {
+      for (const row of turnRows(BOARD, exchange, none)) expect("screen_id" in row).toBe(false);
+    }
+    expect(screenIdOf(S1)).toBe(S1);
+    expect(screenIdOf("page:a:b")).toBeNull();
+  });
+
+  it("saveAskTurns saves the screen with the turns, as the student", async () => {
+    useDbs(() => ({ data: [{ id: "u9", client_id: "m9" }, { id: "t9", client_id: "m9:tutor" }] }));
+    expect(await saveAskTurns(caller, BOARD, exchange, { screenId: S2 })).toEqual(["u9", "t9"]);
+    const [insert] = userDb.calls;
+    for (const row of insert.rows as Array<Record<string, unknown>>) expect(row.screen_id).toBe(S2);
+  });
+
+  it("before the migration (no screen_id column): saved again without it, never lost", async () => {
+    let tries = 0;
+    useDbs((q) => {
+      if (q.op !== "upsert") return { data: [] };
+      tries++;
+      const rows = q.rows as Array<Record<string, unknown>>;
+      return "screen_id" in rows[0] ? { error: { code: "PGRST204", message: "Could not find the 'screen_id' column" } } : { data: [{ id: "u9", client_id: "m9" }, { id: "t9", client_id: "m9:tutor" }] };
+    });
+    expect(await saveAskTurns(caller, BOARD, exchange, { screenId: S2 })).toEqual(["u9", "t9"]);
+    expect(tries).toBe(2);
+    // any other failure is not retried
+    tries = 0;
+    useDbs(() => {
+      tries++;
+      return { error: { code: "42501", message: "rls" } };
+    });
+    expect(await saveAskTurns(caller, BOARD, exchange, { screenId: S2 })).toBeNull();
+    expect(tries).toBe(1);
+  });
+
+  const rowsOn = (screen: string | null) => [{ id: "t1", role: "tutor", body: "Hi!", notes: [], wrote: [], created_at: "2026-10-12T10:00:01Z", screen_id: screen }];
+
+  it("readAskHistory by screen: that screen's own turns (the page id quoted), with its id in each", async () => {
+    useDbs((q) => (q.table === "whiteboards" ? { data: { id: BOARD } } : { data: rowsOn(S2) }));
+    const read = await readAskHistory(caller, BOARD, { id: S2, first: false });
+    expect(read).toEqual({ kind: "turns", turns: [{ id: "t1", role: "tutor", text: "Hi!", notes: [], wrote: [], at: "2026-10-12T10:00:01Z", screenId: S2 }] });
+    const turns = userDb.calls.find((c) => c.table === "ask_messages")!;
+    expect(eqOf(turns, "board_id")).toBe(BOARD);
+    expect(orOf(turns)).toBe(`screen_id.eq."${S2}"`);
+    expect(turns.select).toContain("screen_id");
+    expect(screenFilter({ id: S2, first: false })).toBe(`screen_id.eq."${S2}"`);
+  });
+
+  it("the first screen's chat also holds the turns saved without a screen (null is the first screen's)", async () => {
+    useDbs((q) => (q.table === "whiteboards" ? { data: { id: BOARD } } : { data: rowsOn(null) }));
+    const read = await readAskHistory(caller, BOARD, { id: S1, first: true });
+    expect(read).toMatchObject({ kind: "turns", turns: [{ id: "t1", screenId: null }] });
+    expect(orOf(userDb.calls.find((c) => c.table === "ask_messages")!)).toBe(`screen_id.eq."${S1}",screen_id.is.null`);
+  });
+
+  it("no screen named (an older client): the whole board's chat, as before", async () => {
+    useDbs((q) => (q.table === "whiteboards" ? { data: { id: BOARD } } : { data: [] }));
+    await readAskHistory(caller, BOARD);
+    const turns = userDb.calls.find((c) => c.table === "ask_messages")!;
+    expect(orOf(turns)).toBeUndefined();
+    expect(turns.select).not.toContain("screen_id");
+    // a screen id that is not a page id is no screen at all
+    useDbs((q) => (q.table === "whiteboards" ? { data: { id: BOARD } } : { data: [] }));
+    await readAskHistory(caller, BOARD, { id: "screen 2", first: false });
+    expect(orOf(userDb.calls.find((c) => c.table === "ask_messages")!)).toBeUndefined();
+  });
+
+  it("before the migration: the first screen reads the whole board, any other screen none", async () => {
+    const noColumn = { error: { code: "42703", message: "column ask_messages.screen_id does not exist" } };
+    const plain = [{ id: "t1", role: "tutor", body: "Hi!", notes: [], wrote: [], created_at: "2026-10-12T10:00:01Z" }];
+    useDbs((q) => (q.table === "whiteboards" ? { data: { id: BOARD } } : orOf(q) ? noColumn : { data: plain }));
+    expect(await readAskHistory(caller, BOARD, { id: S1, first: true })).toMatchObject({ kind: "turns", turns: [{ id: "t1" }] });
+    expect(userDb.calls.filter((c) => c.table === "ask_messages")).toHaveLength(2);
+    useDbs((q) => (q.table === "whiteboards" ? { data: { id: BOARD } } : noColumn));
+    expect(await readAskHistory(caller, BOARD, { id: S2, first: false })).toEqual({ kind: "turns", turns: [] });
+  });
+
+  it("moveAskTurns: the caller's own turns, by their token, through ask_move_turns", async () => {
+    const T1 = "c1000000-0000-4000-8000-000000000001";
+    const T2 = "c1000000-0000-4000-8000-000000000002";
+    useDbs(() => ({ data: 2 }));
+    expect(await moveAskTurns(caller, BOARD, [T1, T2, T1], S2)).toEqual({ kind: "moved", moved: 2 });
+    expect(tokens).toEqual([caller.token]);
+    const [call] = userDb.calls;
+    expect(call).toMatchObject({ table: "rpc:ask_move_turns", op: "rpc", rows: { p_board_id: BOARD, p_turn_ids: [T1, T2], p_screen_id: S2 }, signal: true });
+  });
+
+  it("moveAskTurns: not the caller's board is missing; no function yet is unavailable; else failed; never throws", async () => {
+    const T1 = "c1000000-0000-4000-8000-000000000001";
+    useDbs(() => ({ error: { code: "42501", message: "not a board of yours" } }));
+    expect(await moveAskTurns(caller, BOARD, [T1], S2)).toEqual({ kind: "missing" });
+    useDbs(() => ({ error: { code: "PGRST202", message: "Could not find the function" } }));
+    expect(await moveAskTurns(caller, BOARD, [T1], S2)).toEqual({ kind: "unavailable" });
+    useDbs(() => ({ error: { code: "57014", message: "timeout" } }));
+    expect(await moveAskTurns(caller, BOARD, [T1], S2)).toEqual({ kind: "failed" });
+    useDbs(() => new Error("network down"));
+    expect(await moveAskTurns(caller, BOARD, [T1], S2)).toEqual({ kind: "failed" });
+  });
+
+  it("moveAskTurns: a board id that is not a uuid is missing; no uuid turn ids or no page id moves nothing, asking nothing", async () => {
+    expect(await moveAskTurns(caller, "local-board", ["c1000000-0000-4000-8000-000000000001"], S2)).toEqual({ kind: "missing" });
+    expect(await moveAskTurns(caller, BOARD, ["saved_t1", "x"], S2)).toEqual({ kind: "moved", moved: 0 });
+    expect(await moveAskTurns(caller, BOARD, ["c1000000-0000-4000-8000-000000000001"], "screen 2")).toEqual({ kind: "moved", moved: 0 });
+    expect(userDb.calls).toEqual([]);
+  });
+
+  it("loadAskContext onBoard (a new screen's hello): only this board's skills, newest first", async () => {
+    useDbs((q) => {
+      if (q.table === "profiles") return { data: { display_name: "Maya", grade: 5, course: null } };
+      if (q.table === "learner_memory") return { data: null };
+      return {
+        data: [
+          { skill: "times_tables", outcome: "first_try", lines_written: 2, board_id: "b-other", started_at: "2026-10-12T10:05:00Z" },
+          { skill: "divide_fractions", outcome: "with_help", lines_written: 3, board_id: BOARD, started_at: "2026-10-12T10:00:00Z" },
+        ],
+      };
+    });
+    expect((await loadAskContext(caller, { onBoard: BOARD })).recent).toEqual(["Dividing fractions"]);
   });
 });
 

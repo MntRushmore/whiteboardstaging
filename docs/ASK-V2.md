@@ -141,6 +141,13 @@ The owner asked for three things:
 - When the tutor's own actions start a new screen (more problems on a full one), the exchange that asked for it moves with them into the new screen's chat. `POST ASK_MOVE_PATH {boardId, turnIds, screenId}` re-tags the saved turns.
 - The context the model gets is the current screen's chat only. The learner memory stays per kid.
 
+**How it is built (`feat/ask2-screens`).**
+- **Which screen is first.** Only the client knows the board's pages, so it says: `GET history?boardId=&screenId=&first=1` for the screen that is first by the pages' order now. The first screen's chat is its own turns plus every turn with `screen_id` null. No `screenId` at all (an older client) reads the whole board's chat, as before. A board whose first screen was deleted hands the null turns to the screen that is first now.
+- **The hello.** The first screen (or no screen named) gets today's hello ("Welcome back, Maya!…"). Any other empty screen gets "New screen! What should we work on?" with chips naming the newest skill worked on this board ("3 more on dividing fractions", `buildNewScreenHello`): the chip carries the topic, because the model sees only this screen's chat.
+- **The move.** The board marks a screen its own chat actions started (`LiveLoop`'s chat `addScreen`) and tells the panel `onChatScreenChange(id, {tutor: true})`. While an ask's actions run, that moves the exchange into the new screen's thread at once. If it is not heard, `report.screensAdded > 0` moves it after the run to the screen the board is on. A screen the student moves to never takes it. `done.userTurnId` and `done.turnId` then go to the move route.
+- **The database.** Migration `20261012010000_ask_screens.sql`: `ask_messages.screen_id` (a checked page id), an index `(board_id, screen_id, seq desc)`, and `ask_move_turns()`. The move is a security-definer function rather than an update grant: at most 4 of the caller's own turns, on a board the caller owns, and only `screen_id` changes. Deploy it any time. Before it is applied, turns are saved without a screen, every turn reads as the first screen's, and the move answers 503.
+- **The panel.** Threads are keyed by board and screen (`threadKey`). The header shows a quiet "Screen 2". `useChatMessages(boardId)` follows the screen the board is on (`useChatScreen`), for `BoardTour`.
+
 ## Wave 2 parts
 
 | Part | Branch | Owns |

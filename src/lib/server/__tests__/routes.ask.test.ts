@@ -215,7 +215,7 @@ describe("live/ask: the stream", () => {
     expect(deltas(out)).toBe("Sure! Here is the graph of $y = x^{2}$.\n");
     expect(only(out, "reply")).toEqual({ text: "Sure! Here is the graph of $y = x^{2}$." });
     expect(only(out, "actions")).toEqual({ actions: [{ type: "graph", relations: ["y = x^{2}"] }], notes: [] });
-    expect(only(out, "done")).toEqual({ model: LIVE_MODELS.ask, ms: expect.any(Number), turnId: "turn-tutor" });
+    expect(only(out, "done")).toEqual({ model: LIVE_MODELS.ask, ms: expect.any(Number), turnId: "turn-tutor", userTurnId: "turn-user" });
 
     // charged as the old chat, and kept
     expect(calls("consume_credits")[0].args).toMatchObject({ p_route: "live/chat", p_units: 3, p_model: LIVE_MODELS.ask });
@@ -243,10 +243,16 @@ describe("live/ask: the stream", () => {
     expect(vi.mocked(buildAskMessages).mock.calls[0][1]).toEqual({ learner: LEARNER });
 
     // the exchange, saved: the student's turn with its client id, the tutor's with the kinds it wrote
-    expect(saveAskTurns).toHaveBeenCalledWith({ token: fake.GOOD_TOKEN, userId: fake.USER_ID }, "board-1", [
-      { role: "user", text: BODY.message, clientId: "msg-1" },
-      { role: "tutor", text: "Sure! Here is the graph of $y = x^{2}$.", notes: [], wrote: ["graph"] },
-    ]);
+    // (no screen named: the first screen's chat)
+    expect(saveAskTurns).toHaveBeenCalledWith(
+      { token: fake.GOOD_TOKEN, userId: fake.USER_ID },
+      "board-1",
+      [
+        { role: "user", text: BODY.message, clientId: "msg-1" },
+        { role: "tutor", text: "Sure! Here is the graph of $y = x^{2}$.", notes: [], wrote: ["graph"] },
+      ],
+      { screenId: null },
+    );
 
     // the memory model runs after the response, never during it
     expect(rememberFromTurn).not.toHaveBeenCalled();
@@ -626,6 +632,17 @@ describe("live/ask: the request", () => {
     const second = await frames(await ask(request()));
     expect(names(second)).toEqual(["model", "delta", "reply", "actions", "done"]);
     expect(only(second, "done")).not.toHaveProperty("turnId");
+    expect(only(second, "done")).not.toHaveProperty("userTurnId");
     expect(calls("refund_ink_for")).toEqual([]);
+  });
+
+  it("a chat per screen: the exchange is saved in the chat of the screen it was asked from; `done` names both turns", async () => {
+    scripts = [{ chunks: ["Here are 5 more."] }];
+    const out = await frames(await ask(request({ ...BODY, screenId: "page:k2Hq_9-x" })));
+    expect(vi.mocked(saveAskTurns).mock.calls[0][3]).toEqual({ screenId: "page:k2Hq_9-x" });
+    expect(only(out, "done")).toMatchObject({ turnId: "turn-tutor", userTurnId: "turn-user" });
+    // a screen id that is not a page id is a bad request, before any charge
+    const bad = await ask(request({ ...BODY, screenId: "screen 2" }));
+    expect(bad.status).toBe(400);
   });
 });

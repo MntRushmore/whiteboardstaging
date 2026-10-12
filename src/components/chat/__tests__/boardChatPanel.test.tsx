@@ -13,6 +13,7 @@ vi.mock("../useBoardChat", () => ({
     weakSpot: null,
     practiceWeakSpots: vi.fn(),
     hello: { loading: false, hello: null },
+    screen: { id: null, index: null },
     ...chat,
   }),
 }));
@@ -122,6 +123,26 @@ describe("BoardChatPanel", () => {
     expect(render()).not.toContain(CHAT_COPY.grow);
     expect(render({ tall: false, onTallChange: () => {} })).toContain(`aria-label="${CHAT_COPY.grow}"`);
     expect(render({ tall: true, onTallChange: () => {} })).toContain(`aria-label="${CHAT_COPY.shrink}"`);
+  });
+
+  it("a chat per screen: a quiet 'Screen 2' under the title (none when the board does not say)", () => {
+    expect(render()).not.toContain("data-ask-screen");
+    chat = { screen: { id: "page:two", index: 2 } };
+    const html = render();
+    expect(html).toContain(`title="${CHAT_COPY.screenHint(2)}"`);
+    expect(html).toMatch(/data-ask-screen=""[^>]*>Screen 2</);
+    // quiet: small slate words, never a badge or a colour of its own
+    expect(html).toMatch(/data-ask-screen=""[^>]*class="[^"]*text-\[13px\][^"]*text-slate-500/);
+  });
+
+  it("a later screen with no saved hello opens on the new-screen line; the first on the friendly hello", () => {
+    chat = { screen: { id: "page:two", index: 2 } };
+    expect(render()).toContain(CHAT_COPY.newScreen);
+    chat = { screen: { id: "page:page", index: 1 } };
+    expect(render()).toContain(CHAT_COPY.hello);
+    // the server's own hello for the new screen wins
+    chat = { screen: { id: "page:two", index: 2 }, hello: { loading: false, hello: { greeting: "New screen! What should we work on?", chips: ["3 more on dividing fractions"] } } };
+    expect(render()).toContain("3 more on dividing fractions");
   });
 
   it("no gradients, ever (the owner's rule)", () => {

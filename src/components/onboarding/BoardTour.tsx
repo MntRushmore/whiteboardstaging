@@ -14,7 +14,7 @@ import { ASK_BUTTON_ATTR } from "@/components/live/AskButton";
 import { CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
 // the pen in either bar (tldraw's toolbar, or a K–3 kid's simple board's dock), and the simple board's More
 import { MORE_SELECTOR as MORE, PEN_SELECTOR as PEN } from "@/components/kidmode/tourAnchors";
-import { useChatMessages } from "@/components/chat/useBoardChat";
+import { useChatMessages, useChatScreen } from "@/components/chat/useBoardChat";
 import { startersFor, type StarterProblem } from "@/lib/onboarding/courses";
 import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writeTourMarker } from "@/lib/onboarding/marker";
 import { HOME_PATH, PLAN_PATH, writePlanMarker } from "@/lib/onboarding/planMarker";
@@ -178,6 +178,9 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   // the starter on the board (its hint goes in the first coach mark); a resumed tour finds it on the
   // board's first screen (coach mark 2's problem may be on the screen it reloads on)
   const [starter, setStarter] = useState<StarterProblem | null>(() => matchStarter(starters, problemsOnBoard(editor)[0]));
+  // the chat of the screen the board is on (each screen has its own): followed here too, so the
+  // coach marks read the right chat with the panel closed, and after the tutor starts a new screen
+  useChatScreen(boardId, controller);
   const messages = useChatMessages(boardId);
   const mounted = useRef(false);
   const writing = useRef(false);

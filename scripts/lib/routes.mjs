@@ -468,7 +468,17 @@ export const API_ROUTES = Object.freeze([
     auth: "user",
     limit: "liveAskHistory",
     body: "zod",
-    purpose: "Ask: a board's saved chat (newest 60 turns) and, for a board with none, the hello and its chips (no model call)",
+    purpose: "Ask: a screen's saved chat (newest 60 turns; ?screenId=, with &first=1 the turns saved without a screen too) and, for a screen with none, the hello and its chips (no model call)",
+    status: "active",
+  },
+  {
+    path: "/api/live/ask/history/move",
+    file: "src/app/api/live/ask/history/move/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveAskMove",
+    body: "zod",
+    purpose: "Ask: the caller's own saved turns (at most 4, on a board of theirs) move to another screen's chat, when the tutor's own actions started that screen (ask_move_turns)",
     status: "active",
   },
   {
