@@ -53,6 +53,8 @@ export function isArithmetic(latex: string): boolean {
   const bare = latex
     .replace(/\\begin\{(?:array|aligned|gathered)\}(?:\{[^{}]*\})?|\\end\{(?:array|aligned|gathered)\}|\\\\|\\enclose\s*\{\s*longdiv\s*\}/g, " ")
     .replace(/\\(?:frac|dfrac|tfrac|times|div|cdot|left|right|quad|qquad|longdiv|overline|underline|hline|,|;|:|!)/g, " ")
+    // a worksheet's blank is a place for a number, not a letter (`4 + \square = 9`, `engine/blanks.ts`)
+    .replace(/\\(?:square|Box|bigcirc|boxed|phantom|_)(?![a-zA-Z])|[?□○]/g, " ")
     .replace(/(?<=\d)\s*(?:\\(?:text|mathrm)\s*\{\s*[Rr]\s*\}|[Rr]|[xX])\s*(?=\d)/g, " ");
   return /\d/.test(bare) && !/[a-zA-Z\\]/.test(bare);
 }

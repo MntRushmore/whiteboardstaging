@@ -214,6 +214,13 @@ const SYNTH: Record<string, Glyph> = {
   "|": s(3.6, "M 1.8 2.2 L 1.9 12.6"),
   "{": s(4.8, "M 3.8 2.6 C 2.1 2.9 3.0 6.2 1.0 7.0 C 3.0 7.8 2.1 11.1 3.8 11.4"),
   "}": s(4.8, "M 1.0 2.6 C 2.7 2.9 1.8 6.2 3.8 7.0 C 1.8 7.8 2.7 11.1 1.0 11.4"),
+  // A worksheet's blanks (`engine/blanks.ts`): the box a missing number goes in (`4 + □ = 9`), as
+  // tall as a digit and a little wider, drawn as a teacher draws one — down and across, then over
+  // and down; and the circle a comparison's sign goes in (`¾ ○ ⅝`).
+  "□": s(9.4, "M 1.6 3.2 L 1.7 11.2 L 7.8 11.1", "M 1.5 3.2 L 7.7 3.1 L 7.8 11.2"),
+  "○": s(9.6, "M 4.8 4.0 C 8.4 4.0 8.6 11.6 4.8 11.6 C 1.2 11.6 1.0 4.0 4.8 4.0"),
+  // money (`\$3.25`): an S with its stroke through it, as tall as the digits
+  $: s(7.2, "M 6.0 4.2 C 5.2 3.2 2.0 3.2 2.0 5.2 C 2.0 7.0 6.2 6.8 6.2 9.0 C 6.2 11.0 2.6 11.2 1.6 9.8", "M 3.9 2.0 L 3.9 12.4"),
 };
 
 // ---------------------------------------------------------------------------
@@ -557,16 +564,20 @@ const SYMBOL_CMD: Record<string, string> = {
   ohm: "Ω",
   hbar: "ħ",
   checkmark: "✓",
+  square: "□",
+  Box: "□",
+  bigcirc: "○",
   ast: "*",
   rightleftharpoons: "⇌",
 };
 
 /** A command whose symbol is not in the class its character would get. */
-const SYMBOL_CMD_CLASS: Record<string, AtomClass> = { mid: "rel", colon: "punct" };
+const SYMBOL_CMD_CLASS: Record<string, AtomClass> = { mid: "rel", colon: "punct", bigcirc: "rel" };
 
 /** Escaped literals: `\%`, `\{`, `\}`, … */
 const ESCAPED_CMD: Record<string, string> = {
   "%": "%",
+  $: "$",
   "{": "{",
   "}": "}",
   "|": "∥",

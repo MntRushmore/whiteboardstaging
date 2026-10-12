@@ -163,7 +163,7 @@ import {
   type ProblemState,
 } from "./chat/work";
 import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
-import { CHAT_LINE_ID, ChatDesk, type ChatHost } from "./chat/desk";
+import { CHAT_LINE_ID, ChatDesk, type ChatHost, type HelpBoardResult } from "./chat/desk";
 // lecture mode's desk (and its planners) is loaded the first time a lecture needs it (`lectureDesk`)
 import type { LectureDesk, LectureHost, LecturePlanners, LectureRunOptions, LoadLecturePlanners } from "./lecture/desk";
 import type { LectureAction, LecturePageMeta, LectureRunReport, LectureScreen, LectureSpecMeta } from "./lecture/contracts";
@@ -6169,6 +6169,7 @@ export class LiveLoop implements LiveController {
       clearTutor: () => this.clearMarks(),
       problemsChanged: () => this.refreshProblemColumns(),
       helpProblem: (n, depth) => this.chatHelp(n, depth),
+      helpBoard: (depth) => this.chatHelpBoard(depth),
       planFigure: (spec, opts) => this.deps.planFigure(spec, opts),
       seed: (key) => handSeedFor(key),
       delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
@@ -7610,6 +7611,109 @@ export class LiveLoop implements LiveController {
     if (!built) return "busy";
     this.solveBuilt(built, fromLineId, opts);
     return "writing";
+  }
+
+  /**
+   * Ask's "is this right?", "help me with this", "what's next?", "solve it" on the student's OWN
+   * work (`help_board`, `ChatDesk.helpBoard`): what the board's Help me (`step`) and Solve it
+   * (`solve`) do (`helpNow`) on the same target — a proof, the drawing touched last, the line written
+   * in (or picked) last, else the chat's problem the student is on — with the depth asked for, not
+   * the dial's: a typed ask is answered whatever the dial says, Off included (as `chatHelp`). The
+   * ask is an ask (`noteAsked`): with Auto off its problem gets its marks first, as the button's
+   * does. `reading` while the line it is about is still being read: the desk asks again when the
+   * read lands, as the button waits for it (`helpAfterRead`).
+   */
+  private chatHelpBoard(depth: ProblemDepth): HelpBoardResult {
+    if (!this.started) return "busy";
+    // nothing is read with the tutor switched off: there is no work of theirs it can see
+    if (!this.opts.enabled) return "off";
+    const lineTarget = this.helpTargetLine();
+    if (lineTarget && this.reading.has(lineTarget.line.id)) return "reading";
+    this.noteAsked();
+    liveStore.askedAt.set(this.deps.now());
+    const result = this.helpBoardNow(depth, lineTarget);
+    // the outline is around what the ask acts on, as for the button
+    this.publishHelpTarget();
+    return result;
+  }
+
+  /** `helpNow`, with the depth asked for: see `chatHelpBoard`. */
+  private helpBoardNow(depth: ProblemDepth, lineTarget: LiveLineState | undefined): HelpBoardResult {
+    const all = depth === "solve";
+    if (this.proofs.ask(lineTarget?.line.id ?? null, this.helpTargetDiagram(), { all })) return "writing";
+    const figure = this.helpTargetDiagram();
+    if (figure) {
+      this.askAboutDrawing(figure, { lineId: figure.id, onlyFirstStep: !all });
+      return "writing";
+    }
+    const target = this.askedLine(lineTarget);
+    // the chat's problems, as `helpWithProblem`: the current one — after a right answer, the next one
+    const answered = this.onAnsweredProblem(target);
+    if (answered || !this.actsOn(target)) {
+      const pick = this.problemPick(depth);
+      if (pick && pick.kind !== "none") {
+        if (pick.kind === "busy") return "busy";
+        if (target && needsLook(target)) this.syncMark(target, "question", unjudgedReason(target) ?? "unread");
+        // "chat": this ask is the chat's own run (the desk is busy with it)
+        if (pick.kind === "tutor") return this.workProblem(pick.cell, depth, "chat");
+        const work = this.workUnder(pick.cell);
+        if (work) return this.helpBoardLine(work, depth);
+      }
+    }
+    if (!target || answered) return "nothing";
+    if (needsLook(target)) {
+      // ink it cannot read as maths: the board's "?" (write it again), not a guess at it
+      this.syncMark(target, "question", unjudgedReason(target) ?? "unread");
+      return "unread";
+    }
+    return this.helpBoardLine(target, depth);
+  }
+
+  /** One line of the student's: Solve it as `solveTarget` works it, Help me as `escalate` does — whatever the dial says. */
+  private helpBoardLine(target: LiveLineState, depth: ProblemDepth): HelpBoardResult {
+    if (target.analysis?.solved) return "done";
+    const lineId = target.line.id;
+    const column = target.line.column;
+    if (depth === "solve") {
+      if (this.stackLike(target)) {
+        this.solveStack(target);
+        return "writing";
+      }
+      // a line the student ended with `=`, finished where they left off (in Solve, as the button does)
+      if (this.answerLineNow(target)) return "writing";
+      if (this.continueOperation(target, { all: true })) return "writing";
+      const lastOk = this.columnLines(column)
+        .filter((s) => s.latex && !isOperationLine(s))
+        .reverse()
+        .find((s) => s.analysis?.verdict === "ok" || s.analysis?.solved);
+      return this.solveColumnFor(column, lastOk?.line.id ?? lineId, { lineId });
+    }
+    this.closeHintsFor(lineId);
+    if (this.stackLike(target)) {
+      this.helpStack(target);
+      return "writing";
+    }
+    const wrong = target.analysis?.verdict === "mismatch" || this.modelFlagged(target);
+    if (wrong) {
+      if (this.suggestNextStep(lineId, { now: true, typed: true })) return "writing";
+      const good = this.lastGoodLineAbove(target);
+      if (good) return this.solveColumnFor(column, good.line.id, { onlyFirstStep: true, lineId: good.line.id });
+    }
+    if (this.continueOperation(target, { all: false })) return "writing";
+    if (this.writeNextStep(target)) return "writing";
+    const graphBefore = this.graphWriter;
+    if (this.syncGraph(column, { asked: true, anchorLineId: lineId })) {
+      if (this.graphWriter && this.graphWriter !== graphBefore) this.learnHint(lineId);
+      return "writing";
+    }
+    return this.solveColumnFor(column, lineId, { onlyFirstStep: true, lineId });
+  }
+
+  /** `solveColumn`, saying so when the engine found nothing left to write (`done`). */
+  private solveColumnFor(column: number, fromLineId: string | undefined, opts: SolveOpts): "writing" | "busy" | "done" {
+    const built = this.buildCheckLines(column);
+    if (!built) return "busy";
+    return this.solveBuilt(built, fromLineId, opts) === "nothing" ? "done" : "writing";
   }
 
   dismissHint(hintId: string): void {
