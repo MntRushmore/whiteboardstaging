@@ -212,6 +212,7 @@ export async function POST(req: Request) {
           {
             request: data,
             models: { primary: models.ask, fallback: models.askFallback },
+            reasoningFor: askReasoning,
             route: "ask",
             model,
             signal,

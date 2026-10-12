@@ -334,6 +334,9 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     const [primary, fallback, repair] = vi.mocked(chatJsonWithFallback).mock.calls[0];
     expect([primary, fallback]).toEqual([LIVE_MODELS.ask, LIVE_MODELS.askFallback]);
     expect(repair.title).toBe("Agathon Live - ask problems");
+    // Anthropic's primary is sent no reasoning in a repair either; OpenAI's fallback the least
+    expect(repair.reasoningFor?.(LIVE_MODELS.ask)).toBeUndefined();
+    expect(repair.reasoningFor?.(LIVE_MODELS.askFallback)).toBe("minimal");
     // its model events are the board chat's, as Ask is metered
     expect(modelEventKind(repair.title)).toBe("model.live.chat");
     expect(repair.deadline! - Date.now()).toBeLessThanOrEqual(50_000);

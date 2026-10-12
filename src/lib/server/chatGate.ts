@@ -80,6 +80,11 @@ export interface ChatGateContext {
   request: Pick<ChatRequest, "message" | "history" | "screen" | "problem">;
   /** the models the repairs ask (the chat's for /api/live/chat, Ask's for /api/live/ask) */
   models: { primary: string; fallback: string };
+  /**
+   * The repairs' reasoning per model ("low" for every model when unset, as the chat's always was;
+   * Ask's primary is Anthropic's, which takes none: its thinking budget starts at 1024 tokens).
+   */
+  reasoningFor?: (model: string) => "minimal" | "low" | undefined;
   /** the route's word in the repairs' titles ("chat" → "Agathon Live - chat proof"), so their model events are the route's */
   route: string;
   /** the model that proposed the actions (in the events' meta) */
@@ -136,6 +141,7 @@ export interface ChatGateResult {
  */
 export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, unread: readonly DroppedAction[] = []): Promise<ChatGateResult> {
   const { request: data, models, route, model, signal, requestId, userId, log, startedAt, deadline } = ctx;
+  const reasoningFor = ctx.reasoningFor ?? (() => "low" as const);
 
   /** repairs not started because the route's time was running out (an event when any) */
   let repairsSkipped = 0;
@@ -161,7 +167,7 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
         signal,
         requestId,
         maxTokens: 2000,
-        reasoningFor: () => "low",
+        reasoningFor,
         latencyFirst: true,
         attemptTimeoutMs: PROOF_REPAIR_ATTEMPT_MS,
         deadline,
@@ -184,7 +190,7 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
         signal,
         requestId,
         maxTokens: 3000,
-        reasoningFor: () => "low",
+        reasoningFor,
         latencyFirst: true,
         attemptTimeoutMs: TEACH_REPAIR_ATTEMPT_MS,
         deadline,
@@ -207,7 +213,7 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
         signal,
         requestId,
         maxTokens: 1500,
-        reasoningFor: () => "low",
+        reasoningFor,
         latencyFirst: true,
         attemptTimeoutMs: PROBLEMS_REPAIR_ATTEMPT_MS,
         deadline,
@@ -293,7 +299,7 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
           signal,
           requestId,
           maxTokens: 1500,
-          reasoningFor: () => "low",
+          reasoningFor,
           latencyFirst: true,
           attemptTimeoutMs: REPAIR_ATTEMPT_MS,
           deadline,
