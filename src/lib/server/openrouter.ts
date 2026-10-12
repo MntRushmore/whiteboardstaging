@@ -145,8 +145,12 @@ export type StreamChatOptions = {
   messages: ChatMessage[];
   signal?: AbortSignal;
   temperature?: number;
-  /** OpenRouter unified reasoning control (`reasoning: { effort }`). */
-  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  /**
+   * OpenRouter unified reasoning control (`reasoning: { effort }`). "none" turns thinking off on
+   * the models that allow it (Haiku 5.5, GPT-5.4 mini, DeepSeek V4.1 Flash: Ask's first words come
+   * 0.5–1 s sooner); Gemini 3.8 Flash and Sonnet 5.5 refuse it with a 400 (`ASK_REASONING`).
+   */
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
   maxTokens?: number;
   requestId?: string;
   title?: string;
