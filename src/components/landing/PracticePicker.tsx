@@ -1,8 +1,10 @@
 import type { CSSProperties, ReactNode } from "react";
+import Link from "next/link";
 import {
   Calculator,
   ChartPie,
   ChartSpline,
+  ChevronRight,
   DecimalsArrowRight,
   Diff,
   Divide,
@@ -18,7 +20,10 @@ import {
   X,
 } from "lucide-react";
 import { DEFAULT_PRACTICE_TAB, PRACTICE_COPY, practiceTabs, type PracticeTab } from "@/lib/landing/practice";
+import { isTopicId } from "@/lib/learning/topics";
 import type { PathIcon } from "@/lib/path/pathView";
+import { COURSE_SLUGS, coursePath, gradePath as gradePagePath, skillPath, type SeoCourseId } from "@/lib/seo/routes";
+import links from "@/components/seo/pickerLinks.module.css";
 import { LANDING_COPY } from "./copy";
 import landing from "./landing.module.css";
 import styles from "./practice.module.css";
@@ -28,7 +33,20 @@ import styles from "./practice.module.css";
  * real skill path, laid out on a card in the path's own purple tint. It needs no script: the chips
  * are a native radio group (arrow keys move between grades) and CSS shows the chosen grade's path
  * (`practice.module.css`). Without `:has()` every path is simply listed.
+ *
+ * Each path links into the math library (SEO build, docs/SEO.md): every skill opens its page, every
+ * course's name opens its course, and each grade ends with "See all of 3rd grade math".
  */
+
+/** A skill's page in the math library, when the skill has one. */
+function skillHref(id: string): string | null {
+  return isTopicId(id) ? skillPath(id) : null;
+}
+
+/** A course's page in the math library ("other" has none). */
+function courseHref(id: string): string | null {
+  return id in COURSE_SLUGS ? coursePath(id as SeoCourseId) : null;
+}
 
 /** A stop's sign: the same pictures the app's skill path draws (src/components/path/PathTrail.tsx). */
 const GLYPHS: Readonly<Record<PathIcon, (size: number) => ReactNode>> = {
@@ -63,17 +81,28 @@ function Panel({ tab }: { tab: PracticeTab }) {
           <p className={styles.panelNote}>{PRACTICE_COPY.courseNote}</p>
         </div>
         <ul className={styles.courses}>
-          {tab.courses.map((course) => (
-            <li key={course.id} className={styles.course}>
-              <p className={styles.courseName}>{course.label}</p>
-              <p className={styles.courseBlurb}>{course.blurb}</p>
-              <ul className={styles.courseTopics} aria-label={`${course.label} topics`}>
-                {course.topics.map((topic) => (
-                  <li key={topic}>{topic}</li>
-                ))}
-              </ul>
-            </li>
-          ))}
+          {tab.courses.map((course) => {
+            const href = courseHref(course.id);
+            return (
+              <li key={course.id} className={styles.course}>
+                <p className={styles.courseName}>
+                  {href ? (
+                    <Link href={href} className={links.courseLink}>
+                      {course.label}
+                    </Link>
+                  ) : (
+                    course.label
+                  )}
+                </p>
+                <p className={styles.courseBlurb}>{course.blurb}</p>
+                <ul className={styles.courseTopics} aria-label={`${course.label} topics`}>
+                  {course.topics.map((topic) => (
+                    <li key={topic}>{topic}</li>
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
         </ul>
       </div>
     );
@@ -87,18 +116,35 @@ function Panel({ tab }: { tab: PracticeTab }) {
         <p className={styles.panelNote}>{PRACTICE_COPY.gradeNote}</p>
       </div>
       <ol className={styles.trail} style={{ "--n": tab.skills.length } as CSSProperties}>
-        {tab.skills.map((skill) => (
-          <li key={skill.id} className={styles.stop}>
-            <span className={styles.stopIcon} aria-hidden>
-              {GLYPHS[skill.icon]?.(24) ?? GLYPHS.arithmetic(24)}
-            </span>
-            <span className={styles.stopText}>
-              <span className={styles.stopName}>{skill.name}</span>
-              {skill.blurb && <span className={styles.stopBlurb}>{skill.blurb}</span>}
-            </span>
-          </li>
-        ))}
+        {tab.skills.map((skill) => {
+          const href = skillHref(skill.id);
+          return (
+            <li key={skill.id} className={styles.stop}>
+              <span className={styles.stopIcon} aria-hidden>
+                {GLYPHS[skill.icon]?.(24) ?? GLYPHS.arithmetic(24)}
+              </span>
+              <span className={styles.stopText}>
+                <span className={styles.stopName}>
+                  {href ? (
+                    <Link href={href} className={links.stopLink}>
+                      {skill.name}
+                    </Link>
+                  ) : (
+                    skill.name
+                  )}
+                </span>
+                {skill.blurb && <span className={styles.stopBlurb}>{skill.blurb}</span>}
+              </span>
+            </li>
+          );
+        })}
       </ol>
+      <p className={links.seeAll}>
+        <Link href={gradePagePath(tab.grade)} className={landing.textLink}>
+          See all of {tab.grade === 0 ? "kindergarten" : tab.title} math
+          <ChevronRight size={18} strokeWidth={2} aria-hidden />
+        </Link>
+      </p>
     </div>
   );
 }
