@@ -131,6 +131,21 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
         },
       ],
     },
+    /**
+     * v4: right after How it works, on a dark band. What the help holds back, said plainly: the same
+     * promise as the FAQ's "Does it just give them the answer?", from the kid's side. Its picture is
+     * scraps of a real board: the slip the tutor circled with only the next step written beside it
+     * (stepInk.ts HELP_SCENE), the tutor's check mark, and the Help me button.
+     */
+    honest: {
+      eyebrow: "Help, not answers",
+      title: "Not a cheat button.",
+      body: "Help me gives a hint or writes just the next step. Ask nudges with a question before it explains. The whole worked solution only shows up if they choose Solve it, so the thinking stays theirs.",
+      /** to How it works, whose third step shows Help me's three levels */
+      link: "See how Help me works",
+      helpButton: "Help me",
+      alt: "Scraps of paper torn from an Agathon board. On the biggest, a slip, 3x − 2 = 12, which the tutor circles in blue, with only the next step written beside it, 3x − 6 = 12. A smaller scrap has the tutor's blue check mark on it, and another the Help me button.",
+    },
     ask: {
       eyebrow: "Just ask",
       title: "Stuck on why?\nJust ask.",

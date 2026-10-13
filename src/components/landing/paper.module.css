@@ -1,0 +1,130 @@
+/* Paper (v4, "warm it up"): the torn edges between the page's bands (TornEdge) and the hero's
+   painting on its torn sheet (HeroScene). Flat fills only; a sheet's shadow is a warm, soft one under
+   it, never a glow round it. */
+
+/* ---- TornEdge ------------------------------------------------------------------------------- */
+/* Between two bands, taking no room: the SVG hangs up over the band above (`up`) or down over the
+   band below (`down`), and runs 1 px into its own band so no seam ever shows. */
+.tear {
+  position: relative;
+  z-index: 2;
+  height: 0;
+  pointer-events: none;
+}
+.tear svg {
+  position: absolute;
+  left: 0;
+  display: block;
+  width: 100%;
+  /* 1:1 up to a 1920 px screen; on a wider one the tear grows with it, so the edge is never cut */
+  height: max(calc(var(--tear-h) * 1px), calc(var(--tear-h) * 100vw / 1920));
+  overflow: hidden;
+}
+.up svg {
+  bottom: -1px;
+}
+.down svg {
+  top: -1px;
+  scale: 1 -1;
+}
+.sheet {
+  fill: var(--tear);
+}
+.fiber {
+  fill: var(--fiber);
+}
+
+/* each paper, and the paler core its torn edge shows */
+.paper {
+  --tear: var(--lp-paper);
+  --fiber: var(--lp-card);
+}
+.deep {
+  --tear: var(--lp-paper-deep);
+  --fiber: var(--lp-paper);
+}
+.white {
+  --tear: var(--lp-card);
+  --fiber: var(--lp-card);
+}
+.brown {
+  --tear: var(--lp-brown);
+  --fiber: #6f5848;
+}
+.blue {
+  --tear: var(--lp-join);
+  --fiber: #5a95f7;
+}
+
+/* ---- HeroScene -------------------------------------------------------------------------------- */
+/* The painting on its sheet: a white margin round it, all four edges torn, a warm shadow under. */
+.scene {
+  filter: drop-shadow(0 1px 1px rgb(59 42 31 / 0.1)) drop-shadow(0 20px 26px rgb(59 42 31 / 0.14));
+}
+.scenePaper {
+  padding: clamp(0.5rem, 0.25rem + 0.8vw, 1rem);
+  background: var(--lp-card);
+}
+/* The painting at its own proportions (the wide one, or a phone's crop under 700 px), so the ink's
+   corners land on the painted screen's exactly. */
+.sceneFrame {
+  position: relative;
+  aspect-ratio: var(--ar);
+}
+.sceneArt {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+/* cropped from the bottom only (`cropBottom`), so the ink's place, measured from the top, holds */
+.sceneFrame .sceneArt {
+  height: 100%;
+  aspect-ratio: auto;
+  object-fit: cover;
+  object-position: 50% 0;
+}
+@media (max-width: 699px) {
+  .sceneFrame {
+    aspect-ratio: var(--ar-phone);
+  }
+  .sceneArt {
+    aspect-ratio: 4 / 3;
+  }
+  .wideInk {
+    display: none;
+  }
+}
+@media (min-width: 700px) {
+  .phoneInk {
+    display: none;
+  }
+}
+
+/* ---- The ink on the painted screen (HeroScene's ScreenInk) ------------------------------------ */
+/* One SVG in the painting's own px, over it: the ink already projected onto the tablet's screen
+   (sceneInk.ts). It multiplies into the paint, as ink on a painted screen would. */
+.sceneInk {
+  position: absolute;
+  overflow: visible;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+.sceneInk path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Until the painting comes: the same room, one flat warm color. */
+.scenePlaceholder {
+  display: grid;
+  place-items: center;
+  background: #eadcc3;
+}
+.sceneLabel {
+  color: #5c4e40;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}

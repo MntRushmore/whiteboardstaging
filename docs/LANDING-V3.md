@@ -1,5 +1,14 @@
 # Landing v3 (2026-10-12)
 
+> **v4, "warm it up" (2026-10-13, feat/lp4-warm).** The owner liked heyaristotle.com and picked "keep our layout, real product shots and blue ink, add the warmth". Everything below still holds except where this box says otherwise.
+>
+> - **Type.** Headlines (`.display`, `.h2`, `.h3`, the bar's name, the price, card titles, the questions) are Fraunces, SOFT 100, WONK 0, `opsz` 72 for display (`fonts.ts`, next/font, loaded only where imported; `landingFontClass` on a wrapper gives any page the same face). Arc's body face stays for everything else. Comparison: `docs/qa-screenshots/landing-v4/font-compare.png`.
+> - **Paper, not screen white.** Page `#fbf7ef`, deeper bands `#f4ecdd`, cards and boards `#fffdf9`, ink `#1f1a14`, muted `#6b5d4f` (≥4.87:1 on every paper and tint), hairlines `#e6dbc9`, tints sage `#e3e9d3` / peach `#f7dfcf` / lavender `#e7e0ee` / butter `#f6e8bd` / sky `#e2e9f6`, the two dark bands deep brown `#3b2a1f`. Buttons stay `#0562ef`; blue words on paper are `#0450c8`. Eyebrows are small spaced capitals in the muted brown (blue is for buttons and the tutor's ink). Every v3 `--lp-*` token is kept (values warmed); new ones: `--lp-paper`, `--lp-paper-deep`, `--lp-card`, `--lp-brown`, `--lp-join`, `--lp-serif`, `--lp-accent-ink`, `--lp-focus`, `--lp-eyebrow`, `--lp-board-table` (the app's own grey, for drawn UI), `--lp-tint-sage/peach/lavender/butter/sky`.
+> - **Torn edges** (`TornEdge`, `src/lib/landing/torn.ts`): seeded, deterministic, 1:1 at every width up to 1920 px, flat fills only (a paler fibre on the dark and blue sheets). Placed in `parents/page.tsx` at every color change. Scraps and the painting's sheet use `tornOutline` (a clip-path).
+> - **Page order** gains two parts: after the hero, the iPad replay in its own band (`HeroReplay`); after How it works, **"Not a cheat button."** (`Honest.tsx`, dark brown, a collage of torn scraps with HELP_SCENE's slip line, a check mark and the Help me button).
+> - **The hero** is the words over a painting (`HeroScene`, art in `src/lib/landing/heroScene.ts`) on a torn sheet. Real ink is drawn onto the painted tablet: laid out on a flat screen and projected onto the painting by a homography on the server (`src/lib/landing/sceneInk.ts`), one static SVG. No CSS 3D: headless WebKit drops perspective.
+> - Hard NOs unchanged: no gradients, glows or glass; no testimonials, counts or claims.
+
 **Owner's ask:** "upgrade the landing page agathon.app, make it a lot cooler, updated everything … cta to join!" and "i wanted to update the main agathon.app website!"
 
 The landing page is what a signed-out visitor to agathon.app sees. A signed-out `/` currently redirects to `/parents`, which is the page. v3 does three things:

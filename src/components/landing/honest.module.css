@@ -1,0 +1,153 @@
+/* "Not a cheat button." (Honest.tsx): a dark brown band, the words beside (under, on a phone) a
+   collage of torn paper scraps carrying a real board's ink. Flat paper, a soft shadow under each
+   scrap, no gradients. */
+
+.band {
+  position: relative;
+}
+
+.layout {
+  display: grid;
+  gap: clamp(3rem, 2rem + 4vw, 4.5rem);
+  align-items: center;
+}
+.text {
+  max-width: 34rem;
+}
+/* Under a laptop the words are centered over the collage, as the page's other heads are. */
+@media (max-width: 959px) {
+  .text {
+    margin-inline: auto;
+    text-align: center;
+  }
+}
+.body {
+  margin-top: 1.5rem;
+  color: var(--lp-muted);
+}
+.link {
+  margin-top: 1.5rem;
+}
+/* From a laptop up: the collage on the left, the words on the right. */
+@media (min-width: 960px) {
+  .layout {
+    grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+    gap: clamp(3rem, 0rem + 5vw, 6rem);
+  }
+  .collage {
+    grid-row: 1;
+    grid-column: 1;
+  }
+  .text {
+    grid-column: 2;
+  }
+}
+
+/* ---- The collage ------------------------------------------------------------------------------ */
+/* The scraps are laid out in % of the collage, so it keeps its arrangement at every width. */
+.collage {
+  position: relative;
+  width: 100%;
+  max-width: 38rem;
+  aspect-ratio: 20 / 13;
+  margin: 0 auto;
+}
+.piece {
+  position: absolute;
+  filter: drop-shadow(0 1px 1px rgb(20 12 6 / 0.3)) drop-shadow(0 14px 16px rgb(20 12 6 / 0.32));
+  rotate: var(--turn, 0deg);
+}
+/* the strip torn from the board: wide, a little askew, across the middle */
+.pieceBoard {
+  --turn: -2.5deg;
+  top: 29%;
+  left: 0;
+  width: 100%;
+}
+/* the check mark: a small square over the strip's top right corner */
+.pieceCheck {
+  --turn: 6deg;
+  z-index: 1;
+  top: 3%;
+  right: 5%;
+  width: 21%;
+}
+/* the Help me button: under the strip, its top over the strip's bottom margin */
+.pieceHelp {
+  --turn: -4deg;
+  z-index: 1;
+  top: 66%;
+  left: 7%;
+  width: 41%;
+}
+
+/* A scrap of paper: torn on all four sides (its clip-path, Honest.tsx). */
+.scrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.board {
+  background: #fffefb;
+}
+.cream {
+  aspect-ratio: 120 / 112;
+  background: #f5ecdc;
+}
+.butter {
+  aspect-ratio: 250 / 96;
+  background: #f6e8bd;
+}
+
+/* The board's ink: the kid's black and the tutor's blue, at the board's pens (inkPicture.module.css). */
+.ink {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+/* the board's dot grid, faint */
+.dot {
+  fill: #e4dccd;
+}
+.ink path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.kid {
+  stroke: var(--lp-pen-kid, #1d1d1d);
+  stroke-width: 5.2;
+}
+.tutor {
+  stroke: var(--lp-pen-tutor, #4465e9);
+  stroke-width: 4;
+}
+/* The tutor draws its circle and writes its step once the collage is in view (INK_START_SCRIPT holds
+   it until then): the same dash as the page's other ink (ink.module.css). */
+@media (prefers-reduced-motion: no-preference) {
+  .tutor {
+    stroke-dasharray: 1 2;
+    stroke-dashoffset: 1.01;
+    animation: honest-draw var(--for, 400ms) cubic-bezier(0.32, 0, 0.18, 1) var(--at, 0ms) both;
+  }
+}
+@keyframes honest-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The check mark, filling its scrap (over InkCheck's own em size). */
+.scrap .check {
+  width: 56%;
+  height: auto;
+  margin: 0;
+  font-size: inherit;
+}
+
+/* The Help me button as the board draws it (landing.module.css .helpChip), a size up. */
+.chip {
+  margin: 0;
+  font-size: clamp(0.9375rem, 0.7rem + 1vw, 1.375rem);
+}
