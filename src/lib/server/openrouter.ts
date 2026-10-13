@@ -389,15 +389,19 @@ const errorText = (err: unknown) => (err instanceof Error ? `${err.name}: ${err.
 /** What the call was for, from its title ("chat proof"), so `meta` tells a route's calls apart. */
 const callName = (title: string | undefined) => title?.replace(/^Agathon Live - /, "").slice(0, 40);
 
-/** The primary failed and the fallback answered: a warn, code `fallback` (fire and forget). */
-function recordModelFallback(call: ModelCall, primaryErr: unknown, primaryMs: number): void {
+/**
+ * The primary failed and the fallback answered: a warn, code `fallback` (fire and forget). A hedged
+ * call's fallback that only spoke first (`hedge`: the primary had not failed) is info, code `hedge`:
+ * the call went as designed, so it is no issue for /admin.
+ */
+function recordModelFallback(call: ModelCall, primaryErr: unknown, primaryMs: number, hedge = false): void {
   const reason = modelFailureCode(primaryErr);
   recordEvent({
     source: "server",
-    level: "warn",
+    level: hedge ? "info" : "warn",
     kind: modelEventKind(call.title),
-    code: "fallback",
-    message: `${call.primary} failed (${reason}); ${call.fallback} answered`,
+    code: hedge ? "hedge" : "fallback",
+    message: hedge ? `${call.fallback} spoke before ${call.primary}` : `${call.primary} failed (${reason}); ${call.fallback} answered`,
     requestId: call.requestId,
     meta: {
       primary: call.primary,
@@ -562,8 +566,8 @@ type RaceStep = { racer: Racer; result?: IteratorResult<string, void>; err?: unk
  * error, never retried). A failure before any words leaves the other model to answer (the fallback
  * starts at once if it had not yet); both failing is the fallback's error. A `model` event says which
  * model answers: the primary's first, the fallback's only once it has won. Events as unhedged: a
- * warn `fallback` when the fallback answers (the primary's failure, or a timeout `the fallback spoke
- * first`), an error when the call fails for good, nothing when the caller left.
+ * warn `fallback` when the fallback answers a primary that failed, an info `hedge` when it only spoke
+ * first, an error when the call fails for good, nothing when the caller left.
  */
 async function* hedgedStream(
   primary: string,
@@ -662,7 +666,7 @@ async function* hedgedStream(
   // the first to speak answers; the other stops
   for (const r of racers) if (r !== winner) stop(r);
   if (!winner.isPrimary) {
-    recordModelFallback(call, primaryErr ?? new WatchdogTimeoutError(primary, Date.now() - call.startedAt, "slower"), winner.startedAt - call.startedAt);
+    recordModelFallback(call, primaryErr ?? new WatchdogTimeoutError(primary, Date.now() - call.startedAt, "slower"), winner.startedAt - call.startedAt, primaryErr === undefined);
     yield { type: "model", model: fallback };
   }
   try {

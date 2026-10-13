@@ -356,7 +356,8 @@ describe("streamWithFallback: hedged (a slow primary races the fallback)", () =>
     expect(asked).toEqual([PRIMARY, FALLBACK]);
     expect(primaryAborted).toBe(true);
     expect(events()).toEqual([
-      expect.objectContaining({ level: "warn", kind: "model.live.chat", code: "fallback", meta: expect.objectContaining({ reason: "timeout", error: expect.stringContaining("the fallback spoke first") }) }),
+      // the call went as designed: info, not an issue for /admin
+      expect.objectContaining({ level: "info", kind: "model.live.chat", code: "hedge", meta: expect.objectContaining({ reason: "timeout", error: expect.stringContaining("the fallback spoke first") }) }),
     ]);
   });
 
@@ -421,7 +422,7 @@ describe("streamWithFallback: hedged (a slow primary races the fallback)", () =>
     answers[FALLBACK] = timed([20, delta("Cosine is ")], [20, { error: { code: 502, message: "Provider disconnected" } }]);
     await expect(drain(hedged())).rejects.toBeInstanceOf(UpstreamError);
     expect(events()).toEqual([
-      expect.objectContaining({ level: "warn", code: "fallback" }),
+      expect.objectContaining({ level: "info", code: "hedge" }),
       expect.objectContaining({ level: "error", message: `${FALLBACK} failed mid-answer` }),
     ]);
   });
