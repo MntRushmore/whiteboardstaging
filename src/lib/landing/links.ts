@@ -245,7 +245,7 @@ export function enterRoot(path: string, navigate: (to: string) => void): void {
 }
 
 /** Where the page says it lives, for its Open Graph URL: NEXT_PUBLIC_SITE_URL when it is a usable http(s) origin, else production. */
-export const PRODUCTION_ORIGIN = "https://agathon.app";
+export const PRODUCTION_ORIGIN = "https://www.agathon.app";
 
 /** Hosts .env.example ships as placeholders: a build that kept one must not put it in a link preview. */
 const PLACEHOLDER_HOST = /(^|\.)(your-app\.up\.railway\.app|example\.(com|org|net)|your-domain\.[a-z]+)$/i;
