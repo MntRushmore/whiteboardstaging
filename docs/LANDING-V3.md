@@ -83,20 +83,23 @@ Every word is in `copy.ts`, and the contract already holds them. A builder may t
 - **lp3-ask:** `AskDemo.tsx`, `ask.module.css`, and `__tests__/askDemo.test.tsx`. Any new pure helpers go under `src/lib/landing/ask*`.
 - **lp3-devices:** `ProblemStrip.tsx`, `Devices.tsx`, `strip.module.css`, `devices.module.css`, and their tests. Any new device pictures go under `public/landing/v3/devices-*`.
 - **lp3-captures:** `BoardReplay.tsx`, `device.module.css`, `replay*.ts`, `public/landing/*.webp` (board-ipad, path, progress), and `public/landing/v3/` shots that others ask for.
-- **lp3-root:** `SessionHop.tsx` (already placed at the top of the page), `next.config.ts`, `src/lib/landing/links.ts`, the auth cookie in `src/components/AuthProvider.tsx` (or a small new `src/lib/landing/signedInCookie.ts`), `src/app/(platform)/page.tsx` (the gate script only), and the links tests.
+- **lp3-root:** `SessionHop.tsx` (already placed at the top of the page), `next.config.ts`, `src/lib/landing/links.ts`, `sessionCookie.ts` and `leaving.ts`, the auth cookie in `src/components/AuthProvider.tsx`, `src/app/(platform)/page.tsx` (the gate script and the signed-out check only), the full loads into `/` in `LoginForm`, `ResetPasswordForm` and `AppHeader`'s sign-out, and the links, session-cookie and root tests.
 - Nobody else edits `ink.module.css`, `InkMark.tsx`, `HandMath.tsx`, `handInk.ts` or `inkStart.ts`. If one of them needs a change, make it small and additive, and say so in the commit.
 
 ## Root: the page at agathon.app/
 
-- Today a signed-out `/` is sent to `/parents`, so the address bar says `/parents`, and a search engine sees the app shell at `/`.
-- v3 serves the landing page at `/` itself, through a `next.config.ts` `beforeFiles` rewrite of `/` to `/parents`. It applies only when:
+- Before v3 a signed-out `/` was sent to `/parents`, so the address bar said `/parents`, and a search engine saw the app shell at `/`.
+- v3 serves the landing page at `/` itself, through a `next.config.ts` `beforeFiles` rewrite of `/` to `/parents` (`ROOT_LANDING_REWRITE` in `src/lib/landing/links.ts`). It applies only when:
   - the request has no `agathon_session` cookie, and
-  - the query has no auth parameters (`code`, `token_hash`, `error`, `error_code`, `error_description`).
-- The app sets that cookie (a flag only, not a token: `agathon_session=1; Path=/; SameSite=Lax; Secure; Max-Age=400 days`) whenever supabase-js has a session, and clears it on sign-out.
-- The landing page's head carries a tiny inline script. If this device has a stored Supabase session (`sb-*-auth-token`) or auth parameters in the hash, it sets the cookie and does `location.replace` to the same URL. That one-time hop covers a signed-in device from before the cookie existed.
-- The boards home's signed-out gate goes to `/` (keeping the query and hash) after clearing a stale cookie. It falls back to `/parents` when cookies cannot be written, so it can never loop.
-- `/parents` keeps working.
-- The canonical URL becomes `/`.
+  - the query has no auth parameters (`code`, `token_hash`, `access_token`, `refresh_token`, `error`, `error_code`, `error_description`).
+  - Next applies a rewrite only when every `missing` item is absent; an empty value counts as absent. The tests run the rule through Next's own matcher.
+- **The cookie** (`sessionCookie.ts`) is a flag, never a token: `agathon_session=1; Path=/; Max-Age=34560000; SameSite=Lax; Secure` (no `Secure` on plain http). AuthProvider sets it whenever supabase-js has a session, inside the auth callback, so it is there before sign-in navigates. It clears it on `SIGNED_OUT` and when `getSession` finds no session. An empty `INITIAL_SESSION` (it also arrives when Auth cannot be reached) leaves it alone. A profile switch's new session keeps it set.
+- **The hop** (`SessionHop.tsx`, `SESSION_HOP_SCRIPT`): the landing page's first script. On `/` only (never `/parents`), a device with a stored session (`sb-*-auth-token`) or auth parameters in the hash sets the cookie and reloads. A reload, not `location.replace`: a replace to the same address with a hash only scrolls. It stays put when the cookie or the tab's sessionStorage cannot be written, and it hops at most once per 10 minutes per tab (`agathon.sessionHop`).
+- **The signed-out boards home** (`SIGNED_OUT_GATE_SCRIPT` before paint, `leaveSignedOut` after auth): an email link's visitor goes to `/login`. Anyone else gets the cookie cleared and `/` reloaded, so the server serves the landing page there, query and hash kept. It goes to `/parents` instead when the cookie cannot be cleared, the tab cannot mark the reload, or the last reload came back to the app (`agathon.rootReload`, cleared by the landing page). `src/lib/landing/__tests__/root.test.ts` plays whole visits (blocked cookies, a cookie the page cannot see or clear, caches that ignore the rule) and shows that each one settles in a few loads.
+- **Full loads into `/`.** The client router caches `/` as whichever page it saw first, and it would show the landing page after sign-in. So sign-in (`enterRoot`), reset-password and sign-out (`AppHeader`, now to the landing page at `/`) load `/` in full. A document that has started such a load is marked (`leaving.ts`), so nothing else navigates after it, and AuthProvider stops passing auth changes to React.
+- `/parents` keeps working, and it never sends anyone anywhere.
+- The canonical URL and `og:url` are `/` (`LANDING_PATH`). The rewritten `/` carries `/parents`' `index, follow`, and the app at `/` keeps the root layout's `noindex`. Crawlers send no cookie, so they get the landing page.
+- **Caching.** Vercel applies the rewrite per request, before its cache, so each page is cached under its own route. Production sends `cache-control: public, max-age=0, must-revalidate` (seen: `x-vercel-cache: HIT`). Do not add `Vary: Cookie`: Vercel's CDN does not cache a response that varies on Cookie. Cloudflare (`cf-cache-status: DYNAMIC`) caches no HTML by default, and `max-age=0` keeps it out. `/` also sends `Cloudflare-CDN-Cache-Control: no-store`, in case a "cache everything" rule ever covers it. A Cache Rule with an Edge TTL override would still cache `/` for everyone, so never put one on `/`.
 
 ## Checks before a branch is done
 
