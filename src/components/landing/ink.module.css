@@ -1,0 +1,101 @@
+/* The landing page's ink (v3): the board's two pens, drawn onto the page itself. HandMath writes
+   maths in the board's hand; InkMark puts the tutor's marks (a check, a circle, an underline, an
+   arrow) on the page's own words. A drawn stroke animates from pen-down to pen-up (`.draw`), held
+   until it scrolls into view by INK_START_SCRIPT (inkStart.ts); with reduced motion, or no CSS
+   animations, it is simply there. */
+
+.hand {
+  display: block;
+  overflow: visible;
+  max-width: 100%;
+  height: auto;
+}
+.hand path,
+.mark path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* the board's pens (device.module.css .student / .tutor) */
+.kid {
+  stroke: var(--lp-pen-kid, #1d1d1d);
+}
+.tutor {
+  stroke: var(--lp-pen-tutor, #4465e9);
+}
+.white {
+  stroke: #fff;
+}
+
+/* ---- InkMark ---------------------------------------------------------------------------------- */
+/* Words with a mark on them: the words stay text (selectable, read by a screen reader), the mark is
+   an SVG laid over or beside them. */
+.marked {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+}
+.mark {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+/* a loose circle round the words, reaching a little past them */
+.mark[data-kind="circle"] {
+  inset: -0.18em -0.22em -0.12em -0.24em;
+  width: calc(100% + 0.46em);
+  height: calc(100% + 0.3em);
+}
+/* an underline just under the baseline */
+.mark[data-kind="underline"] {
+  left: -0.04em;
+  right: -0.04em;
+  bottom: -0.08em;
+  width: calc(100% + 0.08em);
+  height: 0.22em;
+}
+/* a check mark after the words, sitting on the baseline */
+.check {
+  display: inline-block;
+  width: 0.78em;
+  height: 0.78em;
+  margin-left: 0.12em;
+  overflow: visible;
+  vertical-align: -0.04em;
+}
+.check path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* a free-standing arrow, sized by its parent */
+.arrow {
+  display: block;
+  overflow: visible;
+}
+.arrow path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- Drawing ---------------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  .draw path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: lp-ink-draw var(--for, 420ms) cubic-bezier(0.32, 0, 0.18, 1) var(--at, 0ms) both;
+  }
+}
+/* a stretched mark's visible stroke: drawn through its mask (InkMark's StretchedMark), never dashed */
+.draw path.masked {
+  stroke-dasharray: none;
+  stroke-dashoffset: 0;
+  animation: none;
+}
+@keyframes lp-ink-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}

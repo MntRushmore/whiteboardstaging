@@ -20,6 +20,21 @@
   /* the space above and below each band: 80 px on a phone to 160 px on a wide screen */
   --lp-band: clamp(5rem, 3rem + 6vw, 10rem);
 
+  /* v3 (docs/LANDING-V3.md): the board's two pens, used on the page itself (ink.module.css) */
+  --lp-pen-kid: #1d1d1d;
+  --lp-pen-tutor: #4465e9;
+  /* the board's "table" round the white screen, and its hairline */
+  --lp-table: #f1f2f5;
+  /* flat tints, one per idea, from the app's own colours (the Today pill's cream, the path's green
+     and purple, the accent's blue). Flat fills only: never a gradient between them. */
+  --lp-tint-blue: #eef3ff;
+  --lp-tint-yellow: #fff7e0;
+  --lp-tint-green: #e8f6ee;
+  --lp-tint-purple: #f2edff;
+  --lp-star: #f5b301;
+  /* the wide measure for the product's pictures, wider than the text's */
+  --lp-wide: 80rem;
+
   /* fills the platform layout above the legal footer (platform.css) */
   flex: 1 0 auto;
   background: var(--background);

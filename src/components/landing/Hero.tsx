@@ -4,6 +4,7 @@ import { SIGN_UP_HREF } from "@/lib/landing/links";
 import { BoardReplay } from "./BoardReplay";
 import { LANDING_COPY } from "./copy";
 import { HOW_ID } from "./bands";
+import { InkCheck, InkCircle } from "./InkMark";
 import { TrialWords } from "./TrialWords";
 import styles from "./landing.module.css";
 
@@ -21,7 +22,12 @@ export function Hero() {
       <div className={styles.inner}>
         <p className={styles.eyebrow}>{copy.eyebrow}</p>
         <h1 id="lp-hero-title" className={styles.display}>
-          {copy.title}
+          {copy.titleParts[0]}
+          <InkCircle draw="hero-circle" atMs={500}>
+            {copy.titleParts[1]}
+          </InkCircle>
+          {copy.titleParts[2]}
+          <InkCheck draw="hero-check" atMs={1250} />
         </h1>
         <p className={styles.lede}>{copy.lede}</p>
         <div className={styles.actions}>
