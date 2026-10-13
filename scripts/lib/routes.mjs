@@ -51,7 +51,17 @@ export const PUBLIC_ROUTES = Object.freeze([
   // account yet. Same-origin only, per-visitor and per-day limits, 2 KB body cap, zod; writes one
   // counted row through the service role and answers 204 with no body.
   "src/app/api/start/step/route.ts",
+  // The handwriting /start shows (STATIC_ROUTES): written once at build time and served from the
+  // CDN; it reads nothing from a request and holds nothing but public example problems.
+  "src/app/api/start/ink/route.ts",
 ]);
+
+/**
+ * Routes built once at build time and served as files from the CDN (`dynamic = "force-static"`,
+ * GET only, the handler takes no request): no per-request work to rate limit and no request to
+ * log. routeProtection.test.ts holds each one to exactly that shape, in place of the limiter.
+ */
+export const STATIC_ROUTES = Object.freeze(["src/app/api/start/ink/route.ts"]);
 
 /** Why each public route may skip requireUser (enforced by routeProtection.test.ts). */
 export const PUBLIC_ROUTE_REASONS = Object.freeze({
@@ -66,6 +76,7 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/try/check/route.ts": "the try board, for visitors with no account; same-origin only, 1 MB body cap, zod, per-IP and per-day read limits; one Mathpix read, stores nothing",
   "src/app/api/try/help/route.ts": "the try board's next step, for visitors with no account; same-origin only, 16 KB body cap, zod, per-IP limit; the local engine only, no read, no model",
   "src/app/api/start/step/route.ts": "anonymous onboarding step counts before the account; same-origin only, per-visitor and daily limits, 2 KB body cap, zod; answers 204 with no body",
+  "src/app/api/start/ink/route.ts": "static JSON built at build time (force-static, GET only, no request read): the public example problems /start shows in the tutor's hand",
 });
 
 /** Routes whose handlers legitimately have no zod body schema. */
@@ -74,6 +85,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/config/status/route.ts", // GET only
   "src/app/api/admin/gc/route.ts", // GET (Vercel cron) or POST with an empty body; options are query params
   "src/app/api/admin/health/route.ts", // GET only (pg_cron, or an admin's "check now")
+  "src/app/api/start/ink/route.ts", // GET only, static
   "src/app/api/live/lecture/token/route.ts", // POST with an empty body: mints a speech-to-text token for the caller
   "src/app/api/health/route.ts", // GET only
   "src/app/api/cron/trial-reminders/route.ts", // GET only (Vercel cron); ?dryRun=1 is a query param
@@ -441,6 +453,17 @@ export const API_ROUTES = Object.freeze([
     // 400 without a signed link; 503 when REPORT_LINK_SECRET and CRON_SECRET / the service role key are unset.
     withoutTokenStatus: [400, 503],
     purpose: "The weekly report email's unsubscribe (signed link): GET answers a confirm page, POST (its button, or RFC 8058 one-click) turns that account's email off; small HTML pages",
+    status: "active",
+  },
+  {
+    path: "/api/start/ink",
+    file: "src/app/api/start/ink/route.ts",
+    methods: ["GET"],
+    auth: "public",
+    limit: "static",
+    body: "none",
+    withoutTokenStatus: [200],
+    purpose: "The handwriting /start shows: each skill's example and every try problem in the tutor's hand, static JSON built at build time (src/lib/start/inkSet.ts)",
     status: "active",
   },
   {
