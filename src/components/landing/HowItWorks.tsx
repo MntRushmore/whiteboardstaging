@@ -4,30 +4,36 @@ import { Lightbulb } from "lucide-react";
 import { CHECKS_SCENE, HELP_SCENE } from "@/lib/landing/stepInk";
 import { HOW_ID } from "./bands";
 import { LANDING_COPY } from "./copy";
+import { HandMath } from "./HandMath";
 import { InkPicture } from "./InkPicture";
 import { Lines } from "./Lines";
 import styles from "./landing.module.css";
 
 /**
- * How it works, in three steps, each with its own real moment of the product: a 3rd grader's path
- * and Up next on the home (a crop of the app at 3×, on its own surface colour so the crop's edge
- * never shows), an older student's equation the tutor marked (a check mark, a circle and its
- * "So close!"), and the next step Help me wrote beside a slip. The last two are the boards' own ink
- * as vector (src/lib/landing/stepInk.ts), so they are sharp on any screen and never repeat the hero.
+ * How it works, in three steps. Each step's number is written in the board's hand (HandMath, the
+ * kid's pen) as it comes into view, and each has its own real moment of the product on a flat tint
+ * card, one tint per step: a 3rd grader's path and Up next on the home (a crop of the app at 3×, on
+ * its own surface colour so the crop's edge never shows), an older student's equation the tutor
+ * marked (a check mark, a circle and its "So close!"), and the next step Help me wrote beside a
+ * slip. The last two are the boards' own ink as vector (src/lib/landing/stepInk.ts), so they are
+ * sharp on any screen and never repeat the hero. Side by side from a laptop up, alternating.
  */
 
-/** The full width on a phone or a tablet; beside the text, seven twelfths of the measure. */
-const SIZES = "(max-width: 899px) calc(100vw - 32px), 640px";
+/** The card's inside on a phone or a tablet; beside the text, seven twelfths of the measure. */
+const SIZES = "(max-width: 899px) calc(100vw - 64px), 600px";
 
 /** The path and Up next; on a phone, a closer crop of the path alone, so its labels stay readable. */
 function PathPicture({ alt, phoneAlt }: { alt: string; phoneAlt: string }) {
   return (
     <figure className={styles.shot} style={{ background: "#f8f8f8" }}>
-      <Image className={styles.wideOnly} src="/landing/path-3rd-grade.webp" alt={alt} width={2628} height={1551} sizes={SIZES} />
-      <Image className={styles.phoneOnly} src="/landing/path-3rd-grade-phone.webp" alt={phoneAlt} width={1146} height={900} sizes="calc(100vw - 32px)" />
+      <Image className={styles.wideOnly} src="/landing/path-3rd-grade.webp" alt={alt} width={2628} height={2211} sizes={SIZES} />
+      <Image className={styles.phoneOnly} src="/landing/path-3rd-grade-phone.webp" alt={phoneAlt} width={1146} height={900} sizes="calc(100vw - 64px)" />
     </figure>
   );
 }
+
+/** One tint per step (landing.module.css --lp-tint-*). */
+const TINTS = [styles.tintBlue, styles.tintGreen, styles.tintYellow] as const;
 
 export function HowItWorks() {
   const copy = LANDING_COPY.how;
@@ -56,7 +62,7 @@ export function HowItWorks() {
     },
   ];
   return (
-    <section id={HOW_ID} className={`${styles.band} ${styles.soft} ${styles.anchored}`} aria-labelledby="lp-how-title">
+    <section id={HOW_ID} className={styles.band} aria-labelledby="lp-how-title">
       <div className={styles.inner}>
         <div className={`${styles.head} ${styles.reveal}`}>
           <p className={styles.eyebrow}>{copy.eyebrow}</p>
@@ -66,15 +72,16 @@ export function HowItWorks() {
         </div>
         <ol className={styles.steps}>
           {copy.steps.map((step, i) => (
-            <li key={step.label} className={`${styles.step} ${styles.reveal}`}>
-              <div className={styles.stepText}>
-                <p className={styles.stepLabel}>{step.label}</p>
+            <li key={step.label} className={styles.step}>
+              <div className={`${styles.stepText} ${styles.reveal}`}>
+                <HandMath latex={String(i + 1)} ink="kid" size={64} seed={3 + i} draw={`how-${i + 1}`} startMs={150} className={styles.stepNumeral} />
                 <h3 className={styles.h3}>
+                  <span className={styles.srOnly}>{step.label}: </span>
                   <Lines text={step.title} />
                 </h3>
                 {steps[i].body}
               </div>
-              {steps[i].picture}
+              <div className={`${styles.stepCard} ${TINTS[i]} ${styles.reveal}`}>{steps[i].picture}</div>
             </li>
           ))}
         </ol>

@@ -63,8 +63,11 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
     hero: {
       eyebrow: "Kindergarten to 8th grade",
       title: "Math practice kids actually do.",
-      /** the title in three parts: the tutor's pen circles the middle one (InkMark) */
-      titleParts: ["Math practice kids ", "actually", " do."],
+      /**
+       * The title's words in four parts, joined by spaces: the first always ends its own line, the
+       * tutor's pen circles the third (InkCircle) and checks the last (InkCheck).
+       */
+      titleParts: ["Math practice", "kids", "actually", "do."],
       lede: "Kids write by hand. A tutor checks every line and answers their questions.",
       start: START,
       /** the secondary link, to How it works on this page */
@@ -105,8 +108,8 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
           label: "Step 1",
           title: "Pick their grade.",
           body: "Kindergarten to 8th grade, or a high school course. Agathon lays out that grade's skills as a path, and the first problems are waiting on the board.",
-          phoneAlt: "A 3rd grader's path in Agathon, 2 of 4 done: Times tables mastered (three stars), Division facts next up (one star), then Multiplying by tens.",
-          alt: "A 3rd grader's home in Agathon: their path, with 3-digit adding and subtracting done (three stars), Times tables next up (two stars), then Division facts and Multiplying by tens; under it, Up next: Times tables, with a Start button.",
+          phoneAlt: "A 3rd grader's path in Agathon, 2 of 4 done: Times tables mastered (three stars), Division facts next up (two stars), then Multiplying by tens.",
+          alt: "A 3rd grader's home in Agathon: Today's practice, 5 problems with a Start button and the skills in today's set, over their path, 2 of 4 done: 3-digit adding and subtracting and Times tables mastered (three stars each), Division facts next up (two stars), then Multiplying by tens.",
         },
         {
           label: "Step 2",
@@ -196,7 +199,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
       eyebrow: "For grown-ups",
       title: "Their progress,\nat a glance.",
       lede: "You don't have to sit beside them to know how it's going.",
-      alt: "Agathon's Progress page: a 3rd grade path with 1 of 4 skills mastered, and this week's 8 minutes of practice, 7 problems worked on, 6 solved on their own and 2 days in a row.",
+      alt: "Agathon's Progress page: a 3rd grade path with 2 of 4 skills mastered, and this week's 47 minutes of practice, 31 problems worked on, 28 solved on their own and 2 days of math in a row.",
       features: [
         {
           title: "Today's practice",
@@ -223,6 +226,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
       price: p.price,
       per: p.per,
       trial: `Free for the first ${p.days}.`,
+      includesLabel: "What's included",
       includes: [
         "Each kid's own profile, path and boards",
         "Help me and Ask, with voice, on every board",
@@ -275,9 +279,8 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
         },
       ],
     },
-    /** the last band: the way in, big */
+    /** the last band: the way in, big (no eyebrow: its button already says "Join Agathon") */
     join: {
-      eyebrow: "Join Agathon",
       title: "Their first problem\nis waiting.",
       body: "Sign up with an email, pick their grade, and the first problems are on the board.",
       terms: p.terms,

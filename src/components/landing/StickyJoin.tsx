@@ -1,10 +1,41 @@
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { SIGN_UP_HREF } from "@/lib/landing/links";
+import { LANDING_COPY } from "./copy";
+import { TrialWords } from "./TrialWords";
+import styles from "./landing.module.css";
+
 /**
- * CONTRACT STUB (v3, owner: feat/lp3-page). A phone's bottom bar: once the hero's button has
- * scrolled away (and until the Join band is in view), copy.sticky.note and the Join button, one tap
- * away. Wide screens have the sticky top bar's button instead, so it shows only on narrow screens.
- * Prefer CSS (scroll-driven animation / position: sticky) over a client island; if an island is
- * needed, keep it tiny.
+ * A phone's bottom bar: the free trial and the Join button, one thumb away. No script and no
+ * scroll timeline, just `position: sticky` (landing.module.css .sticky), so it works in every
+ * browser and the server's HTML is already right (nothing flashes):
+ *
+ * - it wraps the page's middle (How it works to Questions) and sits at the end of it, stuck to the
+ *   bottom of the screen; a sticky box never leaves its parent, so it is not there while the hero
+ *   (and its own Join button) is on screen, and slides up into place as How it works comes in;
+ * - its own place is the end of Questions (it takes no room there), so as the Join band comes up it
+ *   scrolls away with the page: it never sits over the Join band nor the legal footer under it;
+ * - in the tab order it comes where it sits, after the last question.
+ *
+ * Phones only (under 768 px): wider screens have the top bar's button.
  */
-export function StickyJoin() {
-  return null;
+export function StickyJoin({ children }: { children: ReactNode }) {
+  const copy = LANDING_COPY.sticky;
+  const invited = LANDING_COPY.invited;
+  return (
+    <div className={styles.stickyScope}>
+      {children}
+      <div className={styles.sticky}>
+        <div className={styles.stickyBar}>
+          <p className={styles.stickyNote}>
+            <TrialWords usual={copy.note} invited={invited.sticky} />
+          </p>
+          {/* the page's one name for the way in; the note beside it already says a friend's month */}
+          <Link href={SIGN_UP_HREF} className={`${styles.pill} ${styles.stickyCta}`}>
+            {copy.start}
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
 }

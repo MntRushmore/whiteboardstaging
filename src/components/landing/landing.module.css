@@ -1,8 +1,9 @@
-/* The parent landing page (/parents): a product page in the manner of Apple's. One idea per
-   section, full-bleed bands alternating white and a soft off-white (one dark band for contrast),
-   a huge display headline, real product pictures, mostly neutrals and one accent. Arc tokens
-   (src/registry/foundation.css) for the neutrals, the faces and the easing; the 8 px grid for
-   every space. Loaded only by /parents. */
+/* The landing page (agathon.app, also /parents), v3: "the page is the board" (docs/LANDING-V3.md).
+   One idea per section, bands alternating white and a soft off-white, one dark band and a flat blue
+   one to end on, huge display type, real product pictures on flat tint cards, the tutor's blue pen
+   marking the page itself. Mostly neutrals and one accent. Arc tokens (src/registry/foundation.css)
+   for the neutrals, the faces and the easing; the 8 px grid for every space. No gradients, glows or
+   glass: flat fills, hairlines and soft shadows. Loaded only by the landing page. */
 
 .page {
   /* Arc's blue accent (foundation.css, data-accent="blue"): links, buttons and the eyebrows. White on
@@ -35,11 +36,23 @@
   /* the wide measure for the product's pictures, wider than the text's */
   --lp-wide: 80rem;
 
+  /* lp3-page: the sticky bar's height (anchors land under it), the board's dot grid, the radius of
+     the page's big cards (24 px on a phone to 40 px), and a card's soft lift */
+  --lp-nav-h: 3.5rem;
+  --lp-dot: #d3d7df;
+  --lp-card-radius: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
+  --lp-lift: 0 1px 2px oklch(0% 0 0 / 0.05), 0 16px 40px -12px oklch(0% 0 0 / 0.14);
+
   /* fills the platform layout above the legal footer (platform.css) */
   flex: 1 0 auto;
   background: var(--background);
   color: var(--lp-ink);
   font-family: var(--font-body);
+}
+@media (min-width: 1024px) {
+  .page {
+    --lp-nav-h: 4rem;
+  }
 }
 
 .inner {
@@ -71,14 +84,14 @@
   line-height: 1.02;
 }
 .h2 {
-  font-size: clamp(2.25rem, 1.45rem + 3.6vw, 4.5rem);
-  letter-spacing: -0.04em;
-  line-height: 1.05;
+  font-size: clamp(2.25rem, 1.2rem + 4vw, 5rem);
+  letter-spacing: -0.042em;
+  line-height: 1.04;
 }
 .h3 {
-  font-size: clamp(1.75rem, 1.35rem + 1.6vw, 2.5rem);
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.75rem);
+  letter-spacing: -0.032em;
+  line-height: 1.08;
 }
 .lede {
   margin: 1.5rem 0 0;
@@ -96,6 +109,9 @@
   line-height: 1.5;
   text-wrap: pretty;
 }
+.nowrap {
+  white-space: nowrap;
+}
 
 /* A band's heading block: centred, its own measure. */
 .head {
@@ -106,6 +122,13 @@
 .head .lede {
   max-width: var(--lp-text);
   margin-inline: auto;
+  text-wrap: balance;
+}
+
+/* A headline the copy breaks into lines (Lines): each line balanced on its own, never a lone word. */
+.line {
+  display: block;
+  text-wrap: balance;
 }
 
 /* ---- Bands ----------------------------------------------------------------------------------- */
@@ -119,10 +142,22 @@
 .dark {
   --lp-ink: var(--neutral-0);
   --lp-muted: var(--neutral-6);
-  --lp-hair: oklch(100% 0 0 / 0.14);
+  --lp-hair: oklch(100% 0 0 / 0.12);
   --lp-accent: #6ba3ff;
   background: var(--neutral-11);
   color: var(--lp-ink);
+}
+
+/* Every part of the page a link jumps to (the bar's links, "See how it works") lands with its top
+   just under the sticky bar, gliding there. */
+.page [id],
+.anchored {
+  scroll-margin-top: var(--lp-nav-h);
+}
+@media (prefers-reduced-motion: no-preference) {
+  :global(html):has(.page) {
+    scroll-behavior: smooth;
+  }
 }
 
 /* ---- Buttons and links ----------------------------------------------------------------------- */
@@ -140,7 +175,10 @@
   font-weight: 600;
   letter-spacing: -0.01em;
   text-decoration: none;
-  transition: background var(--duration-fast) var(--ease-standard);
+  white-space: nowrap;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
   -webkit-tap-highlight-color: transparent;
 }
 .dark .pill {
@@ -154,13 +192,24 @@
 .pill:active {
   background: var(--lp-accent-strong);
 }
+@media (prefers-reduced-motion: no-preference) {
+  .pill:active {
+    transform: scale(0.98);
+  }
+}
 .pill:focus-visible,
 .textLink:focus-visible {
   outline: 2px solid var(--lp-accent);
   outline-offset: 3px;
 }
+/* The page's main buttons: a size up. */
+.pillLarge {
+  min-height: 3.5rem;
+  padding: 0 2rem;
+  font-size: 1.125rem;
+}
 
-/* "Sign in ›": a text link with a chevron, at least 44 px tall to tap. */
+/* "See how it works ›": a text link with a chevron, at least 44 px tall to tap. */
 .textLink {
   display: inline-flex;
   min-height: 2.75rem;
@@ -179,6 +228,7 @@
 @media (hover: hover) and (pointer: fine) {
   .textLink:hover {
     text-decoration: underline;
+    text-decoration-thickness: 1px;
     text-underline-offset: 4px;
   }
   .textLink:hover svg {
@@ -201,25 +251,29 @@
   z-index: 30;
   top: 0;
   border-bottom: 1px solid var(--border);
-  background: oklch(100% 0 0 / 0.86);
+  background: oklch(100% 0 0 / 0.88);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
   transition:
     background var(--duration-standard) var(--ease-standard),
     border-color var(--duration-standard) var(--ease-standard);
 }
-/* Over the dark band (NavTone): a dark glass bar with white words, so nothing reads through it. */
+/* Over the dark band (NavTone): a dark bar with white words, so nothing reads through it. */
 .nav[data-tone="dark"] {
   border-bottom-color: oklch(100% 0 0 / 0.08);
-  background: oklch(16% 0 0 / 0.84);
+  background: oklch(16% 0 0 / 0.86);
 }
 .nav[data-tone="dark"] .brand,
-.nav[data-tone="dark"] .navSignIn {
+.nav[data-tone="dark"] .navSignIn,
+.nav[data-tone="dark"] .navPart {
   color: #fff;
 }
 .nav .brand,
-.nav .navSignIn {
-  transition: color var(--duration-standard) var(--ease-standard);
+.nav .navSignIn,
+.nav .navPart {
+  transition:
+    color var(--duration-standard) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
 }
 /* BETA beside the name, in the page's neutrals rather than the app's violet. */
 .beta {
@@ -234,7 +288,7 @@
 }
 .navInner {
   display: flex;
-  height: 3.5rem;
+  height: var(--lp-nav-h);
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
@@ -244,6 +298,7 @@
   min-height: 2.75rem;
   align-items: center;
   gap: 0.5rem;
+  justify-self: start;
   border-radius: 0.5rem;
   color: var(--foreground);
   font-family: var(--font-display);
@@ -255,6 +310,56 @@
 .brand:focus-visible {
   outline: 2px solid var(--lp-accent);
   outline-offset: 3px;
+}
+/* The page's parts: on a wide screen only, centred in the bar. */
+.navParts {
+  display: none;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.navPart {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+@media (hover: hover) and (pointer: fine) {
+  .navPart:hover {
+    background: var(--neutral-3);
+    color: var(--foreground);
+  }
+  .nav[data-tone="dark"] .navPart:hover {
+    background: oklch(100% 0 0 / 0.1);
+  }
+}
+.navPart:focus-visible {
+  outline: 2px solid var(--lp-accent);
+  outline-offset: 1px;
+}
+.nav[data-tone="dark"] .navPart {
+  color: oklch(100% 0 0 / 0.78);
+}
+@media (min-width: 1024px) {
+  .navInner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+  .navParts {
+    display: flex;
+  }
+  .navLinks {
+    justify-self: end;
+  }
 }
 .navLinks {
   display: flex;
@@ -294,7 +399,7 @@
   outline: 2px solid var(--lp-accent);
   outline-offset: 1px;
 }
-/* The bar's pill: 36 px to look at, 44 px to tap. */
+/* The bar's pill: 36 px to look at (40 px on a wide screen), 44 px to tap. */
 .navCta {
   position: relative;
   min-height: 2.25rem;
@@ -306,25 +411,75 @@
   inset: -0.25rem 0;
   content: "";
 }
+@media (min-width: 1024px) {
+  .navCta {
+    min-height: 2.5rem;
+    padding: 0 1.25rem;
+  }
+}
 
 /* ---- Hero ------------------------------------------------------------------------------------ */
-/* Tight enough that the board's first written line is on the first screen of a laptop and a phone. */
+/* The board itself: white, its dot grid, and a hairline where it ends. */
 .hero {
-  padding-top: clamp(2.5rem, 1.25rem + 3vw, 4.5rem);
-  padding-bottom: clamp(4rem, 2rem + 5vw, 7.5rem);
+  position: relative;
+  isolation: isolate;
+  border-bottom: 1px solid var(--border);
+  padding-top: clamp(3rem, 1.5rem + 4vw, 6rem);
+  padding-bottom: clamp(2.5rem, 1.5rem + 2.5vw, 4rem);
   overflow-x: clip;
   text-align: center;
 }
-.hero .display {
-  max-width: 14ch;
-  margin-inline: auto;
+/* The board's dot grid behind it all (Hero's BoardDots, an SVG pattern): flat, faint dots. */
+.dots {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: var(--lp-dot);
+  pointer-events: none;
 }
-.hero .lede {
-  max-width: 41rem;
-  margin: 1.25rem auto 0;
+.heroEyebrow {
+  margin-bottom: 1.25rem;
+}
+/* Huge and tight: 46 px on a phone, 104 px on a laptop, 120 px on a wide screen. */
+.heroTitle {
+  font-size: clamp(2.875rem, 1.6rem + 5.6vw, 7.5rem);
+  letter-spacing: -0.052em;
+  line-height: 0.98;
+}
+/* The space after "Math practice": a block of its own, so the first line always ends there. */
+.titleBreak {
+  display: block;
+}
+/* "actually", circled: its line gets a little more room above, so the ring clears the descenders of
+   the line over it ("practice"), and the ring itself hugs the word the way the tutor's does. */
+.heroCircle {
+  margin: 0.14em 0.1em 0.04em;
+}
+.heroCircle > svg[data-kind] {
+  top: -0.03em;
+  left: -0.16em;
+  width: calc(100% + 0.32em);
+  height: calc(100% + 0.17em);
+}
+/* the ring's pen at the check's weight: about 5 px on a laptop, 2.5 px on a phone */
+.heroCircle > svg[data-kind] path {
+  stroke-width: clamp(2.5px, 0.05em, 6px);
+}
+.heroCheck {
+  width: 0.74em;
+  height: 0.74em;
+  margin-left: 0.1em;
+  vertical-align: -0.02em;
+}
+.heroLede {
+  max-width: 36rem;
+  margin: 1.75rem auto 0;
+  text-wrap: balance;
 }
 .hero .actions {
-  margin-top: 2rem;
+  margin-top: 2.5rem;
 }
 .terms {
   margin: 1rem auto 0;
@@ -333,25 +488,47 @@
   line-height: 1.45;
   text-wrap: balance;
 }
-.heroDevice {
-  margin-top: clamp(2.5rem, 1.5rem + 2.5vw, 3.75rem);
+/* The iPad: the hero's star, on the board's grey table, at the wide measure. */
+.heroStage {
+  width: min(100% - 2 * var(--lp-gutter), var(--lp-wide));
+  margin: clamp(3.5rem, 2rem + 4vw, 6rem) auto 0;
+  border-radius: var(--lp-card-radius);
+  padding: clamp(2.5rem, 1rem + 4vw, 5rem) clamp(1.5rem, 0rem + 5vw, 6rem) clamp(1rem, 0.5rem + 1vw, 1.5rem);
+  background: var(--lp-table);
 }
-/* On a phone the two ways on sit side by side, so the board starts higher. */
-@media (max-width: 479px) {
+/* On a phone the iPad runs off both edges (device.module.css): the table runs edge to edge too. */
+@media (max-width: 639px) {
+  .heroStage {
+    width: auto;
+    border-radius: 0;
+    padding-inline: 0;
+  }
+}
+/* On a phone the two ways on sit side by side; on the narrowest (under 360 px) the link goes under
+   the button rather than breaking in two. */
+@media (min-width: 360px) and (max-width: 479px) {
   .hero .actions {
     flex-wrap: nowrap;
     gap: 1.25rem;
   }
   .hero .pill {
-    padding-inline: 1.25rem;
+    padding-inline: 1.5rem;
   }
+}
+@media (max-width: 359px) {
+  .hero .actions {
+    gap: 0.5rem 1rem;
+  }
+}
+.hero .textLink {
+  white-space: nowrap;
 }
 
 /* ---- How it works ---------------------------------------------------------------------------- */
 .steps {
   display: grid;
-  gap: clamp(4rem, 2rem + 6vw, 8rem);
-  margin: clamp(3.5rem, 2rem + 5vw, 6rem) 0 0;
+  gap: clamp(4.5rem, 2rem + 6vw, 9rem);
+  margin: clamp(3.5rem, 2rem + 4vw, 6rem) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -363,7 +540,7 @@
 @media (min-width: 900px) {
   .step {
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    gap: clamp(3rem, 1rem + 5vw, 6rem);
+    gap: clamp(3rem, 0rem + 4.5vw, 5rem);
   }
   .step:nth-child(even) {
     grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
@@ -375,13 +552,30 @@
 .stepText {
   max-width: 30rem;
 }
-.stepLabel {
-  margin: 0 0 0.75rem;
-  color: var(--lp-muted);
-  font-size: 1.0625rem;
-  font-variant-caps: all-small-caps;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+/* The step's number, in the kid's pen (HandMath), big. */
+.stepText .stepNumeral {
+  width: auto;
+  height: clamp(4rem, 3rem + 2.5vw, 5.5rem);
+  margin: 0 0 1.5rem -0.125rem;
+}
+/* The step's picture on its own flat tint (one per step). */
+.stepCard {
+  border-radius: var(--lp-card-radius);
+  padding: clamp(1rem, 0rem + 3.5vw, 3rem);
+}
+.tintBlue {
+  background: var(--lp-tint-blue);
+}
+.tintGreen {
+  background: var(--lp-tint-green);
+}
+.tintYellow {
+  background: var(--lp-tint-yellow);
+}
+.stepCard > figure {
+  border-color: oklch(0% 0 0 / 0.06);
+  border-radius: clamp(0.875rem, 0.5rem + 1vw, 1.25rem);
+  box-shadow: var(--lp-lift);
 }
 /* The Help me button, named in a sentence as the board draws it: a blue pill with a bulb. */
 .helpChip {
@@ -398,7 +592,7 @@
   white-space: nowrap;
   vertical-align: 0.06em;
 }
-/* A picture of the board: the board's own surface (#fcfcfc), a hairline, the panel radius. */
+/* A picture of the board: the board's own surface, a hairline, the panel radius. */
 .shot {
   overflow: hidden;
   margin: 0;
@@ -420,55 +614,98 @@
     display: none;
   }
 }
+
 /* ---- For grown-ups --------------------------------------------------------------------------- */
-/* The Progress page on its own background (#f8f8f8), with room round it like the page has. */
-/* Smaller than the band's measure and without a padded light slab round it, so on the dark band the
-   picture sits under the headline instead of out-shouting it. */
+/* Its own, slightly narrower measure, so the heading, the picture and the four columns share one
+   left edge and the picture is never blown up past its pixels. */
+.grownUps .inner {
+  width: min(100% - 2 * var(--lp-gutter), 66rem);
+}
+.grownHead {
+  display: grid;
+  gap: 1.5rem;
+  text-align: center;
+}
+.grownLede {
+  max-width: 34rem;
+  margin: 0 auto;
+}
+@media (min-width: 1024px) {
+  .grownHead {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    align-items: end;
+    gap: 4rem;
+    text-align: left;
+  }
+  .grownLede {
+    margin: 0;
+    padding-bottom: 0.375rem;
+  }
+}
+/* The Progress page on its own background (#f8f8f8), set in a frame like a screen on the table. */
 .progressShot {
   overflow: hidden;
-  max-width: 58rem;
-  margin: clamp(3rem, 2rem + 4vw, 5rem) auto 0;
-  border-radius: 1.5rem;
-  padding: clamp(0.75rem, 0.25rem + 2vw, 2rem);
+  margin: clamp(3rem, 2rem + 3vw, 4.5rem) 0 0;
+  border-radius: clamp(1.25rem, 0.75rem + 1.5vw, 2rem);
+  padding: clamp(0.5rem, 0rem + 1.5vw, 1.25rem);
   background: #f8f8f8;
-  box-shadow:
-    0 0 0 1px oklch(100% 0 0 / 0.1),
-    0 24px 64px oklch(0% 0 0 / 0.5);
+  box-shadow: 0 0 0 1px oklch(100% 0 0 / 0.14);
 }
 .progressShot img {
   display: block;
   width: 100%;
   height: auto;
+  border-radius: clamp(0.75rem, 0.5rem + 1vw, 1.25rem);
 }
 .features {
   display: grid;
   gap: 2.5rem 2rem;
-  margin: clamp(3rem, 2rem + 4vw, 5rem) 0 0;
+  margin: clamp(3rem, 2rem + 3vw, 4.5rem) 0 0;
   padding: 0;
   list-style: none;
+}
+.feature {
+  border-top: 1px solid var(--lp-hair);
+  padding-top: 1.5rem;
 }
 @media (min-width: 640px) {
   .features {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-@media (min-width: 1100px) {
+/* From a laptop up: one row of four, between hairline rules. */
+@media (min-width: 1024px) {
   .features {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+  }
+  .feature {
+    border-top: 0;
+    border-left: 1px solid var(--lp-hair);
+    padding: 0.25rem 1.75rem 0.5rem;
+  }
+  .feature:first-child {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .feature:last-child {
+    padding-right: 0;
   }
 }
-.feature {
-  border-top: 1px solid var(--lp-hair);
-  padding-top: 1.5rem;
-}
 .featureIcon {
-  display: block;
-  margin-bottom: 1rem;
-  color: var(--lp-accent);
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  margin-bottom: 1.25rem;
+  border-radius: 0.75rem;
+  background: oklch(100% 0 0 / 0.08);
+  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 0.1);
+  color: #fff;
 }
 .featureTitle {
   margin: 0;
-  font-size: 1.1875rem;
+  font-size: 1.125rem;
   font-weight: 600;
   letter-spacing: -0.015em;
   line-height: 1.3;
@@ -476,20 +713,41 @@
 .featureBody {
   margin: 0.5rem 0 0;
   color: var(--lp-muted);
-  font-size: 1.0625rem;
-  line-height: 1.5;
+  font-size: 1rem;
+  line-height: 1.55;
   text-wrap: pretty;
 }
 
 /* ---- Pricing --------------------------------------------------------------------------------- */
+/* One card: the price and the way in, and beside it (under it on a phone) what it includes. */
 .priceCard {
-  max-width: 36rem;
-  margin: clamp(3rem, 2rem + 4vw, 5rem) auto 0;
-  border-radius: 2rem;
-  padding: clamp(2rem, 1rem + 4vw, 3.5rem);
+  display: grid;
+  overflow: hidden;
+  max-width: 60rem;
+  margin: clamp(3rem, 2rem + 3vw, 4.5rem) auto 0;
+  border-radius: var(--lp-card-radius);
   background: var(--background);
-  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.04), 0 12px 40px oklch(0% 0 0 / 0.06);
+  box-shadow: 0 0 0 1px oklch(0% 0 0 / 0.05), var(--lp-lift);
+}
+.priceMain {
+  padding: clamp(2rem, 1rem + 4vw, 4rem);
   text-align: center;
+}
+.priceSide {
+  border-top: 1px solid var(--border);
+  padding: clamp(2rem, 1rem + 4vw, 4rem);
+}
+@media (min-width: 880px) {
+  .priceCard {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .priceMain {
+    text-align: left;
+  }
+  .priceSide {
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
 }
 .planName {
   margin: 0;
@@ -503,46 +761,35 @@
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.625rem;
   margin: 0.5rem 0 0;
+}
+@media (min-width: 880px) {
+  .price {
+    justify-content: flex-start;
+  }
 }
 .priceAmount {
   font-family: var(--font-display);
-  font-size: clamp(4rem, 3rem + 4vw, 5.5rem);
+  font-size: clamp(4.5rem, 3rem + 5vw, 7rem);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.05em;
-  line-height: 1;
+  letter-spacing: -0.055em;
+  line-height: 0.95;
 }
 .pricePer {
   color: var(--lp-muted);
-  font-size: 1.1875rem;
+  font-size: 1.25rem;
 }
 .priceTrial {
-  margin: 1rem 0 0;
-  font-size: 1.1875rem;
-  font-weight: 500;
+  margin: 1.25rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
-.includes {
-  display: grid;
-  gap: 1rem;
-  margin: 2rem 0 0;
-  border-top: 1px solid var(--border);
-  padding: 2rem 0 0;
-  list-style: none;
-  text-align: left;
-}
-.includes li {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  font-size: 1.0625rem;
-  line-height: 1.45;
-}
-.includes svg {
-  flex: none;
-  margin-top: 0.15rem;
-  color: var(--lp-accent);
+/* the tutor's underline under the free trial, at its pen's weight */
+.priceMark > svg[data-kind] path {
+  stroke-width: 3.5px;
 }
 .priceCta {
   width: 100%;
@@ -555,12 +802,71 @@
   line-height: 1.5;
   text-wrap: pretty;
 }
+.includesLabel {
+  margin: 0;
+  color: var(--lp-muted);
+  font-size: 1.0625rem;
+  font-variant-caps: all-small-caps;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.includes {
+  display: grid;
+  gap: 1.25rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.includes li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+  line-height: 1.45;
+}
+.includeIcon {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  place-items: center;
+  margin-top: 0.0625rem;
+  border-radius: 50%;
+  background: var(--lp-tint-blue);
+  color: var(--lp-accent);
+}
 
 /* ---- Questions ------------------------------------------------------------------------------- */
+/* A heading over the list on a phone and a tablet; from a laptop up the heading holds still on the
+   left while the questions scroll beside it. */
+.faqLayout {
+  display: grid;
+  gap: clamp(2.5rem, 1.5rem + 3vw, 4rem);
+}
+.faqHead {
+  text-align: center;
+}
 .faq {
+  width: 100%;
   max-width: 48rem;
-  margin: clamp(3rem, 2rem + 4vw, 5rem) auto 0;
+  margin: 0 auto;
   border-top: 1px solid var(--border);
+}
+@media (min-width: 1024px) {
+  .faqLayout {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    align-items: start;
+    gap: 4rem;
+  }
+  .faqHead {
+    position: sticky;
+    top: calc(var(--lp-nav-h) + 2.5rem);
+    text-align: left;
+  }
+  .faq {
+    max-width: none;
+  }
 }
 .qa {
   border-bottom: 1px solid var(--border);
@@ -572,9 +878,9 @@
   justify-content: space-between;
   gap: 1.5rem;
   padding: 1.25rem 0;
-  font-size: clamp(1.1875rem, 1.1rem + 0.35vw, 1.375rem);
+  font-size: clamp(1.125rem, 1.05rem + 0.35vw, 1.3125rem);
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.018em;
   line-height: 1.3;
   list-style: none;
   cursor: pointer;
@@ -591,11 +897,15 @@
 /* A plus that turns into a minus as the answer opens. */
 .toggle {
   position: relative;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 2rem;
+  height: 2rem;
   flex: none;
   border-radius: 50%;
-  background: var(--lp-soft);
+  background: var(--neutral-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 .toggle::before,
 .toggle::after {
@@ -608,22 +918,39 @@
   background: var(--lp-ink);
   content: "";
   transform: translate(-50%, -50%);
-  transition: transform var(--duration-standard) var(--ease-standard);
+  transition:
+    transform var(--duration-standard) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
 }
 .toggle::after {
   transform: translate(-50%, -50%) rotate(90deg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .question:hover .toggle {
+    background: var(--neutral-3);
+  }
+}
+.qa[open] .toggle {
+  background: var(--foreground);
+  box-shadow: none;
+}
+.qa[open] .toggle::before,
+.qa[open] .toggle::after {
+  background: var(--background);
 }
 .qa[open] .toggle::after {
   transform: translate(-50%, -50%) rotate(0deg);
 }
 .answer {
   max-width: 40rem;
-  margin: 0;
-  padding: 0 0 1.75rem;
+  padding: 0 3.5rem 2rem 0;
   color: var(--lp-muted);
   font-size: 1.0625rem;
-  line-height: 1.55;
+  line-height: 1.6;
   text-wrap: pretty;
+}
+.answer p {
+  margin: 0;
 }
 .answerLink {
   display: inline-flex;
@@ -643,11 +970,186 @@
   outline: 2px solid var(--lp-accent);
   outline-offset: 2px;
 }
+/* Where the browser can animate to `auto` (and motion is welcome), an answer slides open. */
+@supports (interpolate-size: allow-keywords) {
+  @media (prefers-reduced-motion: no-preference) {
+    .faq {
+      interpolate-size: allow-keywords;
+    }
+    .qa::details-content {
+      overflow-y: clip;
+      block-size: 0;
+      transition:
+        block-size var(--duration-considered) var(--ease-standard),
+        content-visibility var(--duration-considered) var(--ease-standard) allow-discrete;
+    }
+    .qa[open]::details-content {
+      block-size: auto;
+    }
+  }
+}
 
-/* ---- Closing --------------------------------------------------------------------------------- */
-.closing .h2 {
-  max-width: 16ch;
-  margin-inline: auto;
+/* ---- Join: the last band, the way in -------------------------------------------------------- */
+/* Flat accent blue, edge to edge; everything on it white (5.3:1), the button white with blue words. */
+.join {
+  --lp-accent: #fff;
+  --lp-accent-strong: var(--lp-tint-blue);
+  padding-block: clamp(6rem, 3rem + 8vw, 12rem);
+  background: #0562ef;
+  color: #fff;
+  text-align: center;
+}
+.joinInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.joinTitle {
+  max-width: 14ch;
+  font-size: clamp(3rem, 1.25rem + 7vw, 8.5rem);
+  letter-spacing: -0.055em;
+  line-height: 0.96;
+}
+.joinBody {
+  max-width: 32rem;
+  margin: 2rem 0 0;
+  font-size: clamp(1.1875rem, 1.05rem + 0.55vw, 1.5rem);
+  letter-spacing: -0.012em;
+  line-height: 1.42;
+  text-wrap: pretty;
+}
+.joinActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem 2rem;
+  margin-top: 3rem;
+}
+.joinCta {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.joinPill {
+  min-height: 4rem;
+  padding: 0 2.5rem;
+  color: #0562ef;
+  font-size: 1.25rem;
+}
+.join .pill:focus-visible {
+  outline-color: #fff;
+  outline-offset: 4px;
+}
+/* "Takes a minute", and the tutor's white arrow from it to the button: hung in the margin to the
+   button's left on a wide screen, over the button and pointing down at it on a phone. */
+.joinAside {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.joinArrowBox {
+  position: relative;
+  display: block;
+  width: 1.5rem;
+  height: 5rem;
+}
+.joinArrow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  rotate: 90deg;
+}
+@media (min-width: 640px) {
+  .joinAside {
+    position: absolute;
+    right: calc(100% + 0.75rem);
+    bottom: 50%;
+    align-items: flex-end;
+    margin: 0;
+  }
+  .joinArrowBox {
+    width: 4.5rem;
+    height: 2.5rem;
+    margin-right: 0.25rem;
+  }
+  .joinArrow {
+    rotate: 26deg;
+  }
+}
+@media (max-width: 639px) {
+  .joinActions {
+    flex-direction: column;
+    margin-top: 2.5rem;
+  }
+}
+.joinSignIn {
+  font-size: 1.125rem;
+}
+.joinTerms {
+  max-width: 30rem;
+  margin: 2rem 0 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  text-wrap: balance;
+}
+
+/* ---- The phone's bottom Join bar (StickyJoin) ------------------------------------------------ */
+/* Sticky to the bottom of the screen inside the page's middle (How it works to Questions), so it
+   comes in after the hero and leaves before the Join band; it takes no room at its own place, the
+   end of Questions. Phones only. */
+.sticky {
+  display: none;
+}
+@media (max-width: 767px) {
+  .sticky {
+    --lp-sticky-h: calc(5rem + env(safe-area-inset-bottom, 0px));
+    position: sticky;
+    z-index: 20;
+    bottom: 0;
+    display: block;
+    height: var(--lp-sticky-h);
+    margin-top: calc(-1 * var(--lp-sticky-h));
+    padding: 0 var(--lp-gutter) calc(1rem + env(safe-area-inset-bottom, 0px));
+    pointer-events: none;
+  }
+}
+.stickyBar {
+  display: flex;
+  height: 4rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 999px;
+  padding: 0 0.5rem 0 1.5rem;
+  background: var(--background);
+  box-shadow:
+    0 0 0 1px oklch(0% 0 0 / 0.08),
+    0 8px 28px -6px oklch(0% 0 0 / 0.22);
+  pointer-events: auto;
+}
+.stickyNote {
+  overflow: hidden;
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stickyCta {
+  min-height: 3rem;
+  flex: none;
+  padding: 0 1.25rem;
+  font-size: 1rem;
 }
 
 /* ---- Motion ---------------------------------------------------------------------------------- */
@@ -667,22 +1169,6 @@
     opacity: 0;
     transform: translateY(2rem);
   }
-}
-
-/* "See how it works" lands with the section's top just under the sticky bar, gliding there. */
-.anchored {
-  scroll-margin-top: 3.5rem;
-}
-@media (prefers-reduced-motion: no-preference) {
-  :global(html):has(.page) {
-    scroll-behavior: smooth;
-  }
-}
-
-/* A headline the copy breaks into lines (Lines): each line balanced on its own, never a lone word. */
-.line {
-  display: block;
-  text-wrap: balance;
 }
 
 /* ---- The legal footer under this page (the platform layout's LegalFooter) -------------------- */

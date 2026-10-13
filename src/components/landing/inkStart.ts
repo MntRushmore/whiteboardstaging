@@ -33,4 +33,8 @@ export const INK_START_SCRIPT =
   `var els=document.querySelectorAll("["+A+"]");for(var j=0;j<els.length;j++){held[els[j].getAttribute(A)]=1;n++}if(!n)return;css();scan();` +
   // and again as the page settles and scrolls (fonts and pictures move things)
   `var t=0;function later(){if(!t)t=requestAnimationFrame(function(){t=0;scan()})}` +
-  `window.addEventListener("load",later);window.addEventListener("scroll",later,{passive:true});window.addEventListener("resize",later)})();`;
+  `window.addEventListener("load",later);window.addEventListener("scroll",later,{passive:true});window.addEventListener("resize",later);` +
+  // and once the page is revealed: the root loading boundary streams the page in a hidden div that
+  // React moves into place (often after load), and Chrome's observer never reports the moved
+  // drawings, so the hero's ink stayed held until the first scroll (2026-10-12)
+  `if(window.MutationObserver)new MutationObserver(later).observe(document.body,{childList:true})})();`;
