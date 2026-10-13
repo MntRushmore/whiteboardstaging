@@ -31,8 +31,8 @@ export function GrownUps() {
           <Image
             src="/landing/progress-week.webp"
             alt={copy.alt}
-            width={1958}
-            height={1224}
+            width={2937}
+            height={1836}
             sizes="(max-width: 1023px) calc(100vw - 64px), 1000px"
           />
         </figure>

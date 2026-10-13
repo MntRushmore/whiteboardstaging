@@ -26,7 +26,7 @@ const SIZES = "(max-width: 899px) calc(100vw - 64px), 600px";
 function PathPicture({ alt, phoneAlt }: { alt: string; phoneAlt: string }) {
   return (
     <figure className={styles.shot} style={{ background: "#f8f8f8" }}>
-      <Image className={styles.wideOnly} src="/landing/path-3rd-grade.webp" alt={alt} width={2628} height={1551} sizes={SIZES} />
+      <Image className={styles.wideOnly} src="/landing/path-3rd-grade.webp" alt={alt} width={2628} height={2211} sizes={SIZES} />
       <Image className={styles.phoneOnly} src="/landing/path-3rd-grade-phone.webp" alt={phoneAlt} width={1146} height={900} sizes="calc(100vw - 64px)" />
     </figure>
   );
