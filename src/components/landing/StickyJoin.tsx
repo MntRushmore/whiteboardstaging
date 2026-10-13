@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
-import { SIGN_UP_HREF } from "@/lib/landing/links";
 import { LANDING_COPY } from "./copy";
+import { JoinLink } from "./JoinLink";
 import { TrialWords } from "./TrialWords";
 import styles from "./landing.module.css";
 
@@ -31,9 +30,9 @@ export function StickyJoin({ children }: { children: ReactNode }) {
             <TrialWords usual={copy.note} invited={invited.sticky} />
           </p>
           {/* the page's one name for the way in; the note beside it already says a friend's month */}
-          <Link href={SIGN_UP_HREF} className={`${styles.pill} ${styles.stickyCta}`}>
+          <JoinLink className={`${styles.pill} ${styles.stickyCta}`}>
             {copy.start}
-          </Link>
+          </JoinLink>
         </div>
       </div>
     </div>

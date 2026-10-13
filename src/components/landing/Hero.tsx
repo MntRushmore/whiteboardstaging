@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { BOARD_LINES } from "@/lib/landing/boardInk";
-import { SIGN_UP_HREF } from "@/lib/landing/links";
 import { pathBounds } from "@/lib/landing/replay";
 import { BoardReplay } from "./BoardReplay";
+import { JoinLink } from "./JoinLink";
 import { LANDING_COPY } from "./copy";
 import { HOW_ID } from "./bands";
 import { InkCheck, InkCircle } from "./InkMark";
@@ -66,9 +65,9 @@ export function Hero() {
         </h1>
         <p className={`${styles.lede} ${styles.heroLede}`}>{copy.lede}</p>
         <div className={styles.actions}>
-          <Link href={SIGN_UP_HREF} className={`${styles.pill} ${styles.pillLarge}`}>
+          <JoinLink className={`${styles.pill} ${styles.pillLarge}`}>
             <TrialWords usual={copy.start} invited={invited.start} />
-          </Link>
+          </JoinLink>
           <a href={`#${HOW_ID}`} className={styles.textLink}>
             {copy.more}
             <ChevronRight size={18} strokeWidth={2} aria-hidden />
