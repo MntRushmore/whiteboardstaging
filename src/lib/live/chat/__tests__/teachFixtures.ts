@@ -60,3 +60,20 @@ export const AVG_RATE_TEACH: TeachInput = {
 
 /** A worksheet page pasted in the middle of a 1600×900 screen, as on the demo board (a PDF page, 634×820). */
 export const WORKSHEET_PAGE = { x: 483, y: 40, w: 634, h: 820 } as const;
+
+/**
+ * The live replay's problem set (2026-10-13): four precalculus problems as the tutor wrote them, a
+ * 2×2 grid on one screen; problem 4 is the trig equation the student asked to be shown.
+ */
+export const GRID_PROBLEMS: string[][] = [["2(3)^{2} - 5(3) + 1"], ["\\frac{(-2)^{2} + 1}{(-2) + 3}"], ["\\frac{(3^{2} - 3 + 1) - (0^{2} - 0 + 1)}{3 - 0}"], ["2\\cos x - \\sqrt{2} = 0"]];
+
+/** Problem 4 of the grid, worked. */
+export const TRIG_TEACH: TeachInput = {
+  steps: [
+    { say: "Add √2 to both sides.", math: ["2\\cos x - \\sqrt{2} = 0", "2\\cos x = \\sqrt{2}"] },
+    { say: "Divide both sides by 2.", math: ["\\cos x = \\frac{\\sqrt{2}}{2}"] },
+    { say: "Cosine is √2/2 at π/4, in Quadrant I." },
+    { say: "Cosine is positive in Quadrant IV too, at 2π − π/4.", math: ["2\\pi - \\frac{\\pi}{4} = \\frac{7\\pi}{4}"] },
+  ],
+  answer: "x = \\frac{\\pi}{4}, \\frac{7\\pi}{4}",
+};
