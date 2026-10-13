@@ -232,6 +232,9 @@ describe("live/ask: the stream", () => {
     // ask on Sonnet 5.5 thinks ~3.5 s and speaks at 5–6 s), but not into the fallback's time
     expect(limits!.primaryThinkingMs).toBeGreaterThanOrEqual(10_000);
     expect(limits!.primaryThinkingMs! + limits!.fallbackWatchdogMs!).toBeLessThan(limits!.deadline! - Date.now());
+    // a slow primary races the fallback well before it would be given up on
+    expect(limits!.hedgeMs).toBeGreaterThan(0);
+    expect(limits!.hedgeMs!).toBeLessThan(watchdogMs);
     // the fallback is the fast one: it never thinks
     expect(opts.reasoningFor?.(LIVE_MODELS.askFallback)).toBe("none");
     expect(limits!.deadline! - Date.now()).toBeLessThan(60_000);

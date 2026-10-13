@@ -39,6 +39,13 @@ const ASK_WATCHDOG_MS = 6_000;
  */
 const ASK_THINKING_MS = 13_000;
 /**
+ * A primary with no words this long after the start (thinking, or silent) gets the fallback
+ * started BESIDE it, and the first to speak answers (`streamWithFallback`'s hedge). Sonnet 5.5
+ * mostly thinks 2–4 s before an "explain" and keeps the ask; one that thinks 10 s (seen on "explain
+ * this visually", 2026-10-13) loses it to Haiku 5.5, whose words come ~1.5 s after it starts.
+ */
+const ASK_HEDGE_MS = 4_000;
+/**
  * The fallback's own first-words watchdog (Haiku 5.5, which never thinks, starts in about 1.2 s): a
  * stuck fallback is an error the student can retry, not a minute of nothing.
  */
@@ -110,7 +117,8 @@ const kinds = (actions: readonly ChatAction[]) => [...new Set(actions.map((a) =>
  * `prompts/ask.ts`, which puts the screen's picture in the user message) answers in Markdown-lite
  * and may end with ONE `<board>{"actions":[…]}</board>` block. The reply's words go out as they come
  * (`delta`, split from the block by `AskStreamSplitter`); a stuck primary hands over to the fallback
- * after ASK_WATCHDOG_MS of nothing, or a thinking one after ASK_THINKING_MS (`model` again). Then the block's actions go through the same engine gates as
+ * after ASK_WATCHDOG_MS of nothing, or a thinking one after ASK_THINKING_MS, and one with no words
+ * by ASK_HEDGE_MS races the fallback, the first to speak answering (`model` again when it is the fallback). Then the block's actions go through the same engine gates as
  * POST /api/live/chat (`chatGate`, repairs on Ask's models) and out as `actions`, after the final
  * `reply` (cleaned; when nothing proposed survived, its sentences about the board taken out and the
  * gate's line about what failed added: `keepExplanation`). A block that is not JSON is dropped with
@@ -202,7 +210,7 @@ export async function POST(req: Request) {
           models.askFallback,
           { messages, signal, temperature: 0.4, maxTokens: ASK_MAX_TOKENS, reasoningFor: askReasoning, requestId, title: "Agathon Live - ask" },
           ASK_WATCHDOG_MS,
-          { primaryThinkingMs: ASK_THINKING_MS, fallbackWatchdogMs: ASK_FALLBACK_WATCHDOG_MS, deadline: startedAt + ASK_STREAM_MS },
+          { primaryThinkingMs: ASK_THINKING_MS, hedgeMs: ASK_HEDGE_MS, fallbackWatchdogMs: ASK_FALLBACK_WATCHDOG_MS, deadline: startedAt + ASK_STREAM_MS },
         );
         for await (const ev of events) {
           if (ev.type === "model") {
