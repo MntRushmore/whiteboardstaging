@@ -1,17 +1,16 @@
 /**
- * "Pencil, finger or keyboard." (v3, `Devices.tsx`): the timing of its three moments, worked out
- * once on the server so the pictures can play them as CSS.
+ * "Pencil, finger or mouse." (`Devices.tsx`): the timing of its three moments, worked out once on
+ * the server so the pictures can play them as CSS.
  *
  *  - The tablet and the phone (`inkTimeline`): a real board's ink drawn back over its screenshot
  *    (`devicesInk.ts`), stroke by stroke at a quick child's pace, each line's check mark a beat
  *    after the line, as the board's tutor marks it once the pen rests.
- *  - The laptop (`typingDemo`): Type it, as the bar does it. A line is typed key by key, the bar's
- *    preview showing what the real parser makes of it after each key (`plainToLatex`, the bar's
- *    own); Enter; the box empties and the board writes the line; the tutor checks it.
+ *  - The laptop (`mouseDemo`): a line written with the mouse, right on the board, at a mouse's
+ *    slower pace, the pointer travelling with the pen; the tutor checks it. (Type it, the typing bar,
+ *    was removed on 2026-10-13: "remove the typing thing, we can just use the mouse!")
  *
  * Pure: no React, no DOM. Unit-tested in `__tests__/devices.test.ts`.
  */
-import { plainToLatex } from "@/lib/typeMath/parse";
 import type { InkPictureScene } from "./devicesInk";
 
 /** How a picture's ink is paced, in ms (px are the screenshot's own CSS px). */
@@ -67,77 +66,29 @@ export function inkTimeline(scene: Pick<InkPictureScene, "lines">, pace: InkPace
 }
 
 /** The laptop's pace, in ms after the laptop is in view. */
-export const TYPING_PACE = {
-  /** the board and the bar are seen first, the box focused and waiting */
-  typeAtMs: 1100,
-  /** between keys, by what is typed: a reach for = is slower than the next digit */
-  keyMs: { digit: 150, letter: 190, symbol: 260 },
-  /** after the last key, before Enter */
-  enterAfterMs: 700,
-  /** Enter's press */
-  pressMs: 160,
-  /** the board writes the line: quickly (on the board it is there at once), in the board's hand */
-  writeSpeed: 2.6,
-  /** after the line, before the tutor's check */
-  checkAfterMs: 520,
+export const MOUSE_PACE = {
+  /** the board is seen first, the pointer resting where the line will go */
+  writeAtMs: 900,
+  /** a mouse writes slower than a pen on glass */
+  writeSpeed: 0.8,
+  /** after the line, before the tutor's check (the board marks it once the hand rests) */
+  checkAfterMs: 420,
   checkMs: 260,
-  /** the caret shows where the next line goes */
-  caretAfterMs: 380,
 } as const;
 
-export interface Keystroke {
-  char: string;
-  atMs: number;
-}
-
-/** What the preview shows from one key to the next: the parser's reading of the box so far. */
-export interface PreviewStep {
-  text: string;
-  latex: string;
-  fromMs: number;
-  /** when the next key (or Enter) replaces it */
-  toMs: number;
-}
-
-export interface TypingDemo {
-  /** the line as the board writes it (the parser's LaTeX) */
-  latex: string;
-  keys: Keystroke[];
-  previews: PreviewStep[];
-  /** the first key: the box has text, the preview opens, Enter wakes up */
-  firstMs: number;
-  /** Enter pressed */
-  enterMs: number;
-  /** the box empty again */
-  clearMs: number;
+export interface MouseDemo {
   /** the board starts writing the line */
   writeMs: number;
+  /** the line is written: the pointer rests */
+  doneMs: number;
+  /** the tutor's check */
+  checkAtMs: number;
+  checkMs: number;
 }
 
-function keyGap(char: string): number {
-  if (/\d/.test(char)) return TYPING_PACE.keyMs.digit;
-  if (/[a-z]/i.test(char)) return TYPING_PACE.keyMs.letter;
-  return TYPING_PACE.keyMs.symbol;
-}
-
-/**
- * The laptop's Type it, key by key. Throws if the parser cannot read the whole line: the page never
- * types a line the bar would refuse.
- */
-export function typingDemo(text: string, pace = TYPING_PACE): TypingDemo {
-  const whole = plainToLatex(text);
-  if (!whole.ok) throw new Error(`typingDemo: the bar cannot read ${JSON.stringify(text)} (${whole.hint})`);
-  let t = pace.typeAtMs;
-  const keys = [...text].map((char, i) => {
-    if (i > 0) t += keyGap(char);
-    return { char, atMs: t };
-  });
-  const enterMs = t + pace.enterAfterMs;
-  const clearMs = enterMs + pace.pressMs;
-  const previews = keys.map((key, i) => {
-    const typed = text.slice(0, i + 1);
-    const parse = plainToLatex(typed);
-    return { text: typed, latex: parse.ok ? parse.latex : parse.partial, fromMs: key.atMs, toMs: keys[i + 1]?.atMs ?? clearMs };
-  });
-  return { latex: whole.latex, keys, previews, firstMs: keys[0]?.atMs ?? enterMs, enterMs, clearMs, writeMs: clearMs + 60 };
+/** The laptop's moment, from how long the hand takes to write its line (`handMathMs` at writeSpeed). */
+export function mouseDemo(lineMs: number, pace = MOUSE_PACE): MouseDemo {
+  const writeMs = pace.writeAtMs;
+  const doneMs = writeMs + Math.max(0, lineMs);
+  return { writeMs, doneMs, checkAtMs: doneMs + pace.checkAfterMs, checkMs: pace.checkMs };
 }

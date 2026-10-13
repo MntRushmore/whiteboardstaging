@@ -4,7 +4,7 @@ import { evaluate } from "mathjs";
 import { describe, expect, it } from "vitest";
 import { LANDING_COPY } from "@/components/landing/copy";
 import { pathBounds } from "../replay";
-import { INK_PACE, inkTimeline, TYPING_PACE, typingDemo } from "../devices";
+import { INK_PACE, inkTimeline, MOUSE_PACE, mouseDemo } from "../devices";
 import { PHONE_SCENE, TABLET_SCENE } from "../devicesInk";
 
 const laptop = LANDING_COPY.devices.items[1];
@@ -22,42 +22,29 @@ const holds = (equation: string, x: number) => {
   return Math.abs(Number(evaluate(l, { x })) - Number(evaluate(r, { x }))) < 1e-9;
 };
 
-describe("the laptop's Type it", () => {
-  it("types a right next step for the board's first problem (so the check mark is honest)", () => {
+describe("the laptop's mouse", () => {
+  it("writes a right next step for the board's first problem (so the check mark is honest)", () => {
     const [first] = laptop.problems;
     const x = root(first);
     expect(x).toBe(5);
-    expect(holds(laptop.typed, x)).toBe(true);
+    expect(holds(laptop.line, x)).toBe(true);
     // a step, not the problem again
-    expect(laptop.typed.replace(/\s/g, "")).not.toBe(first.replace(/\s/g, ""));
+    expect(laptop.line.replace(/\s/g, "")).not.toBe(first.replace(/\s/g, ""));
     // and every problem on the board has a whole-number answer, as the board's would
     for (const p of laptop.problems) expect(Number.isInteger(root(p)), p).toBe(true);
   });
 
-  it("says the board writes the line in their pen color, not their own handwriting", () => {
-    expect(laptop.body).toContain(laptop.typed);
-    expect(laptop.body).toMatch(/pen color/);
-    expect(laptop.body).not.toMatch(/own handwriting/);
+  it("says the mouse, never typing (Type it was removed on 2026-10-13)", () => {
+    expect(laptop.body).toMatch(/mouse/);
+    expect(JSON.stringify(LANDING_COPY)).not.toMatch(/Type it|\btype (their|a line)|keyboard/i);
   });
 
-  it("types key by key, the preview being the bar's own reading of the box after each key", () => {
-    const demo = typingDemo(laptop.typed);
-    expect(demo.keys.map((k) => k.char).join("")).toBe(laptop.typed);
-    for (let i = 1; i < demo.keys.length; i++) expect(demo.keys[i].atMs).toBeGreaterThan(demo.keys[i - 1].atMs);
-    expect(demo.firstMs).toBe(TYPING_PACE.typeAtMs);
-    expect(demo.previews.map((p) => p.latex)).toEqual(["3", "3x", "3x =", "3x = 1", "3x = 15"]);
-    expect(demo.latex).toBe("3x = 15");
-    for (const p of demo.previews) expect(p.toMs).toBeGreaterThan(p.fromMs);
-    expect(demo.previews.at(-1)!.toMs).toBe(demo.clearMs);
-    // Enter after the last key, the box empties, then the board writes
-    expect(demo.enterMs).toBeGreaterThan(demo.keys.at(-1)!.atMs);
-    expect(demo.clearMs).toBeGreaterThan(demo.enterMs);
-    expect(demo.writeMs).toBeGreaterThan(demo.clearMs);
-  });
-
-  it("never types a line the bar could not read", () => {
-    expect(() => typingDemo("3x=")).not.toThrow();
-    expect(() => typingDemo("")).toThrow(/cannot read/);
+  it("writes the line, then the check a beat after the hand rests", () => {
+    const demo = mouseDemo(1200);
+    expect(demo.writeMs).toBe(MOUSE_PACE.writeAtMs);
+    expect(demo.doneMs).toBe(MOUSE_PACE.writeAtMs + 1200);
+    expect(demo.checkAtMs).toBe(demo.doneMs + MOUSE_PACE.checkAfterMs);
+    expect(mouseDemo(-5).doneMs).toBe(demo.writeMs);
   });
 });
 

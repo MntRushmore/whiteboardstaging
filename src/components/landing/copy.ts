@@ -1,7 +1,7 @@
 /**
  * Every word on the landing page (agathon.app; also /parents), in one place. v3 (2026-10-12): the
  * page shows the product as it is now (the simple board, Help me's three levels, Ask with voice and
- * pictures, Type it on a laptop) and its one button is "Join Agathon" (owner: "cta to join!"). Written for a parent who was sent
+ * pictures, writing with a mouse on a laptop) and its one button is "Join Agathon" (owner: "cta to join!"). Written for a parent who was sent
  * a link and has never heard of Agathon: short, plain sentences that say what the product does
  * today, and nothing it does not. No testimonials, ratings, user counts, outcome numbers, school
  * logos or press.
@@ -190,7 +190,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
     },
     devices: {
       eyebrow: "Works on what you have",
-      title: "Pencil, finger\nor keyboard.",
+      title: "Pencil, finger\nor mouse.",
       lede: "Agathon runs in the browser. There's nothing to install.",
       items: [
         {
@@ -202,13 +202,13 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
         },
         {
           name: "Laptop",
-          title: "Type it.",
+          title: "Draw it.",
           /** the problems the board wrote, in the tutor's blue; the demo works on the first */
           problems: ["3x+5=20", "4x-5=11", "2x+7=19"],
-          /** what the demo types in the Type bar (a right next step for the first problem) */
-          typed: "3x=15",
-          body: "No pen? Type a line like 3x=15 and the board writes it out by hand in their pen color, then checks it like any other line.",
-          alt: "An Agathon board on a laptop, with three problems written in the tutor's blue, the first 3x + 5 = 20. In the Type bar at the bottom, 3x=15 is typed, and beside it how it will look on the board. Enter is pressed, the board writes 3x = 15 by hand under the problem, and the tutor checks it.",
+          /** what the demo writes with the mouse under the first problem (a right next step) */
+          line: "3x=15",
+          body: "No pen? Write with the mouse or trackpad, right on the board. Every line gets checked the same way.",
+          alt: "An Agathon board on a laptop, with three problems written in the tutor's blue, the first 3x + 5 = 20. The mouse pointer writes 3x = 15 under it by hand, and the tutor puts a blue check mark beside it.",
         },
         {
           name: "Phone",
@@ -275,7 +275,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
         },
         {
           q: "What do we need?",
-          a: "A web browser on an iPad or other tablet, a phone, or a computer. Kids write with a finger or a stylus like Apple Pencil, or type their math on a laptop and the board writes it by hand. There's nothing to install.",
+          a: "A web browser on an iPad or other tablet, a phone, or a computer. Kids write with a finger, a stylus like Apple Pencil, or a mouse or trackpad. There's nothing to install.",
         },
         {
           q: "Does it just give them the answer?",

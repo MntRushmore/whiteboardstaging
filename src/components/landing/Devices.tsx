@@ -3,27 +3,23 @@ import Image from "next/image";
 import {
   ChevronDown,
   ChevronLeft,
-  CornerDownLeft,
   Ellipsis,
   Eraser,
   FilePlus2,
-  Keyboard,
   LayoutGrid,
   Lightbulb,
   MessageCircle,
   MousePointer2,
   Pencil,
-  Plus,
   Star,
   Undo2,
   type LucideIcon,
 } from "lucide-react";
 import { DOCK_COPY } from "@/components/kidmode/dockView";
-import { TYPE_COPY } from "@/components/typeMath/typeBarModel";
 import { DAILY_GOAL } from "@/lib/daily/contracts";
 import { DAILY_BOARD_COPY } from "@/lib/daily/copy";
 import { handInk } from "@/lib/landing/handInk";
-import { inkTimeline, TYPING_PACE, typingDemo } from "@/lib/landing/devices";
+import { inkTimeline, MOUSE_PACE, mouseDemo } from "@/lib/landing/devices";
 import { PHONE_SCENE, TABLET_SCENE, type InkPictureScene } from "@/lib/landing/devicesInk";
 import { LANDING_COPY } from "./copy";
 import { HandMath, handMathMs } from "./HandMath";
@@ -34,14 +30,14 @@ import landing from "./landing.module.css";
 import styles from "./devices.module.css";
 
 /**
- * "Pencil, finger or keyboard." (v3): three ways in, each a real moment of the product on its device.
+ * "Pencil, finger or mouse.": three ways in, each a real moment of the product on its device.
  *
  *  - Tablet: a 6th grader's Today board on an iPad, her lines written back over the real screenshot
  *    with the pen, and the tutor's check mark on each (`devicesInk.ts`, captured from the app).
- *  - Laptop: Type it. The board (drawn here, faithful to the simple board at 800 × 520) has three
- *    problems in the tutor's blue. `3x=15` is typed into the Type bar key by key, its preview in the
- *    board's hand beside it (the parser's reading, as the bar shows it); Enter; the board writes the
- *    line in the kid's pen and the tutor checks it.
+ *  - Laptop: the mouse. The board (drawn here, faithful to the simple board at 800 × 520) has three
+ *    problems in the tutor's blue; `3x=15` is written under the first in the kid's pen, the pointer
+ *    travelling with it, and the tutor checks it. (It showed Type it, the typing bar, until that was
+ *    removed on 2026-10-13.)
  *  - Phone: a 4th grader's Today board on a phone, two answers written back over it, each checked.
  *
  * Server-rendered and static; the moments are CSS animations, each held until its picture is in
@@ -115,19 +111,15 @@ function PhonePicture({ alt }: { alt: string }) {
   );
 }
 
-// ---- The laptop: Type it ------------------------------------------------------------------------
+// ---- The laptop: the mouse --------------------------------------------------------------------
 
 /**
- * The simple board on a laptop at 800 × 520 CSS px (a window that size: the bar is 720 wide, the
- * dock folds Shapes, Picture and Redo behind More), measured off the real board. Board px are `u`.
+ * The simple board on a laptop at 800 × 520 CSS px (a window that size: the dock folds Shapes,
+ * Picture and Redo behind More), measured off the real board. Board px are `u`.
  */
 const PROBLEM = { x: 44, top: 84, gap: 240.5, size: 29.3, pen: 2 } as const;
-/** the typed line: the writer's size on a laptop (a digit about 23 px), its pitch under the problem */
-const TYPED = { x: 44, top: 126.5, size: 40, seed: 11, pen: 1.9 } as const;
-/** the preview's hand (HandPreview: PREVIEW_HAND_SIZE, PREVIEW_SEED, its pen) */
-const PREVIEW = { size: 24, seed: 11, pen: 2.1 } as const;
-/** the soft caret on the board where Enter writes next: its baseline before and after the line */
-const CARET = { h: 40, before: 149.7, after: 207.7 } as const;
+/** the line written with the mouse: a kid's size on a laptop, its pitch under the problem */
+const LINE = { x: 44, top: 132, size: 40, seed: 11, pen: 2.2 } as const;
 
 /** One line of ink on the board, its digits' top-left at (x, top) in board px. */
 function BoardInk({ x, top, children, width, className }: { x: number; top: number; width: number; children: ReactNode; className?: string }) {
@@ -138,11 +130,13 @@ function BoardInk({ x, top, children, width, className }: { x: number; top: numb
   );
 }
 
-function Caret({ baseline, className, style }: { baseline: number; className: string; style?: CSSProperties }) {
+/** The system's arrow pointer, its tip at its box's top-left. */
+function Pointer({ style }: { style: CSSProperties }) {
   return (
-    <span className={`${styles.caret} ${className}`} style={{ left: u(TYPED.x), top: u(baseline - CARET.h * 0.85), height: u(CARET.h), ...style }} {...MOVES}>
-      <span className={styles.caretBar} {...MOVES} />
-      <span className={styles.caretLine} style={{ top: u(CARET.h * 0.85), width: u(CARET.h * 2.4) }} />
+    <span className={styles.pointer} style={style} {...MOVES}>
+      <svg viewBox="0 0 16 24" className={styles.pointerShape}>
+        <path d="M1 1v19.2l4.6-4.4 3.1 7 3-1.3-3-6.9H15z" fill="#fff" stroke="#1d1d1d" strokeWidth="1.4" strokeLinejoin="round" />
+      </svg>
     </span>
   );
 }
@@ -179,30 +173,7 @@ function TopBar() {
   );
 }
 
-const MATH_KEYS = ["frac", "sq", "pow", "√", "×", "÷", "π", "( )", "≤", "≥", "="] as const;
-
-function KeyFace({ k }: { k: (typeof MATH_KEYS)[number] }) {
-  if (k === "frac") {
-    return (
-      <svg viewBox="0 0 16 24" className={styles.fracKey} fill="none" stroke="currentColor">
-        <rect x="3.5" y="1.5" width="9" height="7" rx="1.75" strokeWidth="1.6" />
-        <path d="M1.5 12h13" strokeWidth="2" strokeLinecap="round" />
-        <rect x="3.5" y="15.5" width="9" height="7" rx="1.75" strokeWidth="1.6" />
-      </svg>
-    );
-  }
-  if (k === "sq" || k === "pow") {
-    return (
-      <span className={styles.serif}>
-        <i>x</i>
-        <sup>{k === "sq" ? "2" : <i>n</i>}</sup>
-      </span>
-    );
-  }
-  return <span>{k}</span>;
-}
-
-function DockTool({ icon: Icon, label, state }: { icon: LucideIcon; label: string; state?: "pen" | "open" | "off" }) {
+function DockTool({ icon: Icon, label, state }: { icon: LucideIcon; label: string; state?: "pen" }) {
   return (
     <span className={styles.tool} data-state={state}>
       <Icon className={styles.i22} strokeWidth={2} />
@@ -217,9 +188,8 @@ function Dock({ undoUntilMs }: { undoUntilMs: number }) {
       <DockTool icon={MousePointer2} label={DOCK_COPY.select} />
       <DockTool icon={Pencil} label={DOCK_COPY.pen} state="pen" />
       <DockTool icon={Eraser} label={DOCK_COPY.eraser} />
-      <DockTool icon={Keyboard} label={DOCK_COPY.type} state="open" />
       <span className={styles.divider} />
-      {/* Undo wakes up when the typed line is written: it is one undo step */}
+      {/* Undo wakes up once the line is written */}
       <span className={styles.undo} style={{ "--until": ms(undoUntilMs) } as CSSProperties} {...MOVES}>
         <DockTool icon={Undo2} label={DOCK_COPY.undo} />
       </span>
@@ -244,17 +214,15 @@ function Dock({ undoUntilMs }: { undoUntilMs: number }) {
 }
 
 function LaptopPicture({ item }: { item: Copy["items"][1] }) {
-  const demo = typingDemo(item.typed);
-  const typedHand = handInk(demo.latex, { size: TYPED.size, seed: TYPED.seed, speed: TYPING_PACE.writeSpeed });
-  const writeMs = demo.writeMs;
-  const checkAtMs = writeMs + handMathMs(demo.latex, { size: TYPED.size, seed: TYPED.seed, speed: TYPING_PACE.writeSpeed }) + TYPING_PACE.checkAfterMs;
-  const caretAtMs = checkAtMs + TYPING_PACE.checkMs + TYPING_PACE.caretAfterMs;
-  const timing = {
-    "--first": ms(demo.firstMs),
-    "--typing": ms(demo.clearMs - demo.firstMs),
-    "--enter": ms(demo.enterMs),
-    "--clear": ms(demo.clearMs),
-    "--caret": ms(caretAtMs),
+  const hand = handInk(item.line, { size: LINE.size, seed: LINE.seed, speed: MOUSE_PACE.writeSpeed });
+  const demo = mouseDemo(handMathMs(item.line, { size: LINE.size, seed: LINE.seed, speed: MOUSE_PACE.writeSpeed }));
+  // the pointer rides the pen across the line, its tip on the ink's middle
+  const pointer = {
+    left: u(LINE.x),
+    top: u(LINE.top + hand.height * 0.45),
+    "--write": ms(demo.writeMs),
+    "--len": ms(demo.doneMs - demo.writeMs),
+    "--dx": u(hand.width),
   } as CSSProperties;
 
   return (
@@ -263,89 +231,31 @@ function LaptopPicture({ item }: { item: Copy["items"][1] }) {
         <div className={styles.lid}>
           <span className={styles.lidCamera} />
           <div className={styles.screen}>
-            <div className={styles.board} style={timing}>
+            <div className={styles.board}>
               <span className={styles.page} />
 
               {/* the problems, as the board wrote them: numbered, in the tutor's blue */}
               {item.problems.map((p, i) => {
                 const latex = `${i + 1}.\\ ${p}`;
-                const hand = handInk(latex, { size: PROBLEM.size, seed: 2 + i });
+                const problem = handInk(latex, { size: PROBLEM.size, seed: 2 + i });
                 return (
-                  <BoardInk key={p} x={PROBLEM.x + i * PROBLEM.gap - PROBLEM.pen} top={PROBLEM.top - PROBLEM.pen} width={hand.width + 2 * PROBLEM.pen}>
+                  <BoardInk key={p} x={PROBLEM.x + i * PROBLEM.gap - PROBLEM.pen} top={PROBLEM.top - PROBLEM.pen} width={problem.width + 2 * PROBLEM.pen}>
                     <HandMath latex={latex} ink="tutor" size={PROBLEM.size} seed={2 + i} pen={PROBLEM.pen} />
                   </BoardInk>
                 );
               })}
 
-              {/* where Enter will write, while the box has the focus; then under the new line */}
-              <Caret baseline={CARET.before} className={styles.caretBefore} />
-              <Caret baseline={CARET.after} className={styles.caretAfter} />
-
-              {/* the typed line, written by the board in the kid's pen, and the tutor's check */}
-              <BoardInk x={TYPED.x - TYPED.pen} top={TYPED.top - TYPED.pen} width={typedHand.width + 2 * TYPED.pen} className={styles.typedInk}>
-                <HandMath latex={demo.latex} ink="kid" size={TYPED.size} seed={TYPED.seed} pen={TYPED.pen} speed={TYPING_PACE.writeSpeed} draw={KEYS.laptop} startMs={writeMs} />
+              {/* the line written with the mouse, in the kid's pen, and the tutor's check */}
+              <BoardInk x={LINE.x - LINE.pen} top={LINE.top - LINE.pen} width={hand.width + 2 * LINE.pen} className={styles.typedInk}>
+                <HandMath latex={item.line} ink="kid" size={LINE.size} seed={LINE.seed} pen={LINE.pen} speed={MOUSE_PACE.writeSpeed} draw={KEYS.laptop} startMs={demo.writeMs} />
               </BoardInk>
-              <span className={styles.boardCheck} style={{ left: u(TYPED.x + typedHand.width + 10), top: u(TYPED.top - 9) }}>
-                <InkCheck draw={KEYS.laptop} atMs={checkAtMs} forMs={TYPING_PACE.checkMs} />
+              <span className={styles.boardCheck} style={{ left: u(LINE.x + hand.width + 12), top: u(LINE.top - 6) }}>
+                <InkCheck draw={KEYS.laptop} atMs={demo.checkAtMs} forMs={demo.checkMs} />
               </span>
+              <Pointer style={pointer} />
 
               <TopBar />
-
-              {/* Type it's bar (src/components/typeMath/TypeBar.tsx) */}
-              <span className={styles.bar}>
-                <span className={styles.field}>
-                  <span className={styles.input}>
-                    <span className={styles.placeholder} {...MOVES}>
-                      {TYPE_COPY.placeholder}
-                    </span>
-                    <span className={styles.typed}>
-                      {demo.keys.map((k, i) => (
-                        <span key={i} className={styles.char} style={{ "--at": ms(k.atMs) } as CSSProperties} {...MOVES}>
-                          {k.char}
-                        </span>
-                      ))}
-                      <span className={styles.textCaret} {...MOVES} />
-                    </span>
-                  </span>
-                  <span className={styles.previewSlot} {...MOVES}>
-                    {demo.previews.map((p) => {
-                      const hand = handInk(p.latex, PREVIEW);
-                      return (
-                        <span
-                          key={p.text}
-                          className={styles.preview}
-                          style={{ "--from": ms(p.fromMs), "--len": ms(p.toMs - p.fromMs), width: u(hand.width + 2 * PREVIEW.pen) } as CSSProperties}
-                          {...MOVES}
-                        >
-                          <HandMath latex={p.latex} ink="kid" size={PREVIEW.size} seed={PREVIEW.seed} pen={PREVIEW.pen} />
-                        </span>
-                      );
-                    })}
-                  </span>
-                </span>
-                <span className={styles.newProblem}>
-                  <Plus className={styles.i16} strokeWidth={2.5} />
-                  {TYPE_COPY.newProblem}
-                </span>
-                <span className={styles.enter} {...MOVES}>
-                  <span className={styles.enterFace} {...MOVES}>
-                    <CornerDownLeft className={styles.i18} strokeWidth={2.5} />
-                    {TYPE_COPY.enter}
-                  </span>
-                </span>
-                <span className={styles.keys}>
-                  {MATH_KEYS.map((k) => (
-                    <span key={k} className={styles.key}>
-                      <KeyFace k={k} />
-                    </span>
-                  ))}
-                </span>
-                <span className={styles.hide}>
-                  <ChevronDown className={styles.i20} strokeWidth={2.25} />
-                </span>
-              </span>
-
-              <Dock undoUntilMs={writeMs} />
+              <Dock undoUntilMs={demo.doneMs} />
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-/* "Pencil, finger or keyboard." (Devices.tsx): three devices drawn in CSS in the hero iPad's house
+/* "Pencil, finger or mouse." (Devices.tsx): three devices drawn in CSS in the hero iPad's house
    style (device.module.css: a near-black bezel, a hairline of aluminium round it, one soft shadow),
    each with a real moment of the product on it. Flat fills only. Everything inside a device scales
    with it (container units), so a picture keeps its proportions from a phone to a wide screen. */
@@ -74,8 +74,8 @@
 .phonePicture {
   width: min(56%, 13.5rem);
 }
-/* the laptop runs off the screen's right edge (the band clips it), so its board and the Type bar's
-   box read at a phone's size: what is typed, its preview, the line on the board and its check */
+/* the laptop runs off the screen's right edge (the band clips it), so its board reads at a phone's
+   size: the problems, the line written with the mouse, and its check */
 @media (max-width: 639px) {
   .card[data-device="laptop"] .stage {
     justify-content: flex-start;
@@ -504,186 +504,22 @@
   font-weight: 500;
 }
 
-/* The soft caret on the board where Enter writes next (typeMath/boardMarks.tsx) */
-.caret {
-  width: calc(var(--u) * 3);
-}
-.caretBar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: calc(var(--u) * 2.5);
-  height: 100%;
-  border-radius: 999px;
-  background: var(--lp-pen-kid, #1d1d1d);
-  opacity: 0.6;
-}
-.caretLine {
-  position: absolute;
-  left: 0;
-  height: calc(var(--u) * 2);
-  border-radius: 999px;
-  background: var(--lp-pen-kid, #1d1d1d);
-  opacity: 0.25;
-}
-/* finished: the line is written and the caret waits under it */
-.caretBefore {
-  visibility: hidden;
-}
-
-/* Type it's bar: the box (what is typed, and the preview in the board's hand), New problem, Enter,
-   the maths keys and Hide */
-.bar {
-  top: calc(var(--u) * 310);
-  left: calc(var(--u) * 40);
-  display: grid;
-  width: calc(var(--u) * 720);
-  height: calc(var(--u) * 126);
-  box-sizing: border-box;
-  grid-template-columns: 1fr calc(var(--u) * 147) calc(var(--u) * 106);
-  grid-template-rows: calc(var(--u) * 56) calc(var(--u) * 44);
-  gap: calc(var(--u) * 8);
-  padding: calc(var(--u) * 8);
-  border: max(0.5px, calc(var(--u) * 1)) solid rgb(226 232 240 / 0.8);
-  border-radius: calc(var(--u) * 20);
-  background: #fff;
-  box-shadow:
-    0 calc(var(--u) * 10) calc(var(--u) * 30) rgb(15 23 42 / 0.12),
-    0 calc(var(--u) * 2) calc(var(--u) * 6) rgb(15 23 42 / 0.06);
-}
-.field {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  border: max(0.5px, calc(var(--u) * 1)) solid #2b7fff;
-  border-radius: calc(var(--u) * 14);
-  background: #fff;
-  /* the box has the focus: blue, with its soft ring */
-  box-shadow: 0 0 0 calc(var(--u) * 3) rgb(43 127 255 / 0.2);
-}
-.input {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  height: 100%;
-  flex: 1 1 0;
-  align-items: center;
-  padding: 0 calc(var(--u) * 12);
-  font-size: calc(var(--u) * 18);
-  white-space: nowrap;
-}
-.placeholder {
-  position: absolute;
-  left: calc(var(--u) * 12);
-  color: #90a1b9;
-}
-.typed {
-  display: flex;
-  height: 1.3em;
-  align-items: center;
-}
-/* a typed key: in from its moment until Enter empties the box; finished, the box is empty */
-.char {
-  display: inline-block;
-  overflow: hidden;
-  max-width: 0;
-}
-.textCaret {
-  width: max(1px, calc(var(--u) * 1.6));
-  height: 1.15em;
-  margin-left: max(1px, calc(var(--u) * 1));
-  background: #0f172b;
-}
-.previewSlot {
-  position: relative;
-  overflow: hidden;
-  height: 100%;
-  flex: 0 0 0;
-  border-left: 0 solid #e2e8f0;
-  visibility: hidden;
-}
-.preview {
-  position: absolute;
-  top: 50%;
-  left: calc(var(--u) * 12);
-  opacity: 0;
-  transform: translateY(-50%);
-}
-.preview svg {
-  width: 100%;
-}
-.newProblem,
-.enter {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: calc(var(--u) * 14);
-  white-space: nowrap;
-}
-.newProblem {
-  gap: calc(var(--u) * 6);
-  border: max(0.5px, calc(var(--u) * 1)) solid #e2e8f0;
-  color: #314158;
-  font-size: calc(var(--u) * 15);
-  font-weight: 600;
-}
-/* Enter: dimmed while the box is empty */
-.enter {
-  opacity: 0.4;
-}
-.enterFace {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  gap: calc(var(--u) * 8);
-  border-radius: inherit;
-  background: #0f172b;
-  color: #fff;
-  font-size: calc(var(--u) * 16);
-  font-weight: 600;
-}
-.keys {
-  display: flex;
-  grid-column: 1 / 3;
-  gap: calc(var(--u) * 6);
-}
-.key {
-  display: flex;
-  width: calc(var(--u) * 44);
-  height: calc(var(--u) * 44);
-  align-items: center;
-  justify-content: center;
-  border-radius: calc(var(--u) * 12);
-  background: #f1f5f9;
-  color: #1d293d;
-  font-size: calc(var(--u) * 18);
-  font-weight: 500;
-}
-.fracKey {
+/* The system's arrow pointer, riding the pen across the line as it is written */
+.pointer {
+  z-index: 2;
   width: calc(var(--u) * 16);
   height: calc(var(--u) * 24);
+  filter: drop-shadow(0 calc(var(--u) * 1) calc(var(--u) * 1.5) rgb(15 23 42 / 0.25));
+  /* finished: resting just past the line's end */
+  transform: translateX(var(--dx));
 }
-.serif {
-  font-family: ui-serif, Georgia, "Times New Roman", serif;
-}
-.serif sup {
-  margin-left: calc(var(--u) * 1);
-  font-size: calc(var(--u) * 12);
-  line-height: 0;
-}
-.hide {
-  display: flex;
-  width: calc(var(--u) * 44);
-  height: calc(var(--u) * 44);
-  align-items: center;
-  justify-content: center;
-  justify-self: end;
-  color: #62748e;
+.pointerShape {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
-/* The simple board's dock (kidmode/KidDock.tsx), folded to fit 800 px: Select, Pen, Eraser, Type |
+/* The simple board's dock (kidmode/KidDock.tsx), folded to fit 800 px: Select, Pen, Eraser |
    Undo, More | the colours | New page | Ask */
 .dock {
   top: calc(var(--u) * 445);
@@ -721,10 +557,6 @@
 .tool[data-state="pen"] {
   background: rgb(219 234 254 / 0.8);
   color: #1447e6;
-}
-.tool[data-state="open"] {
-  background: #f1f5f9;
-  color: #0f172b;
 }
 .undo {
   display: flex;
@@ -774,112 +606,27 @@
   font-weight: 600;
 }
 
-/* ---- Type it, played: each step at its moment (Devices.tsx sets the moments). Without motion the
-   picture is finished: the line written and checked, the box empty, the caret under the line. ---- */
+/* ---- The mouse, played: the pointer glides with the pen while the line is written, then rests;
+   Undo wakes once the line is down. Without motion the picture is finished. ---- */
 @media (prefers-reduced-motion: no-preference) {
-  .char {
-    animation:
-      dv-key 1ms linear var(--at) forwards,
-      dv-unkey 1ms linear var(--clear) forwards;
-  }
-  .placeholder {
-    animation: dv-gone var(--typing) linear var(--first);
-  }
-  .previewSlot {
-    animation: dv-slot var(--typing) linear var(--first);
-  }
-  .preview {
-    animation: dv-shown var(--len) linear var(--from);
-  }
-  .enter {
-    animation: dv-shown var(--typing) linear var(--first);
-  }
-  .enterFace {
-    animation: dv-press 200ms var(--ease-standard, ease) var(--enter);
-  }
-  .textCaret {
-    animation: dv-blink 1.06s steps(1) infinite;
-  }
-  .caretBefore {
-    animation: dv-visible var(--enter) linear;
-  }
-  .caretAfter {
-    animation: dv-hidden var(--caret) linear;
-  }
-  .caretBar {
-    animation: dv-soft-blink 1.1s ease-in-out infinite;
+  .pointer {
+    animation: dv-glide var(--len) linear var(--write) backwards;
   }
   .undo {
     animation: dv-dim var(--until) linear;
   }
 }
-@keyframes dv-key {
-  to {
-    max-width: 1em;
+@keyframes dv-glide {
+  from {
+    transform: translateX(0);
   }
-}
-@keyframes dv-unkey {
   to {
-    max-width: 0;
-  }
-}
-@keyframes dv-gone {
-  from,
-  to {
-    visibility: hidden;
-  }
-}
-@keyframes dv-slot {
-  from,
-  to {
-    flex-grow: 1;
-    border-left-width: max(0.5px, calc(var(--u) * 1));
-    visibility: visible;
-  }
-}
-@keyframes dv-shown {
-  from,
-  to {
-    opacity: 1;
-  }
-}
-@keyframes dv-visible {
-  from,
-  to {
-    visibility: visible;
-  }
-}
-@keyframes dv-hidden {
-  from,
-  to {
-    visibility: hidden;
+    transform: translateX(var(--dx));
   }
 }
 @keyframes dv-dim {
   from,
   to {
     opacity: 0.35;
-  }
-}
-@keyframes dv-press {
-  40% {
-    background: #020618;
-    transform: scale(0.94);
-  }
-}
-@keyframes dv-blink {
-  50% {
-    opacity: 0;
-  }
-}
-/* the board's own caret blink (TypeBar.tsx type-blink) */
-@keyframes dv-soft-blink {
-  0%,
-  45% {
-    opacity: 0.75;
-  }
-  55%,
-  100% {
-    opacity: 0.12;
   }
 }

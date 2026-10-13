@@ -58,7 +58,7 @@ describe("the problem strip", () => {
   });
 });
 
-describe("Pencil, finger or keyboard", () => {
+describe("Pencil, finger or mouse", () => {
   const html = renderToStaticMarkup(<Devices />);
   const copy = LANDING_COPY.devices;
 
@@ -86,23 +86,19 @@ describe("Pencil, finger or keyboard", () => {
 
   it("plays each device's moment when it is in view (one key per picture)", () => {
     for (const key of ["devices-tablet", "devices-laptop", "devices-phone"]) expect(html).toContain(`data-lp-draw="${key}"`);
-    // the laptop's moving parts that are not ink are held too
-    expect(count(html, 'data-lp-ink=""')).toBeGreaterThan(10);
+    // the laptop's moving parts that are not ink (the pointer, Undo waking) are held too
+    expect(count(html, 'data-lp-ink=""')).toBeGreaterThanOrEqual(2);
   });
 
-  it("types the copy's line into the Type bar, key by key, with the bar's own words round it", () => {
-    const laptop = copy.items[1];
-    const keys = [...html.matchAll(/style="--at:\d+ms"[^>]*>([^<])<\/span>/g)].map((m) => m[1]).join("");
-    expect(keys).toBe(laptop.typed);
-    expect(html).toContain("Type your math, like 3x + 5 = 20");
-    expect(plain(html)).toMatch(/New problem .*Enter/);
+  it("writes the copy's line with the mouse, the pointer gliding with it, and no typing bar", () => {
+    expect(html).toMatch(/--dx:/);
+    expect(html).not.toMatch(/Type your math|New problem|Enter/);
   });
 
   it("says only what is true: US English, no claims, no testimonials", () => {
     const all = words();
     expect(all).not.toMatch(/\btick|colour|practis|\bmaths\b|favourite/i);
     expect(all).toMatch(/check mark/);
-    expect(all).toMatch(/color/);
     expect(all).not.toMatch(/\d+\s?%|testimonial|rated|review|trusted by|thousands|millions|#1|\bbest\b|guarantee|proven|raise[sd]? (their )?grades/i);
     expect(plain(html)).not.toMatch(/★|⭐|4\.\d\/5/);
   });

@@ -10,7 +10,6 @@ import {
   Ellipsis,
   Eraser,
   History,
-  Keyboard,
   LayoutGrid,
   Lightbulb,
   LoaderCircle,
@@ -178,7 +177,6 @@ function Board() {
           <DockTool icon={MousePointer2} label={DOCK_COPY.select} className={ask.roomy} />
           <DockTool icon={Pencil} label={DOCK_COPY.pen} pressed />
           <DockTool icon={Eraser} label={DOCK_COPY.eraser} />
-          <DockTool icon={Keyboard} label={DOCK_COPY.type} className={ask.roomy} />
           <span className={`${ask.divider} ${ask.roomy}`} />
           <DockTool icon={Undo2} label={DOCK_COPY.undo} />
           <DockTool icon={LayoutGrid} label={DOCK_COPY.more} className={ask.roomy} />
