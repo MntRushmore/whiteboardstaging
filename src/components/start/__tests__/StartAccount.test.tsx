@@ -337,8 +337,8 @@ describe("a kid on their own", () => {
     const { url } = (share.mock.calls[0] as unknown as [{ url: string }])[0];
     const link = new URL(url);
     expect(`${link.origin}${link.pathname}`).toBe("https://www.agathon.app/start");
-    expect([...link.searchParams.keys()]).toEqual(["a"]);
-    expect(decodeStartAnswers(link.searchParams.get("a"))).toEqual(KID);
+    expect(link.search).toBe("");
+    expect(decodeStartAnswers(new URLSearchParams(link.hash.slice(1)).get("a"))).toEqual(KID);
     expect(url).not.toContain("%40");
     expect(fakes.record).toHaveBeenCalledWith("start_handoff", { via: "share" });
     expect(s.view()).toBe("sent");
@@ -363,7 +363,7 @@ describe("a kid on their own", () => {
     s.render();
     expect(s.view()).toBe("share");
     const link = String(s.input("start-link").props.value);
-    expect(decodeStartAnswers(new URL(link).searchParams.get("a"))).toEqual(KID);
+    expect(decodeStartAnswers(new URLSearchParams(new URL(link).hash.slice(1)).get("a"))).toEqual(KID);
     expect(s.input("start-link").props.readOnly).toBe(true);
     s.tap("Copy link");
     await settle();
