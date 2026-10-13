@@ -88,6 +88,11 @@ const envSchema = z.object({
   EMAIL_FROM: optionalString,
   // Admin alerts (src/lib/server/health): where "a service is down" / "errors spiking" emails go.
   ALERT_EMAIL: optionalString,
+
+  // "Try it free" (/try, src/lib/try/contracts.ts): `0` turns its checking off (503); and the reads
+  // everyone together may make in a UTC day (default TRY_LIMITS.perDay).
+  TRY_ENABLED: optionalString,
+  TRY_DAILY_READS: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof envSchema>;
@@ -150,6 +155,24 @@ export function hasElevenLabs(): boolean {
 export function hasMathpix(): boolean {
   const env = getServerEnv();
   return Boolean(env.MATHPIX_APP_ID && env.MATHPIX_APP_KEY);
+}
+
+/**
+ * `TRY_ENABLED`: the try board's kill switch (`/api/try/*`). Only the literal `0` turns it off;
+ * anything else, including unset, leaves it on.
+ */
+export function tryEnabled(): boolean {
+  return getServerEnv().TRY_ENABLED?.trim() !== "0";
+}
+
+/**
+ * `TRY_DAILY_READS`: how many handwriting reads the try board may make in a UTC day, for everyone
+ * together. Unset, not a whole number or below 1: `fallback` (TRY_LIMITS.perDay). At most 1,000,000.
+ */
+export function tryDailyReads(fallback: number): number {
+  const raw = getServerEnv().TRY_DAILY_READS?.trim();
+  const n = raw && /^\d+$/.test(raw) ? Number(raw) : NaN;
+  return Number.isSafeInteger(n) && n >= 1 ? Math.min(n, 1_000_000) : fallback;
 }
 
 export type LiveModels = {
