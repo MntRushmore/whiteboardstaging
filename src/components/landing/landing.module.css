@@ -500,7 +500,9 @@
     padding-inline: 0;
   }
 }
-@media (max-width: 479px) {
+/* On a phone the two ways on sit side by side; on the narrowest (under 360 px) the link goes under
+   the button rather than breaking in two. */
+@media (min-width: 360px) and (max-width: 479px) {
   .hero .actions {
     flex-wrap: nowrap;
     gap: 1.25rem;
@@ -508,6 +510,14 @@
   .hero .pill {
     padding-inline: 1.5rem;
   }
+}
+@media (max-width: 359px) {
+  .hero .actions {
+    gap: 0.5rem 1rem;
+  }
+}
+.hero .textLink {
+  white-space: nowrap;
 }
 
 /* ---- How it works ---------------------------------------------------------------------------- */
@@ -526,7 +536,7 @@
 @media (min-width: 900px) {
   .step {
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    gap: clamp(3rem, 0rem + 5.5vw, 6.5rem);
+    gap: clamp(3rem, 0rem + 4.5vw, 5rem);
   }
   .step:nth-child(even) {
     grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
@@ -547,7 +557,7 @@
 /* The step's picture on its own flat tint (one per step). */
 .stepCard {
   border-radius: var(--lp-card-radius);
-  padding: clamp(1.25rem, 0.25rem + 4vw, 4rem);
+  padding: clamp(1rem, 0rem + 3.5vw, 3rem);
 }
 .tintBlue {
   background: var(--lp-tint-blue);
