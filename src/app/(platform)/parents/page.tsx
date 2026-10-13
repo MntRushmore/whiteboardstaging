@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { LANDING_COPY } from "@/components/landing/copy";
 import { AskDemo } from "@/components/landing/AskDemo";
+import { Devices } from "@/components/landing/Devices";
 import { GrownUps } from "@/components/landing/GrownUps";
 import { Hero } from "@/components/landing/Hero";
 import { HowItWorks } from "@/components/landing/HowItWorks";
@@ -9,6 +10,7 @@ import { Join } from "@/components/landing/Join";
 import { LandingNav } from "@/components/landing/LandingNav";
 import { PracticePicker } from "@/components/landing/PracticePicker";
 import { Pricing } from "@/components/landing/Pricing";
+import { ProblemStrip } from "@/components/landing/ProblemStrip";
 import { Questions } from "@/components/landing/Questions";
 import { SessionHop } from "@/components/landing/SessionHop";
 import { StickyJoin } from "@/components/landing/StickyJoin";
@@ -60,10 +62,12 @@ export default function ParentsPage() {
       <LandingNav />
       <main>
         <Hero />
+        <ProblemStrip />
         {/* a phone's bottom Join bar, while these are on screen (StickyJoin) */}
         <StickyJoin>
           <HowItWorks />
           <AskDemo />
+          <Devices />
           <PracticePicker />
           <GrownUps />
           <Pricing />
