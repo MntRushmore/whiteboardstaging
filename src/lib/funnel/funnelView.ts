@@ -1,7 +1,8 @@
 /**
- * The admin Funnel page in words and numbers (2026-10-09, honest chain 2026-10-12): the money at
- * the top, a bar per stage with its share of the stage before, how sign-ups left the welcome and
- * the guided board, and the same stages per sign-up week and per source. Pure like the console's
+ * The admin Funnel page in words and numbers (2026-10-09, honest chain 2026-10-12, before the
+ * account 2026-10-13): the money at the top, a bar per step at /start before the account, a bar per
+ * stage with its share of the stage before, how sign-ups left the welcome and the guided board, and
+ * the same stages per sign-up week and per source. Pure like the console's
  * other view modules (no React, no network): the page renders what this returns, and every line is
  * tested (src/lib/funnel/__tests__/report.test.ts).
  *
@@ -10,7 +11,20 @@
  */
 import { percentOf } from "@/lib/admin/consoleView";
 import { formatCount, plural } from "@/lib/admin/view";
-import { FUNNEL_COHORTS, FUNNEL_STAGES, HEARD_FROM, type FunnelCohort, type FunnelPath, type FunnelPathRow, type FunnelReport, type FunnelRow, type FunnelStage } from "./contracts";
+import {
+  FUNNEL_COHORTS,
+  FUNNEL_STAGES,
+  HEARD_FROM,
+  START_STAGES,
+  type FunnelCohort,
+  type FunnelPath,
+  type FunnelPathRow,
+  type FunnelReport,
+  type FunnelRow,
+  type FunnelStage,
+  type StartFunnel,
+  type StartStage,
+} from "./contracts";
 
 const DATE = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
 
@@ -37,6 +51,22 @@ export const FUNNEL_COPY = {
     const day = shortDate(since, timeZone);
     return cohort === "paywall" ? `Sign-ups since ${day}, when the free plan ended and the trial began.` : `Sign-ups since ${day}, when the app began recording each step.`;
   },
+  startTitle: "Before the account",
+  startHint: (since: string | null, timeZone: string): string =>
+    since === null
+      ? "Visits to /start, counted by device before anyone makes an account. Nothing is counted in this range yet."
+      : `Visits to /start since ${shortDate(since, timeZone)}, counted by device before anyone makes an account. Each step counts the visits that got at least that far.`,
+  startEmpty: "Nobody has started at /start in this range yet.",
+  startMissing: "This database does not count the steps before the account yet (migration 20261013020000_start_steps.sql).",
+  /** under the bars: the try is the one step a visit may skip */
+  startTryNote: "The try board can be skipped: a checked line counts as a part of Saw the try board, and Saw the plan counts from Saw the try board too.",
+  /** the quiet line: kids who sent their plan to a grown-up, and what came of it */
+  startHandoff: (sent: number, opened: number, accounts: number): string =>
+    sent === 0 && opened === 0
+      ? "No kid has sent their plan to a grown-up yet."
+      : `${plural(sent, "kid")} sent their plan to a grown-up; ${formatCount(opened)} opened it${accounts > 0 ? `, and ${formatCount(accounts)} of them made the account` : ""}. Visits opened from a grown-up's link are counted here, not in the bars.`,
+  /** a share of the try board rather than of the bar just above */
+  ofTryBoard: (pct: string) => `${pct} of those who saw the try board`,
   moneyTitle: "Money",
   moneyHint: "Every sign-up, whichever are picked above.",
   stagesTitle: "From sign-up to paying",
@@ -98,6 +128,18 @@ export const STAGE_SHORT: Record<FunnelStage, string> = {
   came_back_day2: "Day 2",
   came_back_week2: "Week 2",
   paid: "Paying",
+};
+
+/** Each step before the account as the owner reads it (START_STAGES). */
+export const START_STAGE_LABELS: Record<StartStage, string> = {
+  start_shown: "Started",
+  start_who: "Chose who",
+  start_grade: "Picked a grade",
+  start_try_shown: "Saw the try board",
+  start_try_checked: "The tutor checked a line",
+  start_plan: "Saw the plan",
+  start_account_shown: "Saw the account screen",
+  start_account: "Made the account",
 };
 
 /** How each path reads (FUNNEL_PATHS). */
@@ -192,6 +234,77 @@ export function funnelBars(row: FunnelRow): FunnelBarView[] {
       summary: `${label}: ${formatCount(n)}${ofText ? `, ${ofText}` : ""}`,
     };
   });
+}
+
+// ------------------------------------------------------------------ before the account
+
+export interface StartBarView {
+  stage: StartStage;
+  label: string;
+  count: string;
+  /** of the visits that started, 0..1: the bar's length */
+  ratio: number;
+  /** "62%" of the step it is a share of; null for the first step or when that step had none */
+  ofBefore: string | null;
+  ofText: string | null;
+  /** the whole bar for a screen reader */
+  summary: string;
+  /** a step a visit may skip (the try's checked line): drawn as a part of the bar above */
+  branch: boolean;
+}
+
+/** What each step is a share of: the step before it in START_STAGES, except the plan, which counts from the try board (the checked line is skippable). */
+function startBase(stage: StartStage, i: number): StartStage | null {
+  if (i === 0) return null;
+  if (stage === "start_plan") return "start_try_shown";
+  return START_STAGES[i - 1];
+}
+
+/** One bar per step before the account, in order, each scaled to the visits that started. */
+export function startBars(start: StartFunnel): StartBarView[] {
+  const total = start.counts.start_shown;
+  return START_STAGES.map((stage, i) => {
+    const n = start.counts[stage];
+    const base = startBase(stage, i);
+    const ofBefore = base === null ? null : percentOf(n, start.counts[base]);
+    const ofText = ofBefore === null ? null : base === "start_try_shown" && stage === "start_plan" ? FUNNEL_COPY.ofTryBoard(ofBefore) : FUNNEL_COPY.ofBefore(ofBefore);
+    const label = START_STAGE_LABELS[stage];
+    return {
+      stage,
+      label,
+      count: formatCount(n),
+      ratio: total > 0 ? Math.min(1, n / total) : 0,
+      ofBefore,
+      ofText,
+      summary: `${label}: ${formatCount(n)}${ofText ? `, ${ofText}` : ""}`,
+      branch: stage === "start_try_checked",
+    };
+  });
+}
+
+export interface StartView {
+  /** the database does not count these steps (the section says so) */
+  missing: boolean;
+  /** nobody started at /start in the cohort, and no grown-up link was opened */
+  empty: boolean;
+  hint: string;
+  bars: StartBarView[];
+  /** the try's note and the quiet hand-off line */
+  notes: string[];
+}
+
+/** The section "Before the account", from the report's `start`. */
+export function buildStartView(report: FunnelReport): StartView {
+  const start = report.start;
+  if (!start) return { missing: true, empty: true, hint: FUNNEL_COPY.startHint(null, report.timeZone), bars: [], notes: [] };
+  const empty = start.counts.start_shown === 0 && start.handoff.opened === 0;
+  return {
+    missing: false,
+    empty,
+    hint: FUNNEL_COPY.startHint(start.since, report.timeZone),
+    bars: empty ? [] : startBars(start),
+    notes: empty ? [] : [FUNNEL_COPY.startTryNote, FUNNEL_COPY.startHandoff(start.handoff.sent, start.handoff.opened, start.handoff.accounts)],
+  };
 }
 
 // ------------------------------------------------------------------ the tables
@@ -322,6 +435,8 @@ export interface FunnelView {
   /** nobody in the picked cohort (the money still shows) */
   emptyCohort: boolean;
   cohortHint: string;
+  /** the steps before the account (above the stages) */
+  start: StartView;
   tiles: FunnelTile[];
   bars: FunnelBarView[];
   /** the notes under the bars: week 2's, paying's, and the untracked accounts' when some are counted */
@@ -341,6 +456,7 @@ export function buildFunnelView(report: FunnelReport, now: number): FunnelView {
     empty: report.allTime.counts.signed_up === 0,
     emptyCohort: report.totals.counts.signed_up === 0,
     cohortHint: FUNNEL_COPY.cohortHint(report.cohort, report.cohort === "all" ? null : report.cohortSince, report.timeZone),
+    start: buildStartView(report),
     tiles: funnelTiles(report),
     bars: funnelBars(report.totals),
     notes,

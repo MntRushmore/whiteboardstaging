@@ -88,6 +88,10 @@ const envSchema = z.object({
   EMAIL_FROM: optionalString,
   // Admin alerts (src/lib/server/health): where "a service is down" / "errors spiking" emails go.
   ALERT_EMAIL: optionalString,
+
+  // The new onboarding's anonymous step counts (POST /api/start/step): how many steps everyone
+  // together may record in a UTC day (default START_STEP_LIMITS.perDay).
+  START_DAILY_STEPS: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof envSchema>;
@@ -139,6 +143,17 @@ export type RateLimitBackend = "db" | "memory";
 export function getRateLimitBackend(): RateLimitBackend {
   const raw = getServerEnv().RATE_LIMIT_BACKEND;
   return raw?.trim().toLowerCase() === "memory" ? "memory" : "db";
+}
+
+/**
+ * `START_DAILY_STEPS`: how many steps /start may record in a UTC day, for everyone together
+ * (POST /api/start/step). Unset, not a whole number or below 1: `fallback`. At most 1,000,000.
+ */
+export function startDailySteps(fallback: number): number {
+  const raw = getServerEnv().START_DAILY_STEPS?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return fallback;
+  const n = Number(raw);
+  return n >= 1 ? Math.min(n, 1_000_000) : fallback;
 }
 
 /** True when ElevenLabs is configured: lecture mode's realtime recognizer and read aloud's voice. */

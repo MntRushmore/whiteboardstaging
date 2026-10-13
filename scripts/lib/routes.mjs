@@ -42,6 +42,10 @@ export const PUBLIC_ROUTES = Object.freeze([
   // (under REPORT_LINK_SECRET, else CRON_SECRET) is the auth. GET only asks; POST (the page's
   // button, or RFC 8058 one-click) turns that account's email off, and that is all it can do.
   "src/app/api/report/unsubscribe/route.ts",
+  // The new onboarding's anonymous step counts (/start, before the account): the visitor has no
+  // account yet. Same-origin only, per-visitor and per-day limits, 2 KB body cap, zod; writes one
+  // counted row through the service role and answers 204 with no body.
+  "src/app/api/start/step/route.ts",
 ]);
 
 /** Why each public route may skip requireUser (enforced by routeProtection.test.ts). */
@@ -54,6 +58,7 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/health/route.ts": "uptime monitor probe; answers { ok, db, release } only",
   "src/app/api/cron/trial-reminders/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
   "src/app/api/report/unsubscribe/route.ts": "email unsubscribe link; requires an HMAC of the user id under REPORT_LINK_SECRET (else CRON_SECRET); GET only asks, POST only turns the weekly email off",
+  "src/app/api/start/step/route.ts": "anonymous onboarding step counts before the account; same-origin only, per-visitor and daily limits, 2 KB body cap, zod; answers 204 with no body",
 });
 
 /** Routes whose handlers legitimately have no zod body schema. */
@@ -288,6 +293,18 @@ export const API_ROUTES = Object.freeze([
     // A valid report answers 204; the smoke probe's empty body is malformed JSON.
     withoutTokenStatus: [400],
     purpose: "Client error reports (window errors, unhandled rejections, error boundaries) -> one structured log line",
+    status: "active",
+  },
+  {
+    path: "/api/start/step",
+    file: "src/app/api/start/step/route.ts",
+    methods: ["POST"],
+    auth: "public",
+    limit: "ip:startStep",
+    body: "zod",
+    // The smoke probe is not a browser on our page (no Sec-Fetch-Site, no Origin): refused first.
+    withoutTokenStatus: [403],
+    purpose: "The new onboarding (/start): one anonymous step before the account, counted by journey (record_start_step, service role)",
     status: "active",
   },
   {

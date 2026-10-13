@@ -3617,6 +3617,166 @@ export const FUNNEL_STEP_CHECKS = [
 ];
 
 /**
+ * The new onboarding's steps before the account (migration 20261013020000_start_steps.sql; POST
+ * /api/start/step records them with the service role, src/lib/start/record.ts links a journey to
+ * the new account, admin_funnel() reads them).
+ *
+ * start_steps has no client grants at all: anon and a signed-in user can neither read nor write it
+ * (42501). record_start_step() is the service role's alone: anon and A cannot call it. With the
+ * service role: a step is inserted, then counted (times 2, the first meta kept), and the database
+ * refuses an unknown event, start_account (only linking records it), a nested meta and one over 500
+ * bytes (23514). link_start_journey(): anon cannot call it; A links A's journey (true): every row
+ * becomes A's and start_account is recorded; B then gets false and changes nothing; a later step of
+ * the journey joins A's account; a journey with no rows links nothing and is not made. admin_funnel()
+ * (anon and A cannot call it) lists the journey with no id anywhere, and leaves out one linked to an
+ * admin (B, made one for the check). Without the service role only the refusals run. Removes the
+ * rows it wrote and B's admin row.
+ *
+ * Kept out of ALL_CHECKS (the in-memory fake does not model it); scripts/verify-rls.mjs and the DB
+ * integration test run START_STEP_CHECKS after FUNNEL_STEP_CHECKS.
+ * @param {CheckContext} ctx
+ */
+export async function checkStartSteps({ anon, a, b, service }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const refusedWith = (/** @type {HttpResult} */ res, /** @type {string} */ want) => !isOk(res) && code(res) === want;
+  const j1 = uuid();
+  const jNone = uuid();
+  const jAdmin = uuid();
+  const record = (/** @type {RlsClient} */ c, /** @type {string} */ journey, /** @type {string} */ event, /** @type {unknown} */ meta) =>
+    rpc(c, "record_start_step", meta === undefined ? { p_journey: journey, p_event: event } : { p_journey: journey, p_event: event, p_meta: meta });
+  const link = (/** @type {RlsClient} */ c, /** @type {string} */ journey) => rpc(c, "link_start_journey", { p_journey: journey });
+  const rowsOf = async (/** @type {string} */ journey) =>
+    service ? rows(await service.rest("GET", "start_steps", { query: { journey_id: `eq.${journey}`, select: "event,first_at,last_at,times,meta,user_id", order: "event.asc" } })) : [];
+  const cleanup = async () => {
+    if (!service) return;
+    await service.rest("DELETE", "start_steps", { query: { journey_id: `in.(${j1},${jNone},${jAdmin})` } });
+    await service.rest("DELETE", "admins", { query: { user_id: `eq.${b.userId}` } });
+  };
+
+  try {
+    // ---------------------------------------------------------------- anon
+    const anonSel = await anon.rest("GET", "start_steps", { query: { select: "*", limit: "1" } });
+    out.push(result("start steps: anon cannot select start_steps", isDenied(anonSel), describe(anonSel)));
+    const anonIns = await anon.rest("POST", "start_steps", { body: { journey_id: j1, event: "start_shown" }, prefer: "return=minimal" });
+    out.push(result("start steps: anon cannot insert into start_steps", isDenied(anonIns), describe(anonIns)));
+    const anonRecord = await record(anon, j1, "start_shown", undefined);
+    out.push(result("start steps: anon cannot call record_start_step", !isOk(anonRecord), describe(anonRecord)));
+    const anonLink = await link(anon, j1);
+    out.push(result("start steps: anon cannot call link_start_journey", !isOk(anonLink), describe(anonLink)));
+    const anonFunnel = await rpc(anon, "admin_funnel", { p_tz: "UTC" });
+    out.push(result("start steps: anon cannot call admin_funnel", !isOk(anonFunnel), describe(anonFunnel)));
+
+    // ---------------------------------------------------------------- no direct access for a user
+    const aSel = await a.rest("GET", "start_steps", { query: { select: "*", limit: "1" } });
+    out.push(result("start steps: A cannot select start_steps (42501)", refusedWith(aSel, "42501"), describe(aSel)));
+    const aIns = await a.rest("POST", "start_steps", { body: { journey_id: j1, event: "start_account", user_id: a.userId }, prefer: "return=minimal" });
+    out.push(result("start steps: A cannot insert into start_steps (42501)", refusedWith(aIns, "42501"), describe(aIns)));
+    const aUpd = await a.rest("PATCH", "start_steps", { query: { journey_id: `eq.${j1}` }, body: { user_id: a.userId }, prefer: "return=representation" });
+    out.push(result("start steps: A cannot update start_steps (42501)", refusedWith(aUpd, "42501"), describe(aUpd)));
+    const aDel = await a.rest("DELETE", "start_steps", { query: { journey_id: `eq.${j1}` }, prefer: "return=representation" });
+    out.push(result("start steps: A cannot delete from start_steps (42501)", refusedWith(aDel, "42501"), describe(aDel)));
+    const aRecord = await record(a, j1, "start_shown", undefined);
+    out.push(result("start steps: A cannot call record_start_step (the service role's)", !isOk(aRecord), describe(aRecord)));
+    const aFunnel = await rpc(a, "admin_funnel", { p_tz: "UTC" });
+    out.push(result("start steps: A cannot call admin_funnel", !isOk(aFunnel), describe(aFunnel)));
+
+    if (!service) {
+      out.push(result("start steps: recording, linking and admin_funnel's start (skipped: no service role client)", true));
+      return out;
+    }
+
+    // ---------------------------------------------------------------- recording, as the service role
+    const first = await record(service, j1, "start_shown", null);
+    const who = await record(service, j1, "start_who", { role: "parent" });
+    const again = await record(service, j1, "start_shown", { again: true });
+    const recorded = await rowsOf(j1);
+    const shown = recorded.find((r) => r.event === "start_shown");
+    const whoRow = recorded.find((r) => r.event === "start_who");
+    out.push(result("start steps: the service role records a step with record_start_step()", isOk(first) && isOk(who) && isOk(again), `${describe(first)} / ${describe(who)} / ${describe(again)}`));
+    out.push(
+      result(
+        "start steps: a step is inserted, then counted (times 2, first meta kept), with no account",
+        recorded.length === 2 && shown?.times === 2 && shown.meta === null && whoRow?.times === 1 && whoRow.meta?.role === "parent" && recorded.every((r) => r.user_id === null),
+        JSON.stringify(recorded).slice(0, 200),
+      ),
+    );
+    /** @type {Array<[string, string, unknown]>} */
+    const bad = [
+      ["an unknown event", "start_teleported", undefined],
+      ["start_account (only linking records it)", "start_account", undefined],
+      ["a nested meta", "start_focus", { skills: ["fractions"] }],
+      ["a meta over 500 bytes", "start_focus", { note: "x".repeat(500) }],
+    ];
+    for (const [what, event, meta] of bad) {
+      const res = await record(service, j1, event, meta);
+      out.push(result(`start steps: the database refuses ${what} (23514)`, refusedWith(res, "23514"), describe(res)));
+    }
+    out.push(result("start steps: a refused step writes nothing", (await rowsOf(j1)).length === 2));
+
+    // ---------------------------------------------------------------- linking, as the new account
+    const aLink = await link(a, j1);
+    const linked = await rowsOf(j1);
+    out.push(
+      result(
+        "start steps: A links the journey (true): every row becomes A's, start_account recorded",
+        isOk(aLink) && aLink.body === true && linked.length === 3 && linked.every((r) => r.user_id === a.userId) && linked.some((r) => r.event === "start_account" && r.times === 1),
+        `${describe(aLink)} / ${JSON.stringify(linked).slice(0, 200)}`,
+      ),
+    );
+    const bLink = await link(b, j1);
+    const afterB = await rowsOf(j1);
+    out.push(result("start steps: B cannot take A's journey (false), and nothing changes", isOk(bLink) && bLink.body === false && JSON.stringify(afterB) === JSON.stringify(linked), describe(bLink)));
+    await record(service, j1, "start_plan", undefined);
+    const plan = (await rowsOf(j1)).find((r) => r.event === "start_plan");
+    out.push(result("start steps: a later step of a linked journey joins its account", plan?.user_id === a.userId, JSON.stringify(plan)));
+    const noneLink = await link(b, jNone);
+    const noneRows = await rowsOf(jNone);
+    out.push(result("start steps: a journey with no rows links nothing (false) and is not made", isOk(noneLink) && noneLink.body === false && noneRows.length === 0, describe(noneLink)));
+
+    // ---------------------------------------------------------------- admin_funnel's start: no ids, admins left out
+    const made = await service.rest("POST", "admins", { body: { user_id: b.userId }, prefer: "return=minimal" });
+    await record(service, jAdmin, "start_shown", undefined);
+    const adminLink = await link(b, jAdmin);
+    // a minute of their own, 20 to 50 days ago, so the journeys can be found among real ones
+    const at = new Date(Date.now() - (20 + Math.floor(Math.random() * 30)) * 86_400_000 - Math.floor(Math.random() * 1440) * 60_000);
+    at.setUTCSeconds(17, 0);
+    const minute = `${at.toISOString().slice(0, 16)}Z`;
+    const dated = await service.rest("PATCH", "start_steps", { query: { journey_id: `in.(${j1},${jAdmin})` }, body: { first_at: at.toISOString() }, prefer: "return=minimal" });
+    const funnel = await rpc(service, "admin_funnel", { p_tz: "UTC" });
+    const start = asObject(asObject(funnel.body)?.start);
+    const groups = Array.isArray(start?.journeys) ? start.journeys : [];
+    const countAt = (/** @type {string[]} */ events) =>
+      groups.filter((g) => g?.first_at === minute && JSON.stringify(g.events) === JSON.stringify(events)).reduce((n, g) => n + (Number(g.n) || 0), 0);
+    out.push(result("start steps: admin_funnel answers its start (v3)", isOk(made) && isOk(adminLink) && isOk(dated) && isOk(funnel) && typeof start?.since === "string", `${describe(made)} / ${describe(funnel)}`));
+    out.push(result("start steps: admin_funnel lists the journey, by minute and events", countAt(["start_account", "start_plan", "start_shown", "start_who"]) === 1, JSON.stringify(groups.filter((g) => g?.first_at === minute))));
+    out.push(result("start steps: admin_funnel leaves out a journey linked to an admin", countAt(["start_account", "start_shown"]) === 0, JSON.stringify(groups.filter((g) => g?.first_at === minute))));
+    const text = JSON.stringify(start ?? null);
+    out.push(
+      result(
+        "start steps: admin_funnel's start has no ids: each group is first_at, events and n",
+        groups.length > 0 &&
+          groups.every((g) => JSON.stringify(Object.keys(g ?? {}).sort()) === JSON.stringify(["events", "first_at", "n"])) &&
+          !/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text),
+        text.slice(0, 200),
+      ),
+    );
+  } finally {
+    await cleanup();
+  }
+  return out;
+}
+
+/**
+ * The steps before the account's checks, run after FUNNEL_STEP_CHECKS by scripts/verify-rls.mjs and src/__tests__/db-rls.integration.test.ts.
+ * @type {CheckDef[]}
+ */
+export const START_STEP_CHECKS = [
+  { name: "start steps: start_steps out of every client's reach; record_start_step() the service role's; link_start_journey() links only an unlinked journey to the caller; admin_funnel's start has no ids and no admins", run: checkStartSteps },
+];
+
+/**
  * Run one check, converting a thrown error into a single failing result.
  * @param {CheckDef} check
  * @param {CheckContext} ctx

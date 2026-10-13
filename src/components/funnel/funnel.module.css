@@ -1,6 +1,6 @@
 /* The admin Funnel page (src/components/funnel/FunnelScreen.tsx). Builds on the console's own
    styles (admin.module.css, console.module.css): this file only adds the cohort switch, the stage
-   bars and the tables' sticky first column. Arc tokens only. Desktop first, readable on a phone. */
+   bars (the account's, and the steps before it) and the tables' sticky first column. Arc tokens only. Desktop first, readable on a phone. */
 
 /* ---- Which sign-ups ------------------------------------------------------------------------------ */
 .cohort {
@@ -70,6 +70,12 @@
 }
 .fill[data-zero] {
   min-width: 0;
+}
+/* a step a visit may skip (before the account: the try's checked line), a part of the bar above */
+.bar[data-branch] .barLabel {
+  padding-inline-start: var(--space-4);
+  color: var(--text-secondary);
+  font-weight: 400;
 }
 .barCount {
   grid-area: count;

@@ -118,7 +118,7 @@ describe("route discovery", () => {
 });
 
 describe("allow-lists", () => {
-  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the crons, client errors and health", () => {
+  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the crons, client errors, health, the unsubscribe link and the start step", () => {
     // config/status: reports which provider keys exist as booleans (never values,
     // prefixes or lengths) so the setup screen can render before sign-in.
     // billing/webhook: the provider has no user JWT; the Stripe-Signature HMAC is the auth.
@@ -128,6 +128,7 @@ describe("allow-lists", () => {
     // (behaviour: src/lib/server/__tests__/routes.adminHealth.test.ts).
     // client-errors: browser crash reports, signed out too; it only writes a log line.
     // health: an uptime monitor has no user; it answers { ok, db, release } only.
+    // start/step: /start's steps come before the account; it only records an anonymous count.
     expect([...PUBLIC_ROUTES].sort()).toEqual([
       "src/app/api/admin/gc/route.ts",
       "src/app/api/admin/health/route.ts",
@@ -137,7 +138,19 @@ describe("allow-lists", () => {
       "src/app/api/cron/trial-reminders/route.ts",
       "src/app/api/health/route.ts",
       "src/app/api/report/unsubscribe/route.ts",
+      "src/app/api/start/step/route.ts",
     ]);
+  });
+
+  it("the start step only counts: same-origin first, body capped, zod-validated, no session read", () => {
+    // The real invariants behind its PUBLIC_ROUTES entry (behaviour: src/lib/server/start/__tests__/step.test.ts).
+    const src = sources.get("src/app/api/start/step/route.ts") ?? "";
+    expect(/\bisSameOrigin\s*\(/.test(src)).toBe(true);
+    expect(src.indexOf("isSameOrigin(")).toBeLessThan(src.indexOf("readCapped("));
+    expect(/\bSTART_STEP_MAX_BYTES\b/.test(src)).toBe(true);
+    expect(/\.safeParse\s*\(/.test(src)).toBe(true);
+    expect(/req\.json\s*\(/.test(src), "read through the size cap, never req.json()").toBe(false);
+    expect(/identifyUser|getUser|Authorization/i.test(src), "no session: the journey is anonymous").toBe(false);
   });
 
   it("client errors only log: body capped, zod-validated, a token only names the user", () => {

@@ -10,7 +10,7 @@
  * are created and, when a service role key is available, deleted afterwards.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ADMIN_CHECKS, ALL_CHECKS, ASK_CHECKS, BUG_REPLY_CHECKS, FAMILY_CHECKS, FUNNEL_STEP_CHECKS, LEARNING_CHECKS, REFERRAL_CHECKS, runCheck } from "../../scripts/lib/rlsChecks.mjs";
+import { ADMIN_CHECKS, ALL_CHECKS, ASK_CHECKS, BUG_REPLY_CHECKS, FAMILY_CHECKS, FUNNEL_STEP_CHECKS, LEARNING_CHECKS, REFERRAL_CHECKS, runCheck, START_STEP_CHECKS } from "../../scripts/lib/rlsChecks.mjs";
 import type { CheckContext } from "../../scripts/lib/rlsChecks.mjs";
 import { resolveSupabaseEnv, waitForHealth } from "../../scripts/lib/supabaseHttp.mjs";
 import { bootstrapVerifyContext } from "../../scripts/lib/verifyContext.mjs";
@@ -56,8 +56,9 @@ suite(title, () => {
   // (families, family_members, the shared plan), then REFERRAL_CHECKS (referrals), then
   // BUG_REPLY_CHECKS (bug_report_messages and the reporter's functions), then ASK_CHECKS (Ask's
   // ask_messages and learner_memory), then FUNNEL_STEP_CHECKS (funnel_steps and
-  // record_funnel_step()) last.
-  for (const check of [...ALL_CHECKS, ...LEARNING_CHECKS, ...ADMIN_CHECKS, ...FAMILY_CHECKS, ...REFERRAL_CHECKS, ...BUG_REPLY_CHECKS, ...ASK_CHECKS, ...FUNNEL_STEP_CHECKS]) {
+  // record_funnel_step()), then START_STEP_CHECKS (start_steps, record_start_step(),
+  // link_start_journey() and admin_funnel()'s start) last.
+  for (const check of [...ALL_CHECKS, ...LEARNING_CHECKS, ...ADMIN_CHECKS, ...FAMILY_CHECKS, ...REFERRAL_CHECKS, ...BUG_REPLY_CHECKS, ...ASK_CHECKS, ...FUNNEL_STEP_CHECKS, ...START_STEP_CHECKS]) {
     it(
       check.name,
       async () => {

@@ -1,7 +1,10 @@
--- admin_funnel() v2 (supabase/migrations/20261012020000_funnel_steps.sql, after
--- 20261009020000_funnel.sql) against a real Postgres: seeded accounts, every stage, the recorded
--- steps and when tracking began, ended trials, the time zone, kids and admins left out, and who
--- may call it. Runs in one transaction that is rolled back, so nothing it seeds is left behind.
+-- admin_funnel() v3 (supabase/migrations/20261013020000_start_steps.sql, after
+-- 20261012020000_funnel_steps.sql and 20261009020000_funnel.sql) against a real Postgres: seeded
+-- accounts, every stage, the recorded steps and when tracking began, ended trials, the time zone,
+-- kids and admins left out, and who may call it; and the steps before the account: journeys
+-- recorded and linked through record_start_step() and link_start_journey(), grouped by minute and
+-- events with no ids, the 60-day window, and a journey linked to an admin left out. Runs in one
+-- transaction that is rolled back, so nothing it seeds is left behind.
 --
 --   psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 \
 --     -f src/lib/funnel/__tests__/admin_funnel.test.sql
@@ -11,6 +14,14 @@
 
 \set QUIET on
 begin;
+
+create or replace function pg_temp.fq_expect(p_what text, p_got jsonb, p_want jsonb) returns void language plpgsql as $$
+begin
+  if p_got is distinct from p_want then
+    raise exception 'admin_funnel test failed: %: got %, want %', p_what, p_got, p_want;
+  end if;
+end;
+$$;
 
 -- Every seeded account signs up on 2026-09-01 at 15:00 UTC (11:00 in New York, a Tuesday: week of
 -- Monday 2026-08-31) and is found again in the report by its own utm_source ('fq_<letter>').
@@ -91,8 +102,135 @@ select id, 'plan_shown', timestamptz '2026-07-01 00:00:00+00' from fq_seed where
 -- an admin is left out
 insert into public.admins (user_id) select id from fq_seed where tag = 'admin';
 
+-- The steps before the account (v3). Journeys, recorded as the route records them (the service
+-- role's record_start_step) and linked as the new account (link_start_journey):
+--   s1, s2  started, chose who, picked a grade, nothing more (same minute, same events: one group of 2)
+--   s3      on to the plan and the account screen, then a's account (start_account), then one step more
+--   s4      linked to the admin: left out
+--   s5      began 61 days ago: outside the window
+-- Every journey but s5 began ten days ago, in the minute fq_minute names.
+create temp table fq_journey (tag text primary key, id uuid not null default gen_random_uuid()) on commit drop;
+insert into fq_journey (tag) values ('s1'), ('s2'), ('s3'), ('s4'), ('s5'), ('none');
+
+-- link_start_journey as a user: the session's claims, the authenticated role
+create or replace function pg_temp.fq_link(p_user uuid, p_journey uuid) returns boolean language plpgsql as $$
+declare
+  v boolean;
+begin
+  perform set_config('request.jwt.claims', coalesce(jsonb_build_object('sub', p_user, 'role', 'authenticated')::text, ''), true);
+  execute 'set local role authenticated';
+  v := public.link_start_journey(p_journey);
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  return v;
+end;
+$$;
+
+create or replace function pg_temp.fq_j(p_tag text) returns uuid language sql as $$ select id from fq_journey where tag = p_tag $$;
+create or replace function pg_temp.fq_u(p_tag text) returns uuid language sql as $$ select id from fq_seed where tag = p_tag $$;
+
+do $$
+declare
+  ok boolean;
+  n integer;
+begin
+  perform public.record_start_step(pg_temp.fq_j('s1'), 'start_shown');
+  perform public.record_start_step(pg_temp.fq_j('s1'), 'start_who', '{"role":"parent"}');
+  perform public.record_start_step(pg_temp.fq_j('s1'), 'start_grade', '{"grade":3}');
+  perform public.record_start_step(pg_temp.fq_j('s1'), 'start_shown', '{"again":true}');
+  perform public.record_start_step(pg_temp.fq_j('s2'), 'start_shown', '{}');
+  perform public.record_start_step(pg_temp.fq_j('s2'), 'start_who', 'null');
+  perform public.record_start_step(pg_temp.fq_j('s2'), 'start_grade', '{"course":"algebra1"}');
+  perform public.record_start_step(pg_temp.fq_j('s3'), 'start_shown');
+  perform public.record_start_step(pg_temp.fq_j('s3'), 'start_plan');
+  perform public.record_start_step(pg_temp.fq_j('s3'), 'start_account_shown');
+  perform public.record_start_step(pg_temp.fq_j('s4'), 'start_shown');
+  perform public.record_start_step(pg_temp.fq_j('s5'), 'start_shown');
+
+  perform pg_temp.fq_expect('a repeated step is counted, its first details kept',
+    (select jsonb_build_object('times', times, 'meta', meta) from public.start_steps where journey_id = pg_temp.fq_j('s1') and event = 'start_shown'),
+    '{"times":2,"meta":null}');
+  perform pg_temp.fq_expect('details kept as given; {} and a JSON null as none',
+    (select jsonb_agg(meta order by journey_id = pg_temp.fq_j('s2'), event) from public.start_steps where journey_id in (pg_temp.fq_j('s1'), pg_temp.fq_j('s2')) and event <> 'start_shown'),
+    '[{"grade":3},{"role":"parent"},{"course":"algebra1"},null]');
+
+  -- what record_start_step refuses: start_account (linking records it), an unknown event, details that are not small and flat
+  begin
+    perform public.record_start_step(pg_temp.fq_j('s1'), 'start_account');
+    raise exception 'admin_funnel test failed: record_start_step recorded start_account';
+  exception when check_violation then null;
+  end;
+  begin
+    perform public.record_start_step(pg_temp.fq_j('s1'), 'start_teleported');
+    raise exception 'admin_funnel test failed: an unknown event was recorded';
+  exception when check_violation then null;
+  end;
+  begin
+    perform public.record_start_step(pg_temp.fq_j('s1'), 'start_focus', '{"skills":["fractions"]}');
+    raise exception 'admin_funnel test failed: a nested meta was recorded';
+  exception when check_violation then null;
+  end;
+  begin
+    perform public.record_start_step(pg_temp.fq_j('s1'), 'start_focus', jsonb_build_object('note', repeat('x', 500)));
+    raise exception 'admin_funnel test failed: a meta over 500 bytes was recorded';
+  exception when check_violation then null;
+  end;
+  begin
+    perform public.record_start_step(null, 'start_shown');
+    raise exception 'admin_funnel test failed: a step with no journey was recorded';
+  exception when invalid_parameter_value then null;
+  end;
+
+  -- linking: a's account takes s3 and records start_account; b cannot take it after; nothing to take in a journey with no rows
+  ok := pg_temp.fq_link(pg_temp.fq_u('a'), pg_temp.fq_j('s3'));
+  perform pg_temp.fq_expect('a links s3', to_jsonb(ok), 'true');
+  perform pg_temp.fq_expect('s3 is a''s, start_account recorded',
+    (select jsonb_agg(jsonb_build_array(event, user_id = pg_temp.fq_u('a')) order by event) from public.start_steps where journey_id = pg_temp.fq_j('s3')),
+    '[["start_account",true],["start_account_shown",true],["start_plan",true],["start_shown",true]]');
+  ok := pg_temp.fq_link(pg_temp.fq_u('b'), pg_temp.fq_j('s3'));
+  perform pg_temp.fq_expect('b cannot take a''s journey', to_jsonb(ok), 'false');
+  perform pg_temp.fq_expect('s3 is still a''s alone',
+    (select count(*) from public.start_steps where journey_id = pg_temp.fq_j('s3') and user_id is distinct from pg_temp.fq_u('a'))::int::text::jsonb, '0');
+  ok := pg_temp.fq_link(pg_temp.fq_u('b'), pg_temp.fq_j('none'));
+  perform pg_temp.fq_expect('no journey to link: false, and none made', jsonb_build_array(ok, (select count(*) from public.start_steps where journey_id = pg_temp.fq_j('none'))), '[false,0]');
+  -- a step after the link joins the account
+  perform public.record_start_step(pg_temp.fq_j('s3'), 'start_handoff');
+  perform pg_temp.fq_expect('a later step of a linked journey joins its account',
+    (select to_jsonb(user_id = pg_temp.fq_u('a')) from public.start_steps where journey_id = pg_temp.fq_j('s3') and event = 'start_handoff'), 'true');
+  -- linking again counts start_account again, and takes nothing else
+  ok := pg_temp.fq_link(pg_temp.fq_u('a'), pg_temp.fq_j('s3'));
+  perform pg_temp.fq_expect('a links s3 again', jsonb_build_array(ok, (select times from public.start_steps where journey_id = pg_temp.fq_j('s3') and event = 'start_account')), '[true,2]');
+  ok := pg_temp.fq_link(pg_temp.fq_u('admin'), pg_temp.fq_j('s4'));
+  perform pg_temp.fq_expect('the admin links s4', to_jsonb(ok), 'true');
+
+  begin
+    ok := pg_temp.fq_link(null, pg_temp.fq_j('s1'));
+    raise exception 'admin_funnel test failed: link_start_journey worked signed out';
+  exception when insufficient_privilege then
+    reset role;
+  end;
+  perform pg_temp.fq_expect('s1 is nobody''s', (select count(*) from public.start_steps where journey_id = pg_temp.fq_j('s1') and user_id is not null)::int::text::jsonb, '0');
+
+  -- when they began
+  update public.start_steps set first_at = now() - interval '10 days' where journey_id in (pg_temp.fq_j('s1'), pg_temp.fq_j('s2'), pg_temp.fq_j('s3'), pg_temp.fq_j('s4'));
+  update public.start_steps set first_at = now() - interval '61 days' where journey_id = pg_temp.fq_j('s5');
+  get diagnostics n = row_count;
+  perform pg_temp.fq_expect('s5 has one row', to_jsonb(n), '1');
+end;
+$$;
+
+create temp table fq_minute on commit drop as
+  select to_char(date_trunc('minute', (now() - interval '10 days') at time zone 'UTC'), 'YYYY-MM-DD"T"HH24:MI"Z"') as m,
+         to_char(date_trunc('minute', (now() - interval '61 days') at time zone 'UTC'), 'YYYY-MM-DD"T"HH24:MI"Z"') as old;
+
 create temp table fq_after on commit drop as
   select public.admin_funnel('America/New_York') as r, public.admin_funnel('UTC') as r_utc;
+
+-- how many journeys a report lists that began in minute p_at and recorded exactly p_events
+create or replace function pg_temp.fq_journeys(p jsonb, p_at text, p_events jsonb) returns integer language sql as $$
+  select coalesce(sum((g ->> 'n')::int), 0)::int from jsonb_array_elements(p -> 'start' -> 'journeys') g
+   where g ->> 'first_at' = p_at and g -> 'events' = p_events
+$$;
 
 create or replace function pg_temp.fq_entry(p jsonb, p_source text) returns jsonb language sql as $$
   select e from jsonb_array_elements(p -> 'accounts') e where e ->> 'source' = p_source
@@ -104,13 +242,6 @@ create or replace function pg_temp.fq_plan(p jsonb, p_source text) returns jsonb
     from jsonb_array_elements(p -> 'accounts') e where e ->> 'source' = p_source
 $$;
 
-create or replace function pg_temp.fq_expect(p_what text, p_got jsonb, p_want jsonb) returns void language plpgsql as $$
-begin
-  if p_got is distinct from p_want then
-    raise exception 'admin_funnel test failed: %: got %, want %', p_what, p_got, p_want;
-  end if;
-end;
-$$;
 
 do $$
 declare
@@ -152,6 +283,27 @@ begin
     to_jsonb(jsonb_array_length(r -> 'accounts') - jsonb_array_length(b -> 'accounts')), '14');
   perform pg_temp.fq_expect('active subscriptions: h and j', to_jsonb((r ->> 'active_subscriptions')::int - (b ->> 'active_subscriptions')::int), '2');
   perform pg_temp.fq_expect('time zone named', r -> 'time_zone', '"America/New_York"');
+
+  -- v3: the steps before the account
+  perform pg_temp.fq_expect('start: the window began 60 days ago',
+    r -> 'start' -> 'since', to_jsonb(to_char(date_trunc('minute', (now() - interval '60 days') at time zone 'UTC'), 'YYYY-MM-DD"T"HH24:MI"Z"')));
+  perform pg_temp.fq_expect('start: s1 and s2, one group of two',
+    to_jsonb(pg_temp.fq_journeys(r, (select m from fq_minute), '["start_grade","start_shown","start_who"]') - pg_temp.fq_journeys(b, (select m from fq_minute), '["start_grade","start_shown","start_who"]')), '2');
+  perform pg_temp.fq_expect('start: s3, with start_account and the later step, in name order',
+    to_jsonb(pg_temp.fq_journeys(r, (select m from fq_minute), '["start_account","start_account_shown","start_handoff","start_plan","start_shown"]')
+           - pg_temp.fq_journeys(b, (select m from fq_minute), '["start_account","start_account_shown","start_handoff","start_plan","start_shown"]')), '1');
+  perform pg_temp.fq_expect('start: s4, linked to an admin, left out',
+    to_jsonb(pg_temp.fq_journeys(r, (select m from fq_minute), '["start_account","start_shown"]') - pg_temp.fq_journeys(b, (select m from fq_minute), '["start_account","start_shown"]')), '0');
+  perform pg_temp.fq_expect('start: s5, 61 days old, left out',
+    to_jsonb(pg_temp.fq_journeys(r, (select old from fq_minute), '["start_shown"]')), '0');
+  perform pg_temp.fq_expect('start: three more journeys in all',
+    to_jsonb((select sum((g ->> 'n')::int) from jsonb_array_elements(r -> 'start' -> 'journeys') g)
+           - coalesce((select sum((g ->> 'n')::int) from jsonb_array_elements(b -> 'start' -> 'journeys') g), 0)), '3');
+  perform pg_temp.fq_expect('start: a group is first_at, events and n, nothing else (no ids)',
+    (select coalesce(jsonb_agg(distinct (select jsonb_agg(k order by k) from jsonb_object_keys(g) k)), '[]') from jsonb_array_elements(r -> 'start' -> 'journeys') g),
+    '[["events","first_at","n"]]');
+  perform pg_temp.fq_expect('start: the answer has no journey id and no user id anywhere',
+    to_jsonb((r -> 'start')::text ~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'), 'false');
   perform pg_temp.fq_expect('empty zone is New York', public.admin_funnel('') -> 'time_zone', '"America/New_York"');
 
   begin
@@ -163,12 +315,36 @@ begin
 end;
 $$;
 
--- Nobody but the service role may call it (or its helper).
+-- Nobody but the service role may call it (or its helper), or record a step; anon cannot link.
 do $$
 declare
   role_name text;
 begin
+  begin
+    execute 'set local role anon';
+    perform public.link_start_journey(gen_random_uuid());
+    raise exception 'admin_funnel test failed: anon could call link_start_journey';
+  exception when insufficient_privilege then
+    null;
+  end;
+  reset role;
   foreach role_name in array array['anon', 'authenticated'] loop
+    begin
+      execute format('set local role %I', role_name);
+      perform public.record_start_step(gen_random_uuid(), 'start_shown');
+      raise exception 'admin_funnel test failed: % could call record_start_step', role_name;
+    exception when insufficient_privilege then
+      null;
+    end;
+    reset role;
+    begin
+      execute format('set local role %I', role_name);
+      perform 1 from public.start_steps limit 1;
+      raise exception 'admin_funnel test failed: % could read start_steps', role_name;
+    exception when insufficient_privilege then
+      null;
+    end;
+    reset role;
     begin
       execute format('set local role %I', role_name);
       perform public.admin_funnel('UTC');
@@ -188,6 +364,7 @@ begin
   end loop;
   set local role service_role;
   perform public.admin_funnel('UTC');
+  perform public.record_start_step(gen_random_uuid(), 'start_shown');
   reset role;
 end;
 $$;
