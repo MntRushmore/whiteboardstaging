@@ -4,10 +4,20 @@ import { ContactBlock, ContactEmail, LegalPage, LegalSection } from "@/component
 import styles from "@/components/legal/legal.module.css";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { LEGAL } from "@/lib/legal";
+import { OPEN_GRAPH_DEFAULTS } from "@/lib/seo/site";
 
-export const metadata: Metadata = {
+const META = {
   title: "Refund Policy",
-  description: "How refunds work for Agathon Unlimited, and for Agathon ink packs bought before they were retired.",
+  description: `How refunds work for ${UNLIMITED_PLAN.name}, from the free trial to a charge you did not mean to keep, and for ink packs bought before they were retired.`,
+};
+
+/** Indexable (docs/SEO.md): parents and answer engines look for a product's refund policy. */
+export const metadata: Metadata = {
+  ...META,
+  alternates: { canonical: "/refunds" },
+  robots: { index: true, follow: true },
+  openGraph: { ...OPEN_GRAPH_DEFAULTS, url: "/refunds", ...META },
+  twitter: { card: "summary", ...META },
 };
 
 const days = LEGAL.refundWindowDays;

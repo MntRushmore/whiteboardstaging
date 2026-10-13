@@ -17,7 +17,10 @@ const { LANDING_COPY } = await import("../copy");
 const { UNLIMITED_PLAN } = await import("@/lib/billing/unlimited");
 const { planWords } = await import("@/lib/landing/plan");
 
+// What the visitor reads: the page's structured data (JSON-LD, for search engines, never shown) is
+// the server's static page, with the usual trial, and is left out.
 const text = renderToStaticMarkup(<ParentsPage />)
+  .replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, " ")
   .replace(/<[^>]+>/g, " ")
   .replace(/&#x27;/g, "'")
   .replace(/&quot;/g, '"')

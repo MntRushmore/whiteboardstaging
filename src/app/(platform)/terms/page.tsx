@@ -3,10 +3,20 @@ import Link from "next/link";
 import { ContactBlock, ContactEmail, LegalPage, LegalSection } from "@/components/legal/LegalPage";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { LEGAL } from "@/lib/legal";
+import { OPEN_GRAPH_DEFAULTS } from "@/lib/seo/site";
 
-export const metadata: Metadata = {
+const META = {
   title: "Terms of Service",
-  description: "The terms for using Agathon, the AI math tutor on a whiteboard, including Agathon Unlimited.",
+  description: `The terms for using Agathon, the AI math tutor on a whiteboard: accounts and parents, ${UNLIMITED_PLAN.name} and its free trial, cancelling, and the rules.`,
+};
+
+/** Indexable (docs/SEO.md): parents and answer engines look for a product's terms. */
+export const metadata: Metadata = {
+  ...META,
+  alternates: { canonical: "/terms" },
+  robots: { index: true, follow: true },
+  openGraph: { ...OPEN_GRAPH_DEFAULTS, url: "/terms", ...META },
+  twitter: { card: "summary", ...META },
 };
 
 /** Agathon Unlimited as sold (src/lib/billing/unlimited.ts, scripts/stripe-setup.mjs). */

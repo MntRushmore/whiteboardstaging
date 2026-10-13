@@ -12,7 +12,10 @@ import { Pricing } from "@/components/landing/Pricing";
 import { Questions } from "@/components/landing/Questions";
 import { SessionHop } from "@/components/landing/SessionHop";
 import { StickyJoin } from "@/components/landing/StickyJoin";
-import { LANDING_PATH, siteOrigin } from "@/lib/landing/links";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { LANDING_PATH } from "@/lib/landing/links";
+import { landingJsonLd } from "@/lib/seo/landingJsonLd";
+import { OPEN_GRAPH_DEFAULTS } from "@/lib/seo/site";
 import styles from "@/components/landing/landing.module.css";
 
 /**
@@ -24,6 +27,8 @@ import styles from "@/components/landing/landing.module.css";
  * /parents keeps working), so that is its canonical URL.
  * Server-rendered and static: no auth wait, nothing on it depends on who is looking. Its words are
  * in src/components/landing/copy.ts; its ink draws itself as it comes into view (inkStart.ts).
+ * For search (docs/SEO.md): a whole title with the words parents search for, and structured data
+ * (src/lib/seo/landingJsonLd.ts) that says what Agathon is, its plan, and the Questions band's answers.
  */
 
 const copy = LANDING_COPY.meta;
@@ -32,17 +37,17 @@ const copy = LANDING_COPY.meta;
 const CANONICAL = LANDING_PATH;
 
 export const metadata: Metadata = {
-  metadataBase: new URL(siteOrigin(process.env.NEXT_PUBLIC_SITE_URL)),
-  title: copy.title,
+  // the whole title: the brand leads, so the root layout's " · Agathon" is not added (its
+  // metadataBase makes the canonical and og:url absolute)
+  title: { absolute: copy.title },
   description: copy.description,
   alternates: { canonical: CANONICAL },
   // The app's pages stay out of search (the root layout's noindex); this one page exists to be found
   // by parents, so it opts back in. One line to revert if the owner wants the whole site hidden.
   robots: { index: true, follow: true },
   openGraph: {
-    type: "website",
+    ...OPEN_GRAPH_DEFAULTS,
     url: CANONICAL,
-    siteName: "Agathon",
     title: copy.ogTitle,
     description: copy.description,
   },
@@ -73,6 +78,9 @@ export default function ParentsPage() {
       </main>
       {/* After every drawing on the page: holds each until it is in view (no hydration needed). */}
       <script dangerouslySetInnerHTML={{ __html: INK_START_SCRIPT }} />
+      {/* What the page is, for search and answer engines (data, never run): after the page, so the
+          session hop stays its first script. */}
+      <JsonLd data={landingJsonLd()} />
     </div>
   );
 }

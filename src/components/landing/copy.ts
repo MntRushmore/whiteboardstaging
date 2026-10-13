@@ -43,10 +43,16 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
   // a friend's invite: the referral Payment Link's free first month (src/lib/billing/planChoice.ts)
   const friendDays = dayCount(REFERRAL_TRIAL_DAYS);
   return {
+    /**
+     * The page's search result (SEO build 2026-10-13, docs/SEO.md). The title is the whole title (the
+     * brand leads, no " · Agathon" after it), at most 60 characters, with the words parents search
+     * for: AI math tutor, kids, K–8. The description is at most 160 characters. A link preview keeps
+     * the brand line.
+     */
     meta: {
-      title: "Math practice kids actually do",
+      title: "Agathon: AI math tutor and practice for kids, K–8",
       ogTitle: "Agathon: math practice kids actually do",
-      description: `A math whiteboard for kindergarten to 8th grade. Kids work problems by hand, and a tutor checks every line: a check mark for a right step, a circle around a slip, and a hint instead of the answer. Free for ${p.days}.`,
+      description: `Math practice on a whiteboard, K–8: kids work problems by hand, and an AI tutor checks every line and gives a hint instead of the answer. Free for ${p.days}.`,
       ogAlt: "Agathon: math practice kids actually do. Problems written by hand on a whiteboard, checked and circled in blue by the tutor.",
     },
     nav: {
