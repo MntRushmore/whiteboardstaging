@@ -5,7 +5,8 @@
  * device. Fetch, storage and the Supabase client are fakes; no network.
  */
 import { describe, expect, it, vi } from "vitest";
-import { START_EVENTS, START_STEP_API, START_STORAGE_KEY, StartStepRequestSchema, type StartEvent } from "../contracts";
+import { START_EVENTS, START_STEP_API, START_STORAGE_KEY, type StartEvent } from "../contracts";
+import { StartStepRequestSchema } from "../schemas";
 import { cleanStartStepMeta, createStartRecorder, isStartEvent, LINK_START_JOURNEY, randomUuid, REPEAT_SAFE, START_LINKED_KEY, type StartRecorderDeps, type StartRpcClient } from "../record";
 
 const J1 = "11111111-1111-4111-8111-111111111111";

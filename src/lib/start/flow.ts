@@ -252,6 +252,7 @@ export function flowCopy(a: Pick<StartAnswers, "role" | "name" | "choice">, from
       title: name ? `${name} does the math. You see how it’s going.` : "They do the math. You see how it’s going.",
       lede: name ? `Progress shows ${possessive(name)} path, and how many problems ${name} solved without help.` : "Progress shows their path, and how many problems they solved without help.",
       next: "Sounds good",
+      caption: "A 3rd grader’s Progress page, from the app.",
       alt: "Agathon’s Progress page: a 3rd grade path with 2 of 4 skills mastered, and this week’s 47 minutes of practice, 31 problems worked on, 28 solved on their own and 2 days of math in a row.",
     },
     try: {

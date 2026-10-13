@@ -7,8 +7,8 @@
  *
  * Only the answers ever go in: who, the kid's first name, the grade or course, the skills picked,
  * what happened on the try board, and where they heard of us. Never an email, never an id. On the
- * way back in, anything wrong is dropped rather than refused (`StartAnswersSchema`): an old link, a
- * hand-edited one, a skill that no longer exists.
+ * way back in, anything wrong is dropped rather than refused, field by field (`cleanStartAnswers`):
+ * an old link, a hand-edited one, a skill that no longer exists.
  *
  * Pure: no React, no storage, no network. Tested in `__tests__/link.test.ts`.
  */
@@ -17,7 +17,7 @@ import { isSkillId } from "@/lib/learning/contracts";
 import { isGrade, type PathSkillId } from "@/lib/learning/grades";
 import { isCourseId } from "@/lib/onboarding/courseIds";
 import type { WelcomeChoice } from "@/lib/onboarding/choice";
-import { EMPTY_ANSWERS, MAX_FOCUS, START_ANSWERS_PARAM, START_PATH, StartAnswersSchema, type StartAnswers } from "./contracts";
+import { EMPTY_ANSWERS, KID_NAME, MAX_FOCUS, START_ANSWERS_PARAM, START_PATH, START_ROLES, type StartAnswers, type StartRole } from "./contracts";
 
 /**
  * The longest `#a=` value read. A real one is a few hundred characters (a 24-letter name, three
@@ -25,27 +25,43 @@ import { EMPTY_ANSWERS, MAX_FOCUS, START_ANSWERS_PARAM, START_PATH, StartAnswers
  */
 export const MAX_START_ANSWERS_PARAM = 1024;
 
+/** The longest skill id a link may carry (an id is far shorter; anything longer is not ours). */
+const MAX_SKILL_ID = 48;
+
+type Loose = Record<string, unknown>;
+const isObject = (v: unknown): v is Loose => !!v && typeof v === "object" && !Array.isArray(v);
+
+function cleanChoice(v: unknown): WelcomeChoice | null {
+  if (!isObject(v)) return null;
+  if (v.kind === "grade" && isGrade(v.grade)) return { kind: "grade", grade: v.grade };
+  if (v.kind === "course" && isCourseId(v.course)) return { kind: "course", course: v.course };
+  return null;
+}
+
+/** The skills picked: dropped whole when the list is not one (too long, not strings), else the real ones, once each. */
+function cleanFocus(v: unknown): PathSkillId[] {
+  if (!Array.isArray(v) || v.length > MAX_FOCUS || !v.every((id) => typeof id === "string" && id.length <= MAX_SKILL_ID)) return [];
+  return [...new Set(v.filter((id): id is PathSkillId => isSkillId(id)))].slice(0, MAX_FOCUS);
+}
+
 /**
- * The answers as they may be trusted: each field checked (`StartAnswersSchema`, then the ids
- * themselves: a course, a grade, a skill, a source), unknown fields dropped, the skills deduplicated.
- * Null when `raw` is not an object at all.
+ * The answers as they may be trusted: each field checked on its own (a role, a first name
+ * `KID_NAME` accepts once trimmed, a grade or course, real skills, the try's two booleans, a
+ * source), unknown fields dropped, anything wrong dropped rather than refused. Null when `raw` is
+ * not an object at all. Plain checks, no zod: /start's first screen reads a kept flow with this.
  */
 export function cleanStartAnswers(raw: unknown): StartAnswers | null {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const parsed = StartAnswersSchema.safeParse(raw);
-  if (!parsed.success) return null;
-  const v = parsed.data;
-  let choice: WelcomeChoice | null = null;
-  if (v.choice?.kind === "grade" && isGrade(v.choice.grade)) choice = { kind: "grade", grade: v.choice.grade };
-  else if (v.choice?.kind === "course" && isCourseId(v.choice.course)) choice = { kind: "course", course: v.choice.course };
-  const focus = [...new Set(v.focus.filter((id): id is PathSkillId => isSkillId(id)))].slice(0, MAX_FOCUS);
+  if (!isObject(raw)) return null;
+  const role = (START_ROLES as readonly unknown[]).includes(raw.role) ? (raw.role as StartRole) : null;
+  const name = typeof raw.name === "string" && KID_NAME.test(raw.name.trim()) ? raw.name.trim() : null;
+  const tried = isObject(raw.tried) && typeof raw.tried.checked === "boolean" && typeof raw.tried.solved === "boolean" ? { checked: raw.tried.checked, solved: raw.tried.solved } : null;
   return {
-    role: v.role,
-    name: v.name ? v.name.trim() : null,
-    choice,
-    focus,
-    tried: v.tried ? { checked: v.tried.checked, solved: v.tried.solved } : null,
-    heardFrom: isHeardFrom(v.heardFrom) ? v.heardFrom : null,
+    role,
+    name,
+    choice: cleanChoice(raw.choice),
+    focus: cleanFocus(raw.focus),
+    tried,
+    heardFrom: isHeardFrom(raw.heardFrom) ? raw.heardFrom : null,
   };
 }
 

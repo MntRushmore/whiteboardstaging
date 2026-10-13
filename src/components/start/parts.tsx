@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { markStrokes } from "@/lib/live/marks";
 import type { StartInkLine, StartInkSet } from "@/lib/start/inkSet";
 import styles from "./start.module.css";
@@ -10,6 +10,25 @@ import styles from "./start.module.css";
  * `markStrokes`, drawn in its blue pen), a line in the board's hand from the ink set, and the ink
  * set itself (`GET /api/start/ink`, fetched once).
  */
+
+// ------------------------------------------------------------------ words
+
+/**
+ * A skill's name with its hyphenated words kept whole ("2-digit", "3-digit", "Multi-step"), so a
+ * narrow card never breaks it after the hyphen.
+ */
+export function KeepWords({ text }: { text: string }): ReactNode {
+  const parts = text.split(/(\S+-\S+)/);
+  return parts.map((part, i) =>
+    i % 2 === 1 ? (
+      <span key={i} style={{ whiteSpace: "nowrap" }}>
+        {part}
+      </span>
+    ) : (
+      <Fragment key={i}>{part}</Fragment>
+    ),
+  );
+}
 
 // ------------------------------------------------------------------ the tutor's check
 

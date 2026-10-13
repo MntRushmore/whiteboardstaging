@@ -4,7 +4,7 @@ import type { Ref } from "react";
 import type { FlowCopy } from "@/lib/start/flow";
 import type { StartInkSet } from "@/lib/start/inkSet";
 import type { StartPlan as Plan } from "@/lib/start/plan";
-import { SkillExample, TutorCheck } from "../parts";
+import { KeepWords, SkillExample, TutorCheck } from "../parts";
 import styles from "../start.module.css";
 
 export interface StartPlanProps {
@@ -57,7 +57,9 @@ export function StartPlan({ copy, plan, ink, tried, onSave, titleRef }: StartPla
                   </span>
                   <span className={styles.pathText}>
                     <span className={styles.pathEyebrow}>{eyebrow[i]}</span>
-                    <span className={styles.pathName}>{skill.name}</span>
+                    <span className={styles.pathName}>
+                      <KeepWords text={skill.name} />
+                    </span>
                     {skill.blurb && <span className={example ? styles.srOnly : styles.pathHint}>{skill.blurb}</span>}
                   </span>
                   {example && <SkillExample lines={example} height={26} draw atMs={420 + i * 260} />}

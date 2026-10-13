@@ -6,7 +6,7 @@ import { MAX_FOCUS } from "@/lib/start/contracts";
 import type { FlowCopy } from "@/lib/start/flow";
 import type { StartInkSet } from "@/lib/start/inkSet";
 import { skillWords } from "@/lib/start/plan";
-import { SkillExample, TutorCheck } from "../parts";
+import { KeepWords, SkillExample, TutorCheck } from "../parts";
 import styles from "../start.module.css";
 
 export interface StartFocusProps {
@@ -45,7 +45,9 @@ export function StartFocus({ copy, options, focus, ink, onToggle, onNotSure, onN
               <button type="button" className={styles.choice} aria-pressed={on} aria-disabled={!on && full ? true : undefined} onClick={() => onToggle(id)}>
                 <span className={styles.box}>{on && <TutorCheck seed={i * 5 + 2} />}</span>
                 <span className={styles.choiceText}>
-                  <span className={styles.choiceName}>{words.name}</span>
+                  <span className={styles.choiceName}>
+                    <KeepWords text={words.name} />
+                  </span>
                   {words.blurb && <span className={example ? styles.srOnly : styles.choiceHint}>{words.blurb}</span>}
                 </span>
                 {example && <SkillExample lines={example} height={24} />}

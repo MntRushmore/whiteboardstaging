@@ -33,9 +33,9 @@
 **After the account:**
 1. The answers are saved: grade or course, heard from, and the kid's name as the profile's display name.
 2. Onboarding is marked done.
-3. The first board is made on the plan's first skill.
-4. The visitor goes to `/welcome/plan`. The plan screen is unchanged (the owner rejected its redesign in #28).
-5. Then the board.
+3. The first board is made on the plan's first skill (`planSkills`, the same choice the plan screen showed).
+4. The visitor goes straight to that board. It is the account's **free board** (below): open with no card until 5 problems or the starter ink, then its "Nice work" sheet offers the trial at the win. This follows the owner's order (account, then one free board, then the trial). The plan screen itself is unchanged (the owner rejected its redesign in #28); it comes at the free board's end.
+5. If the board could not be made, the visitor goes to `/welcome/plan` as before, and the home sends them there too (the plan marker is set to "pending" only then).
 
 The old in-app welcome and the three-tip tour are skipped for anyone who came through `/start`.
 
@@ -43,6 +43,26 @@ The old in-app welcome and the three-tip tour are skipped for anyone who came th
 - Every **Join Agathon** button on the landing pages goes to `/start`, keeping `?ref` and `utm_*`.
 - **Sign in** stays `/login`.
 - `/login?mode=signup` still works for old links.
+
+## As built (`feat/start-flow-ui`, 2026-10-13)
+
+**Files:**
+- `src/app/(platform)/start/page.tsx`: the route. The first screen is in the server's HTML; its two cards' ink is written there.
+- `src/components/start/StartFlow.tsx`: the flow on the client (history entries, keeping it on the device, the counts, the transitions). One component per screen in `src/components/start/screens/`. Shared pieces (the tutor's check, the board's hand, the ink set) in `parts.tsx`. Styles in `start.module.css`.
+- `src/lib/start/flow.ts`: the screens in order, Back, the progress bar, resume, the answers' reducers, and every word for the grown-up and the kid.
+- `src/lib/start/plan.ts`: what can be picked (a grade's path; six topics for each high-school course, `COURSE_FOCUS`), the plan's skills and their words. `finish.ts` uses the same `planSkills`.
+- `GET /api/start/ink` (static, `src/lib/start/inkSet.ts`): each skill's example (`SKILL_EXAMPLES`, picked by hand to match its line) and every try problem in the tutor's hand. About 28 KB gzip, fetched after the first answer, so the browser never loads the hand engine.
+
+**How it behaves:**
+- A tapped single answer gets the tutor's check (the board's own mark, `markStrokes`) and the next screen follows after 460 ms. "What's tricky" takes up to three, each card with its example in the tutor's hand; "Not sure yet" moves on at once.
+- Each screen is a history entry, so a phone's back swipe goes back a question. The beat ("Making Sam's plan…") is replaced by the plan, never kept.
+- The flow is kept on the device for a week (`START_STORAGE_KEY`, the `flow` field beside the journey id) and reopens where it was (the beat and the account reopen on the plan).
+- A grown-up's link (`#a=`) opens on the plan ("Maya made a math plan"), worded for the grown-up, with no Back; the account screen opens on the form (`StartAccount startIn="form"`). The answers leave the address bar.
+- The try screen is the real try board (`TryBoard join={false} onProgress`), with the band for the grade and the starter for the plan's first skill at the kid's grade. "Maybe later" stays quiet until the tutor has checked a line; then it is a blue Continue, and the plan shows "Solved one already".
+- A signed-in visitor goes home (a grown-up's link stays).
+- Proof (parent only) shows the landing page's real Progress picture, captioned as a 3rd grader's.
+
+**Look:** warm paper (#fbfaf6) with the board's dot grid, Geist titles, white cards with hairlines, the landing page's blue pill for the one button, the tutor's blue (#4465e9) for checks, the progress bar and chosen answers. No gradients, emoji, mascot or claims.
 
 ## Measuring it
 

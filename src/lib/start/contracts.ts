@@ -7,13 +7,13 @@
  * asks who you are, a few questions, builds "your plan", and only then asks for the account. Ours
  * does the same with less asking and one real moment: the try board (src/lib/try).
  *
- * Shared contract for the build. Pure: no React, no storage, no network.
+ * Shared contract for the build. Pure: no React, no storage, no network, and no zod (/start's first
+ * screen loads this; the request's schema is the server's, in `schemas.ts`).
  *   - the flow's screens and state:   src/lib/start/** and src/components/start/** (agent "flow")
  *   - the account and what it saves:  src/components/start/StartAccount.tsx, src/lib/start/finish.ts (agent "account")
  *   - the anonymous step counts:      src/lib/start/record.ts, /api/start/step, the admin Funnel (agent "measure")
  */
-import { z } from "zod";
-import { HEARD_FROM, type HeardFrom } from "@/lib/funnel/contracts";
+import type { HeardFrom } from "@/lib/funnel/contracts";
 import type { WelcomeChoice } from "@/lib/onboarding/choice";
 import type { PathSkillId } from "@/lib/learning/grades";
 
@@ -71,24 +71,10 @@ export interface StartAnswers {
 export const EMPTY_ANSWERS: StartAnswers = { role: null, name: null, choice: null, focus: [], tried: null, heardFrom: null };
 
 /**
- * The answers as the "Send it to my grown-up" link and the device keep them: checked on the way
- * back in, anything wrong dropped rather than refused (an old link, a hand-edited one).
+ * The answers as the "Send it to my grown-up" link and the device keep them are checked on the way
+ * back in by `cleanStartAnswers` (link.ts): anything wrong is dropped rather than refused (an old
+ * link, a hand-edited one).
  */
-export const StartAnswersSchema = z.object({
-  role: z.enum(START_ROLES).nullable().catch(null),
-  name: z.string().trim().regex(KID_NAME).nullable().catch(null),
-  choice: z
-    .union([z.object({ kind: z.literal("grade"), grade: z.number().int().min(0).max(8) }), z.object({ kind: z.literal("course"), course: z.string().max(32) })])
-    .nullable()
-    .catch(null),
-  focus: z.array(z.string().max(48)).max(MAX_FOCUS).catch([]),
-  tried: z.object({ checked: z.boolean(), solved: z.boolean() }).nullable().catch(null),
-  heardFrom: z
-    .string()
-    .refine((v) => HEARD_FROM.some((h) => h.id === v))
-    .nullable()
-    .catch(null),
-});
 
 /** The device keeps the flow (answers, the screen, the journey id) in localStorage under this key. */
 export const START_STORAGE_KEY = "agathon.start";
@@ -131,11 +117,10 @@ export const START_EVENTS = [
 ] as const;
 export type StartEvent = (typeof START_EVENTS)[number];
 
-/** POST body of /api/start/step (public, rate limited per visitor). */
-export const StartStepRequestSchema = z.object({
-  journeyId: z.string().uuid(),
-  event: z.enum(START_EVENTS),
-  meta: z.record(z.union([z.string().max(40), z.number().finite(), z.boolean(), z.null()])).optional(),
-});
-export type StartStepRequest = z.infer<typeof StartStepRequestSchema>;
+/** POST body of /api/start/step (public, rate limited per visitor); checked by `StartStepRequestSchema` (schemas.ts). */
+export interface StartStepRequest {
+  journeyId: string;
+  event: StartEvent;
+  meta?: Record<string, string | number | boolean | null>;
+}
 export const START_STEP_API = "/api/start/step";

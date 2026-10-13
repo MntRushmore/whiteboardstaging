@@ -211,6 +211,12 @@
   margin-top: auto;
   padding-top: 0.5rem;
 }
+/* a phone keeps the button at the bottom, under the thumb; a tablet or a laptop keeps it with what it answers */
+@media (min-width: 640px) {
+  .actions {
+    margin-top: 0.75rem;
+  }
+}
 /* a screen whose button must stay in reach while its list scrolls (focus) */
 .dock {
   position: sticky;
@@ -724,6 +730,12 @@
   display: block;
   width: 100%;
   height: auto;
+}
+.caption {
+  margin: -0.5rem 0 0;
+  color: var(--st-faint);
+  font-size: 0.8125rem;
+  text-align: center;
 }
 .wideOnly {
   display: none !important;

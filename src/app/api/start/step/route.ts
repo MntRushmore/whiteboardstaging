@@ -1,7 +1,7 @@
 import { checkRateLimit } from "@/lib/server/rate-limit";
 import { isSameOrigin, parseJson, readCapped, startError, startLogger, visitorIp } from "@/lib/server/start/http";
 import { cleanStartMeta, recordStartStepRow, spendStartStep, START_STEP_LIMITS, START_STEP_MAX_BYTES } from "@/lib/server/start/step";
-import { StartStepRequestSchema } from "@/lib/start/contracts";
+import { StartStepRequestSchema } from "@/lib/start/schemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
