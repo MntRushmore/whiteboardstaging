@@ -48,7 +48,7 @@ describe("chat prompt", () => {
   });
 
   it("teach: asked to be shown or taught, the whole worked solution on the board, never a question back", () => {
-    expect(CHAT_SYSTEM_PROMPT).toContain('{"type": "teach", "figure": {...}, "steps": [{"say": "<one short sentence>", "math": ["<LaTeX>", "= <LaTeX>", ...]}, ...], "answer": "<LaTeX>"}');
+    expect(CHAT_SYSTEM_PROMPT).toContain('{"type": "teach", "near": 2, "figure": {...}, "steps": [{"say": "<one short sentence>", "math": ["<LaTeX>", "= <LaTeX>", ...]}, ...], "answer": "<LaTeX>"}');
     // the owner's asks, word for word
     for (const ask of ["explain", "now explain", "explain it step by step", "explain it by drawing", "how did we find that?", "do the actual problem", "show me with the numbers", "show your work", "solve it and explain", "walk me through it", "teach me"]) {
       expect(CHAT_SYSTEM_PROMPT).toContain(`"${ask}"`);

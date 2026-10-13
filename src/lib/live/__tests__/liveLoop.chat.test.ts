@@ -16,7 +16,7 @@ import { CHAT_PROBLEM_META, problemMetaOf } from "../chat/cells";
 import type { ChatAction, ChatRunReport } from "../chat/contracts";
 import { CHAT_BLOCK_META } from "../chat/desk";
 import { PROBE_FIGURE } from "../chat/figure";
-import { AVG_RATE_TEACH, LINEAR_TEACH, OWNER_FIGURE, OWNER_TEACH, WORKSHEET_PAGE } from "../chat/__tests__/teachFixtures";
+import { AVG_RATE_TEACH, GRID_PROBLEMS, LINEAR_TEACH, OWNER_FIGURE, OWNER_TEACH, TRIG_TEACH, WORKSHEET_PAGE } from "../chat/__tests__/teachFixtures";
 
 /**
  * The board chat's hand in the loop: a reply's actions written one block at a time, problems the
@@ -698,6 +698,60 @@ describe("live loop — the board chat", () => {
       expect(added.length).toBe(OWNER_TEACH.steps.length + 2);
       for (const [, r] of added) for (const [, f] of first) expect(touches(r, f)).toBe(false);
       for (const [, r] of added) for (const i of ink) expect(touches(r, { x: i.x, y: i.y, w: i.w, h: i.h })).toBe(false);
+    });
+
+    it("the tutor's 2×2 problem grid, \"explain how to do problem 4\": the work goes in problem 4's cell, under it, on this screen", async () => {
+      // the live replay (2026-10-13): every cell owned the screen, so the work took the student to a
+      // new screen and "#2", "problem 3" were never seen again
+      start();
+      const set = await run([{ type: "write_problems", problems: GRID_PROBLEMS }]);
+      expect(set).toMatchObject({ problemsWritten: 4, screensAdded: 0 });
+      const four = problems().find((p) => p.n === 4)!;
+      const home = editor.getCurrentPage().id;
+      for (const action of [{ ...teachAction(TRIG_TEACH), near: 4 }, teachAction(TRIG_TEACH)]) {
+        // with "near", and without it (its first line is problem 4's)
+        const before = blockRects();
+        const report = await run([action as ChatAction]);
+        expect(report).toMatchObject({ screensAdded: 0, outcomes: [{ type: "teach", ok: true }] });
+        expect(editor.getCurrentPage().id).toBe(home);
+        const added = [...blockRects()].filter(([block]) => !before.has(block)).map(([, r]) => r);
+        expect(added).toHaveLength(TRIG_TEACH.steps.length + 1);
+        const head = tutor().filter((s) => problemMetaOf(s.meta)?.n === 4).map((s) => editor.getShapePageBounds(s)!);
+        const headBottom = Math.max(...head.map((b) => b.maxY));
+        for (const r of added) {
+          // inside problem 4's cell, under its line
+          expect(r.x).toBeGreaterThanOrEqual(four.cell.x);
+          expect(r.x + r.w).toBeLessThanOrEqual(four.cell.x + four.cell.w);
+          expect(r.y).toBeGreaterThan(headBottom);
+          expect(r.y + r.h).toBeLessThanOrEqual(four.cell.y + four.cell.h);
+        }
+        // the problems are all still on this screen, as the next ask sees them
+        expect(loop.chatScreen().numbers).toEqual([1, 2, 3, 4]);
+        // the second time, the first solution fills the cell: clear the tutor's work for the next try
+        await run([{ type: "clear_tutor" }]);
+        await run([{ type: "write_problems", problems: GRID_PROBLEMS }]);
+        editor.switchPage(home);
+        await vi.advanceTimersByTimeAsync(50);
+      }
+    });
+
+    it("work that cannot stay with the problems goes on a new screen, and that screen's picture carries the problems it came from", async () => {
+      start();
+      await run([{ type: "write_problems", problems: GRID_PROBLEMS }]);
+      // the long solution fits neither in a cell nor anywhere else on the screen
+      const report = await run([teachAction(OWNER_TEACH, OWNER_FIGURE)]);
+      expect(report).toMatchObject({ screensAdded: 1, outcomes: [{ type: "teach", ok: true }] });
+      const work = loop.chatScreen();
+      expect(work.problems).toEqual([]);
+      expect(work.from).toEqual({ screen: 1, problems: GRID_PROBLEMS.map((p) => p.join("; ")), numbers: [1, 2, 3, 4] });
+      // a second solution sent on from the work's screen still carries the problems of screen 1
+      const again = await run([teachAction(OWNER_TEACH, OWNER_FIGURE)]);
+      expect(again).toMatchObject({ screensAdded: 1 });
+      expect(loop.chatScreen().from).toEqual(work.from);
+      // a screen with problems of its own carries none
+      editor.switchPage(editor.getPages()[0].id);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(loop.chatScreen().from).toBeUndefined();
     });
 
     it("a worksheet page in the middle of the screen: the work goes beside it, the next beside it on the other side, and only a full screen gets a new one", async () => {
