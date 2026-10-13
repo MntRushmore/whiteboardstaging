@@ -83,7 +83,7 @@ Every word is in `copy.ts`, and the contract already holds them. A builder may t
 - **lp3-ask:** `AskDemo.tsx`, `ask.module.css`, and `__tests__/askDemo.test.tsx`. Any new pure helpers go under `src/lib/landing/ask*`.
 - **lp3-devices:** `ProblemStrip.tsx`, `Devices.tsx`, `strip.module.css`, `devices.module.css`, and their tests. Any new device pictures go under `public/landing/v3/devices-*`.
 - **lp3-captures:** `BoardReplay.tsx`, `device.module.css`, `replay*.ts`, `public/landing/*.webp` (board-ipad, path, progress), and `public/landing/v3/` shots that others ask for.
-- **lp3-root:** `next.config.ts`, `src/lib/landing/links.ts`, the auth cookie in `src/components/AuthProvider.tsx` (or a small new `src/lib/landing/signedInCookie.ts`), `src/app/(platform)/page.tsx` (the gate script only), and the links tests.
+- **lp3-root:** `SessionHop.tsx` (already placed at the top of the page), `next.config.ts`, `src/lib/landing/links.ts`, the auth cookie in `src/components/AuthProvider.tsx` (or a small new `src/lib/landing/signedInCookie.ts`), `src/app/(platform)/page.tsx` (the gate script only), and the links tests.
 - Nobody else edits `ink.module.css`, `InkMark.tsx`, `HandMath.tsx`, `handInk.ts` or `inkStart.ts`. If one of them needs a change, make it small and additive, and say so in the commit.
 
 ## Root: the page at agathon.app/

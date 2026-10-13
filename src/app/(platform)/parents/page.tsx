@@ -12,6 +12,7 @@ import { PracticePicker } from "@/components/landing/PracticePicker";
 import { Pricing } from "@/components/landing/Pricing";
 import { ProblemStrip } from "@/components/landing/ProblemStrip";
 import { Questions } from "@/components/landing/Questions";
+import { SessionHop } from "@/components/landing/SessionHop";
 import { StickyJoin } from "@/components/landing/StickyJoin";
 import { LANDING_PATH, siteOrigin } from "@/lib/landing/links";
 import styles from "@/components/landing/landing.module.css";
@@ -52,6 +53,7 @@ export const metadata: Metadata = {
 export default function ParentsPage() {
   return (
     <div className={styles.page}>
+      <SessionHop />
       <LandingNav />
       <main>
         <Hero />
