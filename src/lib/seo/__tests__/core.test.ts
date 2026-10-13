@@ -226,7 +226,7 @@ describe("icons and the web manifest", () => {
     expect(m.name).toBe("Agathon");
     expect(m.short_name).toBe("Agathon");
     expect(m.start_url).toBe("/");
-    expect(m.display).toBe("standalone");
+    expect(m.display).toBe("browser");
     expect(m.description).toBe(site.SITE_DESCRIPTION);
     expect(m.theme_color).toMatch(/^#[0-9a-f]{6}$/i);
     expect(m.background_color).toMatch(/^#[0-9a-f]{6}$/i);

@@ -15,7 +15,9 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: SITE_LANGUAGE,
     start_url: "/",
     scope: "/",
-    display: "standalone",
+    // "browser", not "standalone": a home-screen install on iOS would keep its own sign-in apart from Safari
+    // and send a Stripe checkout back to Safari. The manifest is here for its name, colors and icons.
+    display: "browser",
     background_color: THEME_COLOR,
     theme_color: THEME_COLOR,
     categories: ["education", "kids"],

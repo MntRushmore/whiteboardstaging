@@ -10,6 +10,7 @@ import { Join } from "@/components/landing/Join";
 import { TrialWords } from "@/components/landing/TrialWords";
 import landing from "@/components/landing/landing.module.css";
 import { JsonLd } from "@/components/seo/JsonLd";
+import { organizationNode } from "@/lib/seo/landingJsonLd";
 import { MAX_KIDS } from "@/lib/family/contracts";
 import { LANDING_PATH, SIGN_IN_HREF, SIGN_UP_HREF, siteOrigin } from "@/lib/landing/links";
 import { planWords } from "@/lib/landing/plan";
@@ -68,16 +69,8 @@ const JSON_LD = {
   description: DESCRIPTION,
   inLanguage: "en-US",
   isPartOf: { "@type": "WebSite", "@id": `${origin}/#website`, name: "Agathon", url: `${origin}/` },
-  mainEntity: {
-    "@type": "Organization",
-    "@id": `${origin}/#organization`,
-    name: "Agathon",
-    url: `${origin}/`,
-    description: AGATHON_DEFINITION,
-    email: LEGAL.contactEmail,
-    contactPoint: { "@type": "ContactPoint", contactType: "customer support", email: LEGAL.contactEmail, availableLanguage: "English" },
-    parentOrganization: { "@type": "Organization", name: LEGAL.operatorName },
-  },
+  // the landing page's Organization node (same @id, logo and email), with what this page adds
+  mainEntity: { ...organizationNode(origin), description: AGATHON_DEFINITION, parentOrganization: { "@type": "Organization", name: LEGAL.operatorName } },
 };
 
 /** The page's parts, for the bar's jumps (wide screens) and the sections' ids. */

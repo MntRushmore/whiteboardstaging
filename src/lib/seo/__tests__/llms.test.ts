@@ -19,13 +19,14 @@ import {
   linksIn,
   LLMS_FULL_PATH,
   llmsFullTxt,
+  levelEntries,
   llmsTxt,
   plainMath,
   PRIVACY_POINTS,
   skillEntries,
 } from "../llms";
 import { publicPages, SKILL_IDS, SKILL_SLUGS } from "../routes";
-import type { SkillGuide } from "../skillGuide";
+import { SKILL_GUIDES, type SkillGuide } from "../skillGuide";
 
 const ORIGIN = "https://www.agathon.app";
 const TEST_PLAN = { name: "Agathon Test Plan", monthlyUsd: 31, trialDays: 10 };
@@ -139,18 +140,23 @@ describe("llms-full.txt", () => {
   });
 
   it("lists each grade's skill path in order, and each course's skills", () => {
+    // each skill under its guide's title once written, else its name in the app (skillEntries)
+    const names = new Map(skillEntries().map((e) => [e.id, e.name]));
     for (const tab of practiceTabs()) {
-      if (tab.kind === "grade") {
-        const block = full.slice(full.indexOf(`### ${tab.title}\n`));
-        tab.skills.forEach((s, i) => expect(block, `${tab.title} ${s.name}`).toContain(`${i + 1}. ${s.name}: `));
-      } else {
-        for (const c of tab.courses) for (const t of c.topics) expect(full.slice(full.indexOf(`### ${c.label}\n`))).toContain(`- ${t}: `);
-      }
+      if (tab.kind !== "grade") continue;
+      const block = full.slice(full.indexOf(`### ${tab.title}\n`));
+      tab.skills.forEach((s, i) => expect(block, `${tab.title} ${s.name}`).toContain(`${i + 1}. ${names.get(s.id as TopicId)}: `));
+    }
+    for (const entry of levelEntries()) {
+      if (entry.level.kind !== "course") continue;
+      const block = full.slice(full.indexOf(`### ${entry.label}\n`));
+      for (const id of entry.skills) expect(block, `${entry.label} ${id}`).toContain(`- ${names.get(id)}: `);
     }
   });
 
   it("carries every skill guide written so far: title, what, steps, slips and questions", () => {
-    expect(full).not.toContain("## Skill guides"); // none on this branch
+    expect(full).toContain("## Skill guides");
+    for (const guide of Object.values(SKILL_GUIDES)) expect(full).toContain(`### ${guide.title}\n`);
     expect(fullWithGuide).toContain("## Skill guides");
     expect(fullWithGuide).toContain(`### ${GUIDE.title}`);
     expect(fullWithGuide).toContain(GUIDE.what);
