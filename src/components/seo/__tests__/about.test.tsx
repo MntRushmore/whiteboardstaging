@@ -60,12 +60,12 @@ describe("/about", () => {
     for (const title of ["Agathon at a glance", "How it works", "Who it's for", "What it covers", "What it costs", "Devices", "Privacy and kids' data", "Who makes Agathon", "How to reach us"]) {
       expect(h2s, title).toContain(title);
     }
-    // how it works: the board, check marks and circles, Help me's levels, Ask, Type it
+    // how it works: the board, check marks and circles, Help me's levels, Ask
     expect(text).toContain("A right step gets a blue check mark");
     expect(text).toContain("A slip gets a circle");
     expect(text).toMatch(/a Hint, the Next step .* or Solve it/);
     expect(text).toContain("hold the mic");
-    expect(text).toContain("Type it on a laptop");
+    expect(text).not.toContain("Type it on a laptop"); // Type it was removed from the board (2026-10-13)
     expect(text).toContain("Cancel before the trial ends and you pay nothing");
   });
 

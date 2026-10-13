@@ -129,7 +129,7 @@ export function agathonFacts(origin: string, plan: LandingPlan = UNLIMITED_PLAN)
     },
     {
       term: "Devices",
-      detail: "A web browser on an iPad or other tablet, a phone, or a computer. Kids write with a finger or a stylus like Apple Pencil, or type their math on a laptop. There's nothing to install.",
+      detail: "A web browser on an iPad or other tablet, a phone, or a computer. Kids write with a finger, a stylus like Apple Pencil, or a mouse. There's nothing to install.",
     },
     { term: "Price", detail: `One plan, ${p.name}: ${p.price} ${p.per} for up to ${MAX_KIDS} kids. Cancel anytime, online.` },
     { term: "Free trial", detail: `Free for ${p.days}. A grown-up adds a card to start it, and nothing is charged until the trial ends.` },
@@ -141,7 +141,7 @@ export function agathonFacts(origin: string, plan: LandingPlan = UNLIMITED_PLAN)
 
 /**
  * How it works, in one paragraph: the board, the check marks and circles, Help me's three levels, Ask,
- * Type it, and what grown-ups see. Every clause is on the landing page (How it works, Ask, Devices,
+ * and what grown-ups see. Every clause is on the landing page (How it works, Ask, Devices,
  * For grown-ups).
  */
 export function howItWorks(): string {
@@ -150,7 +150,6 @@ export function howItWorks(): string {
     "A right step gets a blue check mark; a slip gets a circle and a nudge to try again, never a red X.",
     "When they're stuck, Help me offers a Hint, the Next step written in the tutor's handwriting beside theirs, or Solve it; the full solution only appears if they choose it.",
     "Ask answers their questions, typed or said out loud, at their grade level; it can read the answer out loud and draw pictures like fraction bars and number lines on the board.",
-    "On a laptop they can type their math, and the board writes it in their own handwriting and checks it.",
     `Grown-ups see each kid's skill path, Today's practice (${DAILY_GOAL} problems a day), Progress and a weekly report.`,
   ].join(" ");
 }

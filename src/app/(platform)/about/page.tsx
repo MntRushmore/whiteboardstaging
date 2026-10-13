@@ -138,7 +138,6 @@ function Nav() {
 export default function AboutPage() {
   const facts = agathonFacts(origin);
   const [pick, write, stuck] = copy.how.steps;
-  const laptop = copy.devices.items.find((d) => d.name === "Laptop");
   const ages = faqAnswer(copy, FAQ.ages);
   const siblings = faqAnswer(copy, FAQ.siblings);
   const onlyMath = faqAnswer(copy, FAQ.onlyMath);
@@ -224,12 +223,6 @@ export default function AboutPage() {
                 </li>
               ))}
             </ul>
-            {laptop && (
-              <>
-                <h3>Type it on a laptop</h3>
-                <p>{laptop.body}</p>
-              </>
-            )}
             <h3>For grown-ups</h3>
             <p>{copy.grownUps.lede}</p>
             <ul>

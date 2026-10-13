@@ -715,7 +715,7 @@ export const LIBRARY_COPY = {
     },
     {
       title: "The tutor checks each line",
-      body: "Kids write each step by hand, or type it on a laptop. A right step gets a blue check mark; a slip gets a circle and a nudge to try again, never a red X.",
+      body: "Kids write each step by hand, with a pencil, a finger or a mouse. A right step gets a blue check mark; a slip gets a circle and a nudge to try again, never a red X.",
     },
     {
       title: "Help me gives hints, not answers",
