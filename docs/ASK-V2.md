@@ -129,6 +129,7 @@ The owner asked for three things:
   - Each place tries every size, largest first, before the next place. Never over the student's ink, a problem or the tutor's writing (18 px kept clear); in a cell only the room the student hasn't written in.
   - Sizes: each kind's boxes end at its legible minimum (figures 260×215, where the labels stop shrinking; graphs 264×216), and no box below half the largest is ever tried.
   - `write_lines` goes through it too (one size, no `near`). A figure mended by the gate keeps its `near`; a stray `{"near": n}` right after a drawing is read as that drawing's.
+- A worked solution (`teach`, `teachWrite.ts`) stays on the screen too whenever it fits whole beside what is there: one column of room (360 px) is enough, in a hand down to the smallest a whole screen uses (28), and a second solution may go beside the first. A new screen takes the student away from their problems, and the next ask sees only that screen (2026-10-13: a solution sent to a new screen from beside a pasted worksheet page left "explain #2" with no #2 to see).
 - The desk skips a `new_screen` sent in the same reply as a `near` drawing (`live.chat.newScreen.ignored`); `live.chat.place` says where each drawing went (`beside`, `work`, `free`, `new_screen`).
 
 ## A chat per screen

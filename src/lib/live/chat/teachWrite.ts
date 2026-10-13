@@ -52,14 +52,14 @@ export const TEACH_BLOCK = "teach";
 
 /**
  * The solution on this screen, beside what is there, when it all fits clear of it in a hand no
- * smaller than `besideMinSize`; else null (a new screen). A screen that already holds a worked
- * solution gets no second one beside it: one solution, one screen.
+ * smaller than `besideMinSize`; else null (a new screen). A new screen moves the student away from
+ * the problems they are working from (a worksheet page, the tutor's problems), and the next ask is
+ * about this screen only: so the work stays here whenever it fits — a second solution too, beside
+ * the first, clear of it — as a teacher uses the rest of the board before a fresh one.
  */
 function layoutHere(desk: TeachWriterDesk, input: Omit<TeachLayoutInput, "area">): TeachLayout | null {
   const area = teachArea(desk.host.screen());
   if (desk.screenEmpty()) return layoutTeach({ ...input, area });
-  const shapes = desk.host.shapes();
-  if (shapes.some((s) => (s.meta as Record<string, unknown> | null)?.chatBlock === TEACH_BLOCK)) return null;
   const taken = desk.obstacles();
   for (const room of freeAreas(area, taken)) {
     const layout = layoutTeach({ ...input, area: room });
