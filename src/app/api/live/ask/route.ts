@@ -39,12 +39,15 @@ const ASK_WATCHDOG_MS = 6_000;
  */
 const ASK_THINKING_MS = 13_000;
 /**
- * A primary with no words this long after the start (thinking, or silent) gets the fallback
- * started BESIDE it, and the first to speak answers (`streamWithFallback`'s hedge). Sonnet 5.5
- * mostly thinks 2–4 s before an "explain" and keeps the ask; one that thinks 10 s (seen on "explain
- * this visually", 2026-10-13) loses it to Haiku 5.5, whose words come ~1.5 s after it starts.
+ * A primary with no words this long after the start gets the fallback started BESIDE it, and the
+ * first to speak answers (`streamWithFallback`'s hedge): a silent one is given up at ASK_WATCHDOG_MS
+ * anyway, so this is for a long thinker. Sonnet 5.5 speaks by 4–6 s after thinking on an "explain"
+ * and keeps the ask; one that thinks 10 s (seen on "explain this visually", 2026-10-13) loses it to
+ * Haiku 5.5, whose words come ~1.5 s after it starts. Not sooner: at 4 s Haiku answered 5 of 7 asks
+ * of a demo replay that evening and put words in 3 of 4 problems (dropped by the board), where
+ * Sonnet writes the maths alone.
  */
-const ASK_HEDGE_MS = 4_000;
+const ASK_HEDGE_MS = 6_000;
 /**
  * The fallback's own first-words watchdog (Haiku 5.5, which never thinks, starts in about 1.2 s): a
  * stuck fallback is an error the student can retry, not a minute of nothing.
