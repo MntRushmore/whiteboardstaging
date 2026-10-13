@@ -84,7 +84,10 @@
   stroke-width: 4.2;
 }
 
-/* What the board says as it marks a line (the board's own Celebrations, src/components/live). */
+/* What the board says as it marks a line (the board's own Celebrations, src/components/live: a
+   rounded bubble beside the mark, bold white praise on emerald, a kind word on amber-50; unchanged
+   by the 2026-10-12 simple board). The praise's emerald is a shade deeper than the board's 500 so
+   its white text reads at 4.5:1 on the page. */
 .cheer {
   position: absolute;
   border-radius: 1.1em;

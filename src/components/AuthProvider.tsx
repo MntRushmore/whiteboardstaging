@@ -8,6 +8,8 @@ import { installClientLogCapture } from "@/lib/logger";
 import { reportUserError } from "@/lib/reportAppError";
 import { classifyAuthLoadError } from "@/lib/authState";
 import { watchAuthUser } from "@/lib/authUserChange";
+import { isLeaving } from "@/lib/landing/leaving";
+import { syncSessionCookie } from "@/lib/landing/sessionCookie";
 import { Button } from "@/components/ui/button";
 
 if (typeof window !== "undefined") {
@@ -70,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         // Stored session is simply not valid any more: behave as signed out.
         console.warn("Auth session not restored:", err);
+        syncSessionCookie(false);
         setAuthError(null);
       }
     }
@@ -81,6 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error) {
           settle(error);
         } else {
+          syncSessionCookie(Boolean(data.session));
           watch.settle(data.session);
           setSession(data.session);
           setAuthError(null);
@@ -98,6 +102,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (cancelled) return;
+      // The session flag `/` is served by (src/lib/landing/sessionCookie.ts), written here and now:
+      // supabase-js waits for this callback before signIn resolves, so the flag is set before the
+      // sign-in page navigates to `/`. Set with any session (a sign-in, a refresh, a profile switch's
+      // new session); cleared only on SIGNED_OUT, since INITIAL_SESSION also arrives empty when the
+      // sign-in service could not be reached (getSession above decides that case).
+      if (s) syncSessionCookie(true);
+      else if (event === "SIGNED_OUT") syncSessionCookie(false);
+      // This page is leaving by a full load (sign-out on its way to `/`, src/lib/landing/links.ts):
+      // it takes nothing more into state, so no page reacts to the change on the way out.
+      if (isLeaving()) return;
       // false: another user's session arrived from another tab, and this page is leaving
       if (!watch.change(event, s)) return;
       if (event === "SIGNED_OUT") {

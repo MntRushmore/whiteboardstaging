@@ -9,10 +9,15 @@ import { REPLAY_ID, REPLAY_START_SCRIPT } from "./replayStart";
 import styles from "./device.module.css";
 
 /**
- * The hero: an iPad with a real Agathon board on it (a 1st grader's simple board), and three sums
- * being written and marked on it, stroke by stroke (`replayTimeline`). A parent sees what the product
- * does before reading a word: a check mark and a cheer for a right answer, a circle and "So close!"
- * for a slip.
+ * The hero: an iPad with a real Agathon board on it, and three sums being written and marked on it,
+ * stroke by stroke (`replayTimeline`). A parent sees what the product does before reading a word: a
+ * check mark and a cheer for a right answer, a circle and "So close!" for a slip.
+ *
+ * The board is the simple board every kid has (2026-10-12): a 1st grader's Today's practice, on a
+ * fresh page of her own (New page, so "2 / 2"), the day's pill still up top at 0 of 5. Top bar:
+ * Back, Help me ▾, Today, More. Dock: Select, Pen, Eraser, Shapes, Picture, Type, Undo, Redo, the
+ * colors, ‹ 2 / 2 ›, New page and Ask. The white screen sits on the soft grey table, and tldraw's
+ * "Made with tldraw" stays, as on agathon.app (the license carries the watermark).
  *
  * Server-rendered and static. The screen is a screenshot of the real board; the ink is SVG drawn
  * over its canvas; the replay is CSS animations, held at the start until the iPad is half in view
@@ -21,10 +26,16 @@ import styles from "./device.module.css";
  * component.
  */
 
-/** The screenshot (public/landing/board-ipad.webp), in CSS px of the board it was taken from. */
+/** The screenshot (public/landing/board-ipad.webp, at 2x), in CSS px: an iPad Air held sideways. */
 const SCREEN = { width: 1180, height: 820 } as const;
-/** The board's empty canvas in the screenshot: below the kid's toolbar, clear of the page dots. */
-const CANVAS = { left: 16, top: 88, width: 1148, height: 644 } as const;
+/**
+ * The board's white screen in the screenshot, hairline included (tldraw's own page-to-screen of the
+ * 16:9 screen: 16,87 to 1164,733). The top bar (Back, Help me, Today, More) ends at 64 and the dock
+ * starts at 744, so the ink never meets either.
+ */
+const CANVAS = { left: 16, top: 87, width: 1148, height: 646 } as const;
+/** Where the screenshot's top bar ends and its dock begins, in its CSS px. */
+const CHROME = { barBottom: 64, dockTop: 744 } as const;
 /** Board units to canvas pixels: the ink a little larger than life, as an iPad shows it zoomed. */
 const SCALE = 2;
 /** Board units between one line and the next. */
@@ -50,6 +61,9 @@ function composition() {
   return { left: (CANVAS.width - (maxX - minX)) / 2 - minX, top: (CANVAS.height - COLUMN_HEIGHT) / 2 };
 }
 const { left: LEFT, top: TOP } = composition();
+
+/** The hero's layout, for its tests: the screenshot's measures and where the writing goes on it. */
+export const HERO_BOARD = { SCREEN, CANVAS, CHROME, SCALE, CHEER_GAP, MISS_WIDTH, LEFT, TOP, lines: REPLAY.lines } as const;
 
 const pct = (value: number, of: number) => `${((value / of) * 100).toFixed(3)}%`;
 

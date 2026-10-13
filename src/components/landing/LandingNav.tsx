@@ -9,9 +9,11 @@ import styles from "./landing.module.css";
 const NAV_ID = "lp-nav";
 
 /**
- * The landing page's top bar: the name, Sign in, and the one pill. Sticky and translucent, so the
- * way in is always one tap away however far down a parent has read; it turns dark while it sits
- * over the dark band (`NavTone`), so nothing reads through it.
+ * The landing page's top bar: the name, the page's parts (wide screens only), Sign in, and the one
+ * pill. Sticky and translucent, so the way in is always one tap away however far down a parent has
+ * read; it turns dark while it sits over the dark band (`NavTone`), so nothing reads through it. The
+ * part links are plain anchors: the page glides to each (landing.module.css), landing just under
+ * the bar.
  */
 export function LandingNav() {
   const copy = LANDING_COPY.nav;
@@ -23,6 +25,15 @@ export function LandingNav() {
           Agathon
           <BetaBadge className={styles.beta} />
         </Link>
+        <ul className={styles.navParts}>
+          {copy.links.map((link) => (
+            <li key={link.id}>
+              <a href={`#${link.id}`} className={styles.navPart}>
+                {link.label}
+              </a>
+            </li>
+          ))}
+        </ul>
         <div className={styles.navLinks}>
           <Link href={SIGN_IN_HREF} className={styles.navSignIn}>
             {copy.signIn}

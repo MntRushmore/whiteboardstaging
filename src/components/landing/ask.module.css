@@ -1,0 +1,1138 @@
+/* "Stuck on why? Just ask." (v3): the Ask panel docked beside a board, playing one exchange, and the
+   five things Ask does. The panel and the board are drawn in CSS after the real ones
+   (src/components/chat, src/components/kidmode): the same words, bubbles, buttons and colours, a
+   little crisper. Three layouts, by the stage's own width:
+     - under 700 px: the board on top and the panel as a bottom sheet under it (a phone);
+     - 700 px up: the panel docked beside a narrow board;
+     - 1000 px up: docked beside a wide board.
+   What plays is CSS animations, from the moment the demo is in view (INK_START_SCRIPT); without
+   motion every element is in its final state. Flat fills, hairlines and soft shadows only. */
+
+.band {
+  background: var(--background);
+}
+
+.stage {
+  container: lp-ask / inline-size;
+  width: min(100% - 2 * var(--lp-gutter), var(--lp-wide));
+  margin: clamp(3rem, 2rem + 4vw, 5rem) auto 0;
+}
+
+/* ---- The frame: a board and the panel, as the screen shows them --------------------------------- */
+.demo {
+  position: relative;
+}
+.frame {
+  display: grid;
+  overflow: hidden;
+  grid-template-rows: auto auto;
+  border-radius: 1.5rem;
+  background: var(--lp-table);
+  box-shadow:
+    0 0 0 1px oklch(0% 0 0 / 0.06),
+    0 1px 2px oklch(0% 0 0 / 0.04),
+    0 28px 64px -24px oklch(25% 0.02 260 / 0.22);
+  color: #0f172b;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-align: left;
+  user-select: none;
+}
+@container lp-ask (min-width: 700px) {
+  .frame {
+    height: 620px;
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    grid-template-rows: minmax(0, 1fr);
+    border-radius: 1.75rem;
+  }
+}
+@container lp-ask (min-width: 1000px) {
+  .frame {
+    height: clamp(600px, 48cqw, 660px);
+    grid-template-columns: minmax(0, 1fr) clamp(21.5rem, 31cqw, 24.5rem);
+  }
+}
+
+/* ---- The board ------------------------------------------------------------------------------ */
+.board {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.75rem 0.75rem 0.875rem;
+}
+@container lp-ask (min-width: 700px) {
+  .board {
+    gap: 0.875rem;
+    padding: 1rem;
+  }
+}
+
+/* the top bar: Back, Help me ▾, More */
+/* (a phone's board is the screen alone: the page's own bar sits over its top) */
+.bar {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  --bar: 2.25rem;
+}
+@container lp-ask (min-width: 700px) {
+  .bar {
+    display: flex;
+  }
+}
+@container lp-ask (min-width: 1000px) {
+  .bar {
+    --bar: 2.625rem;
+  }
+}
+.bar svg {
+  width: calc(var(--bar) * 0.45);
+  height: calc(var(--bar) * 0.45);
+  flex: none;
+}
+.back {
+  display: grid;
+  width: var(--bar);
+  height: var(--bar);
+  place-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+  color: #314158;
+}
+.help {
+  display: inline-flex;
+  height: var(--bar);
+  overflow: hidden;
+  border-radius: 999px;
+  background: #155dfc;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.1);
+  color: #fff;
+  font-size: calc(var(--bar) * 0.4);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.helpMain {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0 0.85em 0 0.75em;
+}
+.helpMenu {
+  display: grid;
+  width: calc(var(--bar) * 0.95);
+  place-items: center;
+  border-left: 1px solid rgb(255 255 255 / 0.3);
+}
+.more {
+  display: inline-flex;
+  height: var(--bar);
+  align-items: center;
+  gap: 0.4em;
+  margin-left: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 0 0.95em 0 0.8em;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+  color: #62748e;
+  font-size: calc(var(--bar) * 0.36);
+  font-weight: 500;
+}
+
+/* the screen: white on the board's grey table, the tutor's writing laid out on it (askSheets) */
+.sheet {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(15 23 42 / 0.07);
+  border-radius: 0.625rem;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.05);
+  container-type: size;
+}
+/* a phone's board: the screen down to just under the drawing */
+.sheet {
+  aspect-ratio: var(--sheet-crop, 1.62);
+}
+@container lp-ask (min-width: 700px) {
+  .sheet {
+    flex: 1;
+    min-height: 0;
+    aspect-ratio: auto;
+  }
+}
+/* The ink keeps the screen's proportions and fits inside it (a phone's crops it at the bottom). */
+.ink {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 100%;
+  aspect-ratio: var(--ar);
+  translate: -50% 0;
+}
+@container lp-ask (min-width: 700px) {
+  .ink {
+    top: 50%;
+    width: min(100cqw, 100cqh * var(--ar));
+    translate: -50% -50%;
+  }
+}
+.wideInk {
+  display: none;
+}
+@container lp-ask (min-width: 1000px) {
+  .wideInk {
+    display: block;
+  }
+  .narrowInk {
+    display: none;
+  }
+}
+.problem {
+  position: absolute;
+}
+.model {
+  position: absolute;
+  overflow: visible;
+  height: auto;
+}
+.model path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* the dock: the tools, Undo, the color, the pages, and Ask (open: its darker blue) */
+.dockRow {
+  display: none;
+  justify-content: center;
+}
+@container lp-ask (min-width: 700px) {
+  .dockRow {
+    display: flex;
+  }
+}
+.dock {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  border: 1px solid rgb(226 232 240 / 0.9);
+  border-radius: 1.125rem;
+  padding: 0.3125rem;
+  background: #fff;
+  box-shadow:
+    0 8px 28px rgb(15 23 42 / 0.1),
+    0 1px 3px rgb(15 23 42 / 0.06);
+}
+.tool {
+  display: flex;
+  min-width: 2.5rem;
+  height: 2.75rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border-radius: 0.875rem;
+  padding: 0 0.125rem;
+  color: #45556c;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.tool svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+.pressed {
+  background: rgb(219 234 254 / 0.8);
+  color: #1447e6;
+}
+.swatch {
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+  background: #1d1d1d;
+}
+.divider {
+  width: 1px;
+  height: 1.75rem;
+  margin: 0 0.25rem;
+  background: #e2e8f0;
+}
+.pages {
+  display: inline-flex;
+  height: 2.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.25rem;
+  color: #314158;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pages svg {
+  width: 1rem;
+  height: 1rem;
+  color: #90a1b9;
+}
+.askButton {
+  display: inline-flex;
+  height: 2.75rem;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 0.25rem;
+  border-radius: 0.875rem;
+  padding: 0 1rem;
+  background: #193cb8;
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.askButton svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+/* a narrow board folds the dock to what fits, as the board's own dock does */
+.roomy {
+  display: none;
+}
+@container lp-ask (min-width: 1000px) {
+  .roomy {
+    display: flex;
+  }
+}
+
+/* ---- The panel (BoardChatPanel) --------------------------------------------------------------- */
+.panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+  /* the panel's type: the real sizes on a wide screen, a step smaller where it is narrower */
+  --reply: 0.9688rem;
+  --kid: 0.9375rem;
+  --chip: 0.875rem;
+}
+@container lp-ask (min-width: 700px) {
+  .panel {
+    border-top: 0;
+    border-left: 1px solid #e2e8f0;
+  }
+}
+@container lp-ask (min-width: 1000px) {
+  .panel {
+    --reply: 1rem;
+    --kid: 0.96875rem;
+    --chip: 0.9063rem;
+  }
+}
+@container lp-ask (min-width: 1180px) {
+  .panel {
+    --reply: 1.0625rem;
+    --kid: 1rem;
+    --chip: 0.9375rem;
+  }
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.375rem 0.375rem 0.375rem 1rem;
+}
+.avatar {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: #155dfc;
+  color: #fff;
+}
+.avatar svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.panelTitle {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.headButton {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  color: #62748e;
+}
+.headButton svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+/* the speaker, on: blue */
+.speaker {
+  color: #1447e6;
+}
+.speaking {
+  display: grid;
+}
+/* the grow button belongs to a bottom sheet only (and gives way to the title on the narrowest phones) */
+@container lp-ask (max-width: 329px) {
+  .sheetOnly {
+    display: none;
+  }
+}
+@container lp-ask (min-width: 700px) {
+  .sheetOnly {
+    display: none;
+  }
+}
+
+.list {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  padding: 1rem;
+}
+/* the finished exchange (unseen), the hello and the live exchange, one over another */
+.column {
+  display: grid;
+}
+.column > * {
+  grid-area: 1 / 1;
+  align-self: start;
+}
+.ghost {
+  visibility: hidden;
+}
+.ghost,
+.ghost * {
+  animation: none !important;
+}
+.hello {
+  display: none;
+}
+
+.bubble {
+  max-width: 100%;
+  margin: 0;
+  border-radius: 0.375rem 1rem 1rem;
+  padding: 0.75rem 1rem;
+  background: #eff6ff;
+  color: #0f172b;
+  font-size: var(--reply);
+  line-height: 1.55;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.chip {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 0.375rem 0.9375rem;
+  background: #fff;
+  color: #1d293d;
+  font-size: var(--chip);
+  font-weight: 500;
+  line-height: 1.3;
+}
+.weak {
+  border-color: #bedbff;
+  background: #eff6ff;
+  color: #1c398e;
+}
+.weak svg {
+  width: 1rem;
+  height: 1rem;
+  fill: #2b7fff;
+  color: #2b7fff;
+}
+
+/* the kid's words, on the right */
+.kidRow {
+  display: flex;
+  justify-content: flex-end;
+  padding-left: 2.5rem;
+}
+.kid {
+  max-width: 100%;
+  margin: 0;
+  border-radius: 1rem 1rem 0.375rem 1rem;
+  padding: 0.625rem 1rem;
+  background: #1d293d;
+  color: #fff;
+  font-size: var(--kid);
+  line-height: 1.5;
+}
+
+/* the tutor's, on the left */
+.tutorMsg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin-top: 1rem;
+  padding-right: 1.5rem;
+}
+.stack {
+  display: grid;
+  justify-items: start;
+}
+.stack > * {
+  grid-area: 1 / 1;
+}
+.thinking {
+  display: none;
+  align-items: center;
+  gap: 0.75rem;
+  color: #45556c;
+  font-size: calc(var(--reply) - 0.0625rem);
+}
+.dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.dots span {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #51a2ff;
+}
+.reply {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+.reply strong {
+  font-weight: 600;
+}
+.formula {
+  white-space: nowrap;
+}
+.formula :global(.katex) {
+  font-size: 1.08em;
+}
+/* a fraction in a line, as tall as a display one: room above and below, kept on its baseline */
+.tall {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0.3em 0;
+  vertical-align: baseline;
+}
+.caret {
+  display: none;
+  width: 3px;
+  height: 1.05em;
+  margin-left: 0.125rem;
+  border-radius: 999px;
+  background: #2b7fff;
+  translate: 0 0.2em;
+}
+.writing {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.5rem 0.25rem;
+  color: #1447e6;
+  font-size: calc(var(--reply) - 0.125rem);
+  font-weight: 500;
+}
+.pen {
+  display: grid;
+}
+.writing svg {
+  width: 1rem;
+  height: 1rem;
+}
+/* Read it again */
+.again {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: -0.25rem 0 0 -0.375rem;
+  place-items: center;
+  border-radius: 50%;
+  color: #90a1b9;
+}
+.again svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+/* the composer: the box, the mic, send */
+.composer {
+  flex: none;
+  border-top: 1px solid #e2e8f0;
+  padding: 0.75rem;
+}
+.field {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid #cad5e2;
+  border-radius: 1.5rem;
+  padding: 0.25rem 0.25rem 0.25rem 1rem;
+}
+.placeholder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  /* a step darker than the panel's slate-400, to read at 4.5:1 */
+  color: #62748e;
+  font-size: var(--reply);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mic,
+.send {
+  position: relative;
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  place-items: center;
+}
+.mic > *,
+.send > * {
+  grid-area: 1 / 1;
+}
+.mic svg,
+.send svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+.micIdle,
+.micHeld,
+.micBusy {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  border-radius: 50%;
+}
+.micIdle,
+.micBusy {
+  border: 1px solid #e5e5e5;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  color: #0a0a0a;
+}
+/* held: the mic filled, a stop square on it (AskMic, `listening`) */
+.micHeld {
+  display: none;
+  background: #171717;
+  color: #fafafa;
+}
+.micHeld svg,
+.stop svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  fill: currentColor;
+}
+.micBusy {
+  display: none;
+}
+.spin {
+  display: grid;
+}
+/* the ring round the mic, as loud as the voice */
+.level {
+  display: none;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgb(23 23 23 / 0.2);
+}
+/* what the mic is doing, in a bubble over it */
+.pop {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: calc(100% + 0.625rem);
+  display: none;
+  width: max-content;
+  /* on one line where it fits, and always inside a phone's panel (the mic is about 4rem from its edge) */
+  max-width: min(17.5rem, 100cqw - 4.75rem);
+  text-wrap: pretty;
+  border: 1px solid #e5e5e5;
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: #fff;
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.08),
+    0 2px 4px -2px rgb(0 0 0 / 0.06);
+  color: #0a0a0a;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+}
+@container lp-ask (min-width: 700px) {
+  .pop {
+    font-size: 0.875rem;
+  }
+}
+.send {
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #90a1b9;
+}
+.stop {
+  display: none;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  border-radius: 50%;
+  background: #1d293d;
+  color: #fff;
+}
+
+/* ---- The exchange, played ------------------------------------------------------------------- */
+/* Every time is set inline from the timeline (askTimeline). An element shown only for a while has
+   `display: none` above (the finished state); here it is in the layout and its animations say
+   when it is seen. */
+@media (prefers-reduced-motion: no-preference) {
+  .hello {
+    display: block;
+    animation: ask-out 200ms var(--ease-standard) var(--out) forwards;
+  }
+  .thread .kid {
+    animation: ask-in 420ms var(--ease-standard) var(--at) both;
+  }
+  .thread .thinking {
+    display: flex;
+    animation:
+      ask-in 360ms var(--ease-standard) var(--in) both,
+      ask-out 140ms linear var(--out) forwards;
+  }
+  .thread .dots span {
+    animation: ask-bounce 1s var(--d) infinite;
+  }
+  .thread .answer {
+    animation: ask-fade 160ms linear var(--at) both;
+  }
+  .thread .word {
+    animation: ask-word 200ms ease-out var(--at) both;
+  }
+  .thread .caret {
+    display: inline-block;
+    animation:
+      ask-pulse 1.1s ease-in-out infinite,
+      ask-out 1ms linear var(--out) forwards;
+  }
+  .thread .writing {
+    display: flex;
+    animation:
+      ask-in 360ms var(--ease-standard) var(--in) both,
+      ask-out 200ms linear var(--out) forwards;
+  }
+  .thread .pen {
+    animation: ask-pulse 1.1s ease-in-out infinite;
+  }
+  .thread .again {
+    animation: ask-fade 300ms var(--ease-standard) var(--at) both;
+  }
+  /* reading out loud: the speaker's waves come and go */
+  .speaking svg path:nth-of-type(2) {
+    animation:
+      ask-wave 900ms ease-in-out var(--from) infinite,
+      ask-rest 1ms linear var(--to) forwards;
+  }
+  .speaking svg path:nth-of-type(3) {
+    animation:
+      ask-wave 900ms ease-in-out calc(var(--from) + 180ms) infinite,
+      ask-rest 1ms linear var(--to) forwards;
+  }
+  /* the mic: held, then the words on their way, then waiting while the tutor answers */
+  .micIdle {
+    animation:
+      ask-dim 200ms linear var(--in) both,
+      ask-rest 200ms linear var(--out) forwards;
+  }
+  .micHeld {
+    display: grid;
+    animation:
+      ask-press 220ms var(--ease-spring) var(--in) both,
+      ask-out 160ms linear var(--out) forwards;
+  }
+  .micBusy {
+    display: grid;
+    animation:
+      ask-fade 1ms linear var(--in) both,
+      ask-out 160ms linear var(--out) forwards;
+  }
+  .spin {
+    animation: ask-spin 0.8s linear infinite;
+  }
+  .level {
+    display: block;
+    animation: ask-level var(--dur) linear var(--in) both;
+  }
+  .pop {
+    display: block;
+    transform-origin: 85% 100%;
+    animation:
+      ask-pop 260ms var(--ease-standard) var(--in) both,
+      ask-out 160ms linear var(--out) forwards;
+  }
+  .stop {
+    display: grid;
+    animation:
+      ask-fade 140ms linear var(--in) both,
+      ask-out 140ms linear var(--out) forwards;
+  }
+  /* the tutor's pen on the board: each stroke from pen-down to pen-up, a shape tinted once whole */
+  .model path {
+    stroke-dasharray: 1 2;
+    animation: ask-draw var(--for) linear var(--at) both;
+  }
+  .model path.filled {
+    animation:
+      ask-draw var(--for) linear var(--at) both,
+      ask-fill 280ms ease-out var(--fill-at) both;
+  }
+}
+
+@keyframes ask-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+@keyframes ask-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ask-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+@keyframes ask-rest {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ask-dim {
+  to {
+    opacity: 0.5;
+  }
+}
+@keyframes ask-press {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+}
+@keyframes ask-pop {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem) scale(0.96);
+  }
+}
+/* a word arrives: it takes its room at once, then shows */
+@keyframes ask-word {
+  0% {
+    font-size: 0;
+    opacity: 0;
+  }
+  1% {
+    font-size: 1em;
+    opacity: 0;
+  }
+  100% {
+    font-size: 1em;
+    opacity: 1;
+  }
+}
+@keyframes ask-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+@keyframes ask-wave {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+@keyframes ask-bounce {
+  0%,
+  100% {
+    transform: translateY(-25%);
+    animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+  }
+  50% {
+    transform: none;
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+}
+@keyframes ask-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* the voice's loudness while the mic is held: words and the little gaps between them */
+@keyframes ask-level {
+  0% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  4% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  9% {
+    transform: scale(1.32);
+  }
+  14% {
+    transform: scale(1.18);
+  }
+  19% {
+    transform: scale(1.4);
+  }
+  24% {
+    transform: scale(1.08);
+  }
+  28% {
+    transform: scale(1.04);
+  }
+  33% {
+    transform: scale(1.36);
+  }
+  38% {
+    transform: scale(1.22);
+  }
+  43% {
+    transform: scale(1.46);
+  }
+  48% {
+    transform: scale(1.28);
+  }
+  53% {
+    transform: scale(1.06);
+  }
+  58% {
+    transform: scale(1.3);
+  }
+  63% {
+    transform: scale(1.42);
+  }
+  68% {
+    transform: scale(1.16);
+  }
+  73% {
+    transform: scale(1.34);
+  }
+  78% {
+    transform: scale(1.05);
+  }
+  83% {
+    transform: scale(1.26);
+  }
+  88% {
+    transform: scale(1.38);
+  }
+  93% {
+    transform: scale(1.12);
+  }
+  97% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+@keyframes ask-draw {
+  from {
+    stroke-dashoffset: 1.01;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes ask-fill {
+  from {
+    fill-opacity: 0;
+  }
+  to {
+    fill-opacity: 1;
+  }
+}
+
+/* ---- Watch again ---------------------------------------------------------------------------- */
+.caption {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.25rem;
+}
+.replay {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 0.875rem;
+  background: none;
+  color: var(--lp-accent);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.replay:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+@media (hover: hover) and (pointer: fine) {
+  .replay:not(:disabled):hover {
+    background: var(--neutral-2);
+  }
+}
+.replay:focus-visible {
+  outline: 2px solid var(--lp-accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .caption {
+    display: none;
+  }
+}
+
+/* ---- What Ask does -------------------------------------------------------------------------- */
+.features {
+  display: grid;
+  gap: 0.75rem;
+  margin: clamp(2.5rem, 1.5rem + 3vw, 4rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* three over two, then all five in a row */
+@container lp-ask (min-width: 700px) {
+  .features {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .feature {
+    grid-column: span 2;
+  }
+  .feature:nth-child(4),
+  .feature:nth-child(5) {
+    grid-column: span 3;
+  }
+}
+@container lp-ask (min-width: 1180px) {
+  .features {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .feature,
+  .feature:nth-child(4),
+  .feature:nth-child(5) {
+    grid-column: auto;
+  }
+}
+/* on a phone, the picture beside the title, the words under both */
+.feature {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0.875rem;
+  border-radius: 1.25rem;
+  padding: 1.25rem 1.25rem 1.375rem;
+}
+/* side by side, each card's picture, title and words on shared rows, so the words start level */
+@container lp-ask (min-width: 700px) {
+  .feature {
+    grid-row: span 3;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: subgrid;
+    align-items: start;
+    row-gap: 0;
+    padding: 1.5rem 1.5rem 1.625rem;
+  }
+}
+.tintBlue {
+  --tint: var(--lp-tint-blue);
+  --tint-ink: #2453c7;
+}
+.tintGreen {
+  --tint: var(--lp-tint-green);
+  --tint-ink: #187a4c;
+}
+.tintPurple {
+  --tint: var(--lp-tint-purple);
+  --tint-ink: #6440c4;
+}
+.tintYellow {
+  --tint: var(--lp-tint-yellow);
+  --tint-ink: #8a5a00;
+}
+/* the board's own grey, for what is not math */
+.tintTable {
+  --tint: var(--lp-table);
+  --tint-ink: #45556c;
+}
+.feature {
+  background: var(--tint);
+}
+.featureIcon {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border-radius: 0.875rem;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+  color: var(--tint-ink);
+}
+@container lp-ask (min-width: 700px) {
+  .featureIcon {
+    margin-bottom: 1.25rem;
+  }
+}
+.featureTitle {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+}
+.featureBody {
+  grid-column: 1 / -1;
+  margin: 0.75rem 0 0;
+  color: var(--lp-muted);
+  font-size: 1rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}

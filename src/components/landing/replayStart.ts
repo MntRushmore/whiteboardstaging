@@ -25,15 +25,19 @@ export const REPLAY_START_SCRIPT =
   `if(!("IntersectionObserver" in window))return;` +
   `var s=document.createElement("style");s.id=${JSON.stringify(HOLD_ID)};` +
   `s.textContent="#${REPLAY_ID} path,#${REPLAY_ID} span{animation-play-state:paused!important}";document.head.appendChild(s);` +
-  `var o=new IntersectionObserver(function(e){for(var i=0;i<e.length;i++)if(e[i].intersectionRect.height>=${REPLAY_VISIBLE}*e[i].boundingClientRect.height){o.disconnect();s.remove()}},{threshold:[0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1]});` +
+  // an iPad not laid out yet (no height: its stylesheet still coming) is not in view
+  `var o=new IntersectionObserver(function(e){for(var i=0;i<e.length;i++){var h=e[i].boundingClientRect.height;if(h>0&&e[i].intersectionRect.height>=${REPLAY_VISIBLE}*h){o.disconnect();s.remove()}}},{threshold:[0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1]});` +
   `o.observe(f)})();`;
 
 /**
  * Half the iPad's height in view. Height, not area: on a phone the iPad runs off both edges, so its
- * visible area never reaches half of its box however far a parent scrolls.
+ * visible area never reaches half of its box however far a parent scrolls. An iPad with no height
+ * yet (its stylesheet still loading, as in development) is not in view: the observer's first report
+ * can come before the page is laid out, and 0 ≥ half of 0 would let the replay go unseen.
  */
-function halfInView(entry: IntersectionObserverEntry): boolean {
-  return entry.intersectionRect.height >= REPLAY_VISIBLE * entry.boundingClientRect.height;
+export function halfInView(entry: Pick<IntersectionObserverEntry, "intersectionRect" | "boundingClientRect">): boolean {
+  const height = entry.boundingClientRect.height;
+  return height > 0 && entry.intersectionRect.height >= REPLAY_VISIBLE * height;
 }
 const THRESHOLDS = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
 

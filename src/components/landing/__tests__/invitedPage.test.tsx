@@ -25,10 +25,12 @@ const text = renderToStaticMarkup(<ParentsPage />)
   .replace(/\s+/g, " ");
 
 describe("/parents, for a visitor a friend invited", () => {
-  it("says the first month is free in the hero, the pricing card, the card question and the closing", () => {
+  it("says the first month is free in the hero, the pricing card, the card question, the Join band and the phone's bottom bar", () => {
     const invited = LANDING_COPY.invited;
-    for (const words of [invited.start, invited.terms, invited.trial, invited.fine, invited.closing]) expect(text, words).toContain(words);
+    for (const words of [invited.start, invited.terms, invited.trial, invited.fine, invited.sticky]) expect(text, words).toContain(words);
     expect(text).toContain("Do I need a card for the free month?");
+    // the bottom bar's note is the friend's month, beside the page's one button
+    expect(text).toContain(`${invited.sticky} ${LANDING_COPY.sticky.start}`);
   });
 
   it("never also says the usual trial (UNLIMITED_PLAN.trialDays) to them", () => {
@@ -36,6 +38,7 @@ describe("/parents, for a visitor a friend invited", () => {
     expect(text).not.toContain(`${UNLIMITED_PLAN.trialDays} days`);
     expect(text).not.toContain(usual.start);
     expect(text).not.toContain(`free ${usual.trial}`);
+    expect(text).not.toContain(LANDING_COPY.sticky.note);
   });
 
   it("keeps the price and the kid limit", () => {
