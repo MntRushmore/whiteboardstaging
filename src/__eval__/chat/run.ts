@@ -27,6 +27,7 @@ import type {
 } from "@/lib/live/chat/contracts";
 import { figureProblems } from "@/lib/live/chat/figure";
 import { PROBLEM_GRID } from "@/lib/live/chat/layout";
+import { CHAT_GRAPH_READ } from "@/lib/live/chat/limits";
 import {
   checkProofProposal,
   PROOF_CHECK,
@@ -358,7 +359,7 @@ export function scoreGraphs(
     if (a.type !== "graph") return [];
     let graphed = false;
     try {
-      graphed = Boolean(engine.graphFor?.(a.relations));
+      graphed = Boolean(engine.graphFor?.(a.relations, CHAT_GRAPH_READ));
     } catch {
       graphed = false;
     }

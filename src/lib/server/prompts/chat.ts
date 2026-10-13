@@ -46,7 +46,7 @@ import { lenientModelAction } from "./model";
 
 /** How a graph is asked for: relations in LaTeX, and a window only when a range was asked for. */
 export const GRAPH_ACTION =
-  '{"type": "graph", "relations": ["<LaTeX>", ...], "window": {"xMin": -6.2832, "xMax": 6.2832}} — sketches a graph. Relations in x and y: y = x^{2}, y = 2x + 1, 2x + 3y = 6, y < 2x + 1, y \\ge x^{2} - 1, x^{2} + y^{2} = 25, y = \\sin x, f(x) = \\frac{1}{x - 2}; two or three of them are a system (drawn with where they cross); one inequality in x alone (x > 3, -2 \\le x < 3) is a number line. "window" only when a range is asked for: numbers (π = 3.14159…), yMin/yMax optional.';
+  '{"type": "graph", "relations": ["<LaTeX>", ...], "window": {"xMin": -6.2832, "xMax": 6.2832}} — sketches a graph. Relations in x and y: y = x^{2}, y = 2x + 1, 2x + 3y = 6, y < 2x + 1, y \\ge x^{2} - 1, x^{2} + y^{2} = 25, y = \\sin x, f(x) = \\frac{1}{x - 2}, a horizontal line y = 3 or y = \\frac{\\sqrt{2}}{2}; two or three of them are a system (drawn with where they cross); one inequality in x alone (x > 3, -2 \\le x < 3) is a number line. Never a vertical line (x = 2): the board cannot draw one (an asymptote is drawn with its curve anyway). "window" only when a range is asked for: numbers (π = 3.14159…), yMin/yMax optional.';
 
 /** How a geometry figure is asked for (its format is `FIGURE_FORMAT`). */
 export const DRAW_FIGURE_ACTION = '{"type": "draw_figure", "figure": {...}} — a geometry figure, drawn true to scale (format below).';

@@ -366,6 +366,16 @@ export interface NumberLineIntent {
   marks: Array<{ at: number; latex: string }>;
 }
 export type GraphIntent = PlaneGraphIntent | NumberLineIntent;
+/** How `graphFor` reads its lines. */
+export interface GraphForOptions {
+  /**
+   * Every line is a relation someone asked to see drawn (the board chat's `graph`), not a column of
+   * work: `y = c` is a horizontal line (under a function in a column it is a value put in), and a
+   * line the sketch cannot draw (`x = 2`, a value, words) fails the whole graph instead of being
+   * left out of it — nothing is said to be graphed that is not drawn.
+   */
+  explicit?: boolean;
+}
 export interface LiveEngine {
   analyzeLine(latex: string, ctx: AnalyzeContext): LineAnalysis;
   /** compiled y=f(x) sampler for graph shapes; null when the expression does not parse */
@@ -395,10 +405,11 @@ export interface LiveEngine {
    * What to graph for a column of work (the student's lines, then any solution under them),
    * top to bottom: `y = f(x)` / `f(x) = …`, a line in any form, two or three of them (with where
    * they cross), a region (`y < 2x + 1`), a circle, or — from the last line — a one-variable
-   * inequality answer as a number line. Null when there is nothing to graph. Optional so engine
-   * doubles need not implement it.
+   * inequality answer as a number line. Null when there is nothing to graph. `explicit`: the lines
+   * are relations asked for by name (`GraphForOptions`). Optional so engine doubles need not
+   * implement it.
    */
-  graphFor?(lines: readonly string[]): GraphIntent | null;
+  graphFor?(lines: readonly string[], opts?: GraphForOptions): GraphIntent | null;
   /**
    * A line of a young student's working under a problem with no letters (`engine/primaryWork.ts`),
    * judged against the PROBLEM rather than the line above: a true side calculation (`10 \times 7 =
