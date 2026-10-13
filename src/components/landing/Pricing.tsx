@@ -1,8 +1,7 @@
-import Link from "next/link";
 import { Check } from "lucide-react";
-import { SIGN_UP_HREF } from "@/lib/landing/links";
 import { PRICING_ID } from "./bands";
 import { LANDING_COPY } from "./copy";
+import { JoinLink } from "./JoinLink";
 import { InkUnderline } from "./InkMark";
 import { Lines } from "./Lines";
 import { TrialWords } from "./TrialWords";
@@ -39,9 +38,9 @@ export function Pricing() {
                 <TrialWords usual={copy.trial} invited={invited.trial} />
               </InkUnderline>
             </p>
-            <Link href={SIGN_UP_HREF} className={`${styles.pill} ${styles.pillLarge} ${styles.priceCta}`}>
+            <JoinLink className={`${styles.pill} ${styles.pillLarge} ${styles.priceCta}`}>
               <TrialWords usual={copy.start} invited={invited.start} />
-            </Link>
+            </JoinLink>
             <p className={styles.priceFine}>
               <TrialWords usual={copy.fine} invited={invited.fine} />
             </p>

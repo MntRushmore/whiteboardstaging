@@ -31,11 +31,44 @@ export const LANDING_PATH = "/";
 /** The route that renders the landing page. `/` is rewritten to it; it also answers at its own address, the fallback when `/` cannot be the landing page. */
 export const LANDING_ROUTE = "/parents";
 
-/** `?mode=signup` on /login opens the form on Sign up (LoginForm reads it with `wantsSignUp`). */
+/**
+ * `?mode=signup` on /login opens the form on Sign up (LoginForm reads it with `wantsSignUp`). Since
+ * 2026-10-13 no button on the site links here (Join goes to /start, `START_HREF`); it stays for the
+ * links already out there (emails, posts, bookmarks).
+ */
 export const SIGN_UP_PARAM = "mode";
 export const SIGN_UP_VALUE = "signup";
 export const SIGN_UP_HREF = `/login?${SIGN_UP_PARAM}=${SIGN_UP_VALUE}`;
 export const SIGN_IN_HREF = "/login";
+
+/**
+ * The new onboarding (docs/START-FLOW.md), where every "Join Agathon" goes since 2026-10-13: a few
+ * questions, the try board and the plan before the account. `START_PATH` in src/lib/start/contracts.ts
+ * (spelled out here: that module carries zod, and this one is on the landing page's first load).
+ */
+export const START_HREF = "/start";
+
+/** The longest value a Join link carries on (attribution keeps 200 characters of each anyway). */
+const KEPT_VALUE_MAX = 200;
+
+/** A query parameter a Join link carries on to /start: a friend's `?ref=` and a campaign's `utm_*`. */
+export function isKeptJoinParam(key: string): boolean {
+  return key === "ref" || /^utm_[a-z0-9_]+$/i.test(key);
+}
+
+/**
+ * /start with the `?ref` and `utm_*` of the page the visitor is on, in their order (the first of
+ * each name), and nothing else: the sign-up's attribution and a friend's invite go with them even
+ * where this device keeps no storage. Plain `/start` when there are none.
+ */
+export function startHref(search: string | null | undefined): string {
+  const kept = new URLSearchParams();
+  for (const [key, value] of new URLSearchParams(search ?? "")) {
+    if (value && isKeptJoinParam(key) && !kept.has(key)) kept.append(key, value.slice(0, KEPT_VALUE_MAX));
+  }
+  const query = kept.toString();
+  return query ? `${START_HREF}?${query}` : START_HREF;
+}
 
 /** True when the sign-in page was opened to make an account (`/login?mode=signup`). */
 export function wantsSignUp(search: string | null | undefined): boolean {
