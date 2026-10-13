@@ -8,15 +8,26 @@
 import { GRADE_STARTERS, STARTER_PROBLEMS, type StarterProblem } from "@/lib/onboarding/courses";
 import { TRY_BANDS, type TryBandId, type TryProblem } from "./contracts";
 
-function fromStarter(band: TryBandId, n: number, s: StarterProblem): TryProblem {
-  return { id: `${band}-${n}`, band, lines: s.lines, hint: s.hint, oneStep: Boolean(s.oneStep) };
+function fromStarter(band: TryBandId, n: number, s: StarterProblem, grade: number | null): TryProblem {
+  return {
+    id: `${band}-${n}`,
+    band,
+    lines: s.lines,
+    hint: s.hint,
+    oneStep: Boolean(s.oneStep),
+    ...(grade !== null ? { grade } : {}),
+    ...(s.skill ? { skill: s.skill } : {}),
+  };
 }
 
 function build(): readonly TryProblem[] {
   const out: TryProblem[] = [];
   for (const band of TRY_BANDS) {
-    const starters = [...band.grades.flatMap((g) => GRADE_STARTERS[g] ?? []), ...band.courses.flatMap((c) => STARTER_PROBLEMS[c] ?? [])];
-    starters.forEach((s, n) => out.push(fromStarter(band.id, n, s)));
+    const starters = [
+      ...band.grades.flatMap((g) => (GRADE_STARTERS[g] ?? []).map((s) => ({ s, grade: g as number | null }))),
+      ...band.courses.flatMap((c) => (STARTER_PROBLEMS[c] ?? []).map((s) => ({ s, grade: null }))),
+    ];
+    starters.forEach(({ s, grade }, n) => out.push(fromStarter(band.id, n, s, grade)));
   }
   return out;
 }

@@ -4,32 +4,36 @@
  * not (or after "Already have an account? Sign in": `resume.ts`).
  *
  * 1. This device first, before any request, so nothing in between can show the old onboarding: the
- *    welcome is done (`writeLocalDone`), no guided-board tour marker is ever written (the three tips
- *    show only on a board that has one), and the plan screen is due (`writePlanMarker` "pending",
- *    the home's `planDue`) unless it already showed.
+ *    welcome is done (`writeLocalDone`), and no guided-board tour marker is ever written (the three
+ *    tips show only on a board that has one).
  * 2. The answers, as the student (their JWT; RLS and the RPC act on auth.uid()):
  *    - `save_onboarding` v2: the grade or course (`choiceSave`), where they heard of us, and
  *      onboarding done (`onboarded_at`, stamped once);
  *    - then the kid's first name as `profiles.display_name`, only while the profile has none: an
  *      `update … where display_name is null` through the owner-update policy and the column grant
  *      (display_name is the one column a user may update; it is how /account's ProfileCard saves it).
- * 3. The first board, on the plan's first skill: the first of the skills picked on `focus` that has
- *    practice problems, else the first of the grade's path (`GRADE_PATHS`), else the grade's or
- *    course's starters (`startersFor`). It is made the way Progress's Practice makes one
+ * 3. The first board, on the plan's first skill: the first of the plan's skills (`planSkills`: those
+ *    picked on `focus`, then the grade's path or the course's topics) that has practice problems,
+ *    else the grade's or course's starters (`startersFor`). It is made the way Progress's Practice makes one
  *    (`createFirstBoard`, "Practice: <skill>", the problems left in the device's practice marker),
  *    so it opens with real problems in the tutor's hand. A board that fails is not fatal.
  * 4. The welcome email, once onboarding is saved (the server sends it once).
+ * 5. Where to go: the first board itself. It is the account's free board (src/lib/billing/freeBoard.ts:
+ *    the oldest live board, open with no card until 5 problems or the starter ink), and its "Nice
+ *    work" sheet offers the trial at the win, as the owner chose on 2026-10-13 ("create a account
+ *    after onboarding and get 1 free board so they try it then subscribe"). With no board, the plan
+ *    screen, made due (`writePlanMarker` "pending", the home's `planDue`) unless it already showed.
  *
  * Idempotent: the RPC keeps the first `onboarded_at` and `heard_from`, the name is written only
  * over none, and the board is made once per account on this device (`agathon.start.finished.<id>`
  * remembers it; two calls at once share one run). Never throws: what failed is in `failed`, and
- * `next` is always the plan screen.
+ * `next` is the first board, or the plan screen without one.
  *
  * The client is structural (only the calls used here), so the tests pass a fake.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { skillDef, type SkillId } from "@/lib/learning/contracts";
-import { GRADE_PATHS, type PathSkillId } from "@/lib/learning/grades";
+import type { PathSkillId } from "@/lib/learning/grades";
 import { writePracticeMarker } from "@/lib/learning/practiceMarker";
 import { choiceSave } from "@/lib/onboarding/choice";
 import { COURSES, starterBoardTitle, starterIndex, startersFor } from "@/lib/onboarding/courses";
@@ -37,6 +41,7 @@ import { browserStorage, writeLocalDone, type StorageLike } from "@/lib/onboardi
 import { PLAN_PATH, readPlanMarker, writePlanMarker } from "@/lib/onboarding/planMarker";
 import { createFirstBoard, saveOnboarding, type OnboardingClient } from "@/lib/onboarding/storage";
 import { KID_NAME, type StartAnswers } from "./contracts";
+import { planSkills } from "./plan";
 
 interface QueryResult<T> {
   data: T | null;
@@ -104,10 +109,12 @@ function defaultDeps(): FinishDeps {
 
 // ------------------------------------------------------------------ the first board
 
-/** The skills the first board may be on, in order: those picked on `focus`, then the grade's path. */
+/**
+ * The skills the first board may be on, in order: the plan's (`planSkills`), so the board is the
+ * plan the family saw: those picked on `focus`, then the grade's path or the course's topics.
+ */
 export function firstSkills(answers: Pick<StartAnswers, "focus" | "choice">): PathSkillId[] {
-  const path = answers.choice?.kind === "grade" ? GRADE_PATHS[answers.choice.grade] : [];
-  return [...new Set([...answers.focus, ...path])];
+  return planSkills(answers);
 }
 
 export interface FirstBoardPlan {
@@ -193,9 +200,12 @@ export async function nameProfile(client: StartClient, userId: string, name: str
 
 export type FinishFailure = "save" | "name" | "board" | "marker";
 
+/** The board's address (src/app/board/[id]). */
+export const boardPath = (boardId: string) => `/board/${encodeURIComponent(boardId)}`;
+
 export interface FinishResult {
-  /** where to go: the plan screen, always */
-  next: typeof PLAN_PATH;
+  /** where to go: the first board (the free board), or the plan screen when there is none */
+  next: string;
   /** the first board (made now, or by an earlier run on this device); null when it failed */
   boardId: string | null;
   /** save_onboarding answered: onboarding is done on the account */
@@ -225,9 +235,8 @@ async function makeFirstBoard(client: StartClient, userId: string, answers: Star
 
 async function finishOnce(client: StartClient, userId: string, answers: StartAnswers, deps: FinishDeps): Promise<FinishResult> {
   const failed: FinishFailure[] = [];
-  // 1. this device: the old welcome and the tour never show; the plan screen is next
+  // 1. this device: the old welcome and the tour never show
   writeLocalDone(deps.storage, userId);
-  if (readPlanMarker(deps.storage, userId) === null) writePlanMarker(deps.storage, userId, "pending");
 
   // 2 and 3: the answers (then the name: save_onboarding makes a missing profile row) and the board
   const { course, grade } = choiceSave(answers.choice);
@@ -252,7 +261,9 @@ async function finishOnce(client: StartClient, userId: string, answers: StartAns
       /* a welcome email is not worth an error */
     }
   }
-  return { next: PLAN_PATH, boardId: board.ok ? board.boardId : null, saved, name, failed };
+  // 5. the free board, or with none the plan screen (due, so the home sends them there too)
+  if (!board.ok && readPlanMarker(deps.storage, userId) === null) writePlanMarker(deps.storage, userId, "pending");
+  return { next: board.ok ? boardPath(board.boardId) : PLAN_PATH, boardId: board.ok ? board.boardId : null, saved, name, failed };
 }
 
 const running = new Map<string, Promise<FinishResult>>();

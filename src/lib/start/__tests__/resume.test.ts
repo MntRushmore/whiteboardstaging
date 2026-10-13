@@ -128,7 +128,7 @@ describe("resumeStart", () => {
 });
 
 describe("Sign in, then finish (the whole path)", () => {
-  it("'Already have an account? Sign in' on /start, then a sign-in: the account gets the plan, the board, and the plan screen next", async () => {
+  it("'Already have an account? Sign in' on /start, then a sign-in: the account gets the plan and the board, and the board opens next", async () => {
     const storage = fakeStorage();
     // the account screen's Sign in link
     writeStartPending(storage, KID, NOW, null);
@@ -142,13 +142,14 @@ describe("Sign in, then finish (the whole path)", () => {
       finish: (id, answers) =>
         finishStart(db.client, id, answers, { storage, now: () => NOW, seed: () => 1, practice: async () => ({ hasPractice, practiceProblems, practiceTitle }), welcomeEmail: () => undefined }),
     });
-    expect(outcome).toMatchObject({ kind: "finished", next: "/welcome/plan" });
+    expect(outcome).toMatchObject({ kind: "finished", next: "/board/board-1" });
     expect(db.profile).toMatchObject({ course: "other", grade: 1, display_name: "Ava" });
     expect(db.profile.onboarded_at).toBeTruthy();
     expect(db.calls.boards).toEqual([{ title: "Practice: Adding to 20", data: {}, user_id: USER }]);
     expect(readLocalDone(storage, USER)).toBe(true);
     expect(readTourMarker(storage, USER)).toBeNull();
-    expect(readPlanMarker(storage, USER)).toBe("pending");
+    // the free board first: the plan screen comes at its end
+    expect(readPlanMarker(storage, USER)).toBeNull();
     expect(hasStartPending(storage)).toBe(false);
   });
 });

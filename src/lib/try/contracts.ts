@@ -56,6 +56,10 @@ export interface TryProblem {
   hint: string;
   /** the first right step is the answer (`3 + 4` → `7`): the page asks for "the answer", not "the next step" */
   oneStep: boolean;
+  /** the grade it is a starter of (K–8; none for a course's), so /start's try screen can match the kid's grade */
+  grade?: number;
+  /** the path skill it practises, when it has one, so /start's try screen can match the plan's first skill */
+  skill?: string;
 }
 
 /** At most this many lines of the visitor's own work under the problem (the page's lined pad). */

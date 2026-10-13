@@ -47,6 +47,14 @@ export interface TryBoardProps {
   terms: { usual: string; invited: string };
   /** the tutor's check mark beside "Solved!" (server-rendered, draws itself in) */
   finishMark?: ReactNode;
+  /**
+   * Inside /start's `try` screen (src/components/start/StartTry.tsx): no Join card (the flow goes on
+   * to the plan instead), and the flow hears what happened (`checked`: the tutor checked a line
+   * right; `solved`: a problem is finished), each time it changes. The grade picker shows only when
+   * there is more than one band to pick from.
+   */
+  join?: boolean;
+  onProgress?: (progress: { checked: boolean; solved: boolean }) => void;
   /** tests: the state to start from, and what the board talks to */
   initial?: Partial<TryState>;
   deps?: Partial<TryDeps>;
@@ -204,7 +212,7 @@ function TutorInk({ row, line }: { row: TutorRow; line: { w: number; h: number }
   );
 }
 
-export function TryBoard({ problems, bands, defaultBand, api, maxLines, terms, finishMark, initial, deps }: TryBoardProps) {
+export function TryBoard({ problems, bands, defaultBand, api, maxLines, terms, finishMark, join: withJoin = true, onProgress, initial, deps }: TryBoardProps) {
   const [store] = useState(() => new TryStore(problems, { ...browserDeps(api, maxLines), ...deps }, defaultBand, initial));
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const problem = (problems.find((p) => p.id === state.problemId) ?? null) as TryBoardProblemView | null;
@@ -234,6 +242,17 @@ export function TryBoard({ problems, bands, defaultBand, api, maxLines, terms, f
     observer.observe(list);
     return () => observer.disconnect();
   }, []);
+
+  // what happened, for /start: only when it changes
+  const checked = state.checkedOnce;
+  const solved = state.solved === "kid";
+  const progressRef = useRef(onProgress);
+  useEffect(() => {
+    progressRef.current = onProgress;
+  });
+  useEffect(() => {
+    if (checked || solved) progressRef.current?.({ checked, solved });
+  }, [checked, solved]);
 
   useEffect(() => {
     const back = () => store.online();
@@ -309,15 +328,17 @@ export function TryBoard({ problems, bands, defaultBand, api, maxLines, terms, f
 
   return (
     <div className={styles.board} ref={boardRef}>
-      <fieldset className={styles.bands}>
-        <legend className={styles.srOnly}>{TRY_COPY.bands}</legend>
-        {bands.map((band) => (
-          <label key={band.id} className={styles.band}>
-            <input type="radio" name="try-band" value={band.id} checked={state.band === band.id} onChange={() => store.selectBand(band.id)} className={styles.bandInput} />
-            <span className={styles.bandFace}>{band.label}</span>
-          </label>
-        ))}
-      </fieldset>
+      {bands.length > 1 && (
+        <fieldset className={styles.bands}>
+          <legend className={styles.srOnly}>{TRY_COPY.bands}</legend>
+          {bands.map((band) => (
+            <label key={band.id} className={styles.band}>
+              <input type="radio" name="try-band" value={band.id} checked={state.band === band.id} onChange={() => store.selectBand(band.id)} className={styles.bandInput} />
+              <span className={styles.bandFace}>{band.label}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
 
       <div className={styles.paper} data-solved={state.solved ? "" : undefined}>
         <BoardDots />
@@ -411,7 +432,7 @@ export function TryBoard({ problems, bands, defaultBand, api, maxLines, terms, f
 
       <p className={styles.note}>{TRY_COPY.note}</p>
 
-      {state.joinOpen && (
+      {withJoin && state.joinOpen && (
         <aside className={styles.join} aria-labelledby="try-join-title" data-try-join="">
           <h2 id="try-join-title" className={styles.joinTitle}>
             {shown ? TRY_COPY.join.title : TRY_COPY.join.titleDown}
