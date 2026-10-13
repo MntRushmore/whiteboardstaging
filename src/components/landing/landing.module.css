@@ -504,20 +504,21 @@
     padding-inline: 0;
   }
 }
-/* On a phone the two ways on sit side by side; on the narrowest (under 360 px) the link goes under
-   the button rather than breaking in two. */
-@media (min-width: 360px) and (max-width: 479px) {
-  .hero .actions {
-    flex-wrap: nowrap;
-    gap: 1.25rem;
-  }
-  .hero .pill {
-    padding-inline: 1.5rem;
-  }
+/* Beside the button, its two quiet links (Try it free, See how it works), kept together: on a wide
+   screen all three share a line; on a phone the links share the line under the button. */
+.heroLinks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 1.5rem;
 }
-@media (max-width: 359px) {
+@media (max-width: 479px) {
   .hero .actions {
     gap: 0.5rem 1rem;
+  }
+  .heroLinks {
+    gap: 0 1.25rem;
   }
 }
 .hero .textLink {

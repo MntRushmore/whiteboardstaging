@@ -26,7 +26,8 @@ function loadCapture(): Promise<CaptureModule> {
  * Sign-up attribution (src/lib/funnel/capture.ts), mounted once in the root layout. Renders nothing.
  * On the first visit it keeps where the visitor came from on this device; once someone is signed in
  * (the session AuthProvider already reads: no lookup of its own), it saves that to their profile
- * once, a moment after the page has loaded, with the Supabase call in a lazy chunk.
+ * once, a moment after the page has loaded, with the Supabase call in a lazy chunk. It also records
+ * the try board's funnel step (`try_board`) once per account, for a device that tried /try first.
  */
 export function AttributionCapture() {
   const { user } = useAuth();
@@ -76,6 +77,25 @@ export function AttributionCapture() {
       cancelled = true;
       window.clearTimeout(timer);
     };
+  }, [userId, email, createdAt]);
+
+  useEffect(() => {
+    if (!userId) return;
+    // The try board (/try, docs/TRY-BOARD.md): a device that tried it before this account was made
+    // records the funnel's `try_board` step once. Only a device holding the try marker loads the
+    // recorder's chunk. The key is the contract's TRY_MARKER_KEY (pinned by a test): the contract
+    // module itself brings zod, and this component is on every page's first load.
+    let marked = false;
+    try {
+      marked = window.localStorage.getItem("agathon.try") !== null;
+    } catch {
+      marked = false;
+    }
+    if (!marked) return;
+    const timer = window.setTimeout(() => {
+      void import("@/lib/try/afterSignIn").then(({ recordTryBoard }) => recordTryBoard({ id: userId, email, created_at: createdAt })).catch(() => undefined);
+    }, SAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
   }, [userId, email, createdAt]);
 
   return null;

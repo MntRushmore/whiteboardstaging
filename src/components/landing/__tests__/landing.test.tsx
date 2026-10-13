@@ -16,6 +16,7 @@ const { MAX_KIDS } = await import("@/lib/family/contracts");
 const { PLAN_REFERRAL_COPY, REFERRAL_TRIAL_DAYS } = await import("@/lib/billing/planChoice");
 const { SIGN_UP_HREF, START_HREF } = await import("@/lib/landing/links");
 const { JOIN_ID } = await import("../bands");
+const { TRY_PATH } = await import("@/lib/try/contracts");
 
 const html = renderToStaticMarkup(<ParentsPage />);
 /** the page's text, entities read back (apostrophes are escaped) */
@@ -51,7 +52,11 @@ describe("/parents", () => {
     expect(text).toContain("Free for the first 10 days.");
     // one name for the main button everywhere; the trial's length is said beside it
     expect(text).toContain("Join Agathon");
-    expect(text).not.toMatch(/Start free trial|Try it free(?! for)|Start your free/);
+    expect(text).not.toMatch(/Start free trial|Start your free/);
+    // "Try it free" names the free board anyone can write on (/try), never the trial: only its links say it
+    const tryWords = text.match(/Try it free(?! for)/g) ?? [];
+    expect(tryWords.length).toBeGreaterThan(0);
+    expect(links.filter((l) => l.href === TRY_PATH && l.words === "Try it free")).toHaveLength(tryWords.length);
     expect(text).not.toMatch(/\$25|7-day|7 days|free week/);
     expect(String(metadata.description)).toContain("Free for 10 days");
   });

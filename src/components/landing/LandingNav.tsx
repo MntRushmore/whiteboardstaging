@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BetaBadge } from "@/components/app/BetaBadge";
 import { LANDING_PATH, SIGN_IN_HREF } from "@/lib/landing/links";
+import { TRY_PATH } from "@/lib/try/contracts";
 import { LANDING_COPY } from "./copy";
 import { JoinLink } from "./JoinLink";
 import { NavTone } from "./NavTone";
@@ -34,6 +35,11 @@ export function LandingNav() {
               </a>
             </li>
           ))}
+          <li>
+            <Link href={TRY_PATH} className={styles.navPart}>
+              {copy.tryIt}
+            </Link>
+          </li>
         </ul>
         <div className={styles.navLinks}>
           <Link href={SIGN_IN_HREF} className={styles.navSignIn}>

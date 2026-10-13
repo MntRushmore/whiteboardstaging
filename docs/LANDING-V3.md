@@ -51,8 +51,8 @@ The brand's own signature is its two pens: the kid's black marker and the tutor'
 
 | # | Section | File | Owner branch |
 |---|---|---|---|
-| 1 | Nav: brand, section links (wide), Sign in, **Join Agathon** | `LandingNav.tsx` | lp3-page |
-| 2 | Hero: headline with ink, lede, Join + See how it works, terms, the iPad replay | `Hero.tsx` (layout) + `BoardReplay.tsx` (iPad) | lp3-page / lp3-captures |
+| 1 | Nav: brand, section links and Try it free (wide), Sign in, **Join Agathon** | `LandingNav.tsx` | lp3-page |
+| 2 | Hero: headline with ink, lede, Join + Try it free (/try) + See how it works, terms, the iPad replay | `Hero.tsx` (layout) + `BoardReplay.tsx` (iPad) | lp3-page / lp3-captures |
 | 3 | Problem strip: one handwritten, checked problem per grade, moving | `ProblemStrip.tsx` | lp3-devices |
 | 4 | How it works: 3 steps | `HowItWorks.tsx` | lp3-page |
 | 5 | Ask: the panel demo plus 5 features | `AskDemo.tsx` | lp3-ask |
