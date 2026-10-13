@@ -1,0 +1,224 @@
+/* /about (docs/SEO.md "AI search"): a reading page in the landing page's look. It sits inside the
+   landing page's `.page` (landing.module.css), so it wears its tokens: Geist display type, the soft
+   neutrals, the one blue accent, the tutor's pen. Flat fills and hairlines only; no gradients, glows
+   or glass. One column of text on a phone; from a laptop up each section's heading holds the left
+   column and its words read beside it, as the landing page's Questions do. */
+
+/* ---- The opening ---------------------------------------------------------------------------- */
+.hero {
+  border-bottom: 1px solid var(--border);
+  padding-top: clamp(3rem, 1.5rem + 4vw, 6rem);
+  padding-bottom: clamp(2.5rem, 1.5rem + 3vw, 4.5rem);
+}
+.title {
+  max-width: 14ch;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.75rem, 1.4rem + 5.4vw, 6rem);
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+/* the tutor's underline under "Agathon", at the title's pen weight, clear of the g's tail */
+.titleMark > svg[data-kind] {
+  bottom: -0.2em;
+}
+.titleMark > svg[data-kind] path {
+  stroke-width: clamp(2.5px, 0.045em, 5px);
+}
+.definition {
+  max-width: 48rem;
+  margin: 1.75rem 0 0;
+  color: var(--lp-ink);
+  font-size: clamp(1.25rem, 1.08rem + 0.7vw, 1.75rem);
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 2rem;
+  margin-top: 2.5rem;
+}
+.terms {
+  max-width: 36rem;
+  margin: 1rem 0 0;
+  color: var(--lp-muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+/* ---- Agathon at a glance: a flat blue card with the facts as a list of terms ------------------ */
+.glance {
+  margin-top: clamp(2.5rem, 1.5rem + 3vw, 4.5rem);
+  border-radius: var(--lp-card-radius);
+  padding: clamp(1.5rem, 0.75rem + 3vw, 3.5rem);
+  background: var(--lp-tint-blue);
+}
+.glanceTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.625rem, 1.3rem + 1.3vw, 2.5rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+.facts {
+  display: grid;
+  margin: clamp(1.25rem, 1rem + 1vw, 2rem) 0 0;
+}
+@media (min-width: 900px) {
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: clamp(2rem, 1rem + 2vw, 3.5rem);
+  }
+}
+.fact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.25rem;
+  border-top: 1px solid oklch(0% 0 0 / 0.08);
+  padding-block: 1rem;
+}
+@media (min-width: 560px) {
+  .fact {
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+}
+.fact dt {
+  color: var(--lp-muted);
+  font-size: 1rem;
+  font-variant-caps: all-small-caps;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+}
+.fact dd {
+  margin: 0;
+  font-size: 1.0625rem;
+  line-height: 1.5;
+}
+.fact a {
+  overflow-wrap: anywhere;
+  color: var(--lp-accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* ---- The sections --------------------------------------------------------------------------- */
+.section {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: clamp(3rem, 2rem + 3vw, 5rem);
+  border-top: 1px solid var(--border);
+  padding-top: clamp(2rem, 1.5rem + 2vw, 3rem);
+}
+.section:last-child {
+  margin-bottom: clamp(4rem, 2rem + 5vw, 7rem);
+}
+@media (min-width: 1024px) {
+  .section {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    align-items: start;
+    gap: 4rem;
+  }
+  .sectionTitle {
+    position: sticky;
+    top: calc(var(--lp-nav-h) + 2rem);
+  }
+}
+.sectionTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 1.35rem + 1.5vw, 2.75rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.prose {
+  max-width: 42rem;
+  color: var(--lp-ink);
+  font-size: 1.125rem;
+  letter-spacing: -0.008em;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+.prose > :last-child {
+  margin-bottom: 0;
+}
+.prose p {
+  margin: 0 0 1rem;
+}
+.prose h3 {
+  margin: 2rem 0 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1.3125rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+.prose ul {
+  display: grid;
+  gap: 0.625rem;
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+.prose li::marker {
+  color: var(--lp-muted);
+}
+.prose strong {
+  font-weight: 600;
+}
+.prose a {
+  color: var(--lp-accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .prose a:hover,
+  .fact a:hover {
+    color: var(--lp-accent-strong);
+  }
+}
+.prose a:focus-visible,
+.fact a:focus-visible {
+  border-radius: 0.25rem;
+  outline: 2px solid var(--lp-accent);
+  outline-offset: 2px;
+}
+/* the check mark after "They write. It checks.", in the tutor's pen */
+.check {
+  width: 0.9em;
+  height: 0.9em;
+  margin-left: 0.3em;
+}
+/* What it covers: each grade and course, with its skills */
+.prose ul.levels {
+  gap: 0.75rem;
+  padding-left: 0;
+  list-style: none;
+}
+.levels li {
+  border-left: 2px solid var(--border);
+  padding-left: 0.875rem;
+}
+.levels a {
+  font-weight: 600;
+}
+.levelBlurb {
+  color: var(--lp-muted);
+}
