@@ -28,6 +28,8 @@ export interface RouteProbe {
 export declare const PUBLIC_ROUTES: readonly string[];
 /** Reason each PUBLIC_ROUTES file may skip requireUser. */
 export declare const PUBLIC_ROUTE_REASONS: Readonly<Record<string, string>>;
+/** Routes built once at build time and served from the CDN (force-static, GET only, no request read). */
+export declare const STATIC_ROUTES: readonly string[];
 export declare const NO_BODY_ROUTES: readonly string[];
 export declare const API_ROUTES: readonly ApiRoute[];
 

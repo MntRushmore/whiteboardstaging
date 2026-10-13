@@ -32,7 +32,7 @@ import {
 import { answersFromHash } from "@/lib/start/link";
 import { buildPlan, focusOptions, planSkills, skillWords } from "@/lib/start/plan";
 import { recordStartStep } from "@/lib/start/record";
-import { useStartInk } from "./parts";
+import { KeepWords, useStartInk } from "./parts";
 import { StartBuilding } from "./screens/StartBuilding";
 import { StartFocus } from "./screens/StartFocus";
 import { StartGrade } from "./screens/StartGrade";
@@ -319,7 +319,8 @@ export function StartFlow({ motifs, className }: StartFlowProps) {
     case "account": {
       const plan = buildPlan(answers);
       // "3rd grade · Starts with Times tables": what is being saved, in one line
-      const summary = [plan.level, plan.skills[0] ? copy.plan.startsWith(plan.skills[0].name) : null].filter(Boolean).join(" · ") || null;
+      const line = [plan.level, plan.skills[0] ? copy.plan.startsWith(plan.skills[0].name) : null].filter(Boolean).join(" · ");
+      const summary = line ? <KeepWords text={line} /> : null;
       screen = (
         <div className={styles.account}>
           <StartAccount answers={answers} onDone={onAccountDone} onBack={back} startIn={fromLink ? "form" : undefined} inFlow summary={summary} />
