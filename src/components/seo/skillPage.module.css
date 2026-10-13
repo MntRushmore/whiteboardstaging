@@ -180,6 +180,16 @@
   max-width: 42rem;
 }
 
+/* The guide's words hold their math on one line (keepMathsTogether); a run too long for a phone
+   still breaks rather than running off it. */
+.lede,
+.step p,
+.slip,
+.faqItem,
+.sectionLedeLeft {
+  overflow-wrap: break-word;
+}
+
 /* Math as text: numbers line up, and a long line may break anywhere rather than run off a phone. */
 .math {
   font-variant-numeric: tabular-nums;
@@ -190,6 +200,7 @@
 .board {
   position: relative;
   isolation: isolate;
+  max-width: 60rem;
   margin: 0;
   border-radius: var(--lp-card-radius);
   padding: clamp(1.25rem, 0.5rem + 3vw, 3rem) clamp(1rem, 0.25rem + 3vw, 3rem);
@@ -656,6 +667,11 @@
   .band {
     padding: 0;
     background: none;
+  }
+  /* the paper's own margins, not the screen's column */
+  .practiceBand > * {
+    width: 100% !important;
+    margin-inline: 0 !important;
   }
   .practiceHead {
     margin: 0 0 4mm;

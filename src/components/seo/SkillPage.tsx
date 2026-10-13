@@ -7,7 +7,7 @@ import { INK_START_SCRIPT } from "@/components/landing/inkStart";
 import landing from "@/components/landing/landing.module.css";
 import { SKILLS } from "@/lib/learning/contracts";
 import { GRADE_IDS, GRADE_PATHS, GRADES, type Grade } from "@/lib/learning/grades";
-import { isTopicId, TOPIC_PROBLEMS, type TopicId } from "@/lib/learning/topics";
+import { isTopicId, keepMathsTogether, TOPIC_PROBLEMS, type TopicId } from "@/lib/learning/topics";
 import { LANDING_PATH, SIGN_UP_HREF, siteOrigin } from "@/lib/landing/links";
 import { planWords } from "@/lib/landing/plan";
 import { usEnglish } from "@/lib/landing/practice";
@@ -89,7 +89,7 @@ export const SKILL_PAGE_COPY = {
       },
     ] as const,
   onPath: (level: string) => `It's on Agathon's ${level} path, and any student can pick it as a topic.`,
-  inCourses: (courses: string) => `It's in Agathon's ${courses} ${courses.includes(" and ") ? "courses" : "course"}, and any student can pick it as a topic.`,
+  inCourses: (courses: readonly string[]) => `It's in Agathon's ${joinWords(courses)} ${courses.length > 1 ? "courses" : "course"}, and any student can pick it as a topic.`,
   anyTopic: "Any student can pick it as a topic.",
   join: "Join Agathon",
   faqTitle: "Questions parents ask",
@@ -236,6 +236,11 @@ export function skillWords(id: TopicId, guide: SkillGuide | null = skillGuide(id
   };
 }
 
+/** A guide's words with their bits of math held on one line (`6 × 7 = 42` never breaks at its `=`). */
+function prose(text: string): string {
+  return keepMathsTogether(text);
+}
+
 /** A skill as a link elsewhere on the page: its guide's title, else the app's name. */
 function linkName(id: TopicId): string {
   return skillName(id);
@@ -373,7 +378,7 @@ export function SkillPage({ id }: { id: TopicId }) {
             <h1 className={styles.title}>
               <TitleWithCheck text={w.h1} />
             </h1>
-            <p className={styles.lede}>{w.lede}</p>
+            <p className={styles.lede}>{prose(w.lede)}</p>
             <nav aria-label="On this page" className={styles.jump}>
               {content.example && (
                 <a href={`#${IDS.example}`} className={styles.jumpLink}>
@@ -540,7 +545,7 @@ function StepsSection({ steps }: { steps: readonly string[] }) {
               <span className={styles.stepNumber} aria-hidden>
                 {i + 1}
               </span>
-              <p>{step}</p>
+              <p>{prose(step)}</p>
             </li>
           ))}
         </ol>
@@ -566,9 +571,9 @@ function SlipsSection({ slips }: { slips: SkillGuide["slips"] }) {
         <ul className={styles.slips}>
           {slips.map((s, i) => (
             <li key={i} className={styles.slip}>
-              <h3 className={styles.h3}>{s.slip}</h3>
+              <h3 className={styles.h3}>{prose(s.slip)}</h3>
               <p>
-                <strong>{copy.fixLabel}</strong> {s.fix}
+                <strong>{copy.fixLabel}</strong> {prose(s.fix)}
               </p>
             </li>
           ))}
@@ -669,7 +674,7 @@ function AgathonSection({ id, content }: { id: TopicId; content: SkillContent })
   const copy = SKILL_PAGE_COPY;
   const grades = gradesOf(id);
   const courses = coursesOf(id).map(courseName);
-  const where = grades.length > 0 ? copy.onPath(skillLevelText(id)!) : courses.length > 0 ? copy.inCourses(joinWords(courses)) : copy.anyTopic;
+  const where = grades.length > 0 ? copy.onPath(skillLevelText(id)!) : courses.length > 0 ? copy.inCourses(courses) : copy.anyTopic;
   const facts = copy.agathonFacts(`“${usEnglish(pathSkillName(id))}”`, Boolean(content.example));
   const terms = planWords().terms;
   return (
@@ -713,8 +718,8 @@ function FaqSection({ faq }: { faq: SkillGuide["faq"] }) {
         <div className={styles.faq}>
           {faq.map((f, i) => (
             <div key={i} className={styles.faqItem}>
-              <h3 className={styles.h3}>{f.q}</h3>
-              <p>{f.a}</p>
+              <h3 className={styles.h3}>{prose(f.q)}</h3>
+              <p>{prose(f.a)}</p>
             </div>
           ))}
         </div>

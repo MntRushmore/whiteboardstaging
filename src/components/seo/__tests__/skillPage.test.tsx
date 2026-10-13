@@ -239,6 +239,9 @@ describe("a skill page", () => {
     expect(text).toContain("The whole solution only appears if they choose Solve it.");
     expect(text).toMatch(/Choose “Long division” under Pick a topic and the tutor works one example, then writes four new problems/);
     expect(text).toContain("It's on Agathon's 4th grade path");
+    // a course's name may have an "and" in it: one course is still a course
+    expect(plain(html.get("derivatives")!)).toContain("It's in Agathon's Precalculus and calculus course, and any student");
+    expect(plain(html.get("absolute_value")!)).toContain("It's in Agathon's Algebra 1 and Algebra 2 courses, and any student");
   });
 
   it("is in US English, and says nothing it cannot back", () => {
