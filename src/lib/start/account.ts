@@ -30,7 +30,8 @@ export const START_ACCOUNT_COPY = {
   grownUpLede: (name: string | null) =>
     name ? `Grown-up: use your email and a password to save ${possessive(name)} plan.` : "Grown-up: use your email and a password to save the plan.",
   heardTitle: "How did you hear about Agathon?",
-  heardHint: "Optional.",
+  heardHint: "Optional",
+  heardNone: "Choose one",
   haveAccount: "Already have an account?",
   signIn: "Sign in",
   back: "Back",

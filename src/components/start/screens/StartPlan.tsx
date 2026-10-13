@@ -68,7 +68,18 @@ export function StartPlan({ copy, plan, ink, tried, onSave, titleRef }: StartPla
             })}
           </ol>
         )}
-        {!plan.open && plan.skills[0] && <p className={styles.planNote}>{copy.firstBoardNote(plan.skills[0].name)}</p>}
+        {!plan.open && plan.skills[0] && (
+          <div className={styles.boardRow}>
+            {/* a corner of the first board: the board's dot grid, the first skill's problem in the tutor's hand */}
+            <span className={styles.boardTile} aria-hidden>
+              {ink?.skills[plan.skills[0].id] && <SkillExample lines={ink.skills[plan.skills[0].id].lines} height={22} draw atMs={1100} />}
+            </span>
+            <p className={styles.boardText}>
+              <span className={styles.boardTitle}>{copy.firstBoard}</span>
+              <span>{copy.firstBoardNote(plan.skills[0].name)}</span>
+            </p>
+          </div>
+        )}
       </section>
       <div className={styles.actions}>
         <button type="button" className={styles.primary} onClick={onSave}>

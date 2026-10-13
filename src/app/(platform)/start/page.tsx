@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { HandMath } from "@/components/landing/HandMath";
 import { InkCheck } from "@/components/landing/InkMark";
+import { startSerif } from "@/components/start/fonts";
 import { StartFlow } from "@/components/start/StartFlow";
 import { siteOrigin } from "@/lib/landing/links";
 import { START_PATH } from "@/lib/start/contracts";
@@ -24,9 +25,16 @@ export const metadata: Metadata = {
 export default function StartPage() {
   return (
     <StartFlow
+      className={startSerif.variable}
       motifs={{
-        parent: <InkCheck pen={2.6} />,
-        kid: <HandMath latex="2 + 3" ink="kid" size={64} seed={4} pen={4.5} />,
+        // the board's two pens: the kid writes the sum; the grown-up sees the answer, checked by the tutor
+        kid: <HandMath latex="3 + 4" ink="kid" size={64} seed={4} pen={5.5} />,
+        parent: (
+          <>
+            <HandMath latex="7" ink="kid" size={64} seed={9} pen={5.5} />
+            <InkCheck pen={4} />
+          </>
+        ),
       }}
     />
   );

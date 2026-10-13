@@ -32,8 +32,9 @@ describe("what a family can pick on focus", () => {
 });
 
 describe("the plan's skills", () => {
-  it("the ones picked, in the order picked, then the rest of the path, each once", () => {
-    expect(planSkills(SAM)).toEqual(["division_facts", "times_tables", "add_subtract_within_1000", "multiply_by_tens"]);
+  it("the ones picked, in the path's teaching order (not the order tapped), then the rest of the path, each once", () => {
+    expect(planSkills(SAM)).toEqual(["times_tables", "division_facts", "add_subtract_within_1000", "multiply_by_tens"]);
+    expect(planSkills({ ...SAM, choice: { kind: "grade", grade: 1 }, focus: ["subtract_within_20", "add_within_20"] }).slice(0, 2)).toEqual(["add_within_20", "subtract_within_20"]);
     expect(planSkills({ ...SAM, focus: [] })).toEqual([...GRADE_PATHS[3]]);
     expect(planSkills({ ...SAM, focus: ["times_tables"], choice: { kind: "course", course: "geometry" } })[0]).toBe("times_tables");
   });
@@ -44,11 +45,11 @@ describe("the plan's skills", () => {
     expect(plan.open).toBe(false);
     expect(plan.skills).toHaveLength(PLAN_SKILLS);
     expect(plan.skills.map((s) => [s.id, s.picked])).toEqual([
-      ["division_facts", true],
       ["times_tables", true],
+      ["division_facts", true],
       ["add_subtract_within_1000", false],
     ]);
-    expect(plan.skills[1]).toMatchObject({ name: "Times tables", blurb: K8_SKILLS.times_tables.blurb });
+    expect(plan.skills[0]).toMatchObject({ name: "Times tables", blurb: K8_SKILLS.times_tables.blurb });
     expect(buildPlan({ ...SAM, choice: { kind: "course", course: "algebra1" }, focus: [] }).level).toBe("Algebra 1");
   });
 

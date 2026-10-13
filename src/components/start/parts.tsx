@@ -130,7 +130,7 @@ const INK_URL = "/api/start/ink";
 /** How tall a plain line of the set is (written at size 60, a line of digits is about 37 px). */
 const START_INK_LINE = 37;
 /** A fraction or a power stands taller; on a card it may be at most this many plain lines tall. */
-const MAX_LINE_RATIO = 1.7;
+const MAX_LINE_RATIO = 2.1;
 let inkPromise: Promise<StartInkSet | null> | null = null;
 let inkValue: StartInkSet | null = null;
 

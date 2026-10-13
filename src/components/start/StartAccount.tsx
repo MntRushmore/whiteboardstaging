@@ -37,10 +37,17 @@ const subscribeNever = () => () => {};
 
 export interface StartAccountProps {
   answers: StartAnswers;
-  /** the answers are saved: go on to `next` (the plan screen) */
+  /** the answers are saved: go on to `next` (the first board, or the plan screen) */
   onDone: (next: string) => void;
   /** back to the plan */
   onBack: () => void;
+  /**
+   * Inside /start's flow (StartFlow), whose bar already has Back: no second Back to the plan here
+   * (the kid's own steps, ask → share, keep theirs).
+   */
+  inFlow?: boolean;
+  /** a line about the plan being saved, under the title (StartFlow: "3rd grade · Times tables, …") */
+  summary?: React.ReactNode;
   /**
    * Where a kid's screen starts: "ask" (fetch a grown-up, the default for a kid) or "form" (the
    * grown-up is here: they opened the kid's link). A parent always starts on the form.
@@ -58,7 +65,7 @@ export interface StartAccountProps {
  * (email confirmation on) says to check the email, and the first sign-in on this device saves them
  * (`StartResume`). "Already have an account? Sign in" keeps the answers on the device for the same.
  */
-export function StartAccount({ answers, onDone, onBack, startIn }: StartAccountProps) {
+export function StartAccount({ answers, onDone, onBack, startIn, inFlow = false, summary }: StartAccountProps) {
   const kid = answers.role === "kid";
   const name = answers.name;
   const [view, setView] = useState<View>(kid && startIn !== "form" ? "ask" : "form");
@@ -196,11 +203,13 @@ export function StartAccount({ answers, onDone, onBack, startIn }: StartAccountP
             {COPY.sendIt}
           </Button>
         </div>
-        <p className={styles.foot}>
-          <button type="button" className={styles.textButton} onClick={onBack}>
-            {COPY.back}
-          </button>
-        </p>
+        {!inFlow && (
+          <p className={styles.foot}>
+            <button type="button" className={styles.textButton} onClick={onBack}>
+              {COPY.back}
+            </button>
+          </p>
+        )}
       </section>
     );
   }
@@ -258,6 +267,7 @@ export function StartAccount({ answers, onDone, onBack, startIn }: StartAccountP
   return (
     <section data-start="account" data-view="form" data-grown-up={grownUpHere || undefined} className={styles.screen}>
       {heading(save, grownUpHere ? COPY.grownUpLede(name) : COPY.parentLede)}
+      {summary && <p className={styles.summary}>{summary}</p>}
       <form {...AUTH_FORM_METHOD} onSubmit={handleSubmit} noValidate aria-busy={busy} className={styles.form}>
         <Input
           ref={emailRef}
@@ -313,28 +323,28 @@ export function StartAccount({ answers, onDone, onBack, startIn }: StartAccountP
           error={fieldErrors.consent}
           disabled={busy}
         />
-        <div className={styles.heard} role="group" aria-labelledby="start-heard" aria-describedby="start-heard-hint">
-          <p id="start-heard" className={styles.groupLabel}>
-            {COPY.heardTitle}
-          </p>
-          <p id="start-heard-hint" className={styles.groupHint}>
-            {COPY.heardHint}
-          </p>
-          <div className={styles.chips}>
+        <div className={styles.heard}>
+          <label htmlFor="start-heard" className={styles.groupLabel}>
+            {COPY.heardTitle} <span className={styles.groupHint}>{COPY.heardHint}</span>
+          </label>
+          <select
+            id="start-heard"
+            name="heard-from"
+            className={styles.select}
+            value={heardFrom ?? ""}
+            disabled={busy}
+            onChange={(e) => {
+              const id = e.target.value;
+              setHeardFrom(HEARD_FROM.some((h) => h.id === id) ? (id as HeardFrom) : null);
+            }}
+          >
+            <option value="">{COPY.heardNone}</option>
             {HEARD_FROM.map((h) => (
-              <Button
-                key={h.id}
-                size="sm"
-                variant={heardFrom === h.id ? "primary" : "secondary"}
-                className={styles.chip}
-                aria-pressed={heardFrom === h.id}
-                disabled={busy}
-                onClick={() => setHeardFrom((current) => (current === h.id ? null : h.id))}
-              >
+              <option key={h.id} value={h.id}>
                 {h.label}
-              </Button>
+              </option>
             ))}
-          </div>
+          </select>
         </div>
         {formError && <Alert id="start-error" data-state="error" tone="danger" title={formError} />}
         <Button type="submit" size="lg" className={styles.wide} loading={busy} disabled={!hydrated}>
@@ -348,9 +358,11 @@ export function StartAccount({ answers, onDone, onBack, startIn }: StartAccountP
             {COPY.signIn}
           </Link>
         </p>
-        <button type="button" className={styles.textButton} onClick={grownUpHere ? () => go("ask") : onBack} disabled={busy}>
-          {COPY.back}
-        </button>
+        {(grownUpHere || !inFlow) && (
+          <button type="button" className={styles.textButton} onClick={grownUpHere ? () => go("ask") : onBack} disabled={busy}>
+            {COPY.back}
+          </button>
+        )}
       </div>
     </section>
   );

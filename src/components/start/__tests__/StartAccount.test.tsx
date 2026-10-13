@@ -159,6 +159,14 @@ class Screen {
     (this.input(id).props.onChange as (e: { target: { value: string } }) => void)({ target: { value } });
     return this.render();
   }
+  /** "How did you hear about Agathon?": pick in the picker ("" is "Choose one") */
+  heard(id: string): this {
+    (this.find((el) => el.type === "select", "the heard-from picker").props.onChange as (e: { target: { value: string } }) => void)({ target: { value: id } });
+    return this.render();
+  }
+  heardValue(): string {
+    return String(this.find((el) => el.type === "select", "the heard-from picker").props.value);
+  }
   agree(): this {
     (this.find((el) => el.type === ConsentField).props.onChange as (v: boolean) => void)(true);
     return this.render();
@@ -199,7 +207,7 @@ afterEach(() => {
 // ------------------------------------------------------------------ the parent
 
 describe("a parent", () => {
-  it("sees the form at once: Save Sam's plan, email, password, the consent box, the optional chips, Sign in", () => {
+  it("sees the form at once: Save Sam's plan, email, password, the consent box, the optional picker, Sign in", () => {
     const s = new Screen(SAM).render();
     expect(s.view()).toBe("form");
     expect(s.title()).toBe("Save Sam’s plan");
@@ -207,7 +215,10 @@ describe("a parent", () => {
     expect(s.input("start-password").props.autoComplete).toBe("new-password");
     expect(s.input("start-password").props.description).toBe(FORM_COPY.newPasswordHint);
     expect(s.find((el) => el.type === ConsentField).props.checked).toBe(false);
-    for (const h of HEARD_FROM) expect(s.button(h.label).props["aria-pressed"]).toBe(false);
+    // every source, after "Choose one"; nothing picked yet
+    const options = s.all().filter((el) => el.type === "option");
+    expect(options.map((o) => o.props.value)).toEqual(["", ...HEARD_FROM.map((h) => h.id)]);
+    expect(s.heardValue()).toBe("");
     expect(s.text()).toContain("How did you hear about Agathon?");
     expect(s.find((el) => el.type === Link).props.href).toBe("/login");
     const submit = s.find((el) => el.type === Button && el.props.type === "submit");
@@ -224,8 +235,8 @@ describe("a parent", () => {
 
   it("submit: Supabase's sign-up with the Terms version, then the answers saved (with where they heard of us), then on to the plan screen", async () => {
     const s = new Screen(SAM).render();
-    s.tap("TikTok");
-    expect(s.button("TikTok").props["aria-pressed"]).toBe(true);
+    s.heard("tiktok");
+    expect(s.heardValue()).toBe("tiktok");
     await s.fill("  parent@example.com ").submit();
     expect(fakes.signUp).toHaveBeenCalledWith(signUpRequest("parent@example.com", "correct horse"));
     expect(fakes.link).toHaveBeenCalledWith(USER);
@@ -236,11 +247,13 @@ describe("a parent", () => {
     expect(storage.data.has(START_PENDING_KEY)).toBe(false);
   });
 
-  it("a chip tapped twice is cleared", () => {
+  it("the picker back on Choose one is no answer, and anything not a source is none", () => {
     const s = new Screen(SAM).render();
-    s.tap("School or a teacher");
-    s.tap("School or a teacher");
-    expect(s.button("School or a teacher").props["aria-pressed"]).toBe(false);
+    s.heard("school");
+    s.heard("");
+    expect(s.heardValue()).toBe("");
+    s.heard("billboard");
+    expect(s.heardValue()).toBe("");
   });
 
   it("an empty submit: sign-up's sentences under each field, and no request", async () => {
@@ -282,7 +295,7 @@ describe("a parent", () => {
 
   it("'Already have an account? Sign in' keeps the answers on the device for the sign-in", () => {
     const s = new Screen(SAM).render();
-    s.tap("Instagram");
+    s.heard("instagram");
     const signIn = s.find((el) => el.type === Link && text(el.props.children as ReactNode) === "Sign in");
     expect(signIn.props.href).toBe("/login");
     (signIn.props.onClick as () => void)();

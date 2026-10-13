@@ -75,7 +75,6 @@ export default function StartTry({ copy, choice, firstSkill, ink, tried, onProgr
       ),
     }));
   }, [ink, band]);
-  const first = TRY_PROBLEMS.find((p) => p.id === problemId);
   const done = !!tried?.checked || !!tried?.solved;
 
   return (
@@ -84,7 +83,7 @@ export default function StartTry({ copy, choice, firstSkill, ink, tried, onProgr
         <h1 ref={titleRef} tabIndex={-1} className={styles.title}>
           {copy.title}
         </h1>
-        <p className={styles.lede}>{copy.lede(first?.oneStep ?? true)}</p>
+        <p className={styles.lede}>{copy.lede}</p>
       </div>
       {/* the try board's own tokens (its pens, dots and lines) live on its page class */}
       <div className={`${tryStyles.page} ${styles.tryWrap}`}>
@@ -105,17 +104,14 @@ export default function StartTry({ copy, choice, firstSkill, ink, tried, onProgr
           <div className={styles.tryLoading} aria-busy="true" />
         )}
       </div>
-      <div className={styles.actions}>
-        {done ? (
+      {/* Continue once the tutor has checked a line; until then the bar's Skip is the way past */}
+      {done && (
+        <div className={styles.actions}>
           <button type="button" className={styles.primary} onClick={onNext}>
             {copy.next}
           </button>
-        ) : (
-          <button type="button" className={styles.quiet} onClick={onNext}>
-            {copy.later}
-          </button>
-        )}
-      </div>
+        </div>
+      )}
     </>
   );
 }

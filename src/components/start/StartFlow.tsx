@@ -76,6 +76,8 @@ function storage(): Storage | null {
 export interface StartFlowProps {
   /** the who screen's card ink, server-rendered */
   motifs: { parent: ReactNode; kid: ReactNode };
+  /** the page's font class (the titles' serif) */
+  className?: string;
 }
 
 /**
@@ -89,7 +91,7 @@ export interface StartFlowProps {
  *   grown-up's link (`#a=`) opens on the plan, worded for them, and the link leaves the address bar.
  * - Each step is counted anonymously (`recordStartStep`, START_EVENTS), never with the name.
  */
-export function StartFlow({ motifs }: StartFlowProps) {
+export function StartFlow({ motifs, className }: StartFlowProps) {
   const router = useRouter();
   const [flow, setFlow] = useState<FlowState>(INITIAL_FLOW);
   const [dir, setDir] = useState<Direction>("none");
@@ -314,20 +316,24 @@ export function StartFlow({ motifs }: StartFlowProps) {
     case "plan":
       screen = <StartPlan copy={copy.plan} plan={buildPlan(answers)} ink={ink} tried={answers.tried} onSave={() => forward(answers)} titleRef={titleRef} />;
       break;
-    case "account":
+    case "account": {
+      const plan = buildPlan(answers);
+      // "3rd grade · Starts with Times tables": what is being saved, in one line
+      const summary = [plan.level, plan.skills[0] ? copy.plan.startsWith(plan.skills[0].name) : null].filter(Boolean).join(" · ") || null;
       screen = (
         <div className={styles.account}>
-          <StartAccount answers={answers} onDone={onAccountDone} onBack={back} startIn={fromLink ? "form" : undefined} />
+          <StartAccount answers={answers} onDone={onAccountDone} onBack={back} startIn={fromLink ? "form" : undefined} inFlow summary={summary} />
         </div>
       );
       break;
+    }
   }
 
   const centered = step === "building" || step === "who";
   const wide = step === "proof" || step === "try";
   return (
-    <div className={styles.page}>
-      <header className={styles.bar} data-first={step === "who" || undefined}>
+    <div className={[styles.page, className].filter(Boolean).join(" ")}>
+      <header className={styles.bar} data-first={step === "who" || undefined} data-brand={(!canBack && fromLink) || undefined}>
         {step === "who" ? (
           <>
             <Link href={LANDING_PATH} className={styles.brand}>
@@ -343,6 +349,11 @@ export function StartFlow({ motifs }: StartFlowProps) {
               <button type="button" className={styles.iconButton} onClick={back} aria-label={copy.bar.back}>
                 <ArrowLeft size={22} strokeWidth={2} aria-hidden />
               </button>
+            ) : fromLink ? (
+              // a grown-up who opened a kid's link: whose page this is
+              <Link href={LANDING_PATH} className={styles.brand}>
+                Agathon
+              </Link>
             ) : (
               <span className={styles.barSpace} aria-hidden />
             )}

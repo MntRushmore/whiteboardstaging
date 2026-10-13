@@ -39,9 +39,10 @@ describe("who", () => {
     expect(text(html)).toMatch(/I’m a parent .* I’m a kid/);
   });
 
-  it("the one picked wears the tutor's check", () => {
+  it("the one picked is pressed", () => {
     const html = renderToStaticMarkup(<StartWho copy={flowCopy(SAM).who} role="parent" onPick={noop} motifs={{ parent: <i />, kid: <i /> }} titleRef={ref()} />);
-    expect(html).toMatch(/data-role="parent" aria-pressed="true"[\s\S]*?<svg/);
+    expect(html).toContain('data-role="parent" aria-pressed="true"');
+    expect(html).toContain('data-role="kid" aria-pressed="false"');
   });
 });
 
@@ -62,13 +63,13 @@ describe("grade", () => {
 });
 
 describe("focus", () => {
-  it("each skill with its example in the tutor's hand (its words for a screen reader), and Not sure yet", () => {
+  it("each skill with its example in the tutor's hand (its words for a screen reader), and Not sure", () => {
     const html = renderToStaticMarkup(<StartFocus copy={flowCopy(SAM).focus} options={["times_tables", "division_facts"]} focus={["times_tables"]} ink={INK} onToggle={noop} onNotSure={noop} onNext={noop} titleRef={ref()} />);
     expect(text(html)).toContain("What’s tricky for Sam right now?");
     expect(text(html)).toContain("Multiply facts like 6 × 7");
     expect(html.match(/<svg/g)?.length).toBeGreaterThanOrEqual(3); // two examples and one check
-    expect(text(html)).toContain("Not sure yet");
-    expect(text(html)).toContain("1 picked");
+    expect(text(html)).toContain("Not sure");
+    expect(text(html)).toContain("1 of 3 picked");
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue/);
   });
 
@@ -106,7 +107,7 @@ describe("proof, the beat and the plan", () => {
     expect(words).toContain("Sam’s plan is ready");
     expect(words).toMatch(/Start here Times tables .* Next 3-digit adding and subtracting .* Then Division facts/);
     expect(words).toContain("Solved one already");
-    expect(words).toContain("Sam’s first board starts with Times tables");
+    expect(words).toContain("Sam’s first board Times tables. Sam writes, and the tutor checks each line.");
     expect(words).toContain("Save Sam’s plan");
     expect(words).toContain("Free to save. No card needed.");
   });

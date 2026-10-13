@@ -63,8 +63,11 @@ export function flowProgress(state: Pick<FlowState, "step" | "answers">): number
   return Math.min(1, (at + 1) / steps.length);
 }
 
-/** The screens with a Skip: the answer is optional, or the screen is a look. */
-export const SKIPPABLE: ReadonlySet<StartStep> = new Set<StartStep>(["name", "focus", "proof", "try"]);
+/**
+ * The screens with a Skip in the bar: the name (optional), the grown-up's look, and the try board.
+ * "What's tricky" has its own way past ("Not sure"), so it needs no second one.
+ */
+export const SKIPPABLE: ReadonlySet<StartStep> = new Set<StartStep>(["name", "proof", "try"]);
 
 /** True when the screen's answers are all there (a screen that needs nothing is always ready). */
 function answered(step: StartStep, a: StartAnswers): boolean {
@@ -224,7 +227,7 @@ export function flowCopy(a: Pick<StartAnswers, "role" | "name" | "choice">, from
     },
     name: {
       title: kid ? "What’s your first name?" : "What’s your kid’s first name?",
-      lede: kid ? "It goes at the top of your plan." : "It goes at the top of their plan.",
+      lede: kid ? "We’ll put it on your plan." : "We’ll put it on their plan.",
       label: "First name",
       placeholder: kid ? "Your first name" : "Their first name",
       invalid: "Use letters only, like Sam or Mary-Kate.",
@@ -242,24 +245,23 @@ export function flowCopy(a: Pick<StartAnswers, "role" | "name" | "choice">, from
     focus: {
       title: kid ? "What’s tricky for you right now?" : name ? `What’s tricky for ${name} right now?` : "What’s tricky right now?",
       lede: kid ? "Pick up to 3. Your plan starts there." : `Pick up to 3. ${capitalize(their)} plan starts there.`,
-      notSure: "Not sure yet",
-      notSureHint: level ? `Start at the beginning of ${a.choice?.kind === "grade" ? `the ${level} path` : level}` : "Start at the beginning",
+      notSure: kid ? "I’m not sure" : "Not sure",
+      notSureHint: kid ? "Start at the start" : level ? `Start with the first ${level} skill` : "Start at the beginning",
       full: "That’s 3. Tap one again to swap it out.",
       next: "Continue",
-      picked: (n: number) => (n === 0 ? "Pick up to 3" : `${n} picked`),
+      picked: (n: number) => `${n} of 3 picked`,
     },
     proof: {
       title: name ? `${name} does the math. You see how it’s going.` : "They do the math. You see how it’s going.",
-      lede: name ? `Progress shows ${possessive(name)} path, and how many problems ${name} solved without help.` : "Progress shows their path, and how many problems they solved without help.",
+      lede: name ? `Progress shows ${possessive(name)} path: which skills are strong, and what’s next.` : "Progress shows their path: which skills are strong, and what’s next.",
       next: "Sounds good",
       caption: "A 3rd grader’s Progress page, from the app.",
       alt: "Agathon’s Progress page: a 3rd grade path with 2 of 4 skills mastered, and this week’s 47 minutes of practice, 31 problems worked on, 28 solved on their own and 2 days of math in a row.",
     },
     try: {
       title: kid ? "Your turn. Try one!" : name ? `Try one, or hand it to ${name}.` : "Try one, or hand it over.",
-      lede: (answer: boolean) => (answer ? "Write the answer under the problem. The tutor checks it." : "Write the next step under the problem. The tutor checks it."),
+      lede: kid ? "Use your finger, a pen or the mouse." : "Use a finger, a pen or the mouse.",
       next: "Continue",
-      later: "Maybe later",
     },
     building: {
       title: kid ? "Making your plan…" : name ? `Making ${possessive(name)} plan…` : "Making the plan…",
@@ -274,23 +276,21 @@ export function flowCopy(a: Pick<StartAnswers, "role" | "name" | "choice">, from
           ? `Save it so ${name} can start practicing.`
           : "Save it so they can start practicing."
         : kid
-          ? "Made from your answers. Save it to start."
+          ? "Built from your answers. Save it to start."
           : name
-            ? `Made from your answers, for ${name}. Save it to start.`
-            : "Made from your answers. Save it to start.",
+            ? `Built from your answers. Save it so ${name} can start.`
+            : "Built from your answers. Save it to start.",
       whose: kid ? "Your plan" : name ? possessive(name) + " plan" : "The plan",
       startHere: "Start here",
       next: "Next",
       then: "Then",
+      firstBoard: kid ? "Your first board" : name ? `${possessive(name)} first board` : "The first board",
       firstBoardNote: (skill: string) =>
-        kid
-          ? `Your first board starts with ${skill}, ready to write on. The tutor checks each line.`
-          : name
-            ? `${possessive(name)} first board starts with ${skill}, ready to write on. The tutor checks each line.`
-            : `The first board starts with ${skill}, ready to write on. The tutor checks each line.`,
+        kid ? `${skill}. You write, and the tutor checks each line.` : name ? `${skill}. ${name} writes, and the tutor checks each line.` : `${skill}. They write, and the tutor checks each line.`,
       free: "Free to save. No card needed.",
+      startsWith: (skill: string) => `Starts with ${skill}`,
       open: "The tutor starts with a few problems to see where things are, then picks what comes next.",
-      tried: (solved: boolean) => (solved ? "Solved one already" : "Tried one already"),
+      tried: (solved: boolean) => (fromLink && name ? (solved ? `${name} solved one` : `${name} tried one`) : solved ? "Solved one already" : "Tried one already"),
       save: kid ? "Save my plan" : name ? `Save ${possessive(name)} plan` : "Save the plan",
     },
   };

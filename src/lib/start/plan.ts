@@ -82,12 +82,19 @@ export function focusOptions(choice: WelcomeChoice | null): PathSkillId[] {
 }
 
 /**
- * The plan's skills, in order: those picked on `focus` (in the order picked), then the rest of the
- * grade's path or the course's list. `finish.ts` makes the first board on the first of these that
- * has practice problems.
+ * The plan's skills, in order: those picked on `focus`, in teaching order (the path's own, so
+ * adding comes before subtracting whatever was tapped first), then the rest of the grade's path or
+ * the course's list. `finish.ts` makes the first board on the first of these that has practice
+ * problems.
  */
 export function planSkills(answers: Pick<StartAnswers, "focus" | "choice">): PathSkillId[] {
-  return [...new Set([...answers.focus, ...focusOptions(answers.choice)])];
+  const offer = focusOptions(answers.choice);
+  const rank = (id: PathSkillId) => {
+    const at = offer.indexOf(id);
+    return at < 0 ? offer.length : at;
+  };
+  const picked = [...new Set(answers.focus)].sort((a, b) => rank(a) - rank(b));
+  return [...new Set([...picked, ...offer])];
 }
 
 export interface PlanSkill {

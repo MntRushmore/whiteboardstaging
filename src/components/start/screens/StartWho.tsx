@@ -3,14 +3,13 @@
 import type { ReactNode, Ref } from "react";
 import type { StartRole } from "@/lib/start/contracts";
 import type { FlowCopy } from "@/lib/start/flow";
-import { TutorCheck } from "../parts";
 import styles from "../start.module.css";
 
 export interface StartWhoProps {
   copy: FlowCopy["who"];
   role: StartRole | null;
   onPick: (role: StartRole) => void;
-  /** each card's ink, server-rendered: the tutor's check for the grown-up, a kid's sum for the kid */
+  /** each card's ink, server-rendered: a kid's sum for the kid; for the grown-up, its answer with the tutor's check */
   motifs: { parent: ReactNode; kid: ReactNode };
   titleRef: Ref<HTMLHeadingElement>;
 }
@@ -25,7 +24,6 @@ export function StartWho({ copy, role, onPick, motifs, titleRef }: StartWhoProps
       <span className={styles.motif} aria-hidden>
         {motifs[id]}
       </span>
-      {role === id && <TutorCheck className={styles.cornerCheck} seed={id === "parent" ? 3 : 11} />}
     </button>
   );
   return (

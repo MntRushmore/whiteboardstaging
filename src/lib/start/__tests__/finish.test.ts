@@ -42,7 +42,7 @@ function practiceMarker(storage: FakeStorage, boardId: string) {
 }
 
 describe("finishStart: a parent who picked a grade and two tricky skills", () => {
-  it("saves the answers, names the profile, makes the first board on the first skill picked, and opens it next (the free board)", async () => {
+  it("saves the answers, names the profile, makes the first board on the first skill picked (in the path's order), and opens it next (the free board)", async () => {
     const storage = fakeStorage();
     const db = fakeDb();
     const d = deps(storage);
@@ -56,12 +56,12 @@ describe("finishStart: a parent who picked a grade and two tricky skills", () =>
     expect(db.profile.onboarded_at).toBeTruthy();
     // the name over none only: the update says so itself
     expect(db.calls.updates).toEqual([{ values: { display_name: "Sam" }, eq: ["user_id", USER], is: ["display_name", null] }]);
-    // the board: "Practice: Division facts", four problems for it, left in the practice marker
-    expect(db.calls.boards).toEqual([{ title: practiceTitle(skillDef("division_facts")!.name), data: {}, user_id: USER }]);
-    expect(db.calls.boards[0].title).toBe("Practice: Division facts");
+    // the board: "Practice: Times tables" (picked, and first on the path of the two), four problems for it, left in the practice marker
+    expect(db.calls.boards).toEqual([{ title: practiceTitle(skillDef("times_tables")!.name), data: {}, user_id: USER }]);
+    expect(db.calls.boards[0].title).toBe("Practice: Times tables");
     const marker = practiceMarker(storage, "board-1");
-    expect(marker?.skill).toBe("division_facts");
-    expect(marker?.problems).toEqual(practiceProblems("division_facts", START_PROBLEMS, 42));
+    expect(marker?.skill).toBe("times_tables");
+    expect(marker?.problems).toEqual(practiceProblems("times_tables", START_PROBLEMS, 42));
     expect(marker?.problems).toHaveLength(START_PROBLEMS);
     // the welcome email, after the save
     expect(d.welcomeEmail).toHaveBeenCalledTimes(1);
@@ -95,7 +95,7 @@ describe("finishStart: a parent who picked a grade and two tricky skills", () =>
 
 describe("the first board's skill", () => {
   it("is the plan's: the first skill picked, else the first of the grade's path or the course's topics", () => {
-    expect(firstSkills(SAM)).toEqual(["division_facts", "times_tables", "add_subtract_within_1000", "multiply_by_tens"]);
+    expect(firstSkills(SAM)).toEqual(["times_tables", "division_facts", "add_subtract_within_1000", "multiply_by_tens"]);
     expect(firstSkills({ ...SAM, focus: [] })).toEqual([...GRADE_PATHS[3]]);
     expect(firstSkills({ ...SAM, choice: { kind: "course", course: "geometry" }, focus: [] })).toEqual([...COURSE_FOCUS.geometry]);
     expect(firstSkills({ ...SAM, choice: { kind: "course", course: "geometry" }, focus: ["circles"] })[0]).toBe("circles");
@@ -112,10 +112,10 @@ describe("the first board's skill", () => {
   });
 
   it("a picked skill with no practice problems is passed over for the next", () => {
-    const kit: PracticeKit = { ...REAL_KIT, hasPractice: (s) => s !== "division_facts" && hasPractice(s) };
-    expect(firstBoardPlan(SAM, kit, 7, USER)?.skill).toBe("times_tables");
-    const empty: PracticeKit = { ...REAL_KIT, practiceProblems: (s, n, seed) => (s === "division_facts" ? [] : practiceProblems(s, n, seed)) };
-    expect(firstBoardPlan(SAM, empty, 7, USER)?.skill).toBe("times_tables");
+    const kit: PracticeKit = { ...REAL_KIT, hasPractice: (s) => s !== "times_tables" && hasPractice(s) };
+    expect(firstBoardPlan(SAM, kit, 7, USER)?.skill).toBe("division_facts");
+    const empty: PracticeKit = { ...REAL_KIT, practiceProblems: (s, n, seed) => (s === "times_tables" ? [] : practiceProblems(s, n, seed)) };
+    expect(firstBoardPlan(SAM, empty, 7, USER)?.skill).toBe("division_facts");
   });
 
   it("a grade whose skills all fail falls back to the grade's starters", () => {

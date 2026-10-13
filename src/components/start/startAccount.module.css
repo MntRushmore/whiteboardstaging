@@ -19,10 +19,12 @@
 }
 .title {
   margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(1.75rem, 1.3rem + 1.9vw, 2.5rem);
+  /* the flow's serif (start.module.css --st-serif, inherited), Arc's display face outside it */
+  font-family: var(--st-serif, var(--font-display));
+  font-size: clamp(2rem, 1.55rem + 1.9vw, 2.75rem);
   font-weight: 600;
-  letter-spacing: -0.035em;
+  font-variation-settings: "SOFT" 100;
+  letter-spacing: -0.01em;
   line-height: 1.1;
   text-wrap: balance;
 }
@@ -51,10 +53,19 @@
   color: var(--foreground);
 }
 
-/* "How did you hear about Agathon?": optional chips */
+/* the plan being saved, in a line under the title */
+.summary {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--st-muted, var(--text-secondary));
+  font-size: 0.9375rem;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* "How did you hear about Agathon?": optional, one native picker (a phone's own wheel) */
 .heard {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 .groupLabel {
   margin: 0;
@@ -64,24 +75,29 @@
 }
 .groupHint {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
+  color: var(--st-muted, var(--text-muted));
+  font-weight: 400;
 }
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
+.select {
+  width: 100%;
+  min-height: var(--control-height-lg);
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 0 2.75rem 0 var(--space-4);
+  background-color: var(--background);
+  /* the picker's chevron */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%236b5d4f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 8 5 5 5-5'/%3E%3C/svg%3E");
+  background-position: right 0.875rem center;
+  background-repeat: no-repeat;
+  color: var(--foreground);
+  font: inherit;
+  font-size: max(16px, var(--text-base));
+  cursor: pointer;
 }
-.screen .chip {
-  min-height: 44px;
-  border-radius: 999px;
-  font-size: 0.9375rem;
-}
-.screen .chip[aria-pressed="true"] {
-  border-color: var(--st-pen, #4465e9);
-  background: var(--st-pen-tint, #f2f5ff);
-  color: var(--st-ink, #1b1a17);
+.select:focus-visible {
+  outline: 2px solid var(--st-blue, #0562ef);
+  outline-offset: 2px;
 }
 
 /* the one button: the flow's blue pill */
