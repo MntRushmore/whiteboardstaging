@@ -1,0 +1,161 @@
+/* The problem strip under the hero (ProblemStrip.tsx): a band between two hairlines, a line from each
+   grade written in the board's hand, drifting left. Flat white, like the board; the only fade is the
+   mask at the two edges, so a line slides in and out instead of being cut. The band clips its row,
+   so it never widens the page. */
+
+.band {
+  /* the hand's scale: a phone's strip is smaller, but every line still reads at a glance */
+  --k: 0.7;
+  /* the space between one grade's line and the next */
+  --gap: 3rem;
+  --fade: 1.5rem;
+  position: relative;
+  overflow: clip;
+  border-block: 1px solid var(--lp-hair);
+  background: var(--background);
+}
+@media (min-width: 640px) {
+  .band {
+    --k: 0.84;
+    --gap: 4rem;
+    --fade: 4rem;
+  }
+}
+@media (min-width: 1100px) {
+  .band {
+    --k: 1;
+    --gap: 5rem;
+    --fade: 7.5rem;
+  }
+}
+/* the keyboard's focus ring, on the band (the strip itself fades out at its edges) */
+.band:has(.viewport:focus-visible) {
+  outline: 2px solid var(--lp-accent);
+  outline-offset: -3px;
+}
+
+.viewport {
+  overflow: clip;
+  outline: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+}
+
+.track {
+  display: flex;
+  width: max-content;
+}
+
+.row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--gap);
+  margin: 0;
+  /* the gap after the last line too, so the second copy follows the first at the same spacing */
+  padding: clamp(1.25rem, 0.75rem + 1.6vw, 2rem) var(--gap) clamp(1.25rem, 0.75rem + 1.6vw, 2rem) 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: calc(0.875rem * var(--k));
+}
+
+/* the grade, as a small pill in the board's table grey */
+.grade {
+  display: inline-flex;
+  min-width: 2.5rem;
+  height: 1.75rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 0.625rem;
+  background: var(--lp-table);
+  color: var(--lp-muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+
+/* the line, at its own width scaled by --k; nudged so every line's digits sit on one level */
+.math {
+  width: calc(var(--w) * var(--k) * 1px);
+  max-width: none;
+  flex: none;
+  translate: 0 calc(var(--shift) * var(--k) * 1px);
+}
+
+/* the tutor's check mark, a little smaller than the digits, sitting on their line */
+.check {
+  display: flex;
+  flex: none;
+  margin-left: calc(-0.25rem * var(--k));
+  font-size: calc(1.75rem * var(--k));
+  line-height: 1;
+}
+
+.sr {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The drift: the rows move left by exactly one row's width, then start again, unseen. */
+@media (prefers-reduced-motion: no-preference) {
+  /* a line not yet written waits a little past its start, behind a long gap: Safari draws a round
+     cap at a dash of length 0, so one parked exactly at its start (ink.module.css) shows as a dot */
+  .row:not(.again) .math path,
+  .row:not(.again) .check path {
+    stroke-dasharray: 1 2;
+    stroke-dashoffset: 1.01;
+  }
+  .track {
+    animation: strip-drift var(--lap, 110s) linear infinite;
+  }
+  .viewport:hover .track,
+  .viewport:focus-within .track {
+    animation-play-state: paused;
+  }
+}
+/* the track is three rows: from the middle row's start at the left fade to the last row's */
+@keyframes strip-drift {
+  from {
+    transform: translateX(calc(var(--fade) - 100% / 3));
+  }
+  to {
+    transform: translateX(calc(var(--fade) - 200% / 3));
+  }
+}
+
+/* Reduced motion: one still row, scrolled sideways by hand (or the arrow keys), a line at a time. */
+@media (prefers-reduced-motion: reduce) {
+  .viewport {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-padding-inline: var(--fade);
+    scroll-snap-type: x proximity;
+    scrollbar-color: var(--lp-hair) transparent;
+    scrollbar-width: thin;
+  }
+  .track {
+    padding-left: var(--fade);
+  }
+  .again {
+    display: none;
+  }
+  .item {
+    scroll-snap-align: start;
+  }
+}
