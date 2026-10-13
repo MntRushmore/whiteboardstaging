@@ -85,3 +85,18 @@ Levels and skills share `src/app/(platform)/math/[slug]/page.tsx`, which dispatc
 - For pages: `next build` succeeds and your pages are listed as static (○ or ●); then `next start` and `curl` each page with a Googlebot and a GPTBot user agent: 200, the words in the HTML, one `h1`, the JSON-LD parses. Delete `.next` afterwards (disk).
 - Screenshots at 375, 820 and 1440 px in Chromium and WebKit, written to the scratchpad, never into the repo.
 - Commit on your branch with a clear message. Do not push, do not open a PR, do not merge.
+
+## Status (2026-10-13)
+
+All five branches are merged into `feat/seo`. After `next build`, `next start` and `node scripts/seo-audit.mjs <base>`, the audit reads 75 pages, 0 errors and 0 warnings, as Googlebot and as GPTBot. The build prerenders 179 static pages.
+
+**The owner's steps after the deploy (code can't do these):**
+1. **Cloudflare: Security → Bots / AI Crawl Control.** Allow GPTBot, ClaudeBot and CCBot, which get a 403 today. Turn off "Block AI bots" and Cloudflare's managed robots.txt, then check the live `/robots.txt`. Also turn off Email Address Obfuscation, which hides the contact email from crawlers.
+2. **Google Search Console.** Verify www.agathon.app: a DNS TXT record in Cloudflare, or `GOOGLE_SITE_VERIFICATION` in Vercel. Then submit `/sitemap.xml`.
+3. **Bing Webmaster Tools.** Import from Search Console, or set `BING_SITE_VERIFICATION`. Then submit the sitemap. Bing feeds ChatGPT search and Copilot.
+4. **IndexNow.** Run `node scripts/indexnow.mjs` once the pages are live, and again after big content changes.
+
+**Next ideas (not built):**
+- Comparison pages that name other products. These need the owner's OK.
+- A worksheet PDF per skill.
+- More skills as the app learns them: add a slug to `SKILL_SLUGS`; the test fails until there is one.
