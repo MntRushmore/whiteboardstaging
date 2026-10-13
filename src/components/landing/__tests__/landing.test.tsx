@@ -142,9 +142,10 @@ describe("/parents", () => {
     expect(html).toContain(`href="#${LANDING_COPY.nav.links[0].id}"`);
   });
 
-  it("says agathon.app itself is the page's address", () => {
-    expect(metadata.alternates?.canonical).toBe("/");
-    expect(metadata.openGraph?.url).toBe("/");
+  // "/" once the root rewrite ships (feat/lp3-root); until then "/" is the app's shell, which is noindex
+  it("names /parents as the page's address until agathon.app/ serves it", () => {
+    expect(metadata.alternates?.canonical).toBe("/parents");
+    expect(metadata.openGraph?.url).toBe("/parents");
   });
 
   it("lets a parent pick any grade without a script", () => {

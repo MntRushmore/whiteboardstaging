@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { LANDING_COPY } from "@/components/landing/copy";
 import { AskDemo } from "@/components/landing/AskDemo";
-import { Devices } from "@/components/landing/Devices";
 import { GrownUps } from "@/components/landing/GrownUps";
 import { Hero } from "@/components/landing/Hero";
 import { HowItWorks } from "@/components/landing/HowItWorks";
@@ -10,11 +9,10 @@ import { Join } from "@/components/landing/Join";
 import { LandingNav } from "@/components/landing/LandingNav";
 import { PracticePicker } from "@/components/landing/PracticePicker";
 import { Pricing } from "@/components/landing/Pricing";
-import { ProblemStrip } from "@/components/landing/ProblemStrip";
 import { Questions } from "@/components/landing/Questions";
 import { SessionHop } from "@/components/landing/SessionHop";
 import { StickyJoin } from "@/components/landing/StickyJoin";
-import { siteOrigin } from "@/lib/landing/links";
+import { LANDING_PATH, siteOrigin } from "@/lib/landing/links";
 import styles from "@/components/landing/landing.module.css";
 
 /**
@@ -22,16 +20,16 @@ import styles from "@/components/landing/landing.module.css";
  * sees, and the link parents send each other. What Agathon is (the hero's replay), a problem from
  * every grade, how it works, Ask, the devices it runs on, what kids practice, what grown-ups see,
  * the price and the questions, ending in the way in (the Join band); the platform layout adds the
- * legal footer. Its address is agathon.app/ itself (a rewrite serves it to a signed-out "/";
- * /parents keeps working), so that is its canonical URL.
+ * legal footer. Its canonical URL is /parents until agathon.app/ itself serves it (the root rewrite,
+ * feat/lp3-root); then it becomes "/".
  * Server-rendered and static: no auth wait, nothing on it depends on who is looking. Its words are
  * in src/components/landing/copy.ts; its ink draws itself as it comes into view (inkStart.ts).
  */
 
 const copy = LANDING_COPY.meta;
 
-/** Where the page lives: the site's root. */
-const CANONICAL = "/";
+/** Where the page lives: /parents, until the root rewrite ships (then "/"). */
+const CANONICAL = LANDING_PATH;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin(process.env.NEXT_PUBLIC_SITE_URL)),
@@ -62,12 +60,10 @@ export default function ParentsPage() {
       <LandingNav />
       <main>
         <Hero />
-        <ProblemStrip />
         {/* a phone's bottom Join bar, while these are on screen (StickyJoin) */}
         <StickyJoin>
           <HowItWorks />
           <AskDemo />
-          <Devices />
           <PracticePicker />
           <GrownUps />
           <Pricing />
