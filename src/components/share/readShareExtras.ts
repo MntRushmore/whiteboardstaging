@@ -25,7 +25,7 @@ const NONE: ShareExtras = { avatar: null, link: null };
  */
 export function siteUrl(): string {
   const origin = typeof window === "undefined" ? null : window.location.origin;
-  return siteBase(process.env.NEXT_PUBLIC_SITE_URL, origin) ?? "https://agathon.app";
+  return siteBase(process.env.NEXT_PUBLIC_SITE_URL, origin) ?? "https://www.agathon.app";
 }
 
 /** A referral code's link on this deployment, as `ReferralSummary.link` is made. */

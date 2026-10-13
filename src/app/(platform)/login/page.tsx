@@ -7,6 +7,9 @@ import styles from "@/components/login/auth.module.css";
 export const metadata: Metadata = {
   title: "Sign in",
   description: `${PRODUCT_LINE} ${PRODUCT_DESCRIPTION}`,
+  // Out of search, but crawlable (robots.txt) and its links followed: the landing page links here
+  // from every Join button, and this page links the legal pages (docs/SEO.md).
+  robots: { index: false, follow: true },
 };
 
 // Server component: the product panel is static and renders with the HTML;

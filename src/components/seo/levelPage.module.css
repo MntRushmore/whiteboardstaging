@@ -1,0 +1,684 @@
+/* The math library's hub, grade and course pages (docs/SEO.md), in the landing page's look: its
+   tokens (--lp-*, on landing.module.css .page), its bands and type, the board's dot grid, the kid's
+   pen for the problems and the tutor's blue check. Flat fills only: no gradients, glows or glass. */
+
+.library {
+  /* the path's own purple, deepened for words on its tint (8:1 on --lp-tint-purple) */
+  --lib-purple-ink: oklch(40% 0.13 290);
+  --lib-card-lift: 0 0 0 1px oklch(0% 0 0 / 0.04), 0 8px 20px -10px oklch(40% 0.1 290 / 0.3);
+}
+
+/* ---- The board's dot grid (an SVG pattern) --------------------------------------------------- */
+.dots {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: var(--lp-dot);
+  pointer-events: none;
+}
+
+/* ---- Hero ------------------------------------------------------------------------------------ */
+.hero {
+  position: relative;
+  isolation: isolate;
+  border-bottom: 1px solid var(--border);
+  padding-top: clamp(1.5rem, 0.75rem + 3vw, 4rem);
+  padding-bottom: clamp(3rem, 2rem + 3vw, 5.5rem);
+  overflow-x: clip;
+}
+.heroGrid {
+  display: grid;
+  align-items: center;
+  gap: clamp(2.5rem, 1.5rem + 3vw, 4.5rem);
+}
+@media (min-width: 960px) {
+  .heroGrid {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  }
+}
+.heroText {
+  min-width: 0;
+}
+.title {
+  margin: 1rem 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 1.5rem + 4vw, 5rem);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+.intro {
+  max-width: 38rem;
+  margin: 1.5rem 0 0;
+  color: var(--lp-muted);
+  font-size: clamp(1.125rem, 1.05rem + 0.35vw, 1.3125rem);
+  letter-spacing: -0.01em;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.75rem;
+  margin-top: 2rem;
+}
+.actions a {
+  white-space: nowrap;
+}
+
+/* ---- Breadcrumb ------------------------------------------------------------------------------ */
+.crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 0.5rem;
+  margin: 0;
+  padding: 0;
+  color: var(--lp-muted);
+  font-size: 0.9375rem;
+  list-style: none;
+}
+.crumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.crumbs a,
+.crumbs [aria-current] {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+}
+.crumbs a {
+  border-radius: 0.375rem;
+  color: var(--lp-accent);
+  font-weight: 500;
+  text-decoration: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .crumbs a:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+.crumbs a:focus-visible {
+  outline: 2px solid var(--lp-accent);
+  outline-offset: 2px;
+}
+.crumbs [aria-current] {
+  color: var(--foreground);
+  font-weight: 500;
+}
+.crumbSep {
+  color: var(--lp-muted);
+}
+
+/* ---- The board in the hero: a sheet on the dotted board, one problem and its checked step ---- */
+.board {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--lp-card-radius);
+  padding: clamp(1.5rem, 1rem + 2vw, 2.5rem);
+  background: var(--background);
+  box-shadow: var(--lp-lift);
+}
+.boardLines {
+  display: grid;
+  justify-items: start;
+  gap: 1.25rem;
+}
+.boardLine {
+  display: flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.875rem;
+}
+.boardInk {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.boardCheck {
+  width: clamp(2rem, 1.5rem + 1.5vw, 2.75rem);
+  height: clamp(2rem, 1.5rem + 1.5vw, 2.75rem);
+  flex: none;
+  margin: 0;
+}
+.boardCaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.875rem;
+  margin-top: 1.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.25rem;
+  color: var(--lp-muted);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+.boardNote {
+  flex-basis: 100%;
+}
+
+/* ---- A problem in the kid's pen, with its text ----------------------------------------------- */
+.problem {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 1rem 1.125rem 0.875rem;
+  background: #fcfcfc;
+}
+.problemInk {
+  display: grid;
+  min-height: 3rem;
+  align-content: center;
+  justify-items: start;
+  gap: 0.375rem;
+}
+.problemLine {
+  max-width: 100%;
+  height: auto;
+}
+.problemText {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.125rem 0.75rem;
+  margin: 0;
+  color: var(--lp-muted);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+.problemLabel {
+  color: var(--lp-muted);
+  font-size: 0.9375rem;
+  font-variant-caps: all-small-caps;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.problemMath {
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Section heads --------------------------------------------------------------------------- */
+.sectionHead {
+  max-width: 52rem;
+  margin: 0 auto;
+  text-align: center;
+}
+.h2 {
+  font-size: clamp(2rem, 1.2rem + 3vw, 3.75rem);
+}
+.lede {
+  max-width: var(--lp-text);
+  margin-inline: auto;
+  text-wrap: balance;
+}
+
+/* ---- The path: white cards on the path's purple ---------------------------------------------- */
+.pathBoard {
+  margin-top: clamp(2.5rem, 1.5rem + 3vw, 4rem);
+  border-radius: var(--lp-card-radius);
+  padding: clamp(0.75rem, 0rem + 3vw, 3rem);
+  background: var(--lp-tint-purple);
+}
+.skills {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 720px) {
+  .skills {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+}
+@media (min-width: 1100px) {
+  .skills {
+    grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  }
+}
+.skill {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border-radius: 1.5rem;
+  padding: clamp(1.125rem, 0.75rem + 1vw, 1.5rem);
+  background: var(--background);
+  box-shadow: var(--lib-card-lift);
+  transition: box-shadow var(--duration-fast) var(--ease-standard);
+}
+@media (hover: hover) and (pointer: fine) {
+  .skill:hover {
+    box-shadow:
+      0 0 0 1px oklch(0% 0 0 / 0.06),
+      0 14px 28px -12px oklch(40% 0.1 290 / 0.38);
+  }
+  .skill:hover .cardLink {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+  }
+}
+.skill:has(.cardLink:focus-visible) {
+  outline: 2px solid var(--lp-accent);
+  outline-offset: 3px;
+}
+.skillHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+}
+.stepNo {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--lp-tint-purple);
+  color: var(--lib-purple-ink);
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.skillName {
+  margin: 0.375rem 0 0;
+  font-size: 1.1875rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+}
+/* the card's one link, stretched over the whole card */
+.cardLink {
+  color: inherit;
+  text-decoration: none;
+}
+.cardLink::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
+  content: "";
+}
+.cardLink:focus-visible {
+  outline: none;
+}
+.skillBlurb {
+  margin: 0.25rem 0 0;
+  color: var(--lp-muted);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: auto;
+  padding-top: 1rem;
+  color: var(--lp-accent);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+/* ---- Warm-up: what carries over from the grade below (it follows the path, so no top space) --- */
+.warm {
+  padding-top: 0;
+}
+.warmInner {
+  display: grid;
+  gap: 1.75rem;
+}
+@media (min-width: 900px) {
+  .warmInner {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    align-items: center;
+    gap: 4rem;
+  }
+}
+.warmTitle {
+  font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.5rem);
+}
+.warmBody {
+  max-width: 34rem;
+  margin: 1rem 0 0;
+  color: var(--lp-muted);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chip {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  padding: 0 0.875rem 0 1.125rem;
+  background: var(--lp-tint-purple);
+  color: var(--foreground);
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.chip svg {
+  color: var(--lib-purple-ink);
+}
+@media (hover: hover) and (pointer: fine) {
+  .chip:hover {
+    background: oklch(91% 0.045 290);
+  }
+}
+.chip:focus-visible {
+  outline: 2px solid var(--lp-accent);
+  outline-offset: 2px;
+}
+
+/* ---- How practice works ---------------------------------------------------------------------- */
+.how {
+  display: grid;
+  gap: 2rem;
+  margin: clamp(2.5rem, 1.5rem + 3vw, 4rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 640px) {
+  .how {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.5rem 2rem;
+  }
+}
+@media (min-width: 1100px) {
+  .how {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.howItem {
+  border-top: 1px solid var(--lp-hair);
+  padding-top: 1.5rem;
+}
+.howIcon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  margin-bottom: 1rem;
+  border-radius: 0.75rem;
+  background: var(--lp-tint-blue);
+  color: var(--lp-accent);
+}
+.howTitle {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+}
+.howBody {
+  margin: 0.5rem 0 0;
+  color: var(--lp-muted);
+  font-size: 1rem;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+/* ---- Questions: every answer open (they are short) ------------------------------------------- */
+.faqTitle {
+  font-size: clamp(1.875rem, 1.3rem + 2.2vw, 3rem);
+}
+.faq {
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
+  border-top: 1px solid var(--border);
+}
+@media (min-width: 1024px) {
+  .faq {
+    max-width: none;
+  }
+}
+.qa {
+  border-bottom: 1px solid var(--border);
+  padding: 1.5rem 0 1.75rem;
+}
+.question {
+  margin: 0;
+  font-size: clamp(1.125rem, 1.05rem + 0.35vw, 1.3125rem);
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.answer {
+  max-width: 40rem;
+  margin: 0.625rem 0 0;
+  color: var(--lp-muted);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* ---- Across: the grades on either side ------------------------------------------------------- */
+.neighbors {
+  border-top: 1px solid var(--border);
+  padding-block: clamp(2rem, 1.5rem + 2vw, 3.5rem);
+}
+.neighborsInner {
+  display: grid;
+  align-items: center;
+  gap: 0.75rem;
+}
+.neighborsInner > span:empty {
+  display: none;
+}
+@media (min-width: 720px) {
+  .neighborsInner {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+  .neighborsInner > span:empty {
+    display: block;
+  }
+}
+.neighbor {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+  border-radius: 1.25rem;
+  padding: 1rem 1.25rem;
+  background: var(--lp-soft);
+  color: var(--foreground);
+  text-decoration: none;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.neighborNext {
+  align-items: flex-end;
+  text-align: right;
+}
+@media (hover: hover) and (pointer: fine) {
+  .neighbor:hover {
+    background: var(--neutral-3);
+  }
+  .neighbor:hover .neighborName {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+  }
+}
+.neighbor:focus-visible,
+.allLevels:focus-visible {
+  outline: 2px solid var(--lp-accent);
+  outline-offset: 2px;
+}
+.neighborDir {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--lp-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.neighborName {
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.allLevels {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-self: center;
+  border-radius: 0.5rem;
+  padding-inline: 0.5rem;
+  color: var(--lp-accent);
+  font-weight: 500;
+  text-decoration: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .allLevels:hover {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+}
+
+/* ---- The hub (/math): a card per grade and per course ---------------------------------------- */
+.hubHero {
+  text-align: center;
+}
+.hubHero .crumbs ol {
+  justify-content: center;
+}
+.hubTitle {
+  max-width: 18ch;
+  margin-inline: auto;
+}
+.hubHero .intro {
+  margin-inline: auto;
+  text-wrap: balance;
+}
+.hubHero .actions {
+  justify-content: center;
+}
+.levels {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 640px) {
+  .levels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+}
+@media (min-width: 1024px) {
+  .levels {
+    grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  }
+}
+.levelHead {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+.levelChip {
+  display: grid;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  padding: 0 0.625rem;
+  background: var(--lp-tint-purple);
+  color: var(--lib-purple-ink);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.levelName {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+.headline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.headline li {
+  border-radius: 999px;
+  padding: 0.25rem 0.625rem;
+  background: var(--lp-soft);
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+.hubCourses {
+  margin-top: clamp(4rem, 2.5rem + 4vw, 6.5rem);
+}
+.hubSteps {
+  display: grid;
+  gap: 2.5rem 2rem;
+  margin: clamp(2.5rem, 1.5rem + 3vw, 4rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 900px) {
+  .hubSteps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.hubStep {
+  border-top: 1px solid var(--lp-hair);
+  padding-top: 1.5rem;
+}
+.hubNumeral {
+  width: auto;
+  height: 3.5rem;
+  margin: 0 0 1rem -0.125rem;
+}
+.helpChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  margin-inline: 0.15em;
+  border-radius: 999px;
+  padding: 0.08em 0.6em 0.08em 0.5em;
+  background: #155dfc;
+  color: #fff;
+  font-size: 0.9em;
+  font-weight: 600;
+  white-space: nowrap;
+}

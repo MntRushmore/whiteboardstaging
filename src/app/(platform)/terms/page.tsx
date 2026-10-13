@@ -3,10 +3,20 @@ import Link from "next/link";
 import { ContactBlock, ContactEmail, LegalPage, LegalSection } from "@/components/legal/LegalPage";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { LEGAL } from "@/lib/legal";
+import { OPEN_GRAPH_DEFAULTS } from "@/lib/seo/site";
 
-export const metadata: Metadata = {
+const META = {
   title: "Terms of Service",
-  description: "The terms for using Agathon, the AI math tutor on a whiteboard, including Agathon Unlimited.",
+  description: `The terms for using Agathon, the AI math tutor on a whiteboard: accounts and parents, ${UNLIMITED_PLAN.name} and its free trial, cancelling, and the rules.`,
+};
+
+/** Indexable (docs/SEO.md): parents and answer engines look for a product's terms. */
+export const metadata: Metadata = {
+  ...META,
+  alternates: { canonical: "/terms" },
+  robots: { index: true, follow: true },
+  openGraph: { ...OPEN_GRAPH_DEFAULTS, url: "/terms", ...META },
+  twitter: { card: "summary", ...META },
 };
 
 /** Agathon Unlimited as sold (src/lib/billing/unlimited.ts, scripts/stripe-setup.mjs). */
@@ -26,7 +36,7 @@ export default function TermsPage() {
       title="Terms of Service"
       summary={
         <ul>
-          <li>Agathon is an AI maths tutor in beta. The AI can be wrong; check what matters.</li>
+          <li>Agathon is an AI math tutor in beta. The AI can be wrong; check what matters.</li>
           <li>Children under 13 need a parent or guardian to set up and agree to their account.</li>
           <li>Your boards are yours. We use them only to run Agathon for you.</li>
           <li>
@@ -52,7 +62,7 @@ export default function TermsPage() {
 
       <LegalSection id="service" title="What Agathon is">
         <p>
-          {LEGAL.productName} is a whiteboard where students write maths by hand and an AI tutor reads it, checks each
+          {LEGAL.productName} is a whiteboard where students write math by hand and an AI tutor reads it, checks each
           step, and answers on the board. To do that, what you write and draw is sent to AI services that read
           handwriting and generate the tutor’s answers (the <Link href="/privacy#providers">Privacy Policy</Link>{" "}
           lists them).
@@ -67,7 +77,7 @@ export default function TermsPage() {
       <LegalSection id="ai" title="The AI can make mistakes">
         <p>
           The tutor’s checks, hints, worked solutions, graphs and drawings are produced by AI models and by
-          automatic maths checking. They can be wrong, incomplete or misread your handwriting. {LEGAL.productName} is a
+          automatic math checking. They can be wrong, incomplete or misread your handwriting. {LEGAL.productName} is a
           study aid, not a replacement for a teacher, and its answers are not professional advice. Check anything that
           matters, and follow your school’s rules about homework help and academic honesty.
         </p>
