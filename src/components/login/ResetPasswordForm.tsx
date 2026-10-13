@@ -6,6 +6,7 @@ import { KeyRound, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
+import { enterRoot } from "@/lib/landing/links";
 import { ButtonLink } from "@/components/app/ButtonLink";
 import { Alert } from "@/registry/components/alert/alert";
 import { Button } from "@/registry/components/button/button";
@@ -60,7 +61,8 @@ export function ResetPasswordForm() {
       if (error) throw error;
       setDone(true);
       toast.success("Password updated");
-      router.replace("/");
+      // a full load: `/` is the app only once the server sees the session cookie (enterRoot)
+      enterRoot("/", (to) => router.replace(to));
     } catch (error) {
       console.warn("Password update failed:", error);
       const message = loginErrorMessage(error);

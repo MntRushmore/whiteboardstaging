@@ -291,7 +291,7 @@
   }
 }
 
-/* "New to Agathon? See how it works": under the form, to the parent landing page (/parents). */
+/* "New to Agathon? See how it works": under the form, to the parent landing page (agathon.app/). */
 .newHere {
   margin: var(--space-6) 0 0;
   color: var(--text-secondary);

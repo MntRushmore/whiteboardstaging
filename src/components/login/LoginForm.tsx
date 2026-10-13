@@ -13,7 +13,7 @@ import { Button } from "@/registry/components/button/button";
 import { Input } from "@/registry/components/input/input";
 import { PasswordField } from "@/registry/components/password-field/password-field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/registry/components/tabs/tabs";
-import { LANDING_PATH, wantsSignUp } from "@/lib/landing/links";
+import { enterRoot, LANDING_PATH, wantsSignUp } from "@/lib/landing/links";
 import {
   LOGIN_COPY,
   classifyLoginError,
@@ -158,9 +158,10 @@ export function LoginForm() {
   // Set by handlers, applied after the next commit (the target may have just mounted).
   const pendingFocus = useRef<FocusTarget | null>(null);
 
+  // Into the app: `/` by a full load (enterRoot), since the router may still hold `/` as the landing page.
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace(afterSignInPath(window.location.search));
+      enterRoot(afterSignInPath(window.location.search), (to) => router.replace(to));
     }
   }, [user, authLoading, router]);
 
@@ -237,12 +238,12 @@ export function LoginForm() {
         });
         if (error) throw error;
         // no toast: the boards opening is the confirmation (a toast lingered over the cards)
-        router.replace(afterSignInPath(window.location.search));
+        enterRoot(afterSignInPath(window.location.search), (to) => router.replace(to));
       } else if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp(signUpRequest(address, password));
         if (error) throw error;
         if (data.session) {
-          router.replace(afterSignInPath(window.location.search));
+          enterRoot(afterSignInPath(window.location.search), (to) => router.replace(to));
         } else {
           // Email confirmation is on: there is no session until the link is opened.
           setSent({ kind: "confirm-signup", email: address });
