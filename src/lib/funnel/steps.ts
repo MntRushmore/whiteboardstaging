@@ -11,6 +11,11 @@
 
 /** Every step, in the order a new account meets them. The table's check lists the same names. */
 export const FUNNEL_STEPS = [
+  /**
+   * the visitor tried the free board at /try before making the account (recorded once signed in,
+   * from the device's try marker: src/lib/try/contracts.ts); meta: { checked, solved }
+   */
+  "try_board",
   /** the welcome showed (a new account with no boards) */
   "welcome_shown",
   /** Skip for now on the welcome; meta: { step: 1 | 2 } */
