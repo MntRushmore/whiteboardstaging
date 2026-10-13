@@ -42,6 +42,11 @@ export const PUBLIC_ROUTES = Object.freeze([
   // (under REPORT_LINK_SECRET, else CRON_SECRET) is the auth. GET only asks; POST (the page's
   // button, or RFC 8058 one-click) turns that account's email off, and that is all it can do.
   "src/app/api/report/unsubscribe/route.ts",
+  // "Try it free" (/try): a signed-out visitor's line read and checked, and "Show me a step". No
+  // account exists; our own page only (Sec-Fetch-Site / Origin), body capped, zod, problems looked up
+  // by id, per-visitor limits, and the check's reads capped per day for everyone (TRY_DAILY_READS).
+  "src/app/api/try/check/route.ts",
+  "src/app/api/try/help/route.ts",
 ]);
 
 /** Why each public route may skip requireUser (enforced by routeProtection.test.ts). */
@@ -54,6 +59,8 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/health/route.ts": "uptime monitor probe; answers { ok, db, release } only",
   "src/app/api/cron/trial-reminders/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
   "src/app/api/report/unsubscribe/route.ts": "email unsubscribe link; requires an HMAC of the user id under REPORT_LINK_SECRET (else CRON_SECRET); GET only asks, POST only turns the weekly email off",
+  "src/app/api/try/check/route.ts": "the try board, for visitors with no account; same-origin only, 1 MB body cap, zod, per-IP and per-day read limits; one Mathpix read, stores nothing",
+  "src/app/api/try/help/route.ts": "the try board's next step, for visitors with no account; same-origin only, 16 KB body cap, zod, per-IP limit; the local engine only, no read, no model",
 });
 
 /** Routes whose handlers legitimately have no zod body schema. */
@@ -429,6 +436,30 @@ export const API_ROUTES = Object.freeze([
     // 503 when the database does not answer (the free Supabase project paused).
     withoutTokenStatus: [200, 503],
     purpose: "Uptime probe: { ok, db, release }; db up when Postgres answers a trivial query within 3 s",
+    status: "active",
+  },
+  {
+    path: "/api/try/check",
+    file: "src/app/api/try/check/route.ts",
+    methods: ["POST"],
+    auth: "public",
+    limit: "ip:tryCheck",
+    body: "zod",
+    // 403 for a request that is not from our page (the probe sends neither Sec-Fetch-Site nor Origin); 503 with TRY_ENABLED=0.
+    withoutTokenStatus: [403, 503],
+    purpose: "Try it free: a signed-out visitor's line (strokes) under a try problem -> one Mathpix read, judged by the engine -> { latex, verdict, note }",
+    status: "active",
+  },
+  {
+    path: "/api/try/help",
+    file: "src/app/api/try/help/route.ts",
+    methods: ["POST"],
+    auth: "public",
+    limit: "ip:tryHelp",
+    body: "zod",
+    // 403 for a request that is not from our page; 503 with TRY_ENABLED=0.
+    withoutTokenStatus: [403, 503],
+    purpose: "Try it free's Show me a step: the engine's next step after the visitor's work, in the tutor's hand -> { latex, ink, solves }",
     status: "active",
   },
   {

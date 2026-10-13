@@ -118,7 +118,7 @@ describe("route discovery", () => {
 });
 
 describe("allow-lists", () => {
-  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the crons, client errors and health", () => {
+  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the crons, client errors, health, the unsubscribe and the try board", () => {
     // config/status: reports which provider keys exist as booleans (never values,
     // prefixes or lengths) so the setup screen can render before sign-in.
     // billing/webhook: the provider has no user JWT; the Stripe-Signature HMAC is the auth.
@@ -128,6 +128,8 @@ describe("allow-lists", () => {
     // (behaviour: src/lib/server/__tests__/routes.adminHealth.test.ts).
     // client-errors: browser crash reports, signed out too; it only writes a log line.
     // health: an uptime monitor has no user; it answers { ok, db, release } only.
+    // try/check, try/help: "Try it free" is for visitors with no account; our own page only, capped
+    // and limited per visitor (and the check's reads per day), nothing stored.
     expect([...PUBLIC_ROUTES].sort()).toEqual([
       "src/app/api/admin/gc/route.ts",
       "src/app/api/admin/health/route.ts",
@@ -137,7 +139,27 @@ describe("allow-lists", () => {
       "src/app/api/cron/trial-reminders/route.ts",
       "src/app/api/health/route.ts",
       "src/app/api/report/unsubscribe/route.ts",
+      "src/app/api/try/check/route.ts",
+      "src/app/api/try/help/route.ts",
     ]);
+  });
+
+  it("the try routes refuse what is not from our page, cap the body and look the problem up by id", () => {
+    // The real invariants behind their PUBLIC_ROUTES entries (behaviour: src/app/api/try/__tests__).
+    for (const file of ["src/app/api/try/check/route.ts", "src/app/api/try/help/route.ts"]) {
+      const src = sources.get(file) ?? "";
+      expect(/\btryEnabled\s*\(/.test(src), file).toBe(true);
+      expect(/\bisSameOrigin\s*\(/.test(src), file).toBe(true);
+      expect(/\breadCapped\s*\(/.test(src), file).toBe(true);
+      expect(/req\.json\s*\(/.test(src), `${file}: read through the size cap, never req.json()`).toBe(false);
+      expect(/\btryProblem\s*\(/.test(src), file).toBe(true);
+      expect(src.indexOf("isSameOrigin("), file).toBeLessThan(src.indexOf("readCapped("));
+    }
+    // the check makes the only read, and only after both limits
+    const check = sources.get("src/app/api/try/check/route.ts") ?? "";
+    expect(check.indexOf("spendTryRead(")).toBeGreaterThan(check.indexOf("checkRateLimit("));
+    expect(check.indexOf("recognizeStrokes(")).toBeGreaterThan(check.indexOf("spendTryRead("));
+    expect(/recognizeStrokes|chatJson|openrouter/i.test(sources.get("src/app/api/try/help/route.ts") ?? ""), "help makes no read and calls no model").toBe(false);
   });
 
   it("client errors only log: body capped, zod-validated, a token only names the user", () => {
