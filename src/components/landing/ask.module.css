@@ -9,7 +9,7 @@
    motion every element is in its final state. Flat fills, hairlines and soft shadows only. */
 
 .band {
-  background: var(--background);
+  background: var(--lp-paper, #fff);
 }
 
 .stage {
@@ -27,11 +27,12 @@
   overflow: hidden;
   grid-template-rows: auto auto;
   border-radius: 1.5rem;
-  background: var(--lp-table);
+  /* the app's own grey table round the board (real UI: never warmed), lifted off the cream by a warm shadow */
+  background: var(--lp-board-table, #f1f2f5);
   box-shadow:
-    0 0 0 1px oklch(0% 0 0 / 0.06),
-    0 1px 2px oklch(0% 0 0 / 0.04),
-    0 28px 64px -24px oklch(25% 0.02 260 / 0.22);
+    0 0 0 1px rgb(59 42 31 / 0.08),
+    0 1px 2px rgb(59 42 31 / 0.05),
+    0 30px 64px -26px rgb(59 42 31 / 0.3);
   color: #0f172b;
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
@@ -1006,7 +1007,7 @@
   border-radius: 999px;
   padding: 0 0.875rem;
   background: none;
-  color: var(--lp-accent);
+  color: var(--lp-accent-ink, var(--lp-accent));
   font: inherit;
   font-size: 0.9375rem;
   font-weight: 500;
@@ -1022,7 +1023,7 @@
   }
 }
 .replay:focus-visible {
-  outline: 2px solid var(--lp-accent);
+  outline: 2px solid var(--lp-focus, var(--lp-accent));
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1068,8 +1069,8 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   column-gap: 0.875rem;
-  border-radius: 1.25rem;
-  padding: 1.25rem 1.25rem 1.375rem;
+  border-radius: 1.5rem;
+  padding: 1.375rem 1.375rem 1.5rem;
 }
 /* side by side, each card's picture, title and words on shared rows, so the words start level */
 @container lp-ask (min-width: 700px) {
@@ -1079,29 +1080,30 @@
     grid-template-rows: subgrid;
     align-items: start;
     row-gap: 0;
-    padding: 1.5rem 1.5rem 1.625rem;
+    padding: 1.75rem 1.625rem 1.875rem;
   }
 }
+/* v4: the page's flat tints (landing.module.css), each with an ink of its own for the icon */
 .tintBlue {
-  --tint: var(--lp-tint-blue);
+  --tint: var(--lp-tint-sky, var(--lp-tint-blue));
   --tint-ink: #2453c7;
 }
 .tintGreen {
-  --tint: var(--lp-tint-green);
-  --tint-ink: #187a4c;
+  --tint: var(--lp-tint-sage, var(--lp-tint-green));
+  --tint-ink: #4a6a2a;
 }
 .tintPurple {
-  --tint: var(--lp-tint-purple);
+  --tint: var(--lp-tint-lavender, var(--lp-tint-purple));
   --tint-ink: #6440c4;
 }
 .tintYellow {
-  --tint: var(--lp-tint-yellow);
+  --tint: var(--lp-tint-butter, var(--lp-tint-yellow));
   --tint-ink: #8a5a00;
 }
-/* the board's own grey, for what is not math */
+/* what is not math: peach */
 .tintTable {
-  --tint: var(--lp-table);
-  --tint-ink: #45556c;
+  --tint: var(--lp-tint-peach, var(--lp-table));
+  --tint-ink: #a2502a;
 }
 .feature {
   background: var(--tint);
@@ -1112,8 +1114,8 @@
   height: 2.75rem;
   place-items: center;
   border-radius: 0.875rem;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+  background: var(--lp-card, #fff);
+  box-shadow: 0 1px 2px rgb(59 42 31 / 0.08);
   color: var(--tint-ink);
 }
 @container lp-ask (min-width: 700px) {
@@ -1123,10 +1125,12 @@
 }
 .featureTitle {
   margin: 0;
-  font-size: 1.125rem;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.3;
+  font-family: var(--font-lp-serif, var(--font-display));
+  font-size: 1.375rem;
+  font-variation-settings: "SOFT" 100, "WONK" 0;
+  font-weight: 520;
+  letter-spacing: -0.012em;
+  line-height: 1.2;
 }
 .featureBody {
   grid-column: 1 / -1;

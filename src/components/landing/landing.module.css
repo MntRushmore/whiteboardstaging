@@ -1,19 +1,36 @@
-/* The landing page (agathon.app, also /parents), v3: "the page is the board" (docs/LANDING-V3.md).
-   One idea per section, bands alternating white and a soft off-white, one dark band and a flat blue
-   one to end on, huge display type, real product pictures on flat tint cards, the tutor's blue pen
-   marking the page itself. Mostly neutrals and one accent. Arc tokens (src/registry/foundation.css)
-   for the neutrals, the faces and the easing; the 8 px grid for every space. No gradients, glows or
-   glass: flat fills, hairlines and soft shadows. Loaded only by the landing page. */
+/* The landing page (agathon.app, also /parents). v3 made it "the page is the board"
+   (docs/LANDING-V3.md); v4 warms it up: paper instead of screen white. A cream page with bands a
+   shade deeper, two deep brown bands and a flat blue one to end on, each meeting the next along a
+   torn edge (TornEdge); a soft serif for the headlines (fonts.ts) over Arc's body face; real product
+   pictures on white board surfaces, on flat tint cards (sage, peach, lavender, butter, sky); the
+   tutor's blue pen still marking the page, and blue still the one color for a button. Flat fills,
+   warm hairlines and warm soft shadows: no gradients, glows or glass. Loaded only by the landing
+   page (and pages that reuse its pieces). */
 
 .page {
-  /* Arc's blue accent (foundation.css, data-accent="blue"): links, buttons and the eyebrows. White on
-     it is 5.3:1. */
+  /* v4: the papers. The page's cream, a band a shade deeper, the white of a card or a board, the
+     dark bands' brown, and the Join band's blue. */
+  --lp-paper: #fbf7ef;
+  --lp-paper-deep: #f4ecdd;
+  --lp-card: #fffdf9;
+  --lp-brown: #3b2a1f;
+  --lp-join: #0562ef;
+  /* the headlines' serif (fonts.ts), or Arc's display face where the page has not loaded it */
+  --lp-serif: var(--font-lp-serif, var(--font-display));
+
+  /* Agathon's blue: every button (white on it is 5.3:1). Its words on paper are a shade deeper
+     (`--lp-accent-ink`, 6:1 on the deeper cream), and keyboard focus rings are drawn in `--lp-focus`. */
   --lp-accent: #0562ef;
   --lp-accent-strong: #074db7;
-  --lp-ink: var(--foreground);
-  --lp-muted: var(--text-secondary);
-  --lp-soft: var(--neutral-2);
-  --lp-hair: var(--border);
+  --lp-accent-ink: #0450c8;
+  --lp-focus: #0562ef;
+  /* warm near-black words, a warm grey-brown for the quieter ones (4.9:1 or more on every paper and
+     tint here), the eyebrows', and warm hairlines */
+  --lp-ink: #1f1a14;
+  --lp-muted: #6b5d4f;
+  --lp-eyebrow: #6b5d4f;
+  --lp-soft: var(--lp-paper-deep);
+  --lp-hair: #e6dbc9;
   /* the page's margins and its two measures */
   --lp-gutter: clamp(1rem, 0.5rem + 2.5vw, 2.5rem);
   --lp-max: 72rem;
@@ -24,28 +41,43 @@
   /* v3 (docs/LANDING-V3.md): the board's two pens, used on the page itself (ink.module.css) */
   --lp-pen-kid: #1d1d1d;
   --lp-pen-tutor: #4465e9;
-  /* the board's "table" round the white screen, and its hairline */
-  --lp-table: #f1f2f5;
-  /* flat tints, one per idea, from the app's own colours (the Today pill's cream, the path's green
-     and purple, the accent's blue). Flat fills only: never a gradient between them. */
-  --lp-tint-blue: #eef3ff;
-  --lp-tint-yellow: #fff7e0;
-  --lp-tint-green: #e8f6ee;
-  --lp-tint-purple: #f2edff;
+  /* the page's warm "table" (a grade pill, the chips' track), and the board's own grey table round
+     its white screen, for the parts of the page that draw the app itself (the Ask demo) */
+  --lp-table: #efe5d3;
+  --lp-board-table: #f1f2f5;
+  /* flat tints, one per idea, chosen to sit on cream. Flat fills only: never a gradient between them. */
+  --lp-tint-sage: #e3e9d3;
+  --lp-tint-peach: #f7dfcf;
+  --lp-tint-lavender: #e7e0ee;
+  --lp-tint-butter: #f6e8bd;
+  --lp-tint-sky: #e2e9f6;
+  /* v3's names for them */
+  --lp-tint-blue: var(--lp-tint-sky);
+  --lp-tint-yellow: var(--lp-tint-butter);
+  --lp-tint-green: var(--lp-tint-sage);
+  --lp-tint-purple: var(--lp-tint-lavender);
   --lp-star: #f5b301;
   /* the wide measure for the product's pictures, wider than the text's */
   --lp-wide: 80rem;
 
   /* lp3-page: the sticky bar's height (anchors land under it), the board's dot grid, the radius of
-     the page's big cards (24 px on a phone to 40 px), and a card's soft lift */
+     the page's big cards (24 px on a phone to 40 px), and a card's soft lift (a warm shadow) */
   --lp-nav-h: 3.5rem;
-  --lp-dot: #d3d7df;
+  --lp-dot: #e2d8c6;
   --lp-card-radius: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
-  --lp-lift: 0 1px 2px oklch(0% 0 0 / 0.05), 0 16px 40px -12px oklch(0% 0 0 / 0.14);
+  --lp-lift: 0 1px 2px rgb(59 42 31 / 0.06), 0 18px 40px -14px rgb(59 42 31 / 0.2);
+
+  /* Arc's neutrals, warmed, for the parts of the page that read them */
+  --foreground: var(--lp-ink);
+  --text-secondary: var(--lp-muted);
+  --text-muted: var(--lp-muted);
+  --border: var(--lp-hair);
+  --neutral-2: #f3ebdc;
+  --neutral-3: #ebe0cd;
 
   /* fills the platform layout above the legal footer (platform.css) */
   flex: 1 0 auto;
-  background: var(--background);
+  background: var(--lp-paper);
   color: var(--lp-ink);
   font-family: var(--font-body);
 }
@@ -61,37 +93,47 @@
 }
 
 /* ---- Type ------------------------------------------------------------------------------------ */
+/* A band's label over its heading: small, spaced capitals in a quiet warm brown (blue is for buttons
+   and the tutor's ink). */
 .eyebrow {
-  margin: 0 0 1rem;
-  color: var(--lp-accent);
-  font-size: 1.0625rem;
-  font-variant-caps: all-small-caps;
+  margin: 0 0 1.25rem;
+  color: var(--lp-eyebrow);
+  font-size: 0.8125rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  line-height: 1.2;
+  letter-spacing: 0.14em;
+  line-height: 1.3;
+  text-transform: uppercase;
 }
+/* The headlines, in the serif (fonts.ts), soft (SOFT 100), never wonky; read from
+   --font-lp-serif so any page with `landingFontClass` gets them, Arc's display face without it. */
 .display,
 .h2,
 .h3 {
   margin: 0;
-  font-family: var(--font-display);
-  font-weight: 600;
+  font-family: var(--font-lp-serif, var(--font-display));
+  font-variation-settings: "SOFT" 100, "WONK" 0;
+  font-weight: 520;
   text-wrap: balance;
 }
+/* the big ones at a display optical size, warm rather than glossy */
+.display,
+.h2 {
+  font-variation-settings: "SOFT" 100, "WONK" 0, "opsz" 72;
+}
 .display {
-  font-size: clamp(2.75rem, 1.4rem + 6vw, 6rem);
-  letter-spacing: -0.045em;
+  font-size: clamp(2.75rem, 1.5rem + 5.4vw, 6rem);
+  letter-spacing: -0.03em;
   line-height: 1.02;
 }
 .h2 {
-  font-size: clamp(2.25rem, 1.2rem + 4vw, 5rem);
-  letter-spacing: -0.042em;
-  line-height: 1.04;
+  font-size: clamp(2.25rem, 1.4rem + 3.4vw, 4.25rem);
+  letter-spacing: -0.026em;
+  line-height: 1.06;
 }
 .h3 {
-  font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.75rem);
-  letter-spacing: -0.032em;
-  line-height: 1.08;
+  font-size: clamp(1.625rem, 1.3rem + 1.2vw, 2.375rem);
+  letter-spacing: -0.018em;
+  line-height: 1.12;
 }
 .lede {
   margin: 1.5rem 0 0;
@@ -139,12 +181,18 @@
 .soft {
   background: var(--lp-soft);
 }
+/* The dark bands (Not a cheat button, For grown-ups): deep warm brown, cream words (12.8:1), the
+   quieter ones a warm sand (7.3:1), links and focus a light blue (7.6:1); the buttons stay blue. */
 .dark {
-  --lp-ink: var(--neutral-0);
-  --lp-muted: var(--neutral-6);
-  --lp-hair: oklch(100% 0 0 / 0.12);
-  --lp-accent: #6ba3ff;
-  background: var(--neutral-11);
+  --lp-ink: #fbf7ef;
+  --lp-muted: #cdbda8;
+  --lp-eyebrow: #e3c9a6;
+  --lp-hair: rgb(251 247 239 / 0.14);
+  --lp-accent-ink: #a9c1ff;
+  --lp-focus: #a9c1ff;
+  --foreground: var(--lp-ink);
+  --text-secondary: var(--lp-muted);
+  background: var(--lp-brown);
   color: var(--lp-ink);
 }
 
@@ -199,7 +247,7 @@
 }
 .pill:focus-visible,
 .textLink:focus-visible {
-  outline: 2px solid var(--lp-accent);
+  outline: 2px solid var(--lp-focus);
   outline-offset: 3px;
 }
 /* The page's main buttons: a size up. */
@@ -216,7 +264,7 @@
   align-items: center;
   gap: 0.25rem;
   border-radius: 0.5rem;
-  color: var(--lp-accent);
+  color: var(--lp-accent-ink);
   font-size: 1.0625rem;
   font-weight: 500;
   letter-spacing: -0.01em;
@@ -246,27 +294,28 @@
 }
 
 /* ---- The sticky top bar ---------------------------------------------------------------------- */
+/* The page's cream, nearly opaque, so the bands slide under it and their words never read through. */
 .nav {
   position: sticky;
   z-index: 30;
   top: 0;
-  border-bottom: 1px solid var(--border);
-  background: oklch(100% 0 0 / 0.88);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--lp-hair);
+  background: rgb(251 247 239 / 0.9);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  backdrop-filter: saturate(160%) blur(18px);
   transition:
     background var(--duration-standard) var(--ease-standard),
     border-color var(--duration-standard) var(--ease-standard);
 }
-/* Over the dark band (NavTone): a dark bar with white words, so nothing reads through it. */
+/* Over a dark band (NavTone): the band's brown, with cream words. */
 .nav[data-tone="dark"] {
-  border-bottom-color: oklch(100% 0 0 / 0.08);
-  background: oklch(16% 0 0 / 0.86);
+  border-bottom-color: rgb(251 247 239 / 0.1);
+  background: rgb(59 42 31 / 0.92);
 }
 .nav[data-tone="dark"] .brand,
 .nav[data-tone="dark"] .navSignIn,
 .nav[data-tone="dark"] .navPart {
-  color: #fff;
+  color: #fbf7ef;
 }
 .nav .brand,
 .nav .navSignIn,
@@ -277,14 +326,15 @@
 }
 /* BETA beside the name, in the page's neutrals rather than the app's violet. */
 .beta {
-  background: var(--neutral-2);
-  box-shadow: inset 0 0 0 1px var(--border);
-  color: var(--text-secondary);
+  background: var(--lp-paper-deep);
+  box-shadow: inset 0 0 0 1px var(--lp-hair);
+  color: var(--lp-muted);
+  font-family: var(--font-body);
 }
 .nav[data-tone="dark"] .beta {
-  background: oklch(100% 0 0 / 0.12);
+  background: rgb(251 247 239 / 0.12);
   box-shadow: none;
-  color: oklch(100% 0 0 / 0.78);
+  color: #e6dccd;
 }
 .navInner {
   display: flex;
@@ -300,15 +350,16 @@
   gap: 0.5rem;
   justify-self: start;
   border-radius: 0.5rem;
-  color: var(--foreground);
-  font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-weight: 600;
-  letter-spacing: -0.03em;
+  color: var(--lp-ink);
+  font-family: var(--lp-serif);
+  font-size: 1.4375rem;
+  font-variation-settings: "SOFT" 100, "WONK" 0;
+  font-weight: 560;
+  letter-spacing: -0.02em;
   text-decoration: none;
 }
 .brand:focus-visible {
-  outline: 2px solid var(--lp-accent);
+  outline: 2px solid var(--lp-focus);
   outline-offset: 3px;
 }
 /* The page's parts: on a wide screen only, centred in the bar. */
@@ -343,7 +394,7 @@
   }
 }
 .navPart:focus-visible {
-  outline: 2px solid var(--lp-accent);
+  outline: 2px solid var(--lp-focus);
   outline-offset: 1px;
 }
 .nav[data-tone="dark"] .navPart {
@@ -392,11 +443,11 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .navSignIn:hover {
-    color: var(--lp-accent);
+    color: var(--lp-accent-ink);
   }
 }
 .navSignIn:focus-visible {
-  outline: 2px solid var(--lp-accent);
+  outline: 2px solid var(--lp-focus);
   outline-offset: 1px;
 }
 /* The bar's pill: 36 px to look at (40 px on a wide screen), 44 px to tap. */
@@ -419,13 +470,13 @@
 }
 
 /* ---- Hero ------------------------------------------------------------------------------------ */
-/* The board itself: white, its dot grid, and a hairline where it ends. */
+/* The page's cream: the words, then the painting on its torn sheet with the iPad over its lower edge.
+   The problem strip's torn top edge ends it. */
 .hero {
   position: relative;
   isolation: isolate;
-  border-bottom: 1px solid var(--border);
-  padding-top: clamp(3rem, 1.5rem + 4vw, 6rem);
-  padding-bottom: clamp(2.5rem, 1.5rem + 2.5vw, 4rem);
+  padding-top: clamp(2.5rem, 1rem + 3vw, 4.5rem);
+  padding-bottom: clamp(3rem, 2rem + 2.5vw, 4.5rem);
   overflow-x: clip;
   text-align: center;
 }
@@ -442,11 +493,12 @@
 .heroEyebrow {
   margin-bottom: 1.25rem;
 }
-/* Huge and tight: 46 px on a phone, 104 px on a laptop, 120 px on a wide screen. */
+/* Big and warm: 40 px on a phone (its two lines still fit at 320 px), 90 px on a laptop, 100 px on a
+   wide screen. */
 .heroTitle {
-  font-size: clamp(2.875rem, 1.6rem + 5.6vw, 7.5rem);
-  letter-spacing: -0.052em;
-  line-height: 0.98;
+  font-size: clamp(2.125rem, 1.4rem + 4.7vw, 6.25rem);
+  letter-spacing: -0.032em;
+  line-height: 1;
 }
 /* The space after "Math practice": a block of its own, so the first line always ends there. */
 .titleBreak {
@@ -458,10 +510,10 @@
   margin: 0.14em 0.1em 0.04em;
 }
 .heroCircle > svg[data-kind] {
-  top: -0.03em;
-  left: -0.16em;
-  width: calc(100% + 0.32em);
-  height: calc(100% + 0.17em);
+  top: -0.1em;
+  left: -0.17em;
+  width: calc(100% + 0.34em);
+  height: calc(100% + 0.25em);
 }
 /* the ring's pen at the check's weight: about 5 px on a laptop, 2.5 px on a phone */
 .heroCircle > svg[data-kind] path {
@@ -475,11 +527,11 @@
 }
 .heroLede {
   max-width: 36rem;
-  margin: 1.75rem auto 0;
+  margin: 1.5rem auto 0;
   text-wrap: balance;
 }
 .hero .actions {
-  margin-top: 2.5rem;
+  margin-top: 2.25rem;
 }
 .terms {
   margin: 1rem auto 0;
@@ -488,20 +540,25 @@
   line-height: 1.45;
   text-wrap: balance;
 }
-/* The iPad: the hero's star, on the board's grey table, at the wide measure. */
+/* The painting (HeroScene) at the wide measure, under the words. */
 .heroStage {
   width: min(100% - 2 * var(--lp-gutter), var(--lp-wide));
-  margin: clamp(3.5rem, 2rem + 4vw, 6rem) auto 0;
-  border-radius: var(--lp-card-radius);
-  padding: clamp(2.5rem, 1rem + 4vw, 5rem) clamp(1.5rem, 0rem + 5vw, 6rem) clamp(1rem, 0.5rem + 1vw, 1.5rem);
-  background: var(--lp-table);
+  margin: clamp(2rem, 1rem + 2vw, 3.25rem) auto 0;
 }
-/* On a phone the iPad runs off both edges (device.module.css): the table runs edge to edge too. */
+/* Right after the hero (HeroReplay): the iPad on the board's warm table, a band of the deeper cream. */
+.replayBand {
+  padding-block: clamp(3.5rem, 2rem + 4vw, 6.5rem) clamp(2.5rem, 1.5rem + 3vw, 4.5rem);
+  overflow-x: clip;
+  background: var(--lp-paper-deep);
+}
+.heroDevice {
+  width: min(100% - 2 * var(--lp-gutter), 60rem);
+  margin: 0 auto;
+}
+/* On a phone the iPad runs off both edges (device.module.css), so it takes the whole width. */
 @media (max-width: 639px) {
-  .heroStage {
+  .heroDevice {
     width: auto;
-    border-radius: 0;
-    padding-inline: 0;
   }
 }
 /* On a phone the two ways on sit side by side; on the narrowest (under 360 px) the link goes under
@@ -572,8 +629,21 @@
 .tintYellow {
   background: var(--lp-tint-yellow);
 }
+.tintSage {
+  background: var(--lp-tint-sage);
+}
+.tintPeach {
+  background: var(--lp-tint-peach);
+}
+.tintButter {
+  background: var(--lp-tint-butter);
+}
+.tintLavender {
+  background: var(--lp-tint-lavender);
+}
+/* the board on its tint: white, a warm hairline, lifted by a warm shadow */
 .stepCard > figure {
-  border-color: oklch(0% 0 0 / 0.06);
+  border-color: rgb(59 42 31 / 0.08);
   border-radius: clamp(0.875rem, 0.5rem + 1vw, 1.25rem);
   box-shadow: var(--lp-lift);
 }
@@ -642,14 +712,17 @@
     padding-bottom: 0.375rem;
   }
 }
-/* The Progress page on its own background (#f8f8f8), set in a frame like a screen on the table. */
+/* The Progress page on its own background (#f8f8f8), set in a frame like a screen on the table, with
+   a shadow under it a shade darker than the band. */
 .progressShot {
   overflow: hidden;
   margin: clamp(3rem, 2rem + 3vw, 4.5rem) 0 0;
   border-radius: clamp(1.25rem, 0.75rem + 1.5vw, 2rem);
   padding: clamp(0.5rem, 0rem + 1.5vw, 1.25rem);
   background: #f8f8f8;
-  box-shadow: 0 0 0 1px oklch(100% 0 0 / 0.14);
+  box-shadow:
+    0 0 0 1px rgb(251 247 239 / 0.16),
+    0 28px 56px -24px rgb(16 9 4 / 0.55);
 }
 .progressShot img {
   display: block;
@@ -699,16 +772,18 @@
   place-items: center;
   margin-bottom: 1.25rem;
   border-radius: 0.75rem;
-  background: oklch(100% 0 0 / 0.08);
-  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 0.1);
-  color: #fff;
+  background: rgb(251 247 239 / 0.08);
+  box-shadow: inset 0 0 0 1px rgb(251 247 239 / 0.12);
+  color: #f3e3c8;
 }
 .featureTitle {
   margin: 0;
-  font-size: 1.125rem;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.3;
+  font-family: var(--lp-serif);
+  font-size: 1.375rem;
+  font-variation-settings: "SOFT" 100, "WONK" 0;
+  font-weight: 520;
+  letter-spacing: -0.012em;
+  line-height: 1.2;
 }
 .featureBody {
   margin: 0.5rem 0 0;
@@ -726,8 +801,8 @@
   max-width: 60rem;
   margin: clamp(3rem, 2rem + 3vw, 4.5rem) auto 0;
   border-radius: var(--lp-card-radius);
-  background: var(--background);
-  box-shadow: 0 0 0 1px oklch(0% 0 0 / 0.05), var(--lp-lift);
+  background: var(--lp-card);
+  box-shadow: 0 0 0 1px rgb(59 42 31 / 0.06), var(--lp-lift);
 }
 .priceMain {
   padding: clamp(2rem, 1rem + 4vw, 4rem);
@@ -751,11 +826,11 @@
 }
 .planName {
   margin: 0;
-  color: var(--lp-muted);
-  font-size: 1.0625rem;
-  font-variant-caps: all-small-caps;
+  color: var(--lp-eyebrow);
+  font-size: 0.8125rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 .price {
   display: flex;
@@ -770,11 +845,12 @@
   }
 }
 .priceAmount {
-  font-family: var(--font-display);
+  font-family: var(--lp-serif);
   font-size: clamp(4.5rem, 3rem + 5vw, 7rem);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.055em;
+  font-variation-settings: "SOFT" 100, "WONK" 0, "opsz" 72;
+  font-weight: 500;
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: -0.035em;
   line-height: 0.95;
 }
 .pricePer {
@@ -804,11 +880,11 @@
 }
 .includesLabel {
   margin: 0;
-  color: var(--lp-muted);
-  font-size: 1.0625rem;
-  font-variant-caps: all-small-caps;
+  color: var(--lp-eyebrow);
+  font-size: 0.8125rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 .includes {
   display: grid;
@@ -834,7 +910,7 @@
   margin-top: 0.0625rem;
   border-radius: 50%;
   background: var(--lp-tint-blue);
-  color: var(--lp-accent);
+  color: var(--lp-accent-ink);
 }
 
 /* ---- Questions ------------------------------------------------------------------------------- */
@@ -878,10 +954,13 @@
   justify-content: space-between;
   gap: 1.5rem;
   padding: 1.25rem 0;
-  font-size: clamp(1.125rem, 1.05rem + 0.35vw, 1.3125rem);
-  font-weight: 600;
-  letter-spacing: -0.018em;
-  line-height: 1.3;
+  /* v4: the questions in the headlines' serif, a size up */
+  font-family: var(--lp-serif);
+  font-size: clamp(1.25rem, 1.12rem + 0.5vw, 1.5rem);
+  font-variation-settings: "SOFT" 100, "WONK" 0;
+  font-weight: 500;
+  letter-spacing: -0.012em;
+  line-height: 1.28;
   list-style: none;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -891,7 +970,7 @@
 }
 .question:focus-visible {
   border-radius: 0.5rem;
-  outline: 2px solid var(--lp-accent);
+  outline: 2px solid var(--lp-focus);
   outline-offset: 2px;
 }
 /* A plus that turns into a minus as the answer opens. */
@@ -936,7 +1015,7 @@
 }
 .qa[open] .toggle::before,
 .qa[open] .toggle::after {
-  background: var(--background);
+  background: var(--lp-paper);
 }
 .qa[open] .toggle::after {
   transform: translate(-50%, -50%) rotate(0deg);
@@ -957,7 +1036,7 @@
   min-height: 2.75rem;
   align-items: center;
   margin-top: 0.25rem;
-  color: var(--lp-accent);
+  color: var(--lp-accent-ink);
   font-weight: 500;
   text-decoration: none;
 }
@@ -967,7 +1046,7 @@
 }
 .answerLink:focus-visible {
   border-radius: 0.375rem;
-  outline: 2px solid var(--lp-accent);
+  outline: 2px solid var(--lp-focus);
   outline-offset: 2px;
 }
 /* Where the browser can animate to `auto` (and motion is welcome), an answer slides open. */
@@ -990,12 +1069,15 @@
 }
 
 /* ---- Join: the last band, the way in -------------------------------------------------------- */
-/* Flat accent blue, edge to edge; everything on it white (5.3:1), the button white with blue words. */
+/* Flat accent blue, edge to edge, torn at both edges (TornEdge); everything on it white (5.3:1), the
+   button the page's white paper with blue words. */
 .join {
-  --lp-accent: #fff;
-  --lp-accent-strong: var(--lp-tint-blue);
+  --lp-accent: var(--lp-card);
+  --lp-accent-strong: #f1e9da;
+  --lp-accent-ink: #fff;
+  --lp-focus: #fff;
   padding-block: clamp(6rem, 3rem + 8vw, 12rem);
-  background: #0562ef;
+  background: var(--lp-join);
   color: #fff;
   text-align: center;
 }
@@ -1006,9 +1088,9 @@
 }
 .joinTitle {
   max-width: 14ch;
-  font-size: clamp(3rem, 1.25rem + 7vw, 8.5rem);
-  letter-spacing: -0.055em;
-  line-height: 0.96;
+  font-size: clamp(3rem, 1.4rem + 6.2vw, 7.5rem);
+  letter-spacing: -0.03em;
+  line-height: 1;
 }
 .joinBody {
   max-width: 32rem;
@@ -1129,10 +1211,10 @@
   gap: 0.75rem;
   border-radius: 999px;
   padding: 0 0.5rem 0 1.5rem;
-  background: var(--background);
+  background: var(--lp-card);
   box-shadow:
-    0 0 0 1px oklch(0% 0 0 / 0.08),
-    0 8px 28px -6px oklch(0% 0 0 / 0.22);
+    0 0 0 1px rgb(59 42 31 / 0.1),
+    0 10px 28px -8px rgb(59 42 31 / 0.3);
   pointer-events: auto;
 }
 .stickyNote {
@@ -1172,7 +1254,16 @@
 }
 
 /* ---- The legal footer under this page (the platform layout's LegalFooter) -------------------- */
-/* On the landing column, not the app's wider one, with links big enough to tap. */
+/* On the landing column, not the app's wider one, with links big enough to tap; on the page's cream
+   (the tokens are .page's, so the colors are written out), under the Join band's torn bottom edge. */
+.page + :global(footer) {
+  border-top: 0;
+  background: #fbf7ef;
+  color: #6b5d4f;
+}
+.page + :global(footer) a {
+  color: #6b5d4f;
+}
 .page + :global(footer) > div {
   width: min(100% - 2 * clamp(1rem, 0.5rem + 2.5vw, 2.5rem), 72rem);
   max-width: none;

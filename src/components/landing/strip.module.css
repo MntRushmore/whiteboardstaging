@@ -1,7 +1,7 @@
-/* The problem strip under the hero (ProblemStrip.tsx): a band between two hairlines, a line from each
-   grade written in the board's hand, drifting left. Flat white, like the board; the only fade is the
-   mask at the two edges, so a line slides in and out instead of being cut. The band clips its row,
-   so it never widens the page. */
+/* The problem strip under the hero (ProblemStrip.tsx): a torn strip of white paper (v4: its torn
+   edges are TornEdges in the page, round it), a line from each grade written in the board's hand,
+   drifting left. Flat white, like the board; the only fade is the mask at the two edges, so a line
+   slides in and out instead of being cut. The band clips its row, so it never widens the page. */
 
 .band {
   /* the hand's scale: a phone's strip is smaller, but every line still reads at a glance */
@@ -11,8 +11,7 @@
   --fade: 1.5rem;
   position: relative;
   overflow: clip;
-  border-block: 1px solid var(--lp-hair);
-  background: var(--background);
+  background: var(--lp-card, #fff);
 }
 @media (min-width: 640px) {
   .band {
@@ -30,7 +29,7 @@
 }
 /* the keyboard's focus ring, on the band (the strip itself fades out at its edges) */
 .band:has(.viewport:focus-visible) {
-  outline: 2px solid var(--lp-accent);
+  outline: 2px solid var(--lp-focus, #0562ef);
   outline-offset: -3px;
 }
 

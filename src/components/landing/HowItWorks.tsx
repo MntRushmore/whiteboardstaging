@@ -33,7 +33,7 @@ function PathPicture({ alt, phoneAlt }: { alt: string; phoneAlt: string }) {
 }
 
 /** One tint per step (landing.module.css --lp-tint-*). */
-const TINTS = [styles.tintBlue, styles.tintGreen, styles.tintYellow] as const;
+const TINTS = [styles.tintSage, styles.tintPeach, styles.tintButter] as const;
 
 export function HowItWorks() {
   const copy = LANDING_COPY.how;

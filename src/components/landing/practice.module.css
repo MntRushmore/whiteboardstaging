@@ -1,7 +1,7 @@
 /* What they'll practice: a segmented grade picker (a native radio group) over the chosen grade's
-   skill path, laid out on a card in the path's own purple tint (the app's "Next up"). CSS shows the
-   chosen panel with :has(); where :has() is missing every panel shows and the chips hide, so nothing
-   is ever out of reach. */
+   skill path, laid out on a card in the path's own purple tint (the app's "Next up"; v4: the page's
+   lavender). CSS shows the chosen panel with :has(); where :has() is missing every panel shows and
+   the chips hide, so nothing is ever out of reach. */
 
 .picker {
   margin-top: clamp(3rem, 2rem + 3vw, 4.5rem);
@@ -18,6 +18,7 @@
   border-radius: 1.25rem;
   padding: 0.25rem;
   background: var(--lp-table, #f1f2f5);
+  box-shadow: inset 0 0 0 1px var(--lp-hair, transparent);
 }
 .chipWide {
   grid-column: span 3;
@@ -77,13 +78,13 @@
   }
 }
 .chipInput:checked + .chipFace {
-  background: var(--background);
-  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.08), 0 2px 8px oklch(0% 0 0 / 0.06);
+  background: var(--lp-card, var(--background));
+  box-shadow: 0 1px 2px rgb(59 42 31 / 0.1), 0 2px 8px rgb(59 42 31 / 0.08);
   color: var(--foreground);
   font-weight: 600;
 }
 .chipInput:focus-visible + .chipFace {
-  outline: 2px solid #0562ef;
+  outline: 2px solid var(--lp-focus, #0562ef);
   outline-offset: 2px;
 }
 
@@ -92,7 +93,7 @@
   margin-top: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
   border-radius: var(--lp-card-radius, 2rem);
   padding: clamp(2rem, 1rem + 4vw, 4.5rem) clamp(1.25rem, 0rem + 4vw, 4rem);
-  background: var(--lp-tint-purple, #f2edff);
+  background: var(--lp-tint-lavender, var(--lp-tint-purple, #f2edff));
 }
 
 /* ---- The panels ------------------------------------------------------------------------------ */
@@ -175,10 +176,11 @@
 }
 .panelTitle {
   margin: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-lp-serif, var(--font-display));
   font-size: clamp(1.75rem, 1.35rem + 1.4vw, 2.5rem);
-  font-weight: 600;
-  letter-spacing: -0.035em;
+  font-variation-settings: "SOFT" 100, "WONK" 0;
+  font-weight: 520;
+  letter-spacing: -0.02em;
   line-height: 1.1;
 }
 .panelNote {
@@ -220,10 +222,10 @@
   flex: none;
   place-items: center;
   border-radius: 50%;
-  background: var(--background);
+  background: var(--lp-card, var(--background));
   box-shadow:
-    0 0 0 1px oklch(0% 0 0 / 0.05),
-    0 6px 16px -6px oklch(40% 0.1 290 / 0.35);
+    0 0 0 1px rgb(59 42 31 / 0.06),
+    0 6px 16px -6px rgb(74 52 96 / 0.35);
   color: var(--foreground);
 }
 .stopText {
@@ -294,8 +296,8 @@
 .course {
   border-radius: 1.25rem;
   padding: 1.5rem;
-  background: var(--background);
-  box-shadow: 0 0 0 1px oklch(0% 0 0 / 0.04);
+  background: var(--lp-card, var(--background));
+  box-shadow: 0 0 0 1px rgb(59 42 31 / 0.05);
 }
 .courseName {
   margin: 0;
@@ -320,7 +322,7 @@
 .courseTopics li {
   border-radius: 999px;
   padding: 0.25rem 0.625rem;
-  background: var(--lp-tint-purple, #f2edff);
+  background: var(--lp-tint-lavender, var(--lp-tint-purple, #f2edff));
   font-size: 0.875rem;
   line-height: 1.35;
 }

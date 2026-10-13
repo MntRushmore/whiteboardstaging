@@ -5,8 +5,8 @@
 
 /* ---- Layout ------------------------------------------------------------------------------------ */
 .band {
-  /* the board's table under the devices, set apart from Ask's white band above */
-  background: var(--lp-table);
+  /* v4: a band of the deeper cream, set apart from Ask's above */
+  background: var(--lp-paper-deep, var(--lp-table));
   /* the devices' own colours (the hero iPad's) */
   --dv-bezel: #0b0b0d;
   --dv-edge: #c7c8cc;
@@ -47,10 +47,11 @@
 }
 .title {
   margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(1.5rem, 1.3rem + 0.7vw, 1.875rem);
-  font-weight: 600;
-  letter-spacing: -0.03em;
+  font-family: var(--font-lp-serif, var(--font-display));
+  font-size: clamp(1.625rem, 1.35rem + 0.8vw, 2.125rem);
+  font-variation-settings: "SOFT" 100, "WONK" 0;
+  font-weight: 520;
+  letter-spacing: -0.02em;
   line-height: 1.1;
 }
 .body {
