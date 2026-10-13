@@ -1,0 +1,884 @@
+/* "Pencil, finger or keyboard." (Devices.tsx): three devices drawn in CSS in the hero iPad's house
+   style (device.module.css: a near-black bezel, a hairline of aluminium round it, one soft shadow),
+   each with a real moment of the product on it. Flat fills only. Everything inside a device scales
+   with it (container units), so a picture keeps its proportions from a phone to a wide screen. */
+
+/* ---- Layout ------------------------------------------------------------------------------------ */
+.band {
+  /* the board's table under the devices, set apart from Ask's white band above */
+  background: var(--lp-table);
+  /* the devices' own colours (the hero iPad's) */
+  --dv-bezel: #0b0b0d;
+  --dv-edge: #c7c8cc;
+  --dv-edge-2: #e3e4e7;
+}
+
+.cards {
+  display: grid;
+  width: min(100% - 2 * var(--lp-gutter), var(--lp-wide));
+  gap: 4.5rem 1.5rem;
+  margin: clamp(3rem, 2rem + 4vw, 5.5rem) auto 0;
+  padding: 0;
+  list-style: none;
+}
+.card {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+}
+/* each device stands on the same line, as on a shelf */
+.stage {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  justify-content: center;
+  justify-self: stretch;
+}
+.text {
+  max-width: 30rem;
+  margin-top: clamp(1.75rem, 1.25rem + 1.2vw, 2.5rem);
+}
+.name {
+  margin: 0 0 0.5rem;
+  color: var(--lp-muted);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 1.3rem + 0.7vw, 1.875rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.body {
+  margin: 0.75rem 0 0;
+  color: var(--lp-muted);
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* Phones: one under another, each device as big as reads well.
+   Heights, for widths w: the tablet picture is 1.282w tall, the laptop 0.595w, the phone 2.083w. */
+.tabletPicture {
+  width: min(100%, 22rem);
+}
+.laptopPicture {
+  width: 100%;
+}
+.phonePicture {
+  width: min(56%, 13.5rem);
+}
+/* the laptop runs off the screen's right edge (the band clips it), so its board and the Type bar's
+   box read at a phone's size: what is typed, its preview, the line on the board and its check */
+@media (max-width: 639px) {
+  .card[data-device="laptop"] .stage {
+    justify-content: flex-start;
+  }
+  /* the lid's left edge on the words' left edge: the base runs a little past it, off the screen */
+  .laptopPicture {
+    width: 158%;
+    flex: none;
+    margin-left: -11%;
+  }
+}
+
+/* A tablet held sideways: the tablet and the phone side by side, one height, the laptop across under
+   them; each device centred over its words. */
+@media (min-width: 640px) {
+  .cards {
+    grid-template-columns: 1fr 1fr;
+    grid-auto-flow: row dense;
+    gap: 5rem 2.5rem;
+  }
+  .card {
+    justify-items: center;
+    text-align: center;
+  }
+  .card[data-device="laptop"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .text {
+    max-width: 26rem;
+  }
+  .card[data-device="laptop"] .text {
+    max-width: 34rem;
+  }
+  .tabletPicture {
+    width: min(92%, 24rem);
+  }
+  /* as tall as the tablet: 1.282 / 2.083 of its width */
+  .phonePicture {
+    width: min(56.6%, 14.8rem);
+  }
+  .laptopPicture {
+    width: min(100%, 50rem);
+  }
+}
+
+/* Wide: all three on one shelf, the laptop's column twice as wide, the three devices one height (the
+   laptop's), each centred over its words, the words starting on one line. */
+@media (min-width: 1100px) {
+  .cards {
+    grid-template-columns: 1fr 2fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 0 clamp(2rem, 1rem + 1.6vw, 3.5rem);
+  }
+  .card {
+    grid-row: span 2;
+    grid-template-rows: subgrid;
+  }
+  .card[data-device="laptop"] {
+    grid-column: auto;
+    grid-row: span 2;
+  }
+  .text {
+    max-width: 22rem;
+  }
+  .card[data-device="laptop"] .text {
+    max-width: 30rem;
+  }
+  .laptopPicture {
+    width: 100%;
+  }
+  /* the laptop's height (0.595 of its 2 columns' width) over each one's own ratio */
+  .tabletPicture {
+    width: 92.8%;
+  }
+  .phonePicture {
+    width: 57.1%;
+  }
+}
+
+/* ---- The tablet (an iPad upright, Apple Pencil at its side) ----------------------------------- */
+.tabletPicture {
+  container-type: inline-size;
+}
+.tablet {
+  position: relative;
+  width: 91cqw;
+  padding: 3.1cqw;
+  border-radius: 7cqw;
+  background: var(--dv-bezel);
+  box-shadow:
+    0 0 0 max(1px, 0.24cqw) var(--dv-edge),
+    0 0 0 max(2px, 0.5cqw) var(--dv-edge-2),
+    0 4cqw 8cqw -2cqw oklch(0% 0 0 / 0.22),
+    0 1cqw 2cqw oklch(0% 0 0 / 0.07);
+}
+.tabletCamera {
+  position: absolute;
+  top: 1.25cqw;
+  left: 50%;
+  width: 0.75cqw;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #1c1c22;
+  transform: translateX(-50%);
+}
+.tabletScreen {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 820 / 1180;
+  border-radius: 4cqw;
+  background: #f2f4f7;
+}
+.shot {
+  object-fit: cover;
+}
+/* Apple Pencil on the long side: a white body, its flat end up, its tip down */
+.pencil {
+  position: absolute;
+  top: 13%;
+  left: calc(100% + 0.9cqw);
+  width: 4.4cqw;
+  height: 62%;
+  border-radius: 1.4cqw 1.4cqw 0.6cqw 0.6cqw;
+  background: #fbfbfc;
+  box-shadow:
+    inset 0 0 0 max(1px, 0.24cqw) #c9ccd2,
+    0 1.2cqw 2.4cqw -0.4cqw oklch(0% 0 0 / 0.16);
+}
+.pencil::after {
+  position: absolute;
+  top: calc(100% - 0.2cqw);
+  left: 0;
+  width: 100%;
+  height: 6.5cqw;
+  background: #c9ccd2;
+  clip-path: polygon(6% 0, 94% 0, 58% 96%, 50% 100%, 42% 96%);
+  content: "";
+}
+
+/* ---- The phone ---------------------------------------------------------------------------------- */
+.phonePicture {
+  container-type: inline-size;
+}
+.phone {
+  width: 100cqw;
+  padding: 3.5cqw;
+  border-radius: 16cqw;
+  background: var(--dv-bezel);
+  box-shadow:
+    0 0 0 max(1px, 0.5cqw) var(--dv-edge),
+    0 0 0 max(2px, 1cqw) var(--dv-edge-2),
+    0 6cqw 12cqw -3cqw oklch(0% 0 0 / 0.22),
+    0 1.5cqw 3cqw oklch(0% 0 0 / 0.07);
+}
+.phoneScreen {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12.6cqw;
+  background: #f2f4f7;
+}
+/* the status bar's strip, over which the board's own grey runs, and the Dynamic Island */
+.statusBar {
+  display: block;
+  position: relative;
+  aspect-ratio: 390 / 47;
+}
+.island {
+  position: absolute;
+  top: 2.7cqw;
+  left: 50%;
+  width: 30cqw;
+  height: 8.8cqw;
+  border-radius: 999px;
+  background: #000;
+  transform: translateX(-50%);
+}
+.phoneBoard {
+  position: relative;
+  aspect-ratio: 390 / 797;
+}
+
+/* The ink drawn back over a real board's screenshot (its own px) */
+.ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.ink path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.kid {
+  stroke: var(--lp-pen-kid, #1d1d1d);
+}
+.tutor {
+  stroke: var(--lp-pen-tutor, #4465e9);
+}
+/* A stroke waits a little past its start, behind a long gap: Safari draws a round cap at a dash of
+   length 0, so a stroke parked exactly at its start shows as a dot before it is written. The same for
+   the laptop's handwriting and check (ink.module.css parks them at 1 1). */
+@media (prefers-reduced-motion: no-preference) {
+  .ink path {
+    stroke-dasharray: 1 2;
+    stroke-dashoffset: 1.01;
+    animation: dv-draw var(--for, 200ms) cubic-bezier(0.32, 0, 0.18, 1) var(--at, 0ms) both;
+  }
+  .board .typedInk path,
+  .board .boardCheck path {
+    stroke-dasharray: 1 2;
+    stroke-dashoffset: 1.01;
+  }
+}
+@keyframes dv-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ---- The laptop --------------------------------------------------------------------------------- */
+.laptopPicture {
+  container-type: inline-size;
+}
+.laptop {
+  width: 100cqw;
+}
+.lid {
+  position: relative;
+  width: 86cqw;
+  margin: 0 auto;
+  padding: 1.5cqw 1.5cqw 1.9cqw;
+  border-radius: 2.6cqw 2.6cqw 0.4cqw 0.4cqw;
+  background: var(--dv-bezel);
+  box-shadow:
+    0 0 0 max(1px, 0.14cqw) var(--dv-edge),
+    0 0 0 max(2px, 0.3cqw) var(--dv-edge-2);
+}
+.lidCamera {
+  position: absolute;
+  top: 0.5cqw;
+  left: 50%;
+  width: 0.45cqw;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #1c1c22;
+  transform: translateX(-50%);
+}
+.screen {
+  position: relative;
+  overflow: hidden;
+  container-type: inline-size;
+  aspect-ratio: 800 / 520;
+  border-radius: 0.5cqw;
+  background: #f2f4f7;
+}
+/* the base: the keyboard deck's front edge, a thin aluminium slab with its thumb notch */
+.base {
+  position: relative;
+  height: 2cqw;
+  margin-top: 0.15cqw;
+  border-radius: 0.3cqw 0.3cqw 1.6cqw 1.6cqw / 0.3cqw 0.3cqw 1.2cqw 1.2cqw;
+  background: #dcdde1;
+  box-shadow:
+    inset 0 -0.55cqw 0 #c9cace,
+    0 2.2cqw 3.6cqw -1.6cqw oklch(0% 0 0 / 0.3),
+    0 0.6cqw 1.2cqw -0.4cqw oklch(0% 0 0 / 0.1);
+}
+.notch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 13cqw;
+  height: 0.8cqw;
+  border-radius: 0 0 1cqw 1cqw;
+  background: #c9cace;
+  transform: translateX(-50%);
+}
+
+/* The board inside, laid out in its own px (800 × 520): 1 board px is --u. */
+.board {
+  --u: calc(100cqw / 800);
+  position: absolute;
+  inset: 0;
+  color: #0f172b;
+  font-family: var(--font-body);
+  line-height: 1;
+}
+.board > * {
+  position: absolute;
+}
+.page {
+  top: calc(var(--u) * 44);
+  left: calc(var(--u) * 16);
+  width: calc(var(--u) * 768);
+  height: calc(var(--u) * 431);
+  border-radius: calc(var(--u) * 8);
+  background: #fff;
+  box-shadow:
+    0 0 0 max(0.5px, calc(var(--u) * 1)) rgb(15 23 42 / 0.07),
+    0 calc(var(--u) * 1) calc(var(--u) * 3) rgb(15 23 42 / 0.04);
+}
+.boardInk svg {
+  width: 100%;
+}
+/* the typed line (a .boardInk too), written in by the board */
+.typedInk {
+  z-index: 1;
+}
+.boardCheck {
+  font-size: calc(var(--u) * 31);
+  line-height: 1;
+}
+.boardCheck svg {
+  margin: 0;
+}
+
+/* lucide pictures, at the board's sizes */
+.i16 {
+  width: calc(var(--u) * 16);
+  height: calc(var(--u) * 16);
+}
+.i18 {
+  width: calc(var(--u) * 18);
+  height: calc(var(--u) * 18);
+}
+.i20 {
+  width: calc(var(--u) * 20);
+  height: calc(var(--u) * 20);
+}
+.i22 {
+  width: calc(var(--u) * 22);
+  height: calc(var(--u) * 22);
+}
+.i24 {
+  width: calc(var(--u) * 24);
+  height: calc(var(--u) * 24);
+}
+
+/* The bar across the top: Back, Help me ▾, the day's pill, More */
+.round,
+.helpMe,
+.today,
+.more {
+  top: calc(var(--u) * 16);
+  display: flex;
+  height: calc(var(--u) * 48);
+  align-items: center;
+  border-radius: 999px;
+}
+.round,
+.more {
+  border: max(0.5px, calc(var(--u) * 1)) solid #e2e8f0;
+  background: #fff;
+  box-shadow: 0 calc(var(--u) * 1) calc(var(--u) * 2) rgb(15 23 42 / 0.05);
+  color: #45556c;
+}
+.back {
+  left: calc(var(--u) * 16);
+  width: calc(var(--u) * 48);
+  justify-content: center;
+}
+.helpMe {
+  left: calc(var(--u) * 76);
+  overflow: hidden;
+  background: #155dfc;
+  box-shadow: 0 calc(var(--u) * 1) calc(var(--u) * 2) rgb(15 23 42 / 0.06);
+  color: #fff;
+  font-size: calc(var(--u) * 17);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.helpMain {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  gap: calc(var(--u) * 8);
+  padding: 0 calc(var(--u) * 13) 0 calc(var(--u) * 16);
+}
+.helpMore {
+  display: flex;
+  width: calc(var(--u) * 44);
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding-right: calc(var(--u) * 4);
+  border-left: max(0.5px, calc(var(--u) * 1)) solid rgb(255 255 255 / 0.3);
+}
+/* the day's pill (src/components/daily): cream, "Today", five stars, the count */
+.today {
+  right: calc(var(--u) * 121);
+  gap: calc(var(--u) * 10);
+  padding: 0 calc(var(--u) * 18) 0 calc(var(--u) * 16);
+  border: max(0.5px, calc(var(--u) * 1)) solid oklch(90% 0.05 70);
+  background: oklch(97.6% 0.03 85);
+  box-shadow:
+    0 calc(var(--u) * 6) calc(var(--u) * 18) oklch(0% 0 0 / 0.065),
+    0 calc(var(--u) * 1) calc(var(--u) * 3) oklch(0% 0 0 / 0.035);
+  color: #1c1c1c;
+  font-size: calc(var(--u) * 15);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.todayWord {
+  color: #5e5e5e;
+  font-weight: 600;
+}
+.stars {
+  display: flex;
+  gap: calc(var(--u) * 2);
+}
+.star {
+  width: calc(var(--u) * 17);
+  height: calc(var(--u) * 17);
+  color: oklch(80% 0.03 70);
+  fill: transparent;
+}
+.more {
+  right: calc(var(--u) * 16);
+  gap: calc(var(--u) * 6);
+  padding: 0 calc(var(--u) * 16) 0 calc(var(--u) * 14);
+  color: #62748e;
+  font-size: calc(var(--u) * 14);
+  font-weight: 500;
+}
+
+/* The soft caret on the board where Enter writes next (typeMath/boardMarks.tsx) */
+.caret {
+  width: calc(var(--u) * 3);
+}
+.caretBar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(var(--u) * 2.5);
+  height: 100%;
+  border-radius: 999px;
+  background: var(--lp-pen-kid, #1d1d1d);
+  opacity: 0.6;
+}
+.caretLine {
+  position: absolute;
+  left: 0;
+  height: calc(var(--u) * 2);
+  border-radius: 999px;
+  background: var(--lp-pen-kid, #1d1d1d);
+  opacity: 0.25;
+}
+/* finished: the line is written and the caret waits under it */
+.caretBefore {
+  visibility: hidden;
+}
+
+/* Type it's bar: the box (what is typed, and the preview in the board's hand), New problem, Enter,
+   the maths keys and Hide */
+.bar {
+  top: calc(var(--u) * 310);
+  left: calc(var(--u) * 40);
+  display: grid;
+  width: calc(var(--u) * 720);
+  height: calc(var(--u) * 126);
+  box-sizing: border-box;
+  grid-template-columns: 1fr calc(var(--u) * 147) calc(var(--u) * 106);
+  grid-template-rows: calc(var(--u) * 56) calc(var(--u) * 44);
+  gap: calc(var(--u) * 8);
+  padding: calc(var(--u) * 8);
+  border: max(0.5px, calc(var(--u) * 1)) solid rgb(226 232 240 / 0.8);
+  border-radius: calc(var(--u) * 20);
+  background: #fff;
+  box-shadow:
+    0 calc(var(--u) * 10) calc(var(--u) * 30) rgb(15 23 42 / 0.12),
+    0 calc(var(--u) * 2) calc(var(--u) * 6) rgb(15 23 42 / 0.06);
+}
+.field {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  border: max(0.5px, calc(var(--u) * 1)) solid #2b7fff;
+  border-radius: calc(var(--u) * 14);
+  background: #fff;
+  /* the box has the focus: blue, with its soft ring */
+  box-shadow: 0 0 0 calc(var(--u) * 3) rgb(43 127 255 / 0.2);
+}
+.input {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 0;
+  align-items: center;
+  padding: 0 calc(var(--u) * 12);
+  font-size: calc(var(--u) * 18);
+  white-space: nowrap;
+}
+.placeholder {
+  position: absolute;
+  left: calc(var(--u) * 12);
+  color: #90a1b9;
+}
+.typed {
+  display: flex;
+  height: 1.3em;
+  align-items: center;
+}
+/* a typed key: in from its moment until Enter empties the box; finished, the box is empty */
+.char {
+  display: inline-block;
+  overflow: hidden;
+  max-width: 0;
+}
+.textCaret {
+  width: max(1px, calc(var(--u) * 1.6));
+  height: 1.15em;
+  margin-left: max(1px, calc(var(--u) * 1));
+  background: #0f172b;
+}
+.previewSlot {
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+  flex: 0 0 0;
+  border-left: 0 solid #e2e8f0;
+  visibility: hidden;
+}
+.preview {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--u) * 12);
+  opacity: 0;
+  transform: translateY(-50%);
+}
+.preview svg {
+  width: 100%;
+}
+.newProblem,
+.enter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--u) * 14);
+  white-space: nowrap;
+}
+.newProblem {
+  gap: calc(var(--u) * 6);
+  border: max(0.5px, calc(var(--u) * 1)) solid #e2e8f0;
+  color: #314158;
+  font-size: calc(var(--u) * 15);
+  font-weight: 600;
+}
+/* Enter: dimmed while the box is empty */
+.enter {
+  opacity: 0.4;
+}
+.enterFace {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 8);
+  border-radius: inherit;
+  background: #0f172b;
+  color: #fff;
+  font-size: calc(var(--u) * 16);
+  font-weight: 600;
+}
+.keys {
+  display: flex;
+  grid-column: 1 / 3;
+  gap: calc(var(--u) * 6);
+}
+.key {
+  display: flex;
+  width: calc(var(--u) * 44);
+  height: calc(var(--u) * 44);
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--u) * 12);
+  background: #f1f5f9;
+  color: #1d293d;
+  font-size: calc(var(--u) * 18);
+  font-weight: 500;
+}
+.fracKey {
+  width: calc(var(--u) * 16);
+  height: calc(var(--u) * 24);
+}
+.serif {
+  font-family: ui-serif, Georgia, "Times New Roman", serif;
+}
+.serif sup {
+  margin-left: calc(var(--u) * 1);
+  font-size: calc(var(--u) * 12);
+  line-height: 0;
+}
+.hide {
+  display: flex;
+  width: calc(var(--u) * 44);
+  height: calc(var(--u) * 44);
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  color: #62748e;
+}
+
+/* The simple board's dock (kidmode/KidDock.tsx), folded to fit 800 px: Select, Pen, Eraser, Type |
+   Undo, More | the colours | New page | Ask */
+.dock {
+  top: calc(var(--u) * 445);
+  left: 50%;
+  display: flex;
+  height: calc(var(--u) * 66);
+  box-sizing: border-box;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+  padding: calc(var(--u) * 6);
+  border: max(0.5px, calc(var(--u) * 1)) solid rgb(226 232 240 / 0.9);
+  border-radius: calc(var(--u) * 22);
+  background: #fff;
+  box-shadow:
+    0 calc(var(--u) * 8) calc(var(--u) * 28) rgb(15 23 42 / 0.11),
+    0 calc(var(--u) * 1) calc(var(--u) * 3) rgb(15 23 42 / 0.06);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.tool {
+  display: flex;
+  min-width: calc(var(--u) * 48);
+  height: calc(var(--u) * 52);
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 5);
+  padding: 0 calc(var(--u) * 4);
+  border-radius: calc(var(--u) * 16);
+  color: #45556c;
+  font-size: calc(var(--u) * 11);
+  font-weight: 600;
+}
+.tool[data-state="pen"] {
+  background: rgb(219 234 254 / 0.8);
+  color: #1447e6;
+}
+.tool[data-state="open"] {
+  background: #f1f5f9;
+  color: #0f172b;
+}
+.undo {
+  display: flex;
+}
+.newPage {
+  min-width: calc(var(--u) * 64);
+  padding: 0 calc(var(--u) * 8);
+}
+.divider {
+  width: max(0.5px, calc(var(--u) * 1));
+  height: calc(var(--u) * 32);
+  margin: 0 calc(var(--u) * 6);
+  background: #e2e8f0;
+}
+.swatchSlot {
+  display: flex;
+  width: calc(var(--u) * 44);
+  height: calc(var(--u) * 52);
+  align-items: center;
+  justify-content: center;
+}
+.swatch {
+  width: calc(var(--u) * 28);
+  height: calc(var(--u) * 28);
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: inset 0 0 0 calc(var(--u) * 1) rgb(15 23 42 / 0.1);
+}
+.swatch[data-on] {
+  box-shadow:
+    0 0 0 calc(var(--u) * 2.5) #fff,
+    0 0 0 calc(var(--u) * 4.5) var(--dot);
+}
+.ask {
+  display: flex;
+  min-width: calc(var(--u) * 104);
+  height: calc(var(--u) * 52);
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 8);
+  margin-left: calc(var(--u) * 8);
+  padding: 0 calc(var(--u) * 20);
+  border-radius: calc(var(--u) * 16);
+  background: #155dfc;
+  color: #fff;
+  font-size: calc(var(--u) * 17);
+  font-weight: 600;
+}
+
+/* ---- Type it, played: each step at its moment (Devices.tsx sets the moments). Without motion the
+   picture is finished: the line written and checked, the box empty, the caret under the line. ---- */
+@media (prefers-reduced-motion: no-preference) {
+  .char {
+    animation:
+      dv-key 1ms linear var(--at) forwards,
+      dv-unkey 1ms linear var(--clear) forwards;
+  }
+  .placeholder {
+    animation: dv-gone var(--typing) linear var(--first);
+  }
+  .previewSlot {
+    animation: dv-slot var(--typing) linear var(--first);
+  }
+  .preview {
+    animation: dv-shown var(--len) linear var(--from);
+  }
+  .enter {
+    animation: dv-shown var(--typing) linear var(--first);
+  }
+  .enterFace {
+    animation: dv-press 200ms var(--ease-standard, ease) var(--enter);
+  }
+  .textCaret {
+    animation: dv-blink 1.06s steps(1) infinite;
+  }
+  .caretBefore {
+    animation: dv-visible var(--enter) linear;
+  }
+  .caretAfter {
+    animation: dv-hidden var(--caret) linear;
+  }
+  .caretBar {
+    animation: dv-soft-blink 1.1s ease-in-out infinite;
+  }
+  .undo {
+    animation: dv-dim var(--until) linear;
+  }
+}
+@keyframes dv-key {
+  to {
+    max-width: 1em;
+  }
+}
+@keyframes dv-unkey {
+  to {
+    max-width: 0;
+  }
+}
+@keyframes dv-gone {
+  from,
+  to {
+    visibility: hidden;
+  }
+}
+@keyframes dv-slot {
+  from,
+  to {
+    flex-grow: 1;
+    border-left-width: max(0.5px, calc(var(--u) * 1));
+    visibility: visible;
+  }
+}
+@keyframes dv-shown {
+  from,
+  to {
+    opacity: 1;
+  }
+}
+@keyframes dv-visible {
+  from,
+  to {
+    visibility: visible;
+  }
+}
+@keyframes dv-hidden {
+  from,
+  to {
+    visibility: hidden;
+  }
+}
+@keyframes dv-dim {
+  from,
+  to {
+    opacity: 0.35;
+  }
+}
+@keyframes dv-press {
+  40% {
+    background: #020618;
+    transform: scale(0.94);
+  }
+}
+@keyframes dv-blink {
+  50% {
+    opacity: 0;
+  }
+}
+/* the board's own caret blink (TypeBar.tsx type-blink) */
+@keyframes dv-soft-blink {
+  0%,
+  45% {
+    opacity: 0.75;
+  }
+  55%,
+  100% {
+    opacity: 0.12;
+  }
+}

@@ -87,7 +87,10 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
     },
     /**
      * The moving strip under the hero: one problem from each grade's path, written in the board's own
-     * hand (src/lib/hand) and checked. Every line must be right; the strip's test checks each one.
+     * hand (src/lib/hand) and checked. Every line is a whole, true equation with no unknowns, so a
+     * check mark on it is honest on its own; the strip's test works each one out (strip.test.ts).
+     * 8th grade is the Pythagorean theorem (on its path), not a two-step equation like 2x + 3 = 11:
+     * that is a question (and on 7th grade's path), and a tutor doesn't check a question.
      */
     strip: {
       label: "A problem from each grade, kindergarten to 8th grade, each written by hand and checked.",
@@ -100,7 +103,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
         { grade: "5th", latex: "2.5\\times4=10" },
         { grade: "6th", latex: "\\frac{2}{3}\\div\\frac{1}{6}=4" },
         { grade: "7th", latex: "-3+8=5" },
-        { grade: "8th", latex: "2x+3=11" },
+        { grade: "8th", latex: "3^2+4^2=5^2" },
       ],
     },
     how: {
@@ -182,18 +185,24 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
           name: "Tablet",
           title: "Write it.",
           body: "With Apple Pencil, any stylus or a finger. It feels like paper, and every line gets checked.",
+          /** the picture's description (a real 6th grade Today board, src/lib/landing/devicesInk.ts) */
+          alt: "An Agathon board on an iPad held upright, with a pencil at its side and a 6th grader's Today practice. Under 2/5 ÷ 2 she writes 2/5 × 1/2, then = 1/5; under −9 + 18 she writes 9; under 3 squared, 3 × 3 = 9. The tutor puts a blue check mark by each line.",
         },
         {
           name: "Laptop",
           title: "Type it.",
-          /** what the demo types, and what the board then writes */
-          typed: "3x+5=20",
-          body: "No pen? Type 3x+5=20 and the board writes it in their own handwriting, in their pen color, and checks it like any other line.",
+          /** the problems the board wrote, in the tutor's blue; the demo works on the first */
+          problems: ["3x+5=20", "4x-5=11", "2x+7=19"],
+          /** what the demo types in the Type bar (a right next step for the first problem) */
+          typed: "3x=15",
+          body: "No pen? Type a line like 3x=15 and the board writes it out by hand in their pen color, then checks it like any other line.",
+          alt: "An Agathon board on a laptop, with three problems written in the tutor's blue, the first 3x + 5 = 20. In the Type bar at the bottom, 3x=15 is typed, and beside it how it will look on the board. Enter is pressed, the board writes 3x = 15 by hand under the problem, and the tutor checks it.",
         },
         {
           name: "Phone",
           title: "Take it along.",
           body: "The same board and the same tutor, sized for a phone. Today's practice fits in a car ride.",
+          alt: "An Agathon board on a phone with a 4th grader's Today practice, 2 of 5 done: 70 written under 52 + 18 and 97 under 76 + 21, each with the tutor's blue check mark.",
         },
       ],
     },
