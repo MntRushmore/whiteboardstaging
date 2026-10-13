@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { BOARD_LINES } from "@/lib/landing/boardInk";
 import { SIGN_UP_HREF } from "@/lib/landing/links";
+import { TRY_PATH } from "@/lib/try/contracts";
 import { pathBounds } from "@/lib/landing/replay";
 import { BoardReplay } from "./BoardReplay";
 import { LANDING_COPY } from "./copy";
@@ -14,7 +15,8 @@ import styles from "./landing.module.css";
  * The first screen: what Agathon is in one line, the tutor's pen on it (it circles "actually" and
  * checks the line, drawing them in as the page opens), what it does in another, the way in (and a
  * link down to How it works), the price in plain words, and then the product itself working on an
- * iPad, on the board's own grey table. The page's only h1. The trial's words are a friend's free
+ * iPad, on the board's own grey table. The page's only h1. Beside the one button, two quiet links:
+ * the free board anyone can write on (/try) and How it works. The trial's words are a friend's free
  * month for a visitor an invite brought (`TrialWords`).
  *
  * Behind the words, a faint dot grid: the board's surface, as an SVG pattern (flat, no wash).
@@ -69,10 +71,17 @@ export function Hero() {
           <Link href={SIGN_UP_HREF} className={`${styles.pill} ${styles.pillLarge}`}>
             <TrialWords usual={copy.start} invited={invited.start} />
           </Link>
-          <a href={`#${HOW_ID}`} className={styles.textLink}>
-            {copy.more}
-            <ChevronRight size={18} strokeWidth={2} aria-hidden />
-          </a>
+          {/* the two quieter ways on: write on the free board, or read how it works */}
+          <span className={styles.heroLinks}>
+            <Link href={TRY_PATH} className={styles.textLink}>
+              {copy.tryIt}
+              <ChevronRight size={18} strokeWidth={2} aria-hidden />
+            </Link>
+            <a href={`#${HOW_ID}`} className={styles.textLink}>
+              {copy.more}
+              <ChevronRight size={18} strokeWidth={2} aria-hidden />
+            </a>
+          </span>
         </div>
         <p className={styles.terms}>
           <TrialWords usual={copy.terms} invited={invited.terms} />

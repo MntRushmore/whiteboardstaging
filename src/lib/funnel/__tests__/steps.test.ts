@@ -14,11 +14,13 @@ describe("isFunnelStep", () => {
     }
   });
 
-  it("names the same 13 steps as the table's check, once each", () => {
-    expect(FUNNEL_STEPS).toHaveLength(13);
+  it("names the same 14 steps as the table's check, once each", () => {
+    expect(FUNNEL_STEPS).toHaveLength(14);
     expect(new Set(FUNNEL_STEPS).size).toBe(FUNNEL_STEPS.length);
     const sql = readFileSync(new URL("../../../../supabase/migrations/20261012020000_funnel_steps.sql", import.meta.url), "utf8");
-    const check = sql.match(/funnel_steps_step_known check \(step in \(([\s\S]*?)\)\)/)?.[1] ?? "";
+    // the check as the latest migration leaves it (2026-10-13 added the try board's step)
+    const latest = readFileSync(new URL("../../../../supabase/migrations/20261013000000_try_board_step.sql", import.meta.url), "utf8");
+    const check = latest.match(/funnel_steps_step_known check \(step in \(([\s\S]*?)\)\)/)?.[1] ?? "";
     expect([...check.matchAll(/'([a-z_]+)'/g)].map((m) => m[1])).toEqual([...FUNNEL_STEPS]);
     expect(RECORD_FUNNEL_STEP).toBe("record_funnel_step");
     expect(sql).toContain(`function public.${RECORD_FUNNEL_STEP}(p_step text, p_meta jsonb default null)`);
