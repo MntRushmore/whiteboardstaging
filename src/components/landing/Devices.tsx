@@ -120,6 +120,8 @@ function PhonePicture({ alt }: { alt: string }) {
 const PROBLEM = { x: 44, top: 84, gap: 240.5, size: 29.3, pen: 2 } as const;
 /** the line written with the mouse: a kid's size on a laptop, its pitch under the problem */
 const LINE = { x: 44, top: 132, size: 40, seed: 11, pen: 2.2 } as const;
+/** after the line, the pointer moves down and away from it (the check lands where it was) */
+const POINTER_REST_MS = 420;
 
 /** One line of ink on the board, its digits' top-left at (x, top) in board px. */
 function BoardInk({ x, top, children, width, className }: { x: number; top: number; width: number; children: ReactNode; className?: string }) {
@@ -221,8 +223,11 @@ function LaptopPicture({ item }: { item: Copy["items"][1] }) {
     left: u(LINE.x),
     top: u(LINE.top + hand.height * 0.45),
     "--write": ms(demo.writeMs),
-    "--len": ms(demo.doneMs - demo.writeMs),
+    // the glide, then a short move off the line so the check lands in the clear
+    "--len": ms(demo.doneMs - demo.writeMs + POINTER_REST_MS),
     "--dx": u(hand.width),
+    "--rest-x": u(hand.width + 34),
+    "--rest-y": u(hand.height * 0.6),
   } as CSSProperties;
 
   return (

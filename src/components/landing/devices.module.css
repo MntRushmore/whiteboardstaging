@@ -510,8 +510,8 @@
   width: calc(var(--u) * 16);
   height: calc(var(--u) * 24);
   filter: drop-shadow(0 calc(var(--u) * 1) calc(var(--u) * 1.5) rgb(15 23 42 / 0.25));
-  /* finished: resting just past the line's end */
-  transform: translateX(var(--dx));
+  /* finished: resting below and past the line's end, clear of the check */
+  transform: translate(var(--rest-x), var(--rest-y));
 }
 .pointerShape {
   display: block;
@@ -618,10 +618,15 @@
 }
 @keyframes dv-glide {
   from {
-    transform: translateX(0);
+    transform: translate(0, 0);
+  }
+  /* the line is written (the rest takes the last POINTER_REST_MS of --len) */
+  78% {
+    transform: translate(var(--dx), 0);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1);
   }
   to {
-    transform: translateX(var(--dx));
+    transform: translate(var(--rest-x), var(--rest-y));
   }
 }
 @keyframes dv-dim {
