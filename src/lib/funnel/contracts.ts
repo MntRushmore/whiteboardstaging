@@ -7,6 +7,7 @@
  *
  * Shared contract for the K–8 build (docs/KIDS-COME-BACK.md).
  */
+import type { StartEvent } from "@/lib/start/contracts";
 
 /** "How did you hear about Agathon?" (the welcome; optional). Stored as the id in `profiles.heard_from`. */
 export const HEARD_FROM = [
@@ -116,6 +117,44 @@ export interface FunnelPathRow {
   trialStarted: number;
 }
 
+/**
+ * The steps before the account (2026-10-13, /start: src/lib/start/contracts.ts `START_EVENTS`),
+ * counted by journey (a device's visit to /start, `start_steps`), drawn in this order above the
+ * account's stages. The report closes the chain like `reachedStages` (`startReached` in
+ * report.ts): a later step stands for the ones before it, so a journey counts at a step only when
+ * it got at least that far. One exception: `start_try_checked`, the tutor checking a line on the
+ * try board, is a step a journey may skip (the try is skippable, and a line can be wrong), so no
+ * later step implies it. It counts only the journeys that recorded it, as a part of
+ * `start_try_shown`, and `start_plan` is a share of `start_try_shown` too.
+ */
+export const START_STAGES = [
+  "start_shown",
+  "start_who",
+  "start_grade",
+  "start_try_shown",
+  "start_try_checked",
+  "start_plan",
+  "start_account_shown",
+  "start_account",
+] as const satisfies readonly StartEvent[];
+export type StartStage = (typeof START_STAGES)[number];
+
+/** The steps before the account for one cohort (see START_STAGES). */
+export interface StartFunnel {
+  /**
+   * when the journeys counted began (ISO): the later of the cohort's start and the 60 days the
+   * database keeps in view; null when the cohort has no start ("tracked" before any step)
+   */
+  since: string | null;
+  /**
+   * journeys that got at least this far, of the journeys begun at /start itself (one opened from a
+   * grown-up's link continues a kid's journey: it is counted in `handoff`, not here)
+   */
+  counts: Record<StartStage, number>;
+  /** a kid sent the plan to a grown-up (`start_handoff`); grown-up links opened (`start_handoff_opened`); and of those, the accounts made */
+  handoff: { sent: number; opened: number; accounts: number };
+}
+
 /** GET /api/admin/funnel */
 export interface FunnelReport {
   generatedAt: string;
@@ -132,6 +171,8 @@ export interface FunnelReport {
   bySource: FunnelRow[];
   /** how the cohort's tracked accounts left the welcome and the guided board, in FUNNEL_PATHS order */
   paths: FunnelPathRow[];
+  /** the cohort's steps before the account; null on a database that does not count them (before 20261013020000_start_steps.sql) */
+  start: StartFunnel | null;
   /** every account, whatever the cohort: the money tiles */
   allTime: FunnelRow;
   /** monthly recurring revenue now, in dollars: active subscriptions × the plan's price */

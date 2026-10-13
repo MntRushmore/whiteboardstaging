@@ -46,8 +46,9 @@ The old in-app welcome and the three-tip tour are skipped for anyone who came th
 
 ## Measuring it
 
-- **Before the account:** the steps are counted anonymously by journey (`START_EVENTS`, `POST /api/start/step`). The journey is linked to the account when it is made.
-- **Admin Funnel:** it gains a **Before the account** section: started → who → grade → tried → plan ready → account.
+- **Before the account:** the steps are counted anonymously by journey (`START_EVENTS`, `POST /api/start/step`, `recordStartStep` in `src/lib/start/record.ts`), one row per journey and step in `start_steps` (`20261013020000_start_steps.sql`). No IP, no name; of the answers only the role, the grade or course, how many skills and whether the try was solved.
+- **Linking:** once the account exists, `linkStartJourney(userId)` ties the journey to it and records `start_account` (`link_start_journey`, as the new account; never a journey already linked to someone else). Call it before the flow forgets the journey id.
+- **Admin Funnel:** it gains a **Before the account** section above "From sign-up to paying", for the same cohorts: started → chose who → picked a grade → saw the try board → the tutor checked a line → saw the plan → saw the account screen → made the account. A later step stands for the earlier ones, except the checked line (the try can be skipped): it is a part of the try board, and the plan counts from the try board. A journey opened from a grown-up's link is counted in the line under the bars (kids who sent their plan, links opened, accounts made from them), not in the bars.
 
 ## Look
 

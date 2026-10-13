@@ -1,6 +1,6 @@
 /**
  * The admin Funnel's read (GET /api/admin/funnel): one call to admin_funnel()
- * (supabase/migrations/20261012020000_funnel_steps.sql) with the service role, added up into a
+ * (v3: supabase/migrations/20261013020000_start_steps.sql) with the service role, added up into a
  * FunnelReport (src/lib/funnel/report.ts). Like the console's other reads it is a plain fetch to
  * PostgREST, so the tests replace `deps.fetch`; a failure is a ConsoleQueryError naming the
  * function, which the route answers 502 with.

@@ -11,7 +11,7 @@ import type { FunnelStep } from "../steps";
 const TRACKING = "2026-10-12T19:30:42Z";
 
 function rpc(accounts: FunnelRpc["accounts"], over: Partial<FunnelRpc> = {}): FunnelRpc {
-  return { time_zone: "America/New_York", generated_at: "2026-10-12T23:00:00Z", tracking_since: TRACKING, active_subscriptions: 0, kid_profiles: 0, accounts, ...over };
+  return { time_zone: "America/New_York", generated_at: "2026-10-12T23:00:00Z", tracking_since: TRACKING, active_subscriptions: 0, kid_profiles: 0, accounts, start: null, ...over };
 }
 
 type Account = FunnelRpc["accounts"][number];
