@@ -11,6 +11,11 @@
 
 /** Every step, in the order a new account meets them. The table's check lists the same names. */
 export const FUNNEL_STEPS = [
+  /**
+   * the visitor tried the free board at /try before making the account (recorded once signed in,
+   * from the device's try marker: src/lib/try/contracts.ts); meta: { checked, solved }
+   */
+  "try_board",
   /** the welcome showed (a new account with no boards) */
   "welcome_shown",
   /** Skip for now on the welcome; meta: { step: 1 | 2 } */
@@ -37,6 +42,11 @@ export const FUNNEL_STEPS = [
   "checkout_opened",
   /** back on the home from checkout (`?unlimited=started`) */
   "checkout_returned",
+  /**
+   * the free board was used up (src/lib/billing/freeBoard.ts): its 5 problems done, or its starter
+   * ink gone; recorded once per account (the device remembers it); meta: { reason: "problems" | "ink" }
+   */
+  "free_board_done",
 ] as const;
 export type FunnelStep = (typeof FUNNEL_STEPS)[number];
 

@@ -39,7 +39,10 @@ export const DOCK_COPY = {
   /** the less-used tools, folded (Shapes, Picture, Redo) */
   more: "More",
   moreHint: "More tools: shapes, a picture, redo",
-  /** Type it: the bar to type maths in (`TYPE_BUTTON_COPY.label`, pinned equal in the tests) */
+  /**
+   * Type it's button, off the board since 2026-10-13. Kept only for the landing page's v3 dock
+   * pictures (Devices, AskDemo) until landing v4, which drops them, is on main; then delete.
+   */
   type: "Type",
   typeHint: "Type your math",
   colour: "Color",
@@ -179,7 +182,7 @@ export type DockFit = "row" | "fold" | "stack";
 
 /** What the dock holds, for its width. */
 export interface DockContents {
-  /** Type it is offered (`useTypeButton().available`) */
+  /** a Type button (Type it, taken off the board on 2026-10-13: KidDock passes false; kept so the layout can still fit one) */
   type: boolean;
   /** the pages' ‹ n / N › (there is more than one page) */
   arrows: boolean;
@@ -235,7 +238,7 @@ export interface KidDockState {
   color: string;
   canUndo: boolean;
   canRedo: boolean;
-  /** Type it is offered (the bar can write a typed line here) */
+  /** a Type button is offered (never since 2026-10-13: everything on the board is written) */
   type: boolean;
   /** the Ask panel is open (a phone's bottom sheet, or docked beside the board) */
   chatOpen?: boolean;
@@ -254,7 +257,7 @@ export interface KidDockView {
   shapes: { pressed: boolean; current: KidShape | null };
   undo: boolean;
   redo: boolean;
-  /** Type it's button (`useTypeButton().available`) */
+  /** a Type button (never since 2026-10-13) */
   type: boolean;
   /** ...behind More, on a phone too narrow for it in the tools' row (`dockFit`) */
   typeInMore: boolean;

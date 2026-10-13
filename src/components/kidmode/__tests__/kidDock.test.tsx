@@ -24,7 +24,6 @@ vi.mock("tldraw", async (importOriginal) => ({
 }));
 
 const { default: KidDock } = await import("../KidDock");
-const { typeBarState } = await import("@/components/typeMath/typeBarStore");
 const { DOCK_COPY } = await import("../dockView");
 
 /** Each of the dock's buttons by its word (or, with a picture alone, its name), in order. */
@@ -35,9 +34,8 @@ function words(html: string): string[] {
 /** Does this tag's class list have one of these classes? */
 const hasClass = (tag: string, ...names: string[]) => (tag.match(/class="([^"]*)"/)?.[1].split(/\s+/) ?? []).some((c) => names.includes(c));
 
-function render(width: number, type = true) {
+function render(width: number) {
   board.width = width;
-  typeBarState.available.set(type);
   return renderToStaticMarkup(<KidDock />);
 }
 
@@ -45,22 +43,22 @@ describe("KidDock", () => {
   it("a laptop: one row of everything, tools | Undo Redo | colours | pages | Ask", () => {
     const out = render(1440);
     expect(out).toContain('data-fit="row"');
-    expect(words(out)).toEqual(["Select", "Pen", "Eraser", "Shapes", "Picture", "Type", "Undo", "Redo", "Black", "Red", "Green", "Purple", "Page before", "Next page", "New page", "Ask"]);
+    expect(words(out)).toEqual(["Select", "Pen", "Eraser", "Shapes", "Picture", "Undo", "Redo", "Black", "Red", "Green", "Purple", "Page before", "Next page", "New page", "Ask"]);
     expect(out).not.toContain("data-kid-more-tools");
   });
 
-  it("an upright iPad: Shapes, Picture and Redo behind More, the colours behind Color with three pages", () => {
+  it("an upright iPad: Shapes, Picture and Redo behind More; with no Type button the four colours fit beside them", () => {
     const out = render(820);
     expect(out).toContain('data-fit="fold"');
-    expect(words(out)).toEqual(["Select", "Pen", "Eraser", "Type", "Undo", "More", "Color", "Page before", "Next page", "New page", "Ask"]);
+    expect(words(out)).toEqual(["Select", "Pen", "Eraser", "Undo", "More", "Black", "Red", "Green", "Purple", "Page before", "Next page", "New page", "Ask"]);
   });
 
   it("a phone: two rows in one dock, the pages and Ask over the tools, and nothing wraps", () => {
     const out = render(390);
     expect(out).toContain('data-fit="stack"');
-    expect(words(out)).toEqual(["Page before", "Next page", "New page", "Ask", "Select", "Pen", "Eraser", "Type", "Color", "Undo", "More"]);
-    // a phone narrower than most: Type waits behind More too
-    expect(words(render(360))).not.toContain("Type");
+    expect(words(out)).toEqual(["Page before", "Next page", "New page", "Ask", "Select", "Pen", "Eraser", "Color", "Undo", "More"]);
+    // no Type button anywhere: everything on the board is written (Type it was taken off, 2026-10-13)
+    for (const width of [1440, 820, 390, 360]) expect(words(render(width))).not.toContain("Type");
   });
 
   it("every button is a 52 px tall target at least 44 px wide (46 and up for a tool with its word)", () => {

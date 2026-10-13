@@ -16,6 +16,7 @@ import { loadDailyRows, saveDailyPractice } from "@/lib/daily/store";
 import { dailyStreak, isDayDone, withProgress } from "@/lib/daily/streak";
 import { writePracticeMarker } from "@/lib/learning/practiceMarker";
 import { asOnboardingClient, createFirstBoard } from "@/lib/onboarding/storage";
+import { mayMakeBoard } from "@/lib/billing/newBoards";
 import { namedSkills, type PlanSkill } from "@/lib/daily/names";
 import type { DailyPlanInput } from "@/lib/daily/plan";
 
@@ -229,6 +230,8 @@ export function useToday(userId: string): { state: TodayState; actions: TodayAct
   );
 
   const start = useCallback(() => {
+    // on the free board (no plan), the day's new board is the plan screen instead (`newBoards.ts`)
+    if (busyRef.current || !mayMakeBoard()) return;
     if (!claim("start")) return;
     const today = localDay();
     void Promise.all([import("@/lib/daily/plan"), planInput(today)])
@@ -262,6 +265,7 @@ export function useToday(userId: string): { state: TodayState; actions: TodayAct
   }, [ready, claim, router, userId]);
 
   const practiseMore = useCallback(() => {
+    if (busyRef.current || !mayMakeBoard()) return;
     if (!claim("more")) return;
     const today = localDay();
     void Promise.all([import("@/lib/daily/plan"), planInput(today)])

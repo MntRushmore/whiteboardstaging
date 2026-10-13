@@ -15,6 +15,8 @@
  *   6. The static registry in scripts/lib/routes.mjs matches the filesystem exactly.
  *   7. A route file exports only HTTP handlers and route segment config (next dev type-checks
  *      a compiled route's exports under .next/dev/types, so anything else breaks `tsc`).
+ *   8. A route in STATIC_ROUTES (built once, served from the CDN) skips 2 and 4 only because it
+ *      really is static: `dynamic = "force-static"`, GET only, and a handler that takes no request.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -40,6 +42,7 @@ import {
   NO_BODY_ROUTES,
   PUBLIC_ROUTES,
   PUBLIC_ROUTE_REASONS,
+  STATIC_ROUTES,
   protectedRoutes,
   routeFileToPath,
   routeProbes,
@@ -118,7 +121,7 @@ describe("route discovery", () => {
 });
 
 describe("allow-lists", () => {
-  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the crons, client errors and health", () => {
+  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the crons, client errors, health, the unsubscribe link, the try board, the start step and its static ink", () => {
     // config/status: reports which provider keys exist as booleans (never values,
     // prefixes or lengths) so the setup screen can render before sign-in.
     // billing/webhook: the provider has no user JWT; the Stripe-Signature HMAC is the auth.
@@ -128,6 +131,10 @@ describe("allow-lists", () => {
     // (behaviour: src/lib/server/__tests__/routes.adminHealth.test.ts).
     // client-errors: browser crash reports, signed out too; it only writes a log line.
     // health: an uptime monitor has no user; it answers { ok, db, release } only.
+    // try/check, try/help: "Try it free" is for visitors with no account; our own page only, capped
+    // and limited per visitor (and the check's reads per day), nothing stored.
+    // start/step: /start's steps come before the account; it only records an anonymous count.
+    // start/ink: static JSON built at build time (STATIC_ROUTES); public example problems only.
     expect([...PUBLIC_ROUTES].sort()).toEqual([
       "src/app/api/admin/gc/route.ts",
       "src/app/api/admin/health/route.ts",
@@ -137,7 +144,40 @@ describe("allow-lists", () => {
       "src/app/api/cron/trial-reminders/route.ts",
       "src/app/api/health/route.ts",
       "src/app/api/report/unsubscribe/route.ts",
+      "src/app/api/start/ink/route.ts",
+      "src/app/api/start/step/route.ts",
+      "src/app/api/try/check/route.ts",
+      "src/app/api/try/help/route.ts",
     ]);
+  });
+
+  it("the try routes refuse what is not from our page, cap the body and look the problem up by id", () => {
+    // The real invariants behind their PUBLIC_ROUTES entries (behaviour: src/app/api/try/__tests__).
+    for (const file of ["src/app/api/try/check/route.ts", "src/app/api/try/help/route.ts"]) {
+      const src = sources.get(file) ?? "";
+      expect(/\btryEnabled\s*\(/.test(src), file).toBe(true);
+      expect(/\bisSameOrigin\s*\(/.test(src), file).toBe(true);
+      expect(/\breadCapped\s*\(/.test(src), file).toBe(true);
+      expect(/req\.json\s*\(/.test(src), `${file}: read through the size cap, never req.json()`).toBe(false);
+      expect(/\btryProblem\s*\(/.test(src), file).toBe(true);
+      expect(src.indexOf("isSameOrigin("), file).toBeLessThan(src.indexOf("readCapped("));
+    }
+    // the check makes the only read, and only after both limits
+    const check = sources.get("src/app/api/try/check/route.ts") ?? "";
+    expect(check.indexOf("spendTryRead(")).toBeGreaterThan(check.indexOf("checkRateLimit("));
+    expect(check.indexOf("recognizeStrokes(")).toBeGreaterThan(check.indexOf("spendTryRead("));
+    expect(/recognizeStrokes|chatJson|openrouter/i.test(sources.get("src/app/api/try/help/route.ts") ?? ""), "help makes no read and calls no model").toBe(false);
+  });
+
+  it("the start step only counts: same-origin first, body capped, zod-validated, no session read", () => {
+    // The real invariants behind its PUBLIC_ROUTES entry (behaviour: src/lib/server/start/__tests__/step.test.ts).
+    const src = sources.get("src/app/api/start/step/route.ts") ?? "";
+    expect(/\bisSameOrigin\s*\(/.test(src)).toBe(true);
+    expect(src.indexOf("isSameOrigin(")).toBeLessThan(src.indexOf("readCapped("));
+    expect(/\bSTART_STEP_MAX_BYTES\b/.test(src)).toBe(true);
+    expect(/\.safeParse\s*\(/.test(src)).toBe(true);
+    expect(/req\.json\s*\(/.test(src), "read through the size cap, never req.json()").toBe(false);
+    expect(/identifyUser|getUser|Authorization/i.test(src), "no session: the journey is anonymous").toBe(false);
   });
 
   it("client errors only log: body capped, zod-validated, a token only names the user", () => {
@@ -242,8 +282,15 @@ describe("auth + rate limiting", () => {
       }
     });
 
-    it(`${file} is rate limited`, () => {
-      expect(usesRateLimit(src) || usesLivePreamble(src)).toBe(true);
+    it(`${file} is rate limited${STATIC_ROUTES.includes(file) ? " (static: built once, nothing to limit)" : ""}`, () => {
+      if (STATIC_ROUTES.includes(file)) {
+        expect(/export const dynamic = "force-static";/.test(src), "a static route is force-static").toBe(true);
+        expect(exportedHandlers(src), "a static route answers GET only").toEqual(["GET"]);
+        expect(/export (async )?function GET\(\s*\)/.test(src), "a static route's handler takes no request").toBe(true);
+        expect(PUBLIC_ROUTES, "a static route is public").toContain(file);
+      } else {
+        expect(usesRateLimit(src) || usesLivePreamble(src)).toBe(true);
+      }
     });
 
     it(`${file} never reads process.env directly`, () => {
@@ -315,7 +362,9 @@ describe("scripts/lib/routes.mjs registry matches the filesystem", () => {
   it("every limit names a real LIMITS bucket (or an ip:* bucket for public routes)", () => {
     const rateLimitSrc = readFileSync(join(REPO_ROOT, "src/lib/server/rate-limit.ts"), "utf8");
     for (const route of API_ROUTES) {
-      if (route.auth === "public") {
+      if (STATIC_ROUTES.includes(route.file)) {
+        expect(route.limit, route.file).toBe("static");
+      } else if (route.auth === "public") {
         expect(route.limit, route.file).toMatch(/^ip:/);
         expect(sources.get(route.file)!, `${route.file} should key its limiter on ${route.limit}`).toContain(route.limit.slice("ip:".length));
         expect(route.withoutTokenStatus, `${route.file} must say what an unauthenticated probe gets`).toEqual(expect.arrayContaining([expect.any(Number)]));

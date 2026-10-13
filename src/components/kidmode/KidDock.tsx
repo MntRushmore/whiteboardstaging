@@ -8,7 +8,6 @@ import {
   Eraser,
   FilePlus2,
   ImagePlus,
-  Keyboard,
   LayoutGrid,
   MessageCircle,
   MousePointer2,
@@ -35,7 +34,6 @@ import {
 } from "tldraw";
 import { CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
 import { useChatOpen } from "@/components/chat/useChatOpen";
-import { toggleTypeBar, useTypeButton } from "@/components/typeMath/typeBarStore";
 import { BOARD_IMAGE_TYPES } from "@/lib/assets/addImageFiles";
 import { addScreen, goToScreen, MAX_SCREENS, screenPosition } from "@/lib/screens/screens";
 import {
@@ -62,7 +60,7 @@ type Pop = "colours" | "shapes" | "more";
 /**
  * The simple board's dock, in tldraw's toolbar slot (`BoardToolbar`): one white dock of 52 px
  * targets, each a picture with one short word under it, in groups — the tools (Select, Pen, Eraser,
- * Shapes, Picture, Type) | Undo and Redo | four big colours | the board's pages | Ask, the big blue
+ * Shapes, Picture) | Undo and Redo | four big colours | the board's pages | Ask, the big blue
  * button that opens the tutor to talk to. What it shows, and how much of it fits one row on this
  * board, is `kidDockView`; while it is mounted the pen is a little thicker and the eraser a little
  * wider (`useLittleHands`). Loaded lazily: only a simple board needs it.
@@ -79,11 +77,10 @@ export default function KidDock() {
   const pageIds = useValue("kid pages", () => editor.getPages().map((p) => p.id), [editor]);
   const current = useValue("kid page", () => editor.getCurrentPageId(), [editor]);
   const { index, count } = screenPosition(pageIds, current);
-  // Type it (docs/TYPE-MATH.md): the bar to type maths in, opened and closed here too
-  const type = useTypeButton();
   // the board chat's open state is the page's own store, so the dock's Ask and the panel agree
   const [chatOpen, setChatOpen] = useChatOpen();
-  const view = kidDockView({ width, tool, geo, color, canUndo, canRedo, type: type.available, chatOpen, page: index, pages: count, maxPages: MAX_SCREENS });
+  // no Type button: everything on the board is written (Type it was taken off, 2026-10-13)
+  const view = kidDockView({ width, tool, geo, color, canUndo, canRedo, type: false, chatOpen, page: index, pages: count, maxPages: MAX_SCREENS });
   const picture = usePicture(editor);
   const [pop, setPop] = useState<Pop | null>(null);
   const toggle = (p: Pop) => setPop((open) => (open === p ? null : p));
@@ -134,12 +131,6 @@ export default function KidDock() {
       {!view.folded && (
         <DockButton label={DOCK_COPY.picture} title={DOCK_COPY.pictureHint} anchor="data-kid-picture" onClick={act(picture.choose)}>
           <ImagePlus className={ICON} strokeWidth={2} aria-hidden />
-        </DockButton>
-      )}
-      {/* its bar open: grey, like a button whose popover is open (blue is for the tool in hand) */}
-      {view.type && !view.typeInMore && (
-        <DockButton label={DOCK_COPY.type} title={DOCK_COPY.typeHint} expanded={type.open} compact={compact} onClick={act(toggleTypeBar)}>
-          <Keyboard className={ICON} strokeWidth={2} aria-hidden />
         </DockButton>
       )}
       {view.stack && <ColourButton current={view.colours.current} open={pop === "colours"} compact onToggle={() => toggle("colours")} />}
@@ -237,7 +228,6 @@ export default function KidDock() {
             <ShapeButtons current={view.shapes.current} onPick={(s) => act(() => pickShape(s))()} />
             <div className="col-span-4 grid auto-cols-fr grid-flow-col gap-0.5">
               <WideButton label={DOCK_COPY.picture} title={DOCK_COPY.pictureHint} icon={ImagePlus} onClick={act(picture.choose)} />
-              {view.typeInMore && <WideButton label={DOCK_COPY.type} title={DOCK_COPY.typeHint} icon={Keyboard} pressed={type.open} onClick={act(toggleTypeBar)} />}
               {/* stays open: a kid may redo more than once */}
               <WideButton label={DOCK_COPY.redo} icon={Redo2} disabled={!view.redo} onClick={() => editor.redo()} />
             </div>

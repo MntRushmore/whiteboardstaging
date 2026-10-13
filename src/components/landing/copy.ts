@@ -52,6 +52,8 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
     nav: {
       signIn: "Sign in",
       cta: START,
+      /** the free board anyone can write on (/try), last among the bar's links (wide screens only) */
+      tryIt: "Try it free",
       /** the bar's links to the page's parts (wide screens only) */
       links: [
         { label: "How it works", id: HOW_ID },
@@ -70,7 +72,8 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
       titleParts: ["Math practice", "kids", "actually", "do."],
       lede: "Kids write by hand. A tutor checks every line and answers their questions.",
       start: START,
-      /** the secondary link, to How it works on this page */
+      /** the secondary links: the free board anyone can write on (/try), and How it works on this page */
+      tryIt: "Try it free",
       more: "See how it works",
       terms: p.terms,
     },

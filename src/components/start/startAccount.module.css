@@ -1,0 +1,212 @@
+/* /start's account screen (StartAccount): Arc's form controls (src/registry/foundation.css) inside the
+   flow's look (src/components/start/start.module.css): the same centred title, the blue pill for the
+   one button, the tutor's blue for a chosen chip. Mobile first: every tap target at least 44 px. Flat
+   fills only (no gradients). */
+
+.screen {
+  display: grid;
+  width: 100%;
+  max-width: 26rem;
+  gap: var(--space-6);
+  margin-inline: auto;
+}
+
+.heading {
+  display: grid;
+  justify-items: center;
+  gap: 0.625rem;
+  text-align: center;
+}
+.title {
+  margin: 0;
+  /* the flow's serif (start.module.css --st-serif, inherited), Arc's display face outside it */
+  font-family: var(--st-serif, var(--font-display));
+  font-size: clamp(2rem, 1.55rem + 1.9vw, 2.75rem);
+  font-weight: 600;
+  font-variation-settings: "SOFT" 100;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.title:focus {
+  outline: none;
+}
+.lede {
+  max-width: 24rem;
+  margin: 0;
+  color: var(--st-muted, var(--text-secondary));
+  font-size: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.address {
+  display: block;
+  margin-block: var(--space-1);
+  color: var(--foreground);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.form {
+  display: grid;
+  gap: var(--space-4);
+  color: var(--foreground);
+}
+
+/* the plan being saved, in a line under the title */
+.summary {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--st-muted, var(--text-secondary));
+  font-size: 0.9375rem;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* "How did you hear about Agathon?": optional, one native picker (a phone's own wheel) */
+.heard {
+  display: grid;
+  gap: var(--space-2);
+}
+.groupLabel {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.groupHint {
+  margin: 0;
+  color: var(--st-muted, var(--text-muted));
+  font-weight: 400;
+}
+.select {
+  width: 100%;
+  min-height: var(--control-height-lg);
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 0 2.75rem 0 var(--space-4);
+  background-color: var(--background);
+  /* the picker's chevron */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%236b5d4f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 8 5 5 5-5'/%3E%3C/svg%3E");
+  background-position: right 0.875rem center;
+  background-repeat: no-repeat;
+  color: var(--foreground);
+  font: inherit;
+  font-size: max(16px, var(--text-base));
+  cursor: pointer;
+}
+.select:focus-visible {
+  outline: 2px solid var(--st-blue, #0562ef);
+  outline-offset: 2px;
+}
+
+/* the one button: the flow's blue pill */
+.screen .wide {
+  width: 100%;
+  min-height: 3.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--st-blue, #0562ef);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+@media (hover: hover) and (pointer: fine) {
+  .screen .wide:not(:disabled):hover {
+    background: var(--st-blue-strong, #074db7);
+  }
+}
+
+/* a kid on their own: two big choices */
+.choices {
+  display: grid;
+  gap: var(--space-3);
+}
+.screen .choice {
+  width: 100%;
+  min-height: 3.75rem;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+.screen .choicePrimary {
+  border: 0;
+  background: var(--st-blue, #0562ef);
+  color: #fff;
+}
+
+/* "Email it": a mailto link that looks like the secondary button beside it */
+.linkButton {
+  display: inline-flex;
+  width: 100%;
+  min-height: var(--control-height-lg);
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 0 var(--space-4);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: var(--text-base);
+  font-weight: 500;
+  text-decoration: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .linkButton:hover {
+    background: var(--surface-muted);
+  }
+}
+
+.status {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* "Already have an account? Sign in", "Back" */
+.foot {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.line {
+  margin: 0;
+}
+.textLink {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  border-radius: var(--space-2);
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 4px;
+}
+.textButton {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  border: 0;
+  border-radius: var(--space-2);
+  padding: 0 var(--space-2);
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .textLink:hover {
+    text-decoration-color: currentColor;
+  }
+  .textButton:hover {
+    color: var(--foreground);
+  }
+}

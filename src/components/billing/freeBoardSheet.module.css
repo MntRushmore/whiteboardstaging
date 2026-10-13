@@ -1,0 +1,176 @@
+/* The free board's sheet (FreeBoardSheet): a bottom sheet on a phone, a centred card from 600 px.
+   Flat colours only (no gradients, no glow): white card, the kid's black marker for the one primary
+   button, the tutor's blue pen (#4465e9) for the five ticks. Motion is short and off under
+   prefers-reduced-motion. */
+
+.overlay {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  background: oklch(22% 0.01 260 / 0.32);
+}
+
+.content {
+  --s-ink: #1c1c1c;
+  --s-secondary: #555b66;
+  --s-muted: #6b7280;
+  --s-blue: #4465e9;
+  --s-blue-soft: #e9eefd;
+  --s-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  position: fixed;
+  z-index: 1201;
+  inset: auto 0 0 0;
+  box-sizing: border-box;
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  padding: 28px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  border: 1px solid #e5e7eb;
+  border-bottom: 0;
+  border-radius: 28px 28px 0 0;
+  background: #fff;
+  color: var(--s-ink);
+  box-shadow: 0 -12px 40px oklch(0% 0 0 / 0.12);
+  outline: none;
+}
+@media (min-width: 600px) {
+  .content {
+    inset: 0;
+    width: min(420px, calc(100vw - 32px));
+    height: fit-content;
+    margin: auto;
+    padding: 32px 32px 24px;
+    border-bottom: 1px solid #e5e7eb;
+    border-radius: 28px;
+    box-shadow: 0 24px 56px oklch(0% 0 0 / 0.16);
+  }
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.ticks {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+}
+.tick {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--s-blue);
+  color: #fff;
+}
+
+.title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.body {
+  max-width: 30ch;
+  margin: 10px 0 0;
+  color: var(--s-secondary);
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+}
+.start,
+.notNow {
+  display: inline-flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--s-ease),
+    transform 160ms var(--s-ease);
+}
+.start {
+  border: 0;
+  background: var(--s-ink);
+  color: #fff;
+}
+.notNow {
+  border: 0;
+  background: transparent;
+  color: var(--s-secondary);
+}
+.start:focus-visible,
+.notNow:focus-visible {
+  outline: 3px solid var(--s-blue);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .start:hover {
+    background: #000;
+  }
+  .notNow:hover {
+    background: #f3f4f6;
+    color: var(--s-ink);
+  }
+}
+.start:active,
+.notNow:active {
+  transform: scale(0.98);
+}
+
+.terms {
+  max-width: 34ch;
+  margin: 12px 0 0;
+  color: var(--s-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .overlay[data-state="open"] {
+    animation: free-board-fade 200ms var(--s-ease, ease-out) both;
+  }
+  .content[data-state="open"] {
+    animation: free-board-rise 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .content[data-state="open"] .tick {
+    animation: free-board-tick 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(160ms + var(--i, 0) * 70ms);
+  }
+}
+@keyframes free-board-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes free-board-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+@keyframes free-board-tick {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}

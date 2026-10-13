@@ -1,5 +1,18 @@
 # Type it — math typed on a laptop, written on the board by hand
 
+> **Taken off the board, 2026-10-13.** The owner: "remove the typing thing, we can just use the
+> mouse!" (then "remove it everywhere"). What went: the bar and its laptop auto-open and tip
+> (`TypeBar`, `typeBarStore`, the preview and board marks), the toolbar's and the kid dock's Type
+> buttons, and a readback's edit routed to the bar (a readback opens its LaTeX editor again). What
+> stays: a typed line already on a board is still read as typed (the line groups in `flush` /
+> `processLine`, its readback, Undo, a reload), so old boards keep working. The writer
+> (`typedWriter.ts`, `LiveLoop.writeTyped` / `prepareTyped`) stays too, unreachable from the board,
+> because its tests are how typed lines get onto a test board, and a phone used as a pen
+> (docs/PHONE-PEN.md) would write with `writeInk`. `typeBarModel.ts` (its words) and
+> `src/lib/typeMath/parse.ts` stay while main's landing v3 Devices demo imports them; landing v4
+> drops that demo (feat/landing-v4), after which they and `DOCK_COPY.type` can go. Everything below
+> is the feature as it was.
+
 Owner's pick (2026-10-12): until there's an iPad app, a kid on a laptop types their maths
 instead of writing it with a trackpad. A trackpad hand comes out tiny and wobbly, the reader
 misreads it, and the tutor looks broken. The text tool was taken off the board (da3aabb)

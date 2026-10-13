@@ -12,7 +12,7 @@ export const liveShapeUtils: readonly TLAnyShapeUtilConstructor[] = [MathShapeUt
 /**
  * The old Math tool stays registered, so a board left in it still opens, but nothing reaches it any
  * more: no toolbar button, no `m` shortcut (`liveUiOverrides`). Its typed boxes were never read by the
- * tutor; a kid types maths in the Type it bar now (docs/TYPE-MATH.md).
+ * tutor; everything on the board is written with a pen, a finger or the mouse.
  */
 export const liveTools: readonly TLStateNodeConstructor[] = [MathShapeTool] as const;
 export const LIVE_SHAPE_TYPES = ["math", "graph"] as const;

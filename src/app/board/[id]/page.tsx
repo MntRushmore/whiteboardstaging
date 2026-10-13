@@ -56,8 +56,10 @@ import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { InkMeter } from "@/components/billing/InkMeter";
 import { OutOfInkWatcher } from "@/components/billing/OutOfInkWatcher";
-import { usePlanGate } from "@/components/billing/usePlanGate";
-import { noteInkBalance } from "@/lib/live/liveStore";
+import { useFreeBoard } from "@/components/billing/useFreeBoard";
+import type { FreeBoardEnd } from "@/lib/billing/freeBoard";
+import { PLAN_PATH } from "@/lib/onboarding/planMarker";
+import { liveStore, noteInkBalance } from "@/lib/live/liveStore";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
 import { useFeatureLabs } from "@/lib/featureLabs";
@@ -94,7 +96,6 @@ import { topicSheetOpen } from "@/components/topics/topicSheetState";
 import type { ChatKickoff } from "@/components/chat/BoardChatPanel";
 import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
 import { useBoardLearning } from "@/components/learning/useBoardLearning";
-import { useTypeBar } from "@/components/typeMath/typeBarStore";
 import { registerStrokeTimes } from "@/lib/replay/stampTimes";
 import { whenIdle } from "@/lib/whenIdle";
 
@@ -120,13 +121,15 @@ const NowYouTry = React.lazy(() => import("@/components/learning/NowYouTry"));
 const PracticeBoard = React.lazy(() => import("@/components/learning/PracticeBoard"));
 // Today's practice: the stars, and the celebration at the day's goal (only on the day's board)
 const DailyBoard = React.lazy(() => import("@/components/daily/DailyBoard"));
+// The free board used up (src/lib/billing/freeBoard.ts): "Nice work!" and Start your free trial,
+// fetched only at that moment.
+const FreeBoardSheet = React.lazy(() => import("@/components/billing/FreeBoardSheet"));
+/** The tutor rests this long after the free board's end even if its sheet never shows. */
+const FREE_BOARD_PAUSE_MS = 20_000;
 // "Replay my board" (Board options): the board drawn again, full screen; fetched on the first open.
 const KidReplay = React.lazy(() => import("@/components/replay/KidReplay"));
 // New topic (the screen strip's button): the topic picker as a sheet, loaded on the first tap.
 const TopicSheet = React.lazy(() => import("@/components/topics/TopicSheet"));
-// Type it (docs/TYPE-MATH.md): the bar a kid types maths in, with its parser and preview; open by
-// itself on a laptop, behind the toolbar's Type button elsewhere.
-const TypeBar = React.lazy(() => import("@/components/typeMath/TypeBar"));
 // The board chat (Ask): nothing to show until it opens, so it loads in idle time once the board is
 // up, or beside the board's own load when it was left open (docs/BUNDLE.md).
 const loadChatPanel = () => import("@/components/chat/BoardChatPanel");
@@ -204,7 +207,7 @@ const hugeIconsOverrides: TLUiOverrides = {
   },
 };
 
-// Live's tool overrides (no Math tool any more: Type it replaces it) layered on top of the icon overrides above. The text
+// Live's tool overrides (no Math tool: its typed boxes were never read) layered on top of the icon overrides above. The text
 // tool is taken off the board (its toolbar button and its "t" shortcut): typed text boxes are
 // invisible to the tutor, which reads handwriting, so a kid who types an answer gets no help.
 const boardOverrides: TLUiOverrides = {
@@ -228,10 +231,37 @@ interface BoardChatSlot {
   onTallChange: (tall: boolean) => void;
 }
 
-function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion: number | null; chat: BoardChatSlot }) {
+/**
+ * The free board on this page (`useFreeBoard`): `active` while this is the free board of an account
+ * without a plan; `ended` once it was used up during this visit (the sheet's moment).
+ */
+interface BoardFreeSlot {
+  active: boolean;
+  ended: FreeBoardEnd | null;
+}
+
+function BoardContent({ id, initialVersion, chat, free }: { id: string; initialVersion: number | null; chat: BoardChatSlot; free: BoardFreeSlot }) {
   const editor = useEditor();
   useScreenCamera(editor);
   const router = useRouter();
+  // The free board used up (no plan): any help asked for from here goes to the plan screen, and the
+  // sheet says why, once. The tutor rests (its marks stay, the board stays readable) once the sheet
+  // is up — not at the moment itself: a Solve that finished the 5th problem is still being written
+  // then, and pausing drops the steps its hand has not reached, so its pen is finished in place first.
+  const freeOver = free.ended !== null;
+  const [freeSheetOpen, setFreeSheetOpen] = useState(true);
+  const [livePaused, setLivePaused] = useState(false);
+  const openPlan = useCallback(() => router.push(PLAN_PATH), [router]);
+  const pauseLive = useCallback(() => {
+    liveStore.finishWriting.get()?.();
+    setLivePaused(true);
+  }, []);
+  // …and if the sheet never comes (its chunk failed to load), a little later all the same
+  useEffect(() => {
+    if (!freeOver || livePaused) return;
+    const t = setTimeout(pauseLive, FREE_BOARD_PAUSE_MS);
+    return () => clearTimeout(t);
+  }, [freeOver, livePaused, pauseLive]);
   const { features } = useFeatureLabs();
   // Help mode is remembered per board on this device (default Feedback).
   const [assistanceMode, setAssistanceMode] = useAssistanceMode(id);
@@ -271,6 +301,20 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   useEffect(() => {
     if (kickoff) openChat(true);
   }, [kickoff, openChat]);
+  // the free board over: Ask closes with it, and opening it again — the bar's Ask, the kid dock's
+  // (which opens it directly) — goes to the plan screen
+  const chatClosedAtEnd = React.useRef(false);
+  useEffect(() => {
+    if (!freeOver) return;
+    if (!chatClosedAtEnd.current) {
+      chatClosedAtEnd.current = true;
+      if (chat.open) openChat(false);
+      return;
+    }
+    if (!chat.open) return;
+    openChat(false);
+    openPlan();
+  }, [freeOver, chat.open, openChat, openPlan]);
   // the Ask panel's chunk, ready before the first tap on Ask
   useEffect(() => whenIdle(preloadChatPanel), []);
   const askTutor = useCallback((message: string) => setKickoff((k) => ({ id: (k?.id ?? 0) + 1, message })), []);
@@ -278,8 +322,15 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   const topicOpen = useValue("topic sheet open", () => topicSheetOpen.get(), []);
   const [topicMounted, setTopicMounted] = useState(false);
   useEffect(() => {
-    if (topicOpen) setTopicMounted(true);
-  }, [topicOpen]);
+    if (!topicOpen) return;
+    // a new topic is the tutor's help too: once the free board is over, the plan screen instead
+    if (freeOver) {
+      topicSheetOpen.set(false);
+      openPlan();
+      return;
+    }
+    setTopicMounted(true);
+  }, [topicOpen, freeOver, openPlan]);
   useEffect(
     () => () => {
       topicSheetOpen.set(false);
@@ -289,7 +340,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
 
   // Live Math layer: per-device switch (localStorage) gated by the deploy-time kill switch.
   const { settings: live, update: updateLive } = useLiveSettings();
-  const liveEnabled = live.enabled && !LIVE_KILL_SWITCH;
+  const liveOn = live.enabled && !LIVE_KILL_SWITCH;
+  const liveEnabled = liveOn && !livePaused;
   const controller = useLiveMath(editor, {
     boardId: id,
     mode: assistanceMode,
@@ -297,12 +349,6 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     // paused while AI shapes are hidden: no ink spent on marks and steps the student cannot see
     auto: autoActs(live),
   });
-  // Type it: the bar shows while Live can write a typed line here (`useTypeBar` decides when).
-  const typeShown = useTypeBar(liveEnabled && Boolean(controller.writeTyped), guided);
-  // ...and its writer's code loads beside the bar's chunk, not after it (`prepareTyped`)
-  useEffect(() => {
-    if (typeShown) controller.prepareTyped?.().catch(() => undefined);
-  }, [typeShown, controller]);
   // The learning record (src/lib/learning): the problems the student works here, loaded in idle time.
   useBoardLearning(id, user?.id);
   // Lecture mode: the mic and the tutor sketching what is said. Not gated on Live or the help
@@ -361,6 +407,10 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       glow={askGlow}
       big={toolbar.simple}
       onAsk={() => {
+        if (freeOver) {
+          openPlan();
+          return false;
+        }
         const ok = controller.requestHelp();
         if (guided) setTourHelpAsk((a) => ({ n: (a?.n ?? 0) + 1, ok }));
         return ok;
@@ -373,6 +423,10 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   // meter keep working), and the kid's own status takes the pill's place in the bar.
   const toggleAuto = () => updateLive({ auto: !toolbar.autoSwitch?.on });
   const toggleChat = () => {
+    if (freeOver && !chat.open) {
+      openPlan();
+      return;
+    }
     chat.onOpenChange(!chat.open);
     setMoreOpen(false);
   };
@@ -652,7 +706,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           </React.Suspense>
         </LiveErrorBoundary>
       )}
-      {liveEnabled && live.celebrations && (
+      {/* not cut short by the free board's end: the tick that ended it still gets its cheer */}
+      {liveOn && live.celebrations && (
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
             <Celebrations editor={editor} />
@@ -661,7 +716,15 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       )}
 
       {/* a Live 402 or "Unlock help" opens the ink dialog (lazy: the plan); a 402's never mid-stroke */}
-      <OutOfInkWatcher editor={editor} />
+      {/* on the free board, a 402 is the free board's end: its sheet, not the ink dialog */}
+      <OutOfInkWatcher editor={editor} freeBoard={free.active} />
+      {freeOver && freeSheetOpen && user && free.ended && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <FreeBoardSheet editor={editor} userId={user.id} reason={free.ended} onOpen={pauseLive} onStart={openPlan} onClose={() => setFreeSheetOpen(false)} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
       <LiveErrorBoundary>
         <LectureBar lecture={lecture} />
       </LiveErrorBoundary>
@@ -684,13 +747,6 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           <LiveHintLayer editor={editor} controller={controller} />
         </LiveErrorBoundary>
       )}
-      {typeShown && (
-        <LiveErrorBoundary>
-          <React.Suspense fallback={null}>
-            <TypeBar editor={editor} controller={controller} tour={guided} chatOpen={chat.open} simple={toolbar.simple} />
-          </React.Suspense>
-        </LiveErrorBoundary>
-      )}
       {guided && user && (
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
@@ -707,8 +763,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           </React.Suspense>
         </LiveErrorBoundary>
       )}
-      {/* the problem it offers is written in the tutor's hand: not while the tutor's writing is hidden */}
-      {liveEnabled && !live.hideAiShapes && (
+      {/* the problem it offers is written in the tutor's hand: not while the tutor's writing is hidden,
+          nor once the free board is over (another problem is more help) */}
+      {liveEnabled && !freeOver && !live.hideAiShapes && (
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
             <NowYouTry controller={controller} tour={guided} />
@@ -844,7 +901,14 @@ export default function BoardPage() {
   // the guided first board, the tour before the plan screen (its marker is read once the user is
   // known, and the tour clears it as it ends: the next board is gated).
   const guidedBoard = useMemo(() => (userId ? isGuidedBoard(onboardingStorage(), userId, id) : false), [userId, id]);
-  usePlanGate({ enabled: !guidedBoard, page: "board" });
+  // …and one free board (src/lib/billing/freeBoard.ts): an account without a plan keeps its oldest
+  // board until 5 problems are done on it or its starter ink runs out (a Live 402 here says so at
+  // once); any other board goes to the plan screen.
+  const inkRefused = useValue("live ink refused", () => liveStore.lastError.get()?.code === "ink", []);
+  const freeBoard = useFreeBoard({ enabled: !guidedBoard, page: "board", boardId: id, inkRefused });
+  const freeActive = freeBoard.gate === "free";
+  const freeEnded = freeBoard.usedUp ? freeBoard.ended : null;
+  const free = useMemo(() => ({ active: freeActive, ended: freeEnded }), [freeActive, freeEnded]);
   // The simple board (every student's unless switched off): its dock comes down while the board does,
   // without holding it up.
   usePreloadKidDock(useSimpleBoard(userId));
@@ -1018,7 +1082,7 @@ export default function BoardPage() {
           return stopStrokeTimes;
         }}
       >
-        <BoardContent id={id} initialVersion={initialVersion} chat={{ open: chatOpen, onOpenChange: setChatOpen, host: chatHost, tall: chatTall, onTallChange: setChatTall }} />
+        <BoardContent id={id} initialVersion={initialVersion} chat={{ open: chatOpen, onOpenChange: setChatOpen, host: chatHost, tall: chatTall, onTallChange: setChatTall }} free={free} />
       </Tldraw>
       </div>
       {/* the chat panel: docked on the right on a wide screen held sideways, a bottom sheet on a

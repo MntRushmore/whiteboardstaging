@@ -1,7 +1,8 @@
 /**
  * The admin Funnel's numbers (GET /api/admin/funnel): admin_funnel()'s per-account answer
- * (supabase/migrations/20261012020000_funnel_steps.sql, v2 of 20261009020000_funnel.sql) added up
- * into a FunnelReport for one cohort of sign-ups — the totals, one row per sign-up week, one per
+ * (supabase/migrations/20261013020000_start_steps.sql, v3; v2 in 20261012020000_funnel_steps.sql,
+ * v1 in 20261009020000_funnel.sql) added up into a FunnelReport for one cohort of sign-ups — the
+ * steps before the account (by journey at /start), the totals, one row per sign-up week, one per
  * source, how they left the welcome and the guided board — and the schema the page checks the
  * route's answer with.
  *
@@ -9,18 +10,22 @@
  * made-up accounts. The adding up lives here, not in SQL, so every rule of it is one test away.
  */
 import { z } from "zod";
+import { START_EVENTS, type StartEvent } from "@/lib/start/contracts";
 import {
   DEFAULT_FUNNEL_COHORT,
   FUNNEL_COHORTS,
   FUNNEL_PATHS,
   FUNNEL_STAGES,
   PAYWALL_AT,
+  START_STAGES,
   type FunnelCohort,
   type FunnelPath,
   type FunnelPathRow,
   type FunnelReport,
   type FunnelRow,
   type FunnelStage,
+  type StartFunnel,
+  type StartStage,
 } from "./contracts";
 import { FUNNEL_STEPS, type FunnelStep } from "./steps";
 
@@ -78,6 +83,23 @@ const FunnelAccountSchema = z.object({
 });
 export type FunnelAccount = z.output<typeof FunnelAccountSchema>;
 
+/**
+ * `n` journeys of the last 60 days that began in the same minute and recorded the same events (v3,
+ * 20261013020000_start_steps.sql). Unknown events are dropped, not refused (a newer database).
+ */
+const StartJourneysSchema = z.object({
+  first_at: z.string(),
+  events: known(START_EVENTS),
+  n: z.number().int().positive(),
+});
+
+/** admin_funnel()'s `start` (v3): absent on a database without it, which the report reads as null. */
+const StartRpcSchema = z.object({
+  /** the window's start: no journey that began before it is listed */
+  since: z.string(),
+  journeys: z.array(StartJourneysSchema),
+});
+
 export const FunnelRpcSchema = z.object({
   time_zone: z.string(),
   generated_at: z.string(),
@@ -85,6 +107,7 @@ export const FunnelRpcSchema = z.object({
   active_subscriptions: z.number().int().nonnegative(),
   kid_profiles: z.number().int().nonnegative(),
   accounts: z.array(FunnelAccountSchema),
+  start: StartRpcSchema.nullish().transform((v) => v ?? null),
 });
 export type FunnelRpc = z.output<typeof FunnelRpcSchema>;
 
@@ -123,6 +146,89 @@ export function funnelPathOf(steps: readonly FunnelStep[]): FunnelPath | null {
   if (has.has("welcome_started")) return "left_board";
   if (has.has("welcome_shown")) return "left_welcome";
   return null;
+}
+
+/** The steps before the account that make the chain: every one of START_STAGES but the try's checked line. */
+const START_CHAIN: readonly StartStage[] = START_STAGES.filter((s) => s !== "start_try_checked");
+
+/**
+ * The furthest chain step each event stands for: an answer on a screen means the screen before it
+ * was passed (a name means who was chosen, a focus or the parent's proof screen means a grade was
+ * picked), a checked line on the try board means the try board showed, and a kid sending the plan
+ * to a grown-up means the account screen showed. `start_handoff_opened` is not here: a journey
+ * opened from a grown-up's link continues a kid's, and is counted apart (`startReached`).
+ */
+const START_IMPLIES: Readonly<Partial<Record<StartEvent, StartStage>>> = {
+  start_shown: "start_shown",
+  start_who: "start_who",
+  start_name: "start_who",
+  start_grade: "start_grade",
+  start_focus: "start_grade",
+  start_proof: "start_grade",
+  start_try_shown: "start_try_shown",
+  start_try_checked: "start_try_shown",
+  start_plan: "start_plan",
+  start_account_shown: "start_account_shown",
+  start_handoff: "start_account_shown",
+  start_account: "start_account",
+};
+
+/**
+ * The steps before the account a journey reached, as a chain (START_STAGES): its furthest step and
+ * every one before it, and the try's checked line only when it was recorded. Null for a journey
+ * opened from a grown-up's link (`start_handoff_opened`): it continues a kid's journey, which the
+ * chain already counts, so it is counted apart; and an empty set for a journey with no step known.
+ */
+export function startReached(events: readonly StartEvent[]): Set<StartStage> | null {
+  const have = new Set(events);
+  if (have.has("start_handoff_opened")) return null;
+  let last = -1;
+  for (const event of have) {
+    const stage = START_IMPLIES[event];
+    if (stage) last = Math.max(last, START_CHAIN.indexOf(stage));
+  }
+  const out = new Set<StartStage>();
+  for (let i = 0; i <= last; i += 1) out.add(START_CHAIN[i]);
+  if (have.has("start_try_checked")) out.add("start_try_checked");
+  // in START_STAGES order
+  return new Set(START_STAGES.filter((s) => out.has(s)));
+}
+
+function emptyStartCounts(): Record<StartStage, number> {
+  return Object.fromEntries(START_STAGES.map((s) => [s, 0])) as Record<StartStage, number>;
+}
+
+/** The later of two ISO times (either may be null, which loses). */
+function later(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Date.parse(a) >= Date.parse(b) ? a : b;
+}
+
+/**
+ * admin_funnel()'s `start` added up for one cohort: the journeys that began in it (to the minute,
+ * like the sign-ups: `inCohort`), each counted at every step it reached (`startReached`), and the
+ * hand-offs to a grown-up apart. Null when the database does not count the steps (`rpc.start`).
+ */
+export function buildStartFunnel(start: FunnelRpc["start"], cohort: FunnelCohort, cohortSince: string | null): StartFunnel | null {
+  if (!start) return null;
+  const since = cohort === "all" ? start.since : cohortSince === null ? null : later(cohortSince, start.since);
+  const counts = emptyStartCounts();
+  const handoff = { sent: 0, opened: 0, accounts: 0 };
+  if (since === null) return { since, counts, handoff };
+  const from = Math.floor(Date.parse(since) / 60_000) * 60_000;
+  for (const group of start.journeys) {
+    if (cohort !== "all" && !(Date.parse(group.first_at) >= from)) continue;
+    const reached = startReached(group.events);
+    if (reached === null) {
+      handoff.opened += group.n;
+      if (group.events.includes("start_account")) handoff.accounts += group.n;
+      continue;
+    }
+    for (const stage of reached) counts[stage] += group.n;
+    if (group.events.includes("start_handoff")) handoff.sent += group.n;
+  }
+  return { since, counts, handoff };
 }
 
 /** When a cohort's sign-ups begin (ISO), null for all time; "tracked" before any step was recorded has no start and no accounts. */
@@ -218,6 +324,7 @@ export function buildFunnelReport(rpc: FunnelRpc, opts: { monthlyUsd: number; co
     byWeek: [...weeks.values()].sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0)),
     bySource: [...sources.values()].sort((a, b) => b.counts.signed_up - a.counts.signed_up || a.key.localeCompare(b.key)),
     paths: [...paths.values()],
+    start: buildStartFunnel(rpc.start, cohort, since),
     allTime,
     mrrUsd: rpc.active_subscriptions * opts.monthlyUsd,
     activeSubscriptions: rpc.active_subscriptions,
@@ -242,6 +349,12 @@ const FunnelPathRowSchema = z.object({
   trialStarted: Count,
 });
 
+const StartFunnelSchema = z.object({
+  since: z.string().nullable(),
+  counts: z.object(Object.fromEntries(START_STAGES.map((s) => [s, Count])) as Record<StartStage, typeof Count>),
+  handoff: z.object({ sent: Count, opened: Count, accounts: Count }),
+});
+
 /** GET /api/admin/funnel's answer, checked by the page before it shows anything. */
 export const FunnelReportSchema: z.ZodType<FunnelReport, z.ZodTypeDef, unknown> = z.object({
   generatedAt: z.string(),
@@ -253,6 +366,8 @@ export const FunnelReportSchema: z.ZodType<FunnelReport, z.ZodTypeDef, unknown> 
   byWeek: z.array(FunnelRowSchema),
   bySource: z.array(FunnelRowSchema),
   paths: z.array(FunnelPathRowSchema),
+  // a route from before the steps before the account answers without it
+  start: StartFunnelSchema.nullish().transform((v) => v ?? null),
   allTime: FunnelRowSchema,
   mrrUsd: z.number().nonnegative(),
   activeSubscriptions: Count,

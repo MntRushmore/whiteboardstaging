@@ -22,6 +22,7 @@ import {
   type FunnelTableRowView,
   type FunnelTile,
   type FunnelView,
+  type StartView,
 } from "@/lib/funnel/funnelView";
 import { FunnelReportSchema, funnelUrl } from "@/lib/funnel/report";
 import SegmentedControl from "@/registry/components/segmented-control/segmented-control";
@@ -48,12 +49,15 @@ function Tiles({ tiles }: { tiles: readonly FunnelTile[] }) {
   );
 }
 
-function Bars({ bars, notes }: { bars: readonly FunnelBarView[]; notes: readonly string[] }) {
+/** A bar of either chain: the account's stages (FunnelBarView) or the steps before the account (StartBarView). */
+type BarView = Pick<FunnelBarView, "label" | "count" | "ratio" | "ofText" | "summary"> & { stage: string; branch?: boolean };
+
+function Bars({ bars, notes }: { bars: readonly BarView[]; notes: readonly string[] }) {
   return (
     <div className={styles.panel}>
       <ol className={f.bars}>
         {bars.map((b) => (
-          <li key={b.stage} className={f.bar} aria-label={b.summary}>
+          <li key={b.stage} className={f.bar} data-branch={b.branch || undefined} aria-label={b.summary}>
             <span className={f.barLabel} aria-hidden>
               {b.label}
             </span>
@@ -76,6 +80,13 @@ function Bars({ bars, notes }: { bars: readonly FunnelBarView[]; notes: readonly
       ))}
     </div>
   );
+}
+
+/** The visits to /start before the account: the bars, or why there are none. */
+function StartBars({ start }: { start: StartView }) {
+  if (start.missing) return <p className={f.empty}>{FUNNEL_COPY.startMissing}</p>;
+  if (start.empty) return <p className={f.empty}>{FUNNEL_COPY.startEmpty}</p>;
+  return <Bars bars={start.bars} notes={start.notes} />;
 }
 
 function PathCell({ cell }: { cell: FunnelPathCellView }) {
@@ -191,10 +202,11 @@ export interface FunnelContentProps {
 const COHORT_OPTIONS = cohortOptions();
 
 /**
- * The Funnel under its header: which sign-ups it counts, the money, the stage bars, how sign-ups
- * left the welcome and the guided board, then the same stages by sign-up week and by source.
- * Renders from a finished view (skeletons on the first read, what failed and Try again when it
- * could not be read, a calm empty state before anyone signs up or in a range nobody signed up in).
+ * The Funnel under its header: which sign-ups it counts, the money, the steps at /start before the
+ * account, the stage bars, how sign-ups left the welcome and the guided board, then the same stages
+ * by sign-up week and by source. Renders from a finished view (skeletons on the first read, what
+ * failed and Try again when it could not be read, a calm empty state before anyone signs up or in a
+ * range nobody signed up in, with the steps before the account above it when there are some).
  */
 export function FunnelContent({ view, loading, error, updated, onRefresh, cohort, onCohort }: FunnelContentProps) {
   let body: ReactNode;
@@ -206,6 +218,11 @@ export function FunnelContent({ view, loading, error, updated, onRefresh, cohort
         <Section id="funnel-money" title={FUNNEL_COPY.moneyTitle} hint={FUNNEL_COPY.moneyHint}>
           <Tiles tiles={view.tiles} />
         </Section>
+        {!view.start.empty && (
+          <Section id="funnel-start" title={FUNNEL_COPY.startTitle} hint={view.start.hint}>
+            <StartBars start={view.start} />
+          </Section>
+        )}
         <Empty
           icon={<UsersRound size={22} strokeWidth={1.6} />}
           title={view.empty ? FUNNEL_COPY.emptyTitle : FUNNEL_COPY.emptyCohortTitle}
@@ -218,6 +235,9 @@ export function FunnelContent({ view, loading, error, updated, onRefresh, cohort
       <div className={styles.sections}>
         <Section id="funnel-money" title={FUNNEL_COPY.moneyTitle} hint={FUNNEL_COPY.moneyHint}>
           <Tiles tiles={view.tiles} />
+        </Section>
+        <Section id="funnel-start" title={FUNNEL_COPY.startTitle} hint={view.start.hint}>
+          <StartBars start={view.start} />
         </Section>
         <Section id="funnel-stages" title={FUNNEL_COPY.stagesTitle} hint={FUNNEL_COPY.stagesHint}>
           <Bars bars={view.bars} notes={view.notes} />

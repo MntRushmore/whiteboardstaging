@@ -3,6 +3,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/components/AuthProvider";
 import { AttributionCapture } from "@/components/funnel/AttributionCapture";
+import { StartResume } from "@/components/start/StartResume";
 import { geistMono, geistSans } from "./fonts";
 
 export const metadata: Metadata = {
@@ -35,7 +36,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>{children}<AttributionCapture /></AuthProvider>
+        <AuthProvider>{children}<AttributionCapture /><StartResume /></AuthProvider>
         <Toaster />
       </body>
     </html>

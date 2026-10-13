@@ -14,8 +14,9 @@ const { default: PrivacyPage } = await import("@/app/(platform)/privacy/page");
 const { landingCopy, LANDING_COPY } = await import("../copy");
 const { MAX_KIDS } = await import("@/lib/family/contracts");
 const { PLAN_REFERRAL_COPY, REFERRAL_TRIAL_DAYS } = await import("@/lib/billing/planChoice");
-const { SIGN_UP_HREF } = await import("@/lib/landing/links");
+const { SIGN_UP_HREF, START_HREF } = await import("@/lib/landing/links");
 const { JOIN_ID } = await import("../bands");
+const { TRY_PATH } = await import("@/lib/try/contracts");
 
 const html = renderToStaticMarkup(<ParentsPage />);
 /** the page's text, entities read back (apostrophes are escaped) */
@@ -51,7 +52,11 @@ describe("/parents", () => {
     expect(text).toContain("Free for the first 10 days.");
     // one name for the main button everywhere; the trial's length is said beside it
     expect(text).toContain("Join Agathon");
-    expect(text).not.toMatch(/Start free trial|Try it free(?! for)|Start your free/);
+    expect(text).not.toMatch(/Start free trial|Start your free/);
+    // "Try it free" names the free board anyone can write on (/try), never the trial: only its links say it
+    const tryWords = text.match(/Try it free(?! for)/g) ?? [];
+    expect(tryWords.length).toBeGreaterThan(0);
+    expect(links.filter((l) => l.href === TRY_PATH && l.words === "Try it free")).toHaveLength(tryWords.length);
     expect(text).not.toMatch(/\$25|7-day|7 days|free week/);
     expect(String(metadata.description)).toContain("Free for 10 days");
   });
@@ -110,20 +115,21 @@ describe("/parents", () => {
     expect(pictures).toContain(LANDING_COPY.replay.label);
   });
 
-  it("sends Join to the sign-up form and Sign in to the sign-in form", () => {
-    expect(html).toContain('href="/login?mode=signup"');
+  it("sends Join to the new onboarding (/start) and Sign in to the sign-in form; no button opens the old sign-up tab", () => {
+    expect(html).toContain('href="/start"');
     expect(html).toContain('href="/login"');
+    expect(html).not.toContain(`href="${SIGN_UP_HREF}"`);
   });
 
   it("calls every way in Join Agathon: the bar, the hero, the pricing card, the Join band and the phone's bottom bar", () => {
-    const joins = links.filter((l) => l.href === SIGN_UP_HREF);
+    const joins = links.filter((l) => l.href === START_HREF);
     expect(joins.length).toBeGreaterThanOrEqual(5);
     for (const link of joins) expect(link.words).toBe("Join Agathon");
     const copy = LANDING_COPY;
     expect(new Set([copy.nav.cta, copy.hero.start, copy.pricing.start, copy.join.start, copy.sticky.start])).toEqual(new Set(["Join Agathon"]));
     // the Join band has the button, Sign in and the terms
     const join = sectionById(JOIN_ID);
-    expect(join).toContain(`href="${SIGN_UP_HREF}"`);
+    expect(join).toContain(`href="${START_HREF}"`);
     expect(plain(join)).toContain("Join Agathon");
     expect(plain(join)).toContain(copy.join.aside);
     expect(join).toContain('href="/login"');

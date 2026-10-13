@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { checkIsAdmin } from "@/components/admin/useIsAdmin";
 import { clientMetric } from "@/lib/logger";
-import { gateNeedsAdmin, markCheckoutReturn, planGate, returnedFromCheckout, type PlanGate } from "@/lib/billing/planGate";
-import { isUnlimitedReturn, unlimitedLink } from "@/lib/billing/unlimited";
+import { gateNeedsAdmin, markCheckoutReturn, planGate, returnedFromCheckout, type PlanGate, type PlanGateInput } from "@/lib/billing/planGate";
+import { isUnlimitedReturn, unlimitedLink, type UnlimitedState } from "@/lib/billing/unlimited";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { PLAN_PATH } from "@/lib/onboarding/planMarker";
 
@@ -19,15 +19,12 @@ function sessionStore(): Storage | null {
 }
 
 /**
- * The paywall on a signed-in page (`planGate`): a student without Agathon Unlimited is sent to the
- * plan screen, once the plan has been read. `enabled: false` leaves the page alone (the welcome,
- * the guided first board). Returns the gate, so a page can hold back what it would only flash.
- *
- * The plan is part of the ink summary every page reads already (one shared request). `is_admin()`
- * is asked only when the answer would lock someone out, and remembered for the tab.
+ * What the paywall decides on (`PlanGateInput`), as a signed-in page knows it: the plan (the ink
+ * summary every page reads already: one shared request), the checkout link, the return from
+ * checkout, and `is_admin()` — asked only when the answer would hold someone (`gateNeedsAdmin`),
+ * and remembered for the tab. Shared by `usePlanGate` and `useFreeBoard`.
  */
-export function usePlanGate({ enabled = true, page }: { enabled?: boolean; page: string }): PlanGate {
-  const router = useRouter();
+export function usePlanInput(enabled: boolean): { input: PlanGateInput; userId: string | undefined; state: UnlimitedState } {
   const { user } = useAuth();
   const { state, known } = useUnlimited();
   const userId = user?.id;
@@ -40,9 +37,8 @@ export function usePlanGate({ enabled = true, page }: { enabled?: boolean; page:
   });
   const [admin, setAdmin] = useState<{ userId: string; value: boolean } | null>(null);
 
-  const input = { enabled: enabled && Boolean(userId), checkoutOpen: unlimitedLink() !== null, known, state, justPaid };
-  const needsAdmin = gateNeedsAdmin(input);
-  const gate = planGate({ ...input, admin: admin && admin.userId === userId ? admin.value : null });
+  const base = { enabled: enabled && Boolean(userId), checkoutOpen: unlimitedLink() !== null, known, state, justPaid };
+  const needsAdmin = gateNeedsAdmin(base);
 
   useEffect(() => {
     if (!needsAdmin || !userId) return;
@@ -55,6 +51,20 @@ export function usePlanGate({ enabled = true, page }: { enabled?: boolean; page:
       live = false;
     };
   }, [needsAdmin, userId]);
+
+  return { input: { ...base, admin: admin && admin.userId === userId ? admin.value : null }, userId, state };
+}
+
+/**
+ * The paywall on a signed-in page (`planGate`): a student without Agathon Unlimited is sent to the
+ * plan screen, once the plan has been read. `enabled: false` leaves the page alone (the welcome,
+ * the guided first board). Returns the gate, so a page can hold back what it would only flash.
+ * The home and the boards use `useFreeBoard` instead: the same paywall with the free board.
+ */
+export function usePlanGate({ enabled = true, page }: { enabled?: boolean; page: string }): PlanGate {
+  const router = useRouter();
+  const { input, state } = usePlanInput(enabled);
+  const gate = planGate(input);
 
   useEffect(() => {
     if (gate !== "locked") return;

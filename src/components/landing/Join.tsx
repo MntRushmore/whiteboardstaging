@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { SIGN_IN_HREF, SIGN_UP_HREF } from "@/lib/landing/links";
+import { SIGN_IN_HREF } from "@/lib/landing/links";
 import { JOIN_ID } from "./bands";
 import { LANDING_COPY } from "./copy";
+import { JoinLink } from "./JoinLink";
 import { InkArrow } from "./InkMark";
 import { Lines } from "./Lines";
 import { TrialWords } from "./TrialWords";
@@ -32,9 +33,9 @@ export function Join() {
                 <InkArrow className={styles.joinArrow} ink="white" draw="join-arrow" atMs={250} forMs={560} length={64} pen={2.5} seed={5} />
               </span>
             </p>
-            <Link href={SIGN_UP_HREF} className={`${styles.pill} ${styles.pillLarge} ${styles.joinPill}`}>
+            <JoinLink className={`${styles.pill} ${styles.pillLarge} ${styles.joinPill}`}>
               <TrialWords usual={copy.start} invited={invited.start} />
-            </Link>
+            </JoinLink>
           </div>
           <Link href={SIGN_IN_HREF} className={`${styles.textLink} ${styles.joinSignIn}`}>
             {copy.signIn}

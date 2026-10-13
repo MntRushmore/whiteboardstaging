@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TUTOR_INK_COLOR } from "@/lib/live/answer";
 import { CHAT_BUTTON_COPY } from "@/components/chat/askButton";
-import { TYPE_BUTTON_COPY } from "@/components/typeMath/typeBarStore";
 import {
   DOCK_COPY,
   DOCK_SIZE,
@@ -102,10 +101,9 @@ describe("how much of the dock fits (dockFit)", () => {
 });
 
 describe("kidDockView", () => {
-  it("Ask and Type are named as the board's own buttons name them, with hints a kid understands", () => {
+  it("Ask is named as the board's own button names it, with a hint a kid understands", () => {
     expect(DOCK_COPY.ask).toBe(CHAT_BUTTON_COPY.button);
     expect(DOCK_COPY.askHint).toMatch(/tutor/i);
-    expect(DOCK_COPY.type).toBe(TYPE_BUTTON_COPY.label);
   });
 
   it("shows which tool is in hand: Select, Pen, Eraser, or Shapes for a line, an arrow, a box or a circle", () => {
