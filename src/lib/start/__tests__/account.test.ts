@@ -15,7 +15,7 @@ import { copyStartLink, handoffMailto, handoffMessage, shareStartLink, START_ACC
 const USER = "11111111-2222-4333-8444-555555555555";
 const SAM: StartAnswers = { role: "parent", name: "Sam", choice: { kind: "grade", grade: 3 }, focus: ["times_tables"], tried: null, heardFrom: "school" };
 const FINISHED: FinishResult = { next: PLAN_PATH, boardId: "board-1", saved: true, name: "named", failed: [] };
-const LINK = "https://www.agathon.app/start?a=eyJyb2xlIjoia2lkIn0";
+const LINK = "https://www.agathon.app/start#a=eyJyb2xlIjoia2lkIn0";
 
 function fakeDeps(reply: Awaited<ReturnType<SubmitDeps["signUp"]>> | Error = { data: { session: { user: { id: USER } }, user: { id: USER } }, error: null }) {
   const order: string[] = [];

@@ -92,7 +92,11 @@ export const StartAnswersSchema = z.object({
 
 /** The device keeps the flow (answers, the screen, the journey id) in localStorage under this key. */
 export const START_STORAGE_KEY = "agathon.start";
-/** The "Send it to my grown-up" link carries the answers in this query parameter (base64url JSON). */
+/**
+ * The "Send it to my grown-up" link carries the answers under this key in its FRAGMENT
+ * (`/start#a=<base64url JSON>`), never the query: the fragment is not sent to the server, so the
+ * kid's first name stays out of request logs (`link.ts`).
+ */
 export const START_ANSWERS_PARAM = "a";
 
 // ------------------------------------------------------------------ counting the steps before the account

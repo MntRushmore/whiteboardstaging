@@ -1,7 +1,9 @@
 /**
  * The answers as a link: "Send it to my grown-up" (a kid alone on the account screen) shares
- * `${origin}/start?a=<base64url(JSON of the answers)>`, and /start opened from it starts where the
- * kid left off. The same check reads the answers back from the device (`pending.ts`).
+ * `${origin}/start#a=<base64url(JSON of the answers)>`, and /start opened from it starts where the
+ * kid left off (`answersFromHash`). The answers ride in the fragment, which the browser never sends
+ * to a server, so the kid's first name never reaches a request log. The same check reads the
+ * answers back from the device (`pending.ts`).
  *
  * Only the answers ever go in: who, the kid's first name, the grade or course, the skills picked,
  * what happened on the try board, and where they heard of us. Never an email, never an id. On the
@@ -18,7 +20,7 @@ import type { WelcomeChoice } from "@/lib/onboarding/choice";
 import { EMPTY_ANSWERS, MAX_FOCUS, START_ANSWERS_PARAM, START_PATH, StartAnswersSchema, type StartAnswers } from "./contracts";
 
 /**
- * The longest `?a=` value read. A real one is a few hundred characters (a 24-letter name, three
+ * The longest `#a=` value read. A real one is a few hundred characters (a 24-letter name, three
  * skills); anything longer is not ours, and is not parsed.
  */
 export const MAX_START_ANSWERS_PARAM = 1024;
@@ -86,7 +88,13 @@ export function decodeStartAnswers(param: string | null | undefined): StartAnswe
   }
 }
 
-/** "https://www.agathon.app/start?a=…": the link a kid sends their grown-up. */
+/** "https://www.agathon.app/start#a=…": the link a kid sends their grown-up. */
 export function startAnswersLink(origin: string, answers: StartAnswers): string {
-  return `${origin.replace(/\/+$/, "")}${START_PATH}?${START_ANSWERS_PARAM}=${encodeStartAnswers(answers)}`;
+  return `${origin.replace(/\/+$/, "")}${START_PATH}#${START_ANSWERS_PARAM}=${encodeStartAnswers(answers)}`;
+}
+
+/** The answers a grown-up's link carries, from `location.hash` ("#a=…"); null when it carries none. */
+export function answersFromHash(hash: string | null | undefined): StartAnswers | null {
+  if (typeof hash !== "string" || !hash.startsWith("#")) return null;
+  return decodeStartAnswers(new URLSearchParams(hash.slice(1)).get(START_ANSWERS_PARAM));
 }

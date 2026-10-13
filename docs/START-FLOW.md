@@ -23,7 +23,7 @@
 | 6 | `try` | The try board with a problem from Sam's grade: "Try one, or hand it to Sam" | "Write the answer" |
 | 7 | `building` | "Making Sam's plan…" (a short beat; the plan is computed here) | same |
 | 8 | `plan` | "Sam's plan is ready": today's practice and the first skills on the path | same |
-| 9 | `account` | Save Sam's plan: email, password, terms, "How did you hear about Agathon?" (optional) | "Ask a grown-up to save it": "My grown-up is here" (the form, worded for the grown-up) or "Send it to my grown-up" (share / copy a link that reopens /start with the answers) |
+| 9 | `account` | Save Sam's plan: email, password, terms, "How did you hear about Agathon?" (optional) | "Ask a grown-up to save it": "My grown-up is here" (the form, worded for the grown-up) or "Send it to my grown-up" (share / copy a link that reopens /start with the answers in its `#` fragment, so the name never reaches a server log) |
 
 **Every screen:**
 - One question per screen.

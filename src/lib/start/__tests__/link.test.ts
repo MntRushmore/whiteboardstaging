@@ -97,12 +97,28 @@ describe("encodeStartAnswers / decodeStartAnswers", () => {
 });
 
 describe("startAnswersLink", () => {
-  it("reopens /start with the answers in ?a=", () => {
+  it("reopens /start with the answers in #a=, never in the query", () => {
     const link = startAnswersLink("https://www.agathon.app/", SAM);
     const url = new URL(link);
     expect(url.origin).toBe("https://www.agathon.app");
     expect(url.pathname).toBe(START_PATH);
-    expect([...url.searchParams.keys()]).toEqual([START_ANSWERS_PARAM]);
-    expect(decodeStartAnswers(url.searchParams.get(START_ANSWERS_PARAM))).toEqual(SAM);
+    expect(url.search).toBe("");
+    expect(decodeStartAnswers(new URLSearchParams(url.hash.slice(1)).get(START_ANSWERS_PARAM))).toEqual(SAM);
+  });
+});
+
+describe("the grown-up link keeps the answers in its fragment", () => {
+  it("puts them after #, never in the query, and reads them back from location.hash", async () => {
+    const { startAnswersLink, answersFromHash } = await import("../link");
+    const answers = { role: "kid", name: "Sam", choice: { kind: "grade", grade: 3 }, focus: ["times_tables"], tried: null, heardFrom: null } as const;
+    const link = startAnswersLink("https://www.agathon.app/", answers);
+    const url = new URL(link);
+    expect(url.pathname).toBe("/start");
+    expect(url.search).toBe("");
+    expect(url.hash.startsWith("#a=")).toBe(true);
+    expect(answersFromHash(url.hash)).toMatchObject({ role: "kid", name: "Sam", choice: { kind: "grade", grade: 3 }, focus: ["times_tables"] });
+    expect(answersFromHash("")).toBeNull();
+    expect(answersFromHash("#b=1")).toBeNull();
+    expect(answersFromHash("#a=not-base64!!")).toBeNull();
   });
 });
