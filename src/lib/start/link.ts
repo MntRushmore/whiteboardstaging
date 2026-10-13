@@ -13,11 +13,11 @@
  * Pure: no React, no storage, no network. Tested in `__tests__/link.test.ts`.
  */
 import { isHeardFrom } from "@/lib/funnel/contracts";
-import { isSkillId } from "@/lib/learning/contracts";
 import { isGrade, type PathSkillId } from "@/lib/learning/grades";
 import { isCourseId } from "@/lib/onboarding/courseIds";
 import type { WelcomeChoice } from "@/lib/onboarding/choice";
 import { EMPTY_ANSWERS, KID_NAME, MAX_FOCUS, START_ANSWERS_PARAM, START_PATH, START_ROLES, type StartAnswers, type StartRole } from "./contracts";
+import { isStartSkill } from "./plan";
 
 /**
  * The longest `#a=` value read. A real one is a few hundred characters (a 24-letter name, three
@@ -38,10 +38,10 @@ function cleanChoice(v: unknown): WelcomeChoice | null {
   return null;
 }
 
-/** The skills picked: dropped whole when the list is not one (too long, not strings), else the real ones, once each. */
+/** The skills picked: dropped whole when the list is not one (too long, not strings), else the ones /start offers, once each. */
 function cleanFocus(v: unknown): PathSkillId[] {
   if (!Array.isArray(v) || v.length > MAX_FOCUS || !v.every((id) => typeof id === "string" && id.length <= MAX_SKILL_ID)) return [];
-  return [...new Set(v.filter((id): id is PathSkillId => isSkillId(id)))].slice(0, MAX_FOCUS);
+  return [...new Set(v.filter((id): id is PathSkillId => isStartSkill(id)))].slice(0, MAX_FOCUS);
 }
 
 /**

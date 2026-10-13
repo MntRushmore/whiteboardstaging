@@ -35,6 +35,7 @@ Run it with `npm run bundle:check` (`node scripts/check-bundle.mjs`). Unit tests
 | --- | --- | --- |
 | `/board/[id]` | 1,076,120 B (1.03 MB) at `feat/type-math` (2026-10-12, below) | **1,100,000 B (~1.05 MB)**: raised from 1,060,000 on 2026-10-04 (below) |
 | `/try` | 250,429 B (245 KB) at `feat/try-page` (2026-10-13, below) | **265,000 B (~259 KB)** |
+| `/start` | 260,947 B (255 KB) at `feat/start-flow-ui` (2026-10-13, below) | **275,000 B (~269 KB)** |
 
 The budget lives in `BUDGETS` in `scripts/check-bundle.mjs`. Raising it needs a line in this file saying
 what was added and why it could not be lazy-loaded. `/train` has no budget: trainer-only route, same
@@ -54,6 +55,19 @@ step from `/api/try/help` arrives as SVG paths) and zod (the board imports the c
 `TRY_API` and `TRY_MAX_LINES` come in as props). Everyone else's first load grew by about 100 B: the
 try step's effect in AttributionCapture (`/board/[id]` 1,076,831 B, `/` 400,320 B), whose recorder is a
 lazy chunk loaded only on a device that holds the try marker.
+
+**The new onboarding, 2026-10-13** (`feat/start-flow-ui`, docs/START-FLOW.md). Every Join Agathon goes to
+`/start`, mostly on phones, so it gets a budget too: 260,947 B measured, 275,000 B allowed. It is the
+platform pages' shared JS plus one page chunk of about 25 KB gzip: the flow (`StartFlow`, its screens,
+`src/lib/start/flow.ts`, `plan.ts`, `link.ts`, `record.ts`), the tutor's check (`markStrokes`) and the
+grade and course words. Lazy, loaded as the family gets near them: the try board (`StartTry`, with
+`TryBoard`) and the account form (`StartAccount`, with Supabase); the handwriting comes as static JSON
+(`GET /api/start/ink`, about 28 KB gzip) after the first answer. What it never loads on the first
+screen: zod (the start contract has none; the step request's schema is the route's, `schemas.ts`) and
+the learning contract (src/lib/learning/contracts.ts imports zod through `hint.ts`; `plan.ts` keeps its
+own words for the high-school skills, held to `SKILLS` and the topic list by its tests). Taking those
+two out cut 15,950 B (276,897 → 260,947). The page's titles load the landing page's serif (Fraunces,
+a font file, not JS).
 
 CSS: Turbopack put `try.module.css` into the same CSS chunk as the landing page's (they share
 `ink.module.css`), so `/try` and `/parents` load one 12.3 KB gzip chunk between them (`/parents` CSS

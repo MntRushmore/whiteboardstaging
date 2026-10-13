@@ -13,9 +13,12 @@
  * family that picked "Not sure" starts at the beginning of the path.
  *
  * Pure: no React, no storage, no network, no generators (whether a skill has practice problems is
- * `finish.ts`'s question, asked once the account exists).
+ * `finish.ts`'s question, asked once the account exists). Light on purpose: /start's first screen
+ * loads it, so it reads the K–8 skills from `grades.ts` and keeps its own words for the high-school
+ * ones (held to `SKILLS` and the topic list in `__tests__/plan.test.ts`) rather than load
+ * src/lib/learning/contracts.ts, which brings zod.
  */
-import { SKILLS, type SkillId } from "@/lib/learning/contracts";
+import type { SkillId } from "@/lib/learning/contracts";
 import { GRADE_PATHS, gradeLabel, isK8SkillId, K8_SKILLS, type PathSkillId } from "@/lib/learning/grades";
 import type { CourseId } from "@/lib/onboarding/courseIds";
 import type { WelcomeChoice } from "@/lib/onboarding/choice";
@@ -38,40 +41,39 @@ export const COURSE_FOCUS: Readonly<Record<CourseId, readonly SkillId[]>> = {
 };
 
 /**
- * One line under each high-school topic, in a student's words (the topic list's own lines, from
- * src/lib/learning/topics.ts, copied here so /start does not load the topic list). K–8 skills take
- * theirs from `K8_SKILLS`.
+ * The words for each skill /start shows that is not a K–8 one (those come from `K8_SKILLS`): its
+ * name (`SKILLS`) and its line in a student's words (the topic list's, src/lib/learning/topics.ts),
+ * copied here so the first screen loads neither. `__tests__/plan.test.ts` holds both to their source.
  */
-const COURSE_BLURBS: Partial<Record<SkillId, string>> = {
-  two_step_equations: "Solve equations like 2x + 3 = 11",
-  inequalities: "Solve with <, >, ≤ and ≥",
-  linear_functions: "Slope, lines and y = mx + b",
-  systems: "Two equations, two unknowns",
-  factoring: "Turn x² + 5x + 6 into brackets",
-  quadratic_equations: "Solve equations with an x²",
-  angles: "Angles on a line and around a point",
-  triangles: "The angles in a triangle make 180°",
-  pythagorean: "a² + b² = c² in a right triangle",
-  area_perimeter: "How much space, and the way round",
-  circles: "Circumference and area with π",
-  coordinate_geometry: "Distance and midpoint of two points",
-  radicals: "Simplify roots and solve √ equations",
-  rational_expressions: "Fractions with x in them",
-  exponential_equations: "Solve equations like 2ˣ = 32",
-  logarithms: "Logs, the opposite of powers",
-  functions: "f(x): put a number in, get one out",
-  trig_values: "sin, cos and tan of special angles",
-  trig_equations: "Solve equations like 2 sin x = 1",
-  limits: "Where a function is heading",
-  derivatives: "How fast things change: d/dx",
-  // the path skills a K–8 grade shares with the courses
-  negative_numbers: "Numbers below zero",
-  order_of_operations: "Which step comes first (PEMDAS)",
-  powers_roots: "Squares, cubes and square roots",
-  simplify_expressions: "Collect like terms, like 3x + 2x",
-  one_step_equations: "Solve x + 5 = 12 in one step",
-  multi_step_equations: "Brackets, or x on both sides",
-  exponent_rules: "x² · x³ and the other power rules",
+const COURSE_WORDS: Partial<Record<SkillId, { name: string; blurb: string }>> = {
+  two_step_equations: { name: "Two-step equations", blurb: "Solve equations like 2x + 3 = 11" },
+  inequalities: { name: "Inequalities", blurb: "Solve with <, >, ≤ and ≥" },
+  linear_functions: { name: "Lines and slope", blurb: "Slope, lines and y = mx + b" },
+  systems: { name: "Systems of equations", blurb: "Two equations, two unknowns" },
+  factoring: { name: "Factoring", blurb: "Turn x² + 5x + 6 into brackets" },
+  quadratic_equations: { name: "Quadratic equations", blurb: "Solve equations with an x²" },
+  angles: { name: "Angles", blurb: "Angles on a line and around a point" },
+  triangles: { name: "Triangles", blurb: "The angles in a triangle make 180°" },
+  pythagorean: { name: "Pythagorean theorem", blurb: "a² + b² = c² in a right triangle" },
+  area_perimeter: { name: "Area and perimeter", blurb: "How much space, and the way round" },
+  circles: { name: "Circles", blurb: "Circumference and area with π" },
+  coordinate_geometry: { name: "Distance and midpoint", blurb: "Distance and midpoint of two points" },
+  radicals: { name: "Radicals", blurb: "Simplify roots and solve √ equations" },
+  rational_expressions: { name: "Rational expressions", blurb: "Fractions with x in them" },
+  exponential_equations: { name: "Exponential equations", blurb: "Solve equations like 2ˣ = 32" },
+  logarithms: { name: "Logarithms", blurb: "Logs, the opposite of powers" },
+  functions: { name: "Functions", blurb: "f(x): put a number in, get one out" },
+  trig_values: { name: "Trig values", blurb: "sin, cos and tan of special angles" },
+  trig_equations: { name: "Trig equations", blurb: "Solve equations like 2 sin x = 1" },
+  limits: { name: "Limits", blurb: "Where a function is heading" },
+  derivatives: { name: "Derivatives", blurb: "How fast things change: d/dx" },
+  negative_numbers: { name: "Negative numbers", blurb: "Numbers below zero" },
+  order_of_operations: { name: "Order of operations", blurb: "Which step comes first (PEMDAS)" },
+  powers_roots: { name: "Powers and square roots", blurb: "Squares, cubes and square roots" },
+  simplify_expressions: { name: "Simplifying expressions", blurb: "Collect like terms, like 3x + 2x" },
+  one_step_equations: { name: "One-step equations", blurb: "Solve x + 5 = 12 in one step" },
+  multi_step_equations: { name: "Multi-step equations", blurb: "Brackets, or x on both sides" },
+  exponent_rules: { name: "Exponent rules", blurb: "x² · x³ and the other power rules" },
 };
 
 /** The skills a family may pick on `focus` for this grade or course; [] when there are none. */
@@ -110,7 +112,15 @@ export interface PlanSkill {
 /** A skill's name and line as the screens say them. */
 export function skillWords(id: PathSkillId): { name: string; blurb: string } {
   if (isK8SkillId(id)) return K8_SKILLS[id];
-  return { name: SKILLS.find((s) => s.id === id)?.name ?? id, blurb: COURSE_BLURBS[id as SkillId] ?? "" };
+  return COURSE_WORDS[id as SkillId] ?? { name: id, blurb: "" };
+}
+
+/** Every skill /start can offer: each grade's path and each course's topics. */
+export const START_SKILLS: ReadonlySet<string> = new Set<string>([...Object.values(GRADE_PATHS).flat(), ...Object.values(COURSE_FOCUS).flat()]);
+
+/** A skill /start offers (and so the only kind its answers may carry). */
+export function isStartSkill(id: unknown): id is PathSkillId {
+  return typeof id === "string" && START_SKILLS.has(id);
 }
 
 export interface StartPlan {

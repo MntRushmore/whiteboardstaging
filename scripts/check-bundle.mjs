@@ -39,12 +39,16 @@ import { pathToFileURL } from "node:url";
  * /try (the free try board, 2026-10-13) measured 250,429 B gzip: the shared platform JS plus its own
  * 14.8 KB page chunk (the pen, the tutor's marks, two fetches). It must never pull tldraw, the live
  * engine or the hand engine; the budget leaves room for the shared JS to grow, not for those.
+ * /start (the onboarding before the account, 2026-10-13) measured 260,947 B gzip: the shared platform
+ * JS plus its screens and the flow (~25 KB). It must never pull zod, the learning contract, tldraw or
+ * the hand engine on its first screen (the try board and the account form are lazy chunks).
  * See docs/BUNDLE.md before raising a budget.
  * @type {Readonly<Record<string, number>>}
  */
 export const BUDGETS = Object.freeze({
   "/board/[id]": 1_100_000,
   "/try": 265_000,
+  "/start": 275_000,
 });
 
 /** @typedef {{ path: string, inlined?: boolean }} CssEntry */

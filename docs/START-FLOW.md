@@ -54,15 +54,17 @@ The old in-app welcome and the three-tip tour are skipped for anyone who came th
 - `GET /api/start/ink` (static, `src/lib/start/inkSet.ts`): each skill's example (`SKILL_EXAMPLES`, picked by hand to match its line) and every try problem in the tutor's hand. About 28 KB gzip, fetched after the first answer, so the browser never loads the hand engine.
 
 **How it behaves:**
-- A tapped single answer gets the tutor's check (the board's own mark, `markStrokes`) and the next screen follows after 460 ms. "What's tricky" takes up to three, each card with its example in the tutor's hand; "Not sure yet" moves on at once.
+- A tapped single answer gets the tutor's check (the board's own mark, `markStrokes`) and the next screen follows after 460 ms. "What's tricky" takes up to three, each card with its example in the tutor's hand; "Not sure" moves on at once. The plan puts the picked skills in the grade's teaching order (adding before subtracting), and the first board is the first of them.
+- Skip (in the bar) is on the name, the grown-up's look and the try board only.
 - Each screen is a history entry, so a phone's back swipe goes back a question. The beat ("Making Sam's plan…") is replaced by the plan, never kept.
 - The flow is kept on the device for a week (`START_STORAGE_KEY`, the `flow` field beside the journey id) and reopens where it was (the beat and the account reopen on the plan).
 - A grown-up's link (`#a=`) opens on the plan ("Maya made a math plan"), worded for the grown-up, with no Back; the account screen opens on the form (`StartAccount startIn="form"`). The answers leave the address bar.
-- The try screen is the real try board (`TryBoard join={false} onProgress`), with the band for the grade and the starter for the plan's first skill at the kid's grade. "Maybe later" stays quiet until the tutor has checked a line; then it is a blue Continue, and the plan shows "Solved one already".
+- The try screen is the real try board (`TryBoard join={false} onProgress`), with the band for the grade and the starter for the plan's first skill at the kid's grade. Until the tutor has checked a line the bar's Skip is the way past; then a blue Continue shows, and the plan shows "Solved one already".
+- The plan ends with a corner of the first board (its problem in the tutor's hand). The account screen says what is being saved in one line, asks "How did you hear" with one native picker, and has no second Back.
 - A signed-in visitor goes home (a grown-up's link stays).
 - Proof (parent only) shows the landing page's real Progress picture, captioned as a 3rd grader's.
 
-**Look:** warm paper (#fbfaf6) with the board's dot grid, Geist titles, white cards with hairlines, the landing page's blue pill for the one button, the tutor's blue (#4465e9) for checks, the progress bar and chosen answers. No gradients, emoji, mascot or claims.
+**Look:** the landing page's v4 cream paper (#fbf7ef) and warm words with the board's dot grid; titles in its soft serif (Fraunces, loaded by `src/components/start/fonts.ts`); cards in the landing's card white with hairlines; Agathon's blue pill for every button, as on the landing page; the tutor's blue (#4465e9) for checks, the progress bar and chosen answers; the who cards in the board's own pens. No gradients, emoji, mascot or claims.
 
 ## Measuring it
 
