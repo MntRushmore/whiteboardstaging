@@ -5,7 +5,7 @@ import { GRAPH, graphPaceFor, planGraph, type GraphWindowHint } from "../graphin
 import { HAND_LINE_META, planHandwriting, placeHandPlan, placeHandPlanOnBaseline, type HandPlan } from "../handwriting";
 import { CHAT_PROBLEM_META, problemMetaOf } from "./cells";
 import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow, DrawModelAction } from "./contracts";
-import { CHAT_LIMITS, noProblemNote } from "./limits";
+import { CHAT_GRAPH_READ, CHAT_LIMITS, noProblemNote } from "./limits";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
 import type * as Verify from "./verify";
 import type * as Models from "./models";
@@ -672,7 +672,8 @@ export class ChatDesk {
     if (!this.host.handwriting()) return { type: "graph", ok: false, note: "The tutor's handwriting is switched off, so I can't sketch a graph." };
     let intent: GraphIntent | null = null;
     try {
-      intent = engine.graphFor?.(clean) ?? null;
+      // every relation was asked for by name: `y = c` is a line to draw, not a value put in
+      intent = engine.graphFor?.(clean, CHAT_GRAPH_READ) ?? null;
     } catch {
       intent = null;
     }

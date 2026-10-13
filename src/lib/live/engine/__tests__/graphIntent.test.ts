@@ -284,3 +284,91 @@ describe("graphFor — transformations: the parent and its image together", () =
     expect(g.points.filter((p) => p.role === "intersection")).toHaveLength(2);
   });
 });
+
+describe("graphFor — relations asked for by name (explicit: the board chat's graph)", () => {
+  // the demo (2026-10-13): "explain this visually" → graph y = sin x and y = √2/2 from 0 to 2π, and
+  // nothing came, four times — a column of work reads `y = c` as a value put in, not a line
+  const explicit = (lines: string[]) => engine.graphFor!(lines, { explicit: true });
+  const asked = (lines: string[]): PlaneGraphIntent => {
+    const g = explicit(lines);
+    if (!g || g.kind !== "plane") throw new Error(`expected a plane graph for ${lines.join(" / ")}, got ${g?.kind ?? "null"}`);
+    return g;
+  };
+  const crossings = (g: PlaneGraphIntent) => g.points.filter((p) => p.role === "intersection");
+
+  it("y = sin x with y = √2/2: both drawn, with dots where they meet (π/4 and 3π/4 among them)", () => {
+    const g = asked(["y = \\sin x", "y = \\frac{\\sqrt{2}}{2}"]);
+    expect(g.curves).toHaveLength(2);
+    const level = g.curves[1];
+    expect(level).toMatchObject({ kind: "function", op: "=" });
+    if (level.kind === "function") for (const x of [-7, 0, 3.3]) expect(level.f(x)).toBeCloseTo(Math.SQRT1_2, 12);
+    const xs = crossings(g).map((p) => p.x);
+    for (const x of [Math.PI / 4, (3 * Math.PI) / 4]) expect(xs.some((v) => Math.abs(v - x) < 1e-9)).toBe(true);
+    for (const p of crossings(g)) expect(p.y).toBeCloseTo(Math.SQRT1_2, 9);
+    // as the chat sends it, any spelling
+    expect(explicit(["y=\\sin x", "y=\\frac{\\sqrt2}{2}"])?.key).toBe(g.key);
+    expect(explicit(["y = \\sin(x)", "y = 0.7071067811865476"])?.kind).toBe("plane");
+  });
+
+  it("a horizontal line alone, or with a curve: any number the engine can work out", () => {
+    for (const [latex, c] of [
+      ["y = \\frac{\\sqrt{2}}{2}", Math.SQRT1_2],
+      ["y = 0.7071", 0.7071],
+      ["y = -3", -3],
+      ["y = \\pi", Math.PI],
+      ["y = 0", 0],
+    ] as const) {
+      const g = asked([latex]);
+      expect(g.curves, latex).toHaveLength(1);
+      const curve = g.curves[0];
+      expect(curve.kind === "function" && curve.f(2.5)).toBeCloseTo(c, 12);
+    }
+    expect(labels(asked(["y = -3"]))).toEqual(["(0, -3)"]);
+    expect(crossings(asked(["y = \\cos x", "y = 0.5"])).some((p) => Math.abs(p.x - Math.PI / 3) < 1e-9)).toBe(true);
+    expect(labels(asked(["y = x^{2}", "y = 4"]))).toEqual(expect.arrayContaining(["(-2, 4)", "(2, 4)"]));
+    // a value put in, read as a column, is a line when it was asked for
+    expect(labels(asked(["x + y = 18", "y = 9"]))).toEqual(["(9, 9)"]);
+  });
+
+  it("a region above or below a horizontal line, either way round, with another region: a system", () => {
+    const g = asked(["y < x + 1", "3 < y"]);
+    expect(g.curves.map((c) => c.op)).toEqual(["<", ">"]);
+    expect(labels(g)).toEqual(["(2, 3)"]);
+    expect(asked(["y \\ge -2"]).curves[0].op).toBe(">=");
+  });
+
+  it("the equation of an asymptote asked for with its curve is that dashed line, not a second curve", () => {
+    const v = asked(["y = \\frac{1}{x - 1}", "x = 1"]);
+    expect(v.curves).toHaveLength(1);
+    expect(v.asymptotes).toContainEqual({ axis: "vertical", at: 1 });
+    const h = asked(["y = \\frac{x}{x - 1}", "y = 1"]);
+    expect(h.curves).toHaveLength(1);
+    expect(h.asymptotes).toContainEqual({ axis: "horizontal", at: 1 });
+  });
+
+  it("what the sketch cannot draw fails the whole graph, never left out of it quietly", () => {
+    for (const lines of [
+      ["x = 2"],
+      ["y = x^{2}", "x = 2"],
+      ["y = 2x + 1", "x = ?"],
+      ["y = \\sin x", "\\text{the sine wave}"],
+      ["y = x", "y = 2x", "y = 3x", "y = 4x"],
+      ["x > 3", "x < 5"],
+      ["y = x^{2}", "x > 1"],
+    ]) {
+      expect(explicit(lines), lines.join(" / ")).toBeNull();
+    }
+    // one inequality in one variable is still a number line
+    expect(explicit(["-2 \\le x < 3"])?.kind).toBe("numberLine");
+    // and everything a column graphs, asked for by name, is the same graph
+    for (const lines of [["y = 2x + 1"], ["x^{2} + y^{2} = 25"], ["y = 2x", "y = x + 3"], ["f(x) = x^{2}", "g(x) = f(x - 3) + 1"], ["y < 2x + 1"]]) {
+      expect(explicit(lines)?.key, lines.join(" / ")).toBe(engine.graphFor!(lines)?.key);
+    }
+  });
+
+  it("a column of work is read as before: y = c under a relation is a value put in", () => {
+    expect(engine.graphFor!(["y = \\sin x", "y = \\frac{\\sqrt{2}}{2}"])).toBeNull();
+    expect(engine.graphFor!(["x + y = 18", "y = 9"])).toBeNull();
+    expect(engine.graphFor!(["y = 4"])).toBeNull();
+  });
+});

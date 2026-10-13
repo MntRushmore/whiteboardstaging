@@ -4,6 +4,7 @@
  * constants from `contracts.ts` brought every zod schema in it along (docs/BUNDLE.md). Re-exported
  * from `contracts.ts`, so every other import is unchanged.
  */
+import type { GraphForOptions } from "../contracts";
 
 export const CHAT_LIMITS = {
   /** the typed request */
@@ -42,3 +43,10 @@ export const CHAT_LIMITS = {
 export function noProblemNote(n: number): string {
   return `There's no problem ${n} on this screen.`;
 }
+
+/**
+ * How a `graph` action's relations are read: each was asked for by name, so `y = c` is a line to
+ * draw and a relation the sketch cannot draw fails the graph. The board (`ChatDesk.graph`) and the
+ * route's gate (`chatGate`) read them the same way, so a graph the board cannot draw is never sent.
+ */
+export const CHAT_GRAPH_READ: GraphForOptions = { explicit: true };

@@ -66,6 +66,18 @@ describe("keepExplanation", () => {
     expect(keepExplanation(plain, GENERIC)).toBe(`${plain}\n\n${GENERIC}`);
   });
 
+  it("a claim to have graphed or sketched it goes too (the demo's 'I graphed y = sin x and the line …')", () => {
+    const explanation = "On the unit circle, $\\sin x = \\frac{\\sqrt{2}}{2}$ where the height is $\\frac{\\sqrt{2}}{2}$: at $\\frac{\\pi}{4}$ and $\\frac{3\\pi}{4}$.";
+    for (const claim of [
+      "I graphed $y = \\sin x$ and the line $y = \\frac{\\sqrt{2}}{2}$ beside #1, from 0 to 2π.",
+      "I sketched both curves for you.",
+      "Here's the graph, so you can see where they cross!",
+      "I drew the line in red.",
+    ]) {
+      expect(keepExplanation(`${explanation} ${claim}`, GENERIC), claim).toBe(`${explanation}\n\n${GENERIC}`);
+    }
+  });
+
   it("sentences joined back are the reply", () => {
     const reply = "First, **look.** Then (think!) \"Why?\" she asked.\n\n- one\n- two $a.b$ end";
     expect(

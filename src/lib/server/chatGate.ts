@@ -1,6 +1,7 @@
 import type pino from "pino";
 import type { ChatAction, ChatRequest, DrawModelAction, TeachAction, WriteProofAction } from "@/lib/live/chat/contracts";
 import { figureProblems } from "@/lib/live/chat/figure";
+import { CHAT_GRAPH_READ } from "@/lib/live/chat/limits";
 import { modelProblems } from "@/lib/live/chat/models/check";
 import { PROOF_CHECK, wantsHardProof } from "@/lib/live/chat/proof";
 import { commonestReason } from "@/lib/live/chat/verify";
@@ -46,9 +47,12 @@ import { buildModelRepairMessages, ModelRepairReplySchema } from "@/lib/server/p
  *  - a `draw_model` (Ask's visual models) the board's spec check refuses (`modelProblems`: more
  *    shaded than parts, a jump off its line, a label that says other than the picture) gets ONE repair
  *    round-trip, else it is dropped with a note;
+ *  - a `graph` goes on only when the engine graphs every relation in it as the board will
+ *    (`CHAT_GRAPH_READ`), else it is dropped with a note: a reply never says it graphed something
+ *    the board then cannot draw;
  *  - a `help_problem` about a number the screen does not have is dropped with a note;
- *  - everything else (`graph`, `write_lines`, `new_screen`, `clear_tutor`, Ask's `help_board`) goes
- *    on as it came: the board runs it.
+ *  - everything else (`write_lines`, `new_screen`, `clear_tutor`, Ask's `help_board`) goes on as
+ *    it came: the board runs it.
  *
  * Every repair fits the route's time (`deadline`): one is not started with less than REPAIR_MIN_MS
  * left, and the platform never kills a request mid-way. When the model proposed something and
@@ -72,7 +76,10 @@ export const PROBLEMS_NOT_WRITTEN = "I couldn't check those problems, so I didn'
 const problemsLeftOut = (n: number, of: number) => `${n} of ${of} problems couldn't be checked, so I left ${n === 1 ? "it" : "them"} out.`;
 
 export const FIGURE_NOT_DRAWN = "The figure couldn't be drawn.";
+export const GRAPH_NOT_DRAWN = "The graph couldn't be drawn.";
 export const MODEL_NOT_DRAWN = "The picture couldn't be drawn.";
+/** What the panel says when a graph was all the reply proposed and the board cannot draw it. */
+export const GRAPH_NOT_DRAWN_REPLY = "Sorry, I couldn't draw that graph. Try asking for it another way.";
 
 /** The maths engine the teach and problem checks run on, loaded on the first one (mathjs, ~2 MB). */
 let enginePromise: Promise<LiveEngine> | null = null;
@@ -127,6 +134,7 @@ export interface ChatGateStats {
   repairsSkipped: number;
   modelRepairs: number;
   modelsDropped: number;
+  graphsDropped: number;
 }
 
 export interface ChatGateResult {
@@ -292,6 +300,8 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
   const problemDrops: ProblemDropReason[] = [];
   let problemsProposed = 0;
   let problemsReplaced = 0;
+  // Graphs: every relation graphed by the engine as the board reads it (`CHAT_GRAPH_READ`), else dropped.
+  let graphsDropped = 0;
   // "the hardest proof ever" is held to it: a proof that takes a few rows is sent back once
   const proofCheck = wantsHardProof(data.message) ? { minRows: PROOF_CHECK.hardMinRows } : {};
   for (const action of valid) {
@@ -338,8 +348,23 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
       if (gated) actions.push(gated);
       continue;
     }
+    if (action.type === "graph") {
+      const engine = await gateEngine();
+      let graphed = false;
+      try {
+        graphed = Boolean(engine.graphFor?.(action.relations, CHAT_GRAPH_READ));
+      } catch {
+        graphed = false;
+      }
+      if (graphed) actions.push(action);
+      else {
+        graphsDropped++;
+        dropped.push({ type: "graph", reason: `not graphable: ${action.relations.join("; ")}`.slice(0, 160) });
+      }
+      continue;
+    }
     if (action.type !== "draw_figure") {
-      // graph, write_lines, new_screen, clear_tutor, help_problem (checked below), help_board: the board runs them
+      // write_lines, new_screen, clear_tutor, help_problem (checked below), help_board: the board runs them
       actions.push(action);
       continue;
     }
@@ -378,15 +403,16 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
     dropped.push({ type: "draw_figure", reason: problems.slice(0, 3).join("; ").slice(0, 160) });
   }
   if (figuresDropped > 0 && !notes.includes(FIGURE_NOT_DRAWN)) notes.push(FIGURE_NOT_DRAWN);
+  if (graphsDropped > 0) notes.push(GRAPH_NOT_DRAWN);
   if (modelsDropped > 0) notes.push(MODEL_NOT_DRAWN);
   if (proofsDropped > 0) notes.push(PROOF_NOT_WRITTEN);
   if (teachesDropped > 0) notes.push(TEACH_NOT_WRITTEN);
   if (problemSetsDropped > 0) notes.push(PROBLEMS_NOT_WRITTEN);
 
-  // A screen added (or the tutor's ink cleared) only to make room for a figure, a picture, a proof or a
-  // worked solution that could not be written is not something the student asked for: with
-  // nothing else left, nothing is done.
-  if (figuresDropped + modelsDropped + proofsDropped + teachesDropped + problemSetsDropped > 0 && actions.every((a) => a.type === "new_screen" || a.type === "clear_tutor")) actions.length = 0;
+  // A screen added (or the tutor's ink cleared) only to make room for a figure, a picture, a graph, a
+  // proof or a worked solution that could not be written is not something the student asked for:
+  // with nothing else left, nothing is done.
+  if (figuresDropped + modelsDropped + graphsDropped + proofsDropped + teachesDropped + problemSetsDropped > 0 && actions.every((a) => a.type === "new_screen" || a.type === "clear_tutor")) actions.length = 0;
 
   // Help with a problem that is not on this screen: dropped, and the panel says there is none.
   const present = dropMissingProblems(actions, data.screen);
@@ -408,7 +434,9 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
             ? "Sorry, I couldn't draw that figure."
             : modelsDropped > 0
               ? "Sorry, I couldn't draw that picture."
-              : problemSetsDropped > 0
+              : graphsDropped > 0
+                ? GRAPH_NOT_DRAWN_REPLY
+                : problemSetsDropped > 0
                 ? "Sorry, I couldn't check those problems, so I didn't write them. Try asking for them another way."
                 : present.notes.length > 0
                   ? present.notes[0]
@@ -461,6 +489,7 @@ export async function chatGate(raw: readonly unknown[], ctx: ChatGateContext, un
       repairsSkipped,
       modelRepairs,
       modelsDropped,
+      graphsDropped,
     },
   };
 }

@@ -6,8 +6,8 @@
  * only the sentences that claim board work go, and the gate's line about what failed follows.
  */
 
-/** A sentence that claims board work ("I put 5 problems on your board", "I wrote the steps"). */
-export const BOARD_TALK = /\b(board|wrote|written|put (them|it|these|those)|on your screen)\b/i;
+/** A sentence that claims board work ("I put 5 problems on your board", "I wrote the steps", "I graphed y = sin x"). */
+export const BOARD_TALK = /\b(board|wrote|written|put (them|it|these|those)|on your screen|graphed|sketched|I drew|here(?:'|’)?s (?:the|your|a) graph)\b/i;
 
 /** Less than this left after the board talk is not an explanation worth keeping: the failure line alone. */
 export const MIN_EXPLANATION_CHARS = 40;

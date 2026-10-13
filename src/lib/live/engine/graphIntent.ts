@@ -27,6 +27,10 @@
  * under `f(x) = x^{2}`) is a TRANSFORMATION: the parent and its image drawn together — the parent
  * dotted, each named — with the parent's key point, where it lands, and an arrow between them.
  *
+ * Relations asked for by name (`explicit`: the board chat's `graph`) are not a column of work:
+ * `y = \frac{\sqrt{2}}{2}` is a horizontal line drawn with the rest (crossings and all), and a line
+ * the sketch cannot draw (`x = 2`, words) fails the graph rather than being quietly left out.
+ *
  * `key` identifies the graph by its maths, not its spelling (every relation is fingerprinted by
  * its values), so the board never draws the same graph twice and redraws it only when the maths
  * changed.
@@ -36,6 +40,7 @@ import type {
   GraphAsymptote,
   GraphCircleCurve,
   GraphCurve,
+  GraphForOptions,
   GraphFunctionCurve,
   GraphIntent,
   GraphKeyPoint,
@@ -384,7 +389,7 @@ function functionFingerprint(op: GraphRelOp, f: Sampler): string {
   return `f${op}:${FP_XS.map((x) => fingerprint(f(x))).join(",")}`;
 }
 
-export function createGraphIntent(math: MathJsInstance, deps: GraphIntentDeps): { graphFor(lines: readonly string[]): GraphIntent | null } {
+export function createGraphIntent(math: MathJsInstance, deps: GraphIntentDeps): { graphFor(lines: readonly string[], opts?: GraphForOptions): GraphIntent | null } {
   const substitute = (node: MathNode, name: string, value: number): MathNode =>
     node.transform((n: MathNode) =>
       n.type === "SymbolNode" && (n as MathNode & { name: string }).name === name ? new math.ConstantNode(value) : n,
@@ -823,15 +828,44 @@ export function createGraphIntent(math: MathJsInstance, deps: GraphIntentDeps): 
     }
   };
 
-  const graphFor = (lines: readonly string[]): GraphIntent | null => {
+  /**
+   * `y = \frac{\sqrt{2}}{2}`, `y \ge -3`, `\pi < y`: a horizontal line (or the region above or below
+   * it), read only where it was asked to be drawn (`explicit`) — in a column it is a value put in.
+   */
+  const levelRel = (latex: string): PlaneRel | null => {
+    try {
+      const pre = preprocessLatex(latex);
+      const split = splitRelations(pre);
+      if (split.sides.length !== 2 || split.ops.length !== 1) return null;
+      let [lhs, rhs] = split.sides;
+      let op = split.ops[0];
+      if (isVariable(rhs) === "y") {
+        [lhs, rhs] = [rhs, lhs];
+        op = MIRROR[op] ?? op;
+      }
+      const rel = OP_OF[op];
+      const c = isVariable(lhs) === "y" && rel ? numberValue(rhs) : null;
+      if (c === null || !Number.isFinite(c)) return null;
+      const f: Sampler = () => c;
+      const curve: GraphFunctionCurve = { kind: "function", latex: pre, f, expr: String(c), op: rel };
+      return { curve, fingerprint: functionFingerprint(rel, f), variable: "x", name: "y" };
+    } catch {
+      return null;
+    }
+  };
+
+  const graphFor = (lines: readonly string[], opts: GraphForOptions = {}): GraphIntent | null => {
+    const explicit = opts.explicit === true;
     const rels: PlaneRel[] = [];
     /** function lines by name, for a later line written from one (`g(x) = f(x - 3) + 1`) */
     const named = new Map<string, PlaneRel>();
     let answer: NumberLineIntent | null = null;
     const values: Array<{ variable: string; value: number | null }> = [];
+    /** lines that are not a relation in x and y (a value, an inequality in one variable, words) */
+    let others = 0;
     for (const line of lines) {
       if (!line || !line.trim()) continue;
-      const rel = planeRel(line) ?? derivedRel(preprocessLatex(line), named);
+      const rel = planeRel(line) ?? derivedRel(preprocessLatex(line), named) ?? (explicit ? levelRel(line) : null);
       if (rel) {
         const seen = rels.findIndex((r) => r.fingerprint === rel.fingerprint);
         if (seen !== -1) {
@@ -844,17 +878,29 @@ export function createGraphIntent(math: MathJsInstance, deps: GraphIntentDeps): 
         if (rel.name && rel.name !== "y") named.set(rel.name, rel);
         continue;
       }
+      others++;
       const value = valueLine(line);
       if (value) values.push(value);
       if (isInequality(line)) answer = numberLine(line);
     }
     // The equation of an asymptote of one of the relations (`x = -1`, `y = 1`, `y = x + 1` under a
-    // rational function) is that dashed line, already drawn: not a value, not a second curve.
+    // rational function) is that dashed line, already drawn: not a value, not a second curve. (Asked
+    // for by name, `y = 1` is a curve of its own, and the same dashed line.)
     const asym = rels.flatMap((r) => (r.curve.kind === "function" ? asymptotesOf(r.curve.f).map((a) => ({ a, r })) : []));
-    const kept = rels.filter((r) => !(r.curve.kind === "function" && asym.some((x) => x.r !== r && x.a.axis === "oblique" && sameLine(r.curve as GraphFunctionCurve, x.a))));
+    const lineAxis = (axis: GraphAsymptote["axis"]) => axis === "oblique" || (explicit && axis === "horizontal");
+    const kept = rels.filter((r) => !(r.curve.kind === "function" && asym.some((x) => x.r !== r && lineAxis(x.a.axis) && sameLine(r.curve as GraphFunctionCurve, x.a))));
     const onAsymptote = (v: { variable: string; value: number | null }) =>
       v.value !== null && asym.some(({ a, r }) => a.axis === (v.variable === "y" ? "horizontal" : v.variable === r.variable ? "vertical" : "") && Math.abs(a.at - v.value!) < 1e-9);
     const asymptoteLines = values.filter(onAsymptote);
+    if (explicit) {
+      // Asked for by name, every line is drawn or the graph is not: one inequality in one variable
+      // alone is a number line; else each line that is not a curve must be an asymptote's equation.
+      // A vertical line (`x = 2`) or a value is not something the sketch can draw.
+      if (kept.length === 0) return others === 1 ? answer : null;
+      if (others !== asymptoteLines.length) return null;
+      const variable = kept[kept.length - 1].variable;
+      if (kept.length > MAX_GRAPH_CURVES || kept.some((r) => r.variable !== variable)) return null;
+    }
     // `x = ?` answered by an asymptote's equation is that question, not a value asked for
     const remaining = values.filter((v) => !onAsymptote(v) && !(v.value === null && asymptoteLines.some((n) => n.variable === v.variable)));
     // One relation with a value put into it (`x + y = 18`, `y = 9`, `x = ?`) is substitution, not

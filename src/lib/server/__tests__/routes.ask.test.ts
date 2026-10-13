@@ -60,6 +60,7 @@ import { LIVE_MODELS } from "@/lib/live/contracts";
 import { logger } from "@/lib/logger";
 import { loadAskContext, MEMORY_ATTEMPT_MS, rememberFromTurn, saveAskTurns, STORE_TIMEOUT_MS, type AskLearnerContext } from "@/lib/server/ask/store";
 import { resetBillingWarnings } from "@/lib/server/billing";
+import { GRAPH_NOT_DRAWN, GRAPH_NOT_DRAWN_REPLY } from "@/lib/server/chatGate";
 import { recordEvent } from "@/lib/server/events";
 import {
   chatJsonWithFallback,
@@ -433,6 +434,42 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     expect(exchange).toEqual({ message: asked.message, reply: "Sure, [name]! Let's work it out.", memory: ["[name] likes animal problems"], memoryAt: LEARNER.memoryAt });
     // the saved chat is the kid's own (no model reads it)
     expect(vi.mocked(saveAskTurns).mock.calls[0][2][0].text).toBe(body.message);
+  });
+
+  it("the demo's graph (y = sin x with the line y = √2/2, from 0 to 2π, beside #1) passes the gate as sent: the reply stands", async () => {
+    const graph = { type: "graph", relations: ["y = \\sin x", "y = \\frac{\\sqrt{2}}{2}"], window: { xMin: 0, xMax: 6.2832 }, near: 1 };
+    const reply = "I graphed $y = \\sin x$ and the line $y = \\frac{\\sqrt{2}}{2}$ beside #1, from 0 to 2π. Where do they cross?";
+    scripts = [{ chunks: [reply, block([graph])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "explain this visually please", screen: { empty: false, student: [], tutor: [], problems: ["\\sin x = \\frac{\\sqrt{2}}{2}"] } })));
+    expect(only(out, "actions")).toEqual({ actions: [graph], notes: [] });
+    expect(only(out, "reply")).toEqual({ text: reply });
+    expect(calls("refund_ink_for")).toEqual([]);
+  });
+
+  it("a graph the board cannot draw (a vertical line) is dropped by the gate: its claim goes, the student hears so", async () => {
+    const explanation = "The parabola $y = x^{2}$ is symmetric about the y-axis, and its lowest point is the vertex at the origin.";
+    scripts = [{ chunks: [`${explanation} I graphed it with the line $x = 2$ beside #1.`, block([{ type: "graph", relations: ["y = x^{2}", "x = 2"], near: 1 }])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "show me the parabola and x = 2" })));
+    expect(only(out, "actions")).toEqual({ actions: [], notes: [] });
+    expect(only(out, "reply")).toEqual({ text: `${explanation}\n\n${GRAPH_NOT_DRAWN_REPLY}` });
+    // a real explanation stays: the charge is kept
+    expect(calls("refund_ink_for")).toEqual([]);
+    expect(vi.mocked(saveAskTurns).mock.calls[0][2][1]).toMatchObject({ text: `${explanation}\n\n${GRAPH_NOT_DRAWN_REPLY}`, wrote: [] });
+  });
+
+  it("'try graphing it on a new page' with a graph the board cannot draw: no blank screen either, and the ink back", async () => {
+    scripts = [{ chunks: ["Here's the graph on a new page!", block([{ type: "new_screen" }, { type: "graph", relations: ["x = 3"] }])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "try graphing it on a new page" })));
+    expect(only(out, "actions")).toEqual({ actions: [], notes: [] });
+    expect(only(out, "reply")).toEqual({ text: GRAPH_NOT_DRAWN_REPLY });
+    expect(only(out, "done")).toMatchObject({ refunded: true });
+  });
+
+  it("a graph dropped beside one that is drawn: the drawn one goes on, with a note for the other", async () => {
+    const good = { type: "graph", relations: ["y = \\cos x", "y = 0.5"] };
+    scripts = [{ chunks: ["Two graphs coming up.", block([good, { type: "graph", relations: ["x = 1"] }])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "graph cos x and 0.5, then x = 1" })));
+    expect(only(out, "actions")).toEqual({ actions: [good], notes: [GRAPH_NOT_DRAWN] });
   });
 
   it("help_board passes the gate untouched (the board runs Help me / Solve it on the student's own work)", async () => {

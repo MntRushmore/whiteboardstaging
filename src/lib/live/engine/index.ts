@@ -4,7 +4,7 @@
  * kind 'unknown' / verdict 'unknown' / null — the engine never throws.
  */
 import type { MathJsInstance, MathNode } from "mathjs";
-import type { AnalyzeContext, EngineVerdict, LineAnalysis, LineDomain, LiveEngine, SolveOptions } from "../contracts";
+import type { AnalyzeContext, EngineVerdict, GraphForOptions, LineAnalysis, LineDomain, LiveEngine, SolveOptions } from "../contracts";
 import { balance as balanceChem, balanceEquation, equationLatex, isBalanced, molarMassLatex, normalizeChemText, parseEquation, looksLikeChemEquation } from "./chem";
 import { preClassify } from "./classify";
 import { PHYSICS_SCOPE_NAMES, physicsScope } from "./constants";
@@ -1828,9 +1828,9 @@ export function createEngine(mod: MathModule): LiveEngine {
     solveLatex: solveWithBlanks,
     simplifySteps,
     alreadySimplest,
-    graphFor: (lines: readonly string[]) => {
+    graphFor: (lines: readonly string[], opts?: GraphForOptions) => {
       try {
-        return graphing.graphFor(lines);
+        return graphing.graphFor(lines, opts);
       } catch {
         return null;
       }
