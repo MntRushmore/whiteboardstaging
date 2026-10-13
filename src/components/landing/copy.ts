@@ -137,8 +137,13 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
       answer: "Great question! The bottom number says how many equal pieces the whole is cut into. Cut it into 2 pieces and each piece is big. Cut it into 3 and each piece is smaller. So $\\frac{1}{2}$ is bigger than $\\frac{1}{3}$. I drew it on your board so you can see.",
       /** suggestion chips under a hello, as the panel shows them */
       chips: ["3 more like these", "Practice my weak spots"],
+      /** the panel's hello on a board with no chat yet, from what the tutor remembers (src/lib/server/ask/hello.ts) */
+      hello: "Welcome back! Last time you worked on equivalent fractions.",
+      /** the panel's words while the tutor thinks, and while it writes on the board (CHAT_COPY) */
+      thinking: "Thinking…",
+      writing: "Writing on your board…",
       demoLabel:
-        "The Ask panel beside an Agathon board. A kid asks why one half is bigger than one third when 3 is bigger than 2. The tutor explains that the bottom number is how many equal pieces the whole is cut into, and draws two fraction bars on the board: one cut in halves with one half shaded, one cut in thirds with one third shaded.",
+        "The Ask panel beside an Agathon board of fraction problems. A kid holds the mic and asks why one half is bigger than one third when 3 is bigger than 2. The tutor's answer appears word by word and is read out loud: the bottom number is how many equal pieces the whole is cut into. Then it draws two fraction bars on the board: one cut in halves with one half shaded, one cut in thirds with one third shaded.",
       features: [
         {
           title: "Explains, not just answers",
@@ -154,7 +159,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
         },
         {
           title: "Remembers them",
-          body: "Each board keeps its chat, and the tutor remembers what they've been working on: “Welcome back! Last time you worked on dividing fractions.”",
+          body: "Each board keeps its chat, and the tutor remembers what they've been working on: “Welcome back! Last time you worked on equivalent fractions.”",
         },
         {
           title: "Other subjects too",
