@@ -30,23 +30,93 @@ export function thumbnailHeight(width: number): number {
   return Math.round((width * SCREEN.h) / SCREEN.w);
 }
 
-/** Encodes the thumbnail at `width` px wide; returns the data URL (or null when it cannot). */
-export type ThumbnailEncoder = (width: number, type: string, quality: number) => string | null;
+/**
+ * Encodes the thumbnail at `width` px wide; resolves to the encoded image (or null when it cannot).
+ * A Blob, not a data URL: `canvas.toBlob` encodes off the main thread, where `toDataURL` blocked it
+ * for every rung tried (measured 2026-10-13 on a board of ~550 strokes: ~7 encodes, ~85 ms of main
+ * thread per autosave at full speed, every 10 s while the student writes; a hitch in the pen).
+ */
+export type ThumbnailEncoder = (width: number, type: string, quality: number) => Promise<Blob | null>;
+
+/** Every width and encoding in the order tried: largest width first, best encoding first at each. */
+export const THUMBNAIL_RUNGS: ReadonlyArray<{ width: number; type: string; quality: number }> = THUMBNAIL_WIDTHS.flatMap((width) =>
+  THUMBNAIL_ENCODINGS.map(({ type, quality }) => ({ width, type, quality })),
+);
+
+/** The length of the data URL `blob` becomes (`data:<type>;base64,` + its base64), without making it. */
+export function dataUrlLength(type: string, bytes: number): number {
+  return `data:${type};base64,`.length + 4 * Math.ceil(bytes / 3);
+}
 
 /**
- * The first data URL, largest width and best encoding first, that fits in `maxChars`.
- * A URL of another type than asked for (a browser without that encoder falls back to PNG) is
- * skipped. Null when nothing fits.
+ * The first encoding, from rung `startAt` of `THUMBNAIL_RUNGS` down (largest width and best encoding
+ * first), whose data URL fits in `maxChars`, with the rung it is. An image of another type than asked
+ * for (a browser without that encoder falls back to PNG) is skipped. Null when nothing fits.
  */
-export function fitThumbnail(encode: ThumbnailEncoder, maxChars: number): string | null {
-  for (const width of THUMBNAIL_WIDTHS) {
-    for (const { type, quality } of THUMBNAIL_ENCODINGS) {
-      const url = encode(width, type, quality);
-      if (!url || !url.startsWith(`data:${type}`)) continue;
-      if (url.length <= maxChars) return url;
-    }
+export async function fitThumbnail(encode: ThumbnailEncoder, maxChars: number, startAt = 0): Promise<{ blob: Blob; rung: number } | null> {
+  for (let rung = Math.max(0, startAt); rung < THUMBNAIL_RUNGS.length; rung++) {
+    const { width, type, quality } = THUMBNAIL_RUNGS[rung];
+    const blob = await encode(width, type, quality);
+    if (!blob || blob.type !== type) continue;
+    if (dataUrlLength(type, blob.size) <= maxChars) return { blob, rung };
   }
   return null;
+}
+
+/**
+ * Where the next thumbnail of a board starts on the ladder: at the rung that fitted last time, so a
+ * board that needed the 7th rung is not encoded 7 times on every save. A board can get lighter (ink
+ * rubbed out), so every `THUMBNAIL_REFIT_MS` the ladder is walked from the top again.
+ */
+export const THUMBNAIL_REFIT_MS = 60_000;
+
+export interface ThumbnailRungMemory {
+  /** the rung to start this thumbnail at */
+  start(now: number): number;
+  /** the rung that fitted (null: nothing did) */
+  fitted(rung: number | null): void;
+}
+
+export function createRungMemory(refitMs = THUMBNAIL_REFIT_MS): ThumbnailRungMemory {
+  let rung = 0;
+  /** when the ladder was last walked from the top; null = never */
+  let walkedAt: number | null = null;
+  return {
+    start(now) {
+      if (walkedAt === null || now - walkedAt >= refitMs) {
+        walkedAt = now;
+        return 0;
+      }
+      return rung;
+    },
+    fitted(fit) {
+      if (fit === null) {
+        // nothing fitted: start from the top next time (the board may be lighter by then)
+        rung = 0;
+        walkedAt = null;
+      } else rung = fit;
+    },
+  };
+}
+
+const rungMemories = new WeakMap<object, ThumbnailRungMemory>();
+
+function rungMemoryFor(editor: object): ThumbnailRungMemory {
+  let memory = rungMemories.get(editor);
+  if (!memory) {
+    memory = createRungMemory();
+    rungMemories.set(editor, memory);
+  }
+  return memory;
+}
+
+function blobToDataUrl(blob: Blob): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(blob);
+  });
 }
 
 /** The rect a thumbnail shows: the page's screen, or (before it has one) a screen around its ink. */
@@ -88,14 +158,21 @@ export async function makeScreenThumbnail(editor: Editor, maxChars: number): Pro
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
-    return fitThumbnail((width, type, quality) => {
-      canvas.width = width;
-      canvas.height = thumbnailHeight(width);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL(type, quality);
-    }, maxChars);
+    const memory = rungMemoryFor(editor);
+    const fit = await fitThumbnail(
+      (width, type, quality) => {
+        canvas.width = width;
+        canvas.height = thumbnailHeight(width);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
+      },
+      maxChars,
+      memory.start(Date.now()),
+    );
+    memory.fitted(fit?.rung ?? null);
+    return fit ? blobToDataUrl(fit.blob) : null;
   } finally {
     bitmap.close();
   }

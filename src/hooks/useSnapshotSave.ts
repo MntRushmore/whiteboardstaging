@@ -21,6 +21,7 @@ import { ASSET_COPY } from "@/components/live/copy";
 import { SNAPSHOT_LIMITS, findInlineAssets, snapshotJsonBytes } from "../../scripts/lib/snapshotAssets.mjs";
 import { isBoardEmpty, makeScreenThumbnail } from "@/lib/boards/thumbnail";
 import { trackExitWrite } from "@/lib/boards/exitWrites";
+import { whenPenUp } from "@/lib/sync/whenPenUp";
 
 /**
  * Board autosave. Every document change marks the board dirty in a `SaveQueue`
@@ -193,10 +194,26 @@ function errorInfo(error: unknown): Record<string, unknown> {
   return info;
 }
 
-/** JSON round-trip so the payload is exactly what Supabase will receive; null when it cannot be serialized. */
-function toSafeSnapshot(snapshot: unknown, boardId: string): unknown | null {
+/**
+ * `measureSnapshot` from the JSON the snapshot was already serialized to (`toSafeSnapshot`): the same
+ * numbers without serializing the whole board a second time (~1 MB of JSON on a full board, on every
+ * autosave).
+ */
+export function measureSerialized(snapshot: unknown, json: string): SnapshotMeasure {
+  return {
+    bytes: new TextEncoder().encode(json).byteLength,
+    inlineAssets: findInlineAssets(snapshot).length,
+  };
+}
+
+/**
+ * JSON round-trip so the payload is exactly what Supabase will receive, with the JSON itself (for
+ * `measureSerialized`); null when it cannot be serialized.
+ */
+function toSafeSnapshot(snapshot: unknown, boardId: string): { value: unknown; json: string } | null {
   try {
-    return JSON.parse(JSON.stringify(snapshot));
+    const json = JSON.stringify(snapshot);
+    return { value: JSON.parse(json), json };
   } catch (e) {
     logger.error({ error: errorInfo(e), id: boardId }, "Failed to serialize board snapshot for auto-save");
     return null;
@@ -211,17 +228,17 @@ function toSafeSnapshot(snapshot: unknown, boardId: string): unknown | null {
 export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<BuildOutcome> {
   const { boardId } = deps;
   const decide = deps.decide ?? decideSave;
-  const measure = deps.measure ?? measureSnapshot;
+  const measure = (safe: { value: unknown; json: string }): SnapshotMeasure => (deps.measure ? deps.measure(safe.value) : measureSerialized(safe.value, safe.json));
   const now = deps.now ?? (() => new Date());
 
   try {
     let snapshot = deps.takeSnapshot();
     // (each outcome below is logged once, through `logger`, which also writes to the console)
     if (!snapshot) return { kind: "skipped", reason: "no-snapshot" };
-    let safeSnapshot = toSafeSnapshot(snapshot, boardId);
-    if (safeSnapshot === null) return { kind: "skipped", reason: "unserializable" };
+    let safe = toSafeSnapshot(snapshot, boardId);
+    if (safe === null) return { kind: "skipped", reason: "unserializable" };
 
-    let measured = measure(safeSnapshot);
+    let measured = measure(safe);
     const decision = decide({ ...measured, offloadInFlight: deps.isOffloadInFlight?.() ?? false });
     let offloaded = false;
 
@@ -250,9 +267,9 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
       }
       snapshot = deps.takeSnapshot();
       if (!snapshot) return { kind: "skipped", reason: "no-snapshot" };
-      safeSnapshot = toSafeSnapshot(snapshot, boardId);
-      if (safeSnapshot === null) return { kind: "skipped", reason: "unserializable" };
-      measured = measure(safeSnapshot);
+      safe = toSafeSnapshot(snapshot, boardId);
+      if (safe === null) return { kind: "skipped", reason: "unserializable" };
+      measured = measure(safe);
       // The offload was the only way to shrink the board; if it is still over the hard
       // limit (uploads failed, or the bulk is not inline images) refuse instead of
       // letting the DB size constraint be the first thing the user hears about it.
@@ -275,7 +292,7 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
     }
 
     const update: SaveUpdate = {
-      data: safeSnapshot,
+      data: safe.value,
       updated_at: now().toISOString(),
     };
 
@@ -292,7 +309,7 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
       }
     }
 
-    return { kind: "update", update, snapshot: safeSnapshot, bytes: measured.bytes, offloaded };
+    return { kind: "update", update, snapshot: safe.value, bytes: measured.bytes, offloaded };
   } catch (error) {
     const info = { id: boardId, ...errorInfo(error) };
     logger.error({ error: info, id: boardId }, "Error preparing board auto-save");
@@ -602,15 +619,24 @@ export function blockedMessageForSync(state: SyncState): string | null {
   return state.status === "refused" ? state.message ?? ASSET_COPY.boardTooLarge : null;
 }
 
-/** `buildUpdate` for the queue, bound to a live editor. */
-export function buildEditorUpdate(editor: Editor, boardId: string): Promise<BuildResult> {
+/**
+ * `buildUpdate` for the queue, bound to a live editor. Built between strokes, not in the middle of
+ * one (`whenPenUp`): the snapshot and the thumbnail are each a long task on a full board.
+ */
+export async function buildEditorUpdate(editor: Editor, boardId: string): Promise<BuildResult> {
+  const isPointing = () => editor.inputs.isPointing;
+  await whenPenUp(isPointing);
   return buildSnapshotUpdate({
     boardId,
     takeSnapshot: () => getSnapshot(editor.store),
     offload: () => offloadAssetsOnce(editor),
     isOffloadInFlight: () => isOffloadRunning(editor),
-    // The current screen, sized and encoded to fit the column (src/lib/boards/thumbnail.ts).
-    makePreview: () => makeScreenThumbnail(editor, MAX_PREVIEW_LENGTH),
+    // The current screen, sized and encoded to fit the column (src/lib/boards/thumbnail.ts); the
+    // pen may have come down again while the board was serialized.
+    makePreview: async () => {
+      await whenPenUp(isPointing);
+      return makeScreenThumbnail(editor, MAX_PREVIEW_LENGTH);
+    },
     isEmpty: () => isBoardEmpty(editor),
   }).then(toBuildResult);
 }
