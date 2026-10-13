@@ -13,7 +13,6 @@ import { clientMetric } from "@/lib/logger";
 import { reportUserError } from "@/lib/reportAppError";
 import { say } from "@/lib/speech/say";
 import { BOTTOM_UI_SELECTOR } from "@/components/live/hintPlacement";
-import { typeBarInset } from "@/lib/typeMath/barLink";
 
 /**
  * "Now you try one!" (`src/lib/learning/nowYouTry.ts` decides when): a big friendly pill at the
@@ -147,9 +146,8 @@ export default function NowYouTry({ controller, tour }: NowYouTryProps) {
     clientMetric("learning.now_you_try.dismiss", {});
   }, []);
 
-  // above tldraw's bottom row, and above the Type it bar when it is open over it
-  const typeBar = useValue("now you try: type bar", () => typeBarInset.get(), []);
-  const bottom = Math.max(useBottomInset(editor, offer !== null), typeBar);
+  // above tldraw's bottom row
+  const bottom = useBottomInset(editor, offer !== null);
 
   return (
     <>

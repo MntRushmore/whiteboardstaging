@@ -96,7 +96,6 @@ import { topicSheetOpen } from "@/components/topics/topicSheetState";
 import type { ChatKickoff } from "@/components/chat/BoardChatPanel";
 import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
 import { useBoardLearning } from "@/components/learning/useBoardLearning";
-import { useTypeBar } from "@/components/typeMath/typeBarStore";
 import { registerStrokeTimes } from "@/lib/replay/stampTimes";
 import { whenIdle } from "@/lib/whenIdle";
 
@@ -131,9 +130,6 @@ const FREE_BOARD_PAUSE_MS = 20_000;
 const KidReplay = React.lazy(() => import("@/components/replay/KidReplay"));
 // New topic (the screen strip's button): the topic picker as a sheet, loaded on the first tap.
 const TopicSheet = React.lazy(() => import("@/components/topics/TopicSheet"));
-// Type it (docs/TYPE-MATH.md): the bar a kid types maths in, with its parser and preview; open by
-// itself on a laptop, behind the toolbar's Type button elsewhere.
-const TypeBar = React.lazy(() => import("@/components/typeMath/TypeBar"));
 // The board chat (Ask): nothing to show until it opens, so it loads in idle time once the board is
 // up, or beside the board's own load when it was left open (docs/BUNDLE.md).
 const loadChatPanel = () => import("@/components/chat/BoardChatPanel");
@@ -211,7 +207,7 @@ const hugeIconsOverrides: TLUiOverrides = {
   },
 };
 
-// Live's tool overrides (no Math tool any more: Type it replaces it) layered on top of the icon overrides above. The text
+// Live's tool overrides (no Math tool: its typed boxes were never read) layered on top of the icon overrides above. The text
 // tool is taken off the board (its toolbar button and its "t" shortcut): typed text boxes are
 // invisible to the tutor, which reads handwriting, so a kid who types an answer gets no help.
 const boardOverrides: TLUiOverrides = {
@@ -353,13 +349,6 @@ function BoardContent({ id, initialVersion, chat, free }: { id: string; initialV
     // paused while AI shapes are hidden: no ink spent on marks and steps the student cannot see
     auto: autoActs(live),
   });
-  // Type it: the bar shows while Live can write a typed line here (`useTypeBar` decides when).
-  // (a typed line is a check: none once the free board is over)
-  const typeShown = useTypeBar(liveEnabled && !freeOver && Boolean(controller.writeTyped), guided);
-  // ...and its writer's code loads beside the bar's chunk, not after it (`prepareTyped`)
-  useEffect(() => {
-    if (typeShown) controller.prepareTyped?.().catch(() => undefined);
-  }, [typeShown, controller]);
   // The learning record (src/lib/learning): the problems the student works here, loaded in idle time.
   useBoardLearning(id, user?.id);
   // Lecture mode: the mic and the tutor sketching what is said. Not gated on Live or the help
@@ -756,13 +745,6 @@ function BoardContent({ id, initialVersion, chat, free }: { id: string; initialV
       {toolbar.showHintLayer && (
         <LiveErrorBoundary>
           <LiveHintLayer editor={editor} controller={controller} />
-        </LiveErrorBoundary>
-      )}
-      {typeShown && (
-        <LiveErrorBoundary>
-          <React.Suspense fallback={null}>
-            <TypeBar editor={editor} controller={controller} tour={guided} chatOpen={chat.open} simple={toolbar.simple} />
-          </React.Suspense>
         </LiveErrorBoundary>
       )}
       {guided && user && (
