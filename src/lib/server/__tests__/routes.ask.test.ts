@@ -227,6 +227,12 @@ describe("live/ask: the stream", () => {
     expect([primary, fallback]).toEqual([LIVE_MODELS.ask, LIVE_MODELS.askFallback]);
     expect(watchdogMs).toBeLessThanOrEqual(6_000);
     expect(limits).toMatchObject({ fallbackWatchdogMs: expect.any(Number), deadline: expect.any(Number) });
+    // a primary that is thinking is alive: it may think past the first-words watchdog (an "explain"
+    // ask on Sonnet 5.5 thinks ~3.5 s and speaks at 5–6 s), but not into the fallback's time
+    expect(limits!.primaryThinkingMs).toBeGreaterThanOrEqual(10_000);
+    expect(limits!.primaryThinkingMs! + limits!.fallbackWatchdogMs!).toBeLessThan(limits!.deadline! - Date.now());
+    // the fallback is the fast one: it never thinks
+    expect(opts.reasoningFor?.(LIVE_MODELS.askFallback)).toBe("none");
     expect(limits!.deadline! - Date.now()).toBeLessThan(60_000);
     expect(opts).toMatchObject({ temperature: 0.4, maxTokens: 4000, title: "Agathon Live - ask" });
     // each model streams with the reasoning eval:ask measured for it (askReasoningFor)
@@ -382,7 +388,7 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     expect(repair.title).toBe("Agathon Live - ask problems");
     // Anthropic's primary is sent no reasoning in a repair either; OpenAI's fallback the least
     expect(repair.reasoningFor?.(LIVE_MODELS.ask)).toBe("minimal");
-    expect(repair.reasoningFor?.(LIVE_MODELS.askFallback)).toBe("minimal");
+    expect(repair.reasoningFor?.(LIVE_MODELS.askFallback)).toBe("none");
     // its model events are the board chat's, as Ask is metered
     expect(modelEventKind(repair.title)).toBe("model.live.chat");
     expect(repair.deadline! - Date.now()).toBeLessThanOrEqual(50_000);
@@ -486,16 +492,52 @@ describe("live/ask: the models", () => {
     expect(out.filter((f) => f.event === "model").map((f) => f.data.model)).toEqual([LIVE_MODELS.ask, LIVE_MODELS.askFallback]);
     expect(deltas(out)).toBe("Hi! Let's work on it.");
     expect(only(out, "done")).toMatchObject({ model: LIVE_MODELS.askFallback, turnId: "turn-tutor" });
-    // Anthropic's primary is sent no reasoning; OpenAI's fallback the least
+    // each model with its own reasoning: the primary the least it takes, the fallback none
     expect(asked).toEqual([
       { model: LIVE_MODELS.ask, reasoning: { effort: "minimal" } },
-      { model: LIVE_MODELS.askFallback, reasoning: { effort: "minimal" } },
+      { model: LIVE_MODELS.askFallback, reasoning: { effort: "none" } },
     ]);
     // filed with the board chat Ask is metered as; the call's own name says it was Ask
     expect(events()).toEqual([
       expect.objectContaining({ level: "warn", kind: "model.live.chat", code: "fallback", meta: expect.objectContaining({ reason: "timeout", call: "ask" }) }),
     ]);
     expect(calls("refund_ink_for")).toEqual([]);
+  });
+
+  it("a primary that is thinking past the first-words watchdog is kept: its words, no handover, no fallback event", async () => {
+    asked.length = 0;
+    const encoder = new TextEncoder();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as { model: string; reasoning?: unknown };
+        asked.push({ model: body.model, reasoning: body.reasoning });
+        // thinking at once, then its words only after the (shortened) first-words watchdog
+        const frame = (delta: object) => encoder.encode(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`);
+        const stream = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(frame({ reasoning: "The student wants problem 4 explained." }));
+            await new Promise((r) => setTimeout(r, 120));
+            controller.enqueue(frame({ content: "First, get cos x by itself." }));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+      }),
+    );
+    const actual = await vi.importActual<typeof import("@/lib/server/openrouter")>("@/lib/server/openrouter");
+    vi.mocked(streamWithFallback).mockImplementation((primary, fallback, opts, _watchdogMs, limits) =>
+      // the route's limits, the first-words watchdog shortened under the time it thinks (it would have been cut off before)
+      actual.streamWithFallback(primary, fallback, opts, 40, limits),
+    );
+
+    const out = await frames(await ask(request()));
+    expect(out.filter((f) => f.event === "model").map((f) => f.data.model)).toEqual([LIVE_MODELS.ask]);
+    expect(deltas(out)).toBe("First, get cos x by itself.");
+    expect(only(out, "done")).toMatchObject({ model: LIVE_MODELS.ask });
+    expect(asked.map((a) => a.model)).toEqual([LIVE_MODELS.ask]);
+    expect(events()).toEqual([]);
   });
 
   it("an upstream failure is an `error` event with its code, the ink back in full, nothing saved", async () => {

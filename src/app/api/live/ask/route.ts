@@ -25,12 +25,24 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 90;
 
 /**
- * The primary's first words. Haiku 5.5 streamed its first in 0.75 s on 2026-10-11 (GPT-5.4 mini in
- * 1.5 s): 5 s of nothing is a stuck provider, and the student is staring at the panel.
+ * The primary's first sign of life: its first words, or its first thought. Sonnet 5.5 streams its
+ * first words in about 1.3 s, or starts thinking within 4 s; 6 s of nothing at all is a stuck
+ * provider, and the student is staring at the panel.
  */
-const ASK_WATCHDOG_MS = 5_000;
-/** The fallback's own first-words watchdog: a stuck fallback is an error the student can retry, not a minute of nothing. */
-const ASK_FALLBACK_WATCHDOG_MS = 10_000;
+const ASK_WATCHDOG_MS = 6_000;
+/**
+ * How long a THINKING primary may go before its first words (from the start). Even at "minimal",
+ * Sonnet 5.5 thinks before "explain how to do problem 4", "walk me through #3" or "explain this
+ * visually" — about 3.5 s of thought, first words at 5–6 s (measured 2026-10-13 on a high-school
+ * screen). Before this, thought was no sign of life: every such ask was cut off at the first-words
+ * watchdog and handed to the fallback, and a demo that day lost 7 of 13 asks that way.
+ */
+const ASK_THINKING_MS = 13_000;
+/**
+ * The fallback's own first-words watchdog (Haiku 5.5, which never thinks, starts in about 1.2 s): a
+ * stuck fallback is an error the student can retry, not a minute of nothing.
+ */
+const ASK_FALLBACK_WATCHDOG_MS = 8_000;
 /**
  * The answer's stream ends this long after the route started (both models), so the engine's gates
  * still have time for a repair after a long answer.
@@ -98,7 +110,7 @@ const kinds = (actions: readonly ChatAction[]) => [...new Set(actions.map((a) =>
  * `prompts/ask.ts`, which puts the screen's picture in the user message) answers in Markdown-lite
  * and may end with ONE `<board>{"actions":[…]}</board>` block. The reply's words go out as they come
  * (`delta`, split from the block by `AskStreamSplitter`); a stuck primary hands over to the fallback
- * after ASK_WATCHDOG_MS (`model` again). Then the block's actions go through the same engine gates as
+ * after ASK_WATCHDOG_MS of nothing, or a thinking one after ASK_THINKING_MS (`model` again). Then the block's actions go through the same engine gates as
  * POST /api/live/chat (`chatGate`, repairs on Ask's models) and out as `actions`, after the final
  * `reply` (cleaned; when nothing proposed survived, its sentences about the board taken out and the
  * gate's line about what failed added: `keepExplanation`). A block that is not JSON is dropped with
@@ -190,7 +202,7 @@ export async function POST(req: Request) {
           models.askFallback,
           { messages, signal, temperature: 0.4, maxTokens: ASK_MAX_TOKENS, reasoningFor: askReasoning, requestId, title: "Agathon Live - ask" },
           ASK_WATCHDOG_MS,
-          { fallbackWatchdogMs: ASK_FALLBACK_WATCHDOG_MS, deadline: startedAt + ASK_STREAM_MS },
+          { primaryThinkingMs: ASK_THINKING_MS, fallbackWatchdogMs: ASK_FALLBACK_WATCHDOG_MS, deadline: startedAt + ASK_STREAM_MS },
         );
         for await (const ev of events) {
           if (ev.type === "model") {
