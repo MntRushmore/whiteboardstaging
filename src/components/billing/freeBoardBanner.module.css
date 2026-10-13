@@ -1,0 +1,87 @@
+/* The home's free-board banner (FreeBoardBanner): slim and calm, on the home's own Arc tokens (with
+   light fallbacks). Flat surface, one border, the tutor's blue (#4465e9) for the pips done. A row
+   on a laptop; on a phone the words above, the two buttons side by side under them. */
+
+.banner {
+  --fb-blue: #4465e9;
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 0.75rem) var(--space-5, 1.25rem);
+  padding: var(--space-4, 1rem) var(--space-4, 1rem) var(--space-4, 1rem) var(--space-5, 1.25rem);
+  border: 1px solid var(--border, #e5e5e5);
+  border-radius: var(--radius-surface, 1rem);
+  background: var(--surface, #fff);
+  color: var(--foreground, #1c1c1c);
+  box-shadow: var(--shadow-resting, 0 1px 2px oklch(0% 0 0 / 0.035));
+}
+
+.text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 18rem;
+  align-items: center;
+  gap: var(--space-4, 1rem);
+}
+
+.pips {
+  display: flex;
+  flex: none;
+  gap: 5px;
+}
+.pip {
+  width: 10px;
+  height: 10px;
+  border: 2px solid color-mix(in oklch, var(--fb-blue) 45%, var(--border, #e5e5e5));
+  border-radius: 999px;
+  box-sizing: border-box;
+}
+.pip[data-done] {
+  border-color: var(--fb-blue);
+  background: var(--fb-blue);
+}
+
+.line {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+.progress {
+  font-size: var(--text-base, 1rem);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.hint {
+  color: var(--text-secondary, #5e5e5e);
+  font-size: var(--text-sm, 0.875rem);
+  line-height: 1.4;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  gap: var(--space-2, 0.5rem);
+}
+
+@media (max-width: 639px) {
+  /* the pips over the words, so the words have the card's whole width */
+  .text {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2, 0.5rem);
+  }
+  .actions {
+    flex: 1 1 100%;
+  }
+  .button {
+    flex: 1 1 0;
+  }
+  /* the primary one takes the room it needs */
+  .button:last-child {
+    flex-grow: 2;
+  }
+}

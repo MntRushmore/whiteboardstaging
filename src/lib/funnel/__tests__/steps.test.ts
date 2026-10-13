@@ -2,7 +2,7 @@
  * The onboarding's funnel steps (src/lib/funnel/steps.ts): which names are steps, and the small
  * details (`meta`) the database takes, cut down by `cleanMeta` rather than refused.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { cleanMeta, FUNNEL_STEPS, isFunnelStep, RECORD_FUNNEL_STEP } from "../steps";
 
@@ -14,12 +14,19 @@ describe("isFunnelStep", () => {
     }
   });
 
-  it("names the same 13 steps as the table's check, once each", () => {
-    expect(FUNNEL_STEPS).toHaveLength(13);
+  it("names the same 15 steps as the table's check (the newest migration that writes it), once each", () => {
+    expect(FUNNEL_STEPS).toHaveLength(15);
     expect(new Set(FUNNEL_STEPS).size).toBe(FUNNEL_STEPS.length);
-    const sql = readFileSync(new URL("../../../../supabase/migrations/20261012020000_funnel_steps.sql", import.meta.url), "utf8");
-    const check = sql.match(/funnel_steps_step_known check \(step in \(([\s\S]*?)\)\)/)?.[1] ?? "";
+    // each new step rewrites the check in a migration of its own (try_board, free_board_done): the last one is the table's
+    const dir = new URL("../../../../supabase/migrations/", import.meta.url);
+    const checks = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .map((f) => readFileSync(new URL(f, dir), "utf8").match(/funnel_steps_step_known check \(step in \(([\s\S]*?)\)\)/)?.[1])
+      .filter((c): c is string => Boolean(c));
+    const check = checks.at(-1) ?? "";
     expect([...check.matchAll(/'([a-z_]+)'/g)].map((m) => m[1])).toEqual([...FUNNEL_STEPS]);
+    const sql = readFileSync(new URL("20261012020000_funnel_steps.sql", dir), "utf8");
     expect(RECORD_FUNNEL_STEP).toBe("record_funnel_step");
     expect(sql).toContain(`function public.${RECORD_FUNNEL_STEP}(p_step text, p_meta jsonb default null)`);
   });

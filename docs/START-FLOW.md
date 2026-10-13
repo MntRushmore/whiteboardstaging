@@ -82,3 +82,11 @@ The old in-app welcome and the three-tip tour are skipped for anyone who came th
 - **What counts as the free board:** the account's oldest live board. Problems done on it come from its learning attempts, and "used up" also reads the ink summary every page already loads (balance 0).
 
 **Old accounts:** accounts from before this, and the old `/login?mode=signup` path, get the same rule. Their first board is the guided board, and the guided-tour exemption stays as it is.
+
+**As built (`feat/free-board`):**
+- **The rule:** `src/lib/billing/freeBoard.ts` (pure). It only narrows `planGate`'s `locked`, so a plan, an admin, no checkout link, just back from checkout and an unread plan stay as they were.
+- **A problem done:** a learning attempt on the free board whose outcome left `in_progress` for anything but `unfinished` (`first_try`, `self_corrected`, `with_help`, `tutor_solved`), any origin but the chat's worked examples (`teach`). Each problem counts once (by its LaTeX), and each attempt once.
+- **The ink:** the balance at 0, or a Live 402 on the free board.
+- **The pages:** `useFreeBoard` (`src/components/billing`). The home shows `FreeBoardBanner` and holds new boards (`src/lib/billing/newBoards.ts`: New Board, topics, Today's practice, Practice more and Ask go to the plan screen). With no board yet, the first one made is the free one.
+- **The moment:** the board shows `FreeBoardSheet` (lazy). Under it the tutor finishes its pen and rests; from then on Help me, Ask and New topic go to the plan screen.
+- **Remembered:** the device keeps the end (`agathon.freeBoard.end.<userId>`), and `free_board_done` is recorded once (`20261013030000_free_board_step.sql`).
