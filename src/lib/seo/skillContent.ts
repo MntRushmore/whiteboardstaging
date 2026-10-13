@@ -726,15 +726,42 @@ function wholeNumbers(p: string): string[] | null {
       const [big, small] = a >= b ? [a, b] : [b, a];
       return [`${big} + ${10 - big} = 10`, `10 + ${small - (10 - big)} = ${a + b}`];
     }
-    return countOn(a, placeParts(b), "+");
+    return byPlace(a, b, "+") ?? countOn(a, placeParts(b), "+");
   }
   if (op === "-") {
     // back to ten: 13 - 7 → 13 - 3 = 10, 10 - 4 = 6
     if (a > 10 && a < 20 && b < 10 && a - b < 10) return [`${a} - ${a - 10} = 10`, `10 - ${b - (a - 10)} = ${a - b}`];
-    return countOn(a, placeParts(b), "-");
+    return byPlace(a, b, "-") ?? countOn(a, placeParts(b), "-");
   }
   if (op === "\\times") return multiply(a, b);
   return divide(a, b);
+}
+
+/** A whole number's digit in each place, ones first: 4785 → [5, 8, 7, 4]. */
+const digitsOf = (n: number) => [...String(n)].reverse().map(Number);
+
+/**
+ * Column by column, the ones first, as the numbers are lined up: 54 + 27 → 4 + 7 = 11, 50 + 20 = 70,
+ * 70 + 11 = 81. Taking away only where no column has to regroup (96 − 14 → 6 − 4 = 2, 90 − 10 = 80,
+ * 80 + 2 = 82); a take-away that regroups is counted back instead.
+ */
+function byPlace(a: number, b: number, op: "+" | "-"): string[] | null {
+  if (a < 10 || b < 10) return null;
+  const da = digitsOf(a);
+  const db = digitsOf(b);
+  if (op === "-" && (b > a || db.some((d, k) => d > (da[k] ?? 0)))) return null;
+  const lines: string[] = [];
+  const parts: number[] = [];
+  for (let k = 0; k < Math.max(da.length, db.length); k++) {
+    const x = (da[k] ?? 0) * 10 ** k;
+    const y = (db[k] ?? 0) * 10 ** k;
+    const value = op === "+" ? x + y : x - y;
+    if (x > 0 && y > 0) lines.push(`${x} ${op} ${y} = ${value}`);
+    if (value > 0) parts.push(value);
+  }
+  if (lines.length < 1 || parts.length < 2) return null;
+  lines.push(`${[...parts].reverse().join(" + ")} = ${op === "+" ? a + b : a - b}`);
+  return lines;
 }
 
 /** Adding or taking away one place at a time: 54 + 27 → 54 + 20 = 74, 74 + 7 = 81. */
@@ -752,6 +779,8 @@ function countOn(a: number, parts: readonly number[], op: "+" | "-"): string[] |
 }
 
 function multiply(a: number, b: number): string[] | null {
+  // a times-table fact (6 × 11) is its own working
+  if (a <= 12 && b <= 12) return null;
   // multiples of ten: 3 × 40 → 3 × 4 = 12, 12 × 10 = 120
   const zeros = (n: number) => String(n).length - String(n).replace(/0+$/, "").length;
   const za = zeros(a);
@@ -762,39 +791,40 @@ function multiply(a: number, b: number): string[] | null {
     if (a1 >= 10 || b1 >= 10 || a1 < 2 || b1 < 2) return null;
     return [`${a1} \\times ${b1} = ${a1 * b1}`, `${a1 * b1} \\times ${10 ** (za + zb)} = ${a * b}`];
   }
-  // by parts: 67 × 8 → 60 × 8 = 480, 7 × 8 = 56, 480 + 56 = 536
-  if (b < 10 && placeParts(a).length >= 2) {
-    const parts = placeParts(a);
-    return [...parts.map((part) => `${part} \\times ${b} = ${part * b}`), `${parts.map((part) => part * b).join(" + ")} = ${a * b}`];
-  }
-  if (a < 10 && placeParts(b).length >= 2) {
-    const parts = placeParts(b);
-    return [...parts.map((part) => `${a} \\times ${part} = ${a * part}`), `${parts.map((part) => a * part).join(" + ")} = ${a * b}`];
-  }
-  // two numbers of two digits or more: 87 × 55 → 87 × 50 = 4350, 87 × 5 = 435, 4350 + 435 = 4785
-  if (a >= 10 && b >= 10) {
-    const parts = placeParts(b);
-    if (parts.length < 2) return null;
-    return [...parts.map((part) => `${a} \\times ${part} = ${a * part}`), `${parts.map((part) => a * part).join(" + ")} = ${a * b}`];
-  }
+  // by place, the ones first, as the rows of the written method: 67 × 8 → 7 × 8 = 56, 60 × 8 = 480, 56 + 480 = 536
+  // the number split into its places: `split` is a, else b (the other factor multiplies each part)
+  const rows = (split: "a" | "b") => {
+    const parts = [...placeParts(split === "a" ? a : b)].reverse();
+    const line = (part: number) => (split === "a" ? `${part} \\times ${b} = ${part * b}` : `${a} \\times ${part} = ${a * part}`);
+    const value = (part: number) => (split === "a" ? part * b : a * part);
+    return [...parts.map(line), `${parts.map(value).join(" + ")} = ${a * b}`];
+  };
+  if (b < 10 && placeParts(a).length >= 2) return rows("a");
+  if (a < 10 && placeParts(b).length >= 2) return rows("b");
+  // two numbers of two digits or more, a row for each digit of the bottom one: 87 × 55 → 87 × 5 = 435, 87 × 50 = 4350, 435 + 4350 = 4785
+  if (a >= 10 && b >= 10 && placeParts(b).length >= 2) return rows("b");
   return null;
 }
 
-/** Partial quotients: 48 ÷ 3 → 3 × 10 = 30, 48 − 30 = 18, 3 × 6 = 18, 10 + 6 = 16. */
+/**
+ * Long division as it is written under the bracket, a digit of the answer at a time: what the
+ * divisor times that digit takes off, and what is left before the next digit comes down (a 0 in the
+ * answer just brings the next digit down). 48 ÷ 3 → 3 × 1 = 3, 4 − 3 = 1, 3 × 6 = 18, 18 − 18 = 0,
+ * 48 ÷ 3 = 16.
+ */
 function divide(a: number, b: number): string[] | null {
-  if (b === 0 || a % b !== 0) return null;
-  const parts = placeParts(a / b);
-  if (parts.length < 2) return null;
+  // a times-table fact (99 ÷ 9 = 11) is its own working
+  if (b === 0 || a % b !== 0 || a / b < 10 || (a / b <= 12 && b <= 12)) return null;
   const lines: string[] = [];
-  let left = a;
-  parts.forEach((part, i) => {
-    lines.push(`${b} \\times ${part} = ${b * part}`);
-    if (i < parts.length - 1) {
-      lines.push(`${left} - ${b * part} = ${left - b * part}`);
-      left -= b * part;
-    }
-  });
-  lines.push(`${parts.join(" + ")} = ${a / b}`);
+  let cur = 0;
+  for (const ch of String(a)) {
+    cur = cur * 10 + Number(ch);
+    const d = Math.floor(cur / b);
+    if (d === 0) continue;
+    lines.push(`${b} \\times ${d} = ${b * d}`, `${cur} - ${b * d} = ${cur - b * d}`);
+    cur -= b * d;
+  }
+  lines.push(`${a} \\div ${b} = ${a / b}`);
   return lines;
 }
 

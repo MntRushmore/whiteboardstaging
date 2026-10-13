@@ -11,11 +11,6 @@
   --sp-radius: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);
 }
 
-/* The bar has the name and the two ways in, no section links: a plain row at every width. */
-.page .navInner {
-  display: flex;
-}
-
 /* ---- The top: where it is, what it is, where to jump ---------------------------------------- */
 .hero {
   position: relative;
@@ -623,6 +618,8 @@
   @page {
     margin: 14mm 12mm;
   }
+  /* the library's bar (LibraryNav), the parts marked noPrint, and the legal footer */
+  .page > header,
   .noPrint,
   .page + :global(footer) {
     display: none !important;

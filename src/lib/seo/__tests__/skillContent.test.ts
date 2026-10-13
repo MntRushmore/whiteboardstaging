@@ -149,12 +149,21 @@ describe("every skill's worked example", () => {
         expect(workingChecks(engine, problem, slipped), `${id} line ${i + 1}: ${slipped[i]}`).toBe(false);
       }
     }
-    expect(content("long_division").example!.steps.map((l) => l.text)).toEqual(["3 × 10 = 30", "48 − 30 = 18", "3 × 6 = 18", "10 + 6 = 16"]);
+    // long division as it is written under the bracket: multiply, subtract, bring down
+    expect(content("long_division").example!.steps.map((l) => l.text)).toEqual(["3 × 1 = 3", "4 − 3 = 1", "3 × 6 = 18", "18 − 18 = 0", "48 ÷ 3 = 16"]);
   });
 
   it("makes a kid's working from the problem's own numbers", () => {
-    expect(kidWorking(["570 \\div 6"])).toEqual(["6 \\times 90 = 540", "570 - 540 = 30", "6 \\times 5 = 30", "90 + 5 = 95"]);
-    expect(kidWorking(["67 \\times 8"])).toEqual(["60 \\times 8 = 480", "7 \\times 8 = 56", "480 + 56 = 536"]);
+    expect(kidWorking(["570 \\div 6"])).toEqual(["6 \\times 9 = 54", "57 - 54 = 3", "6 \\times 5 = 30", "30 - 30 = 0", "570 \\div 6 = 95"]);
+    // a 0 in the answer brings the next digit down
+    expect(kidWorking(["618 \\div 3"])).toEqual(["3 \\times 2 = 6", "6 - 6 = 0", "3 \\times 6 = 18", "18 - 18 = 0", "618 \\div 3 = 206"]);
+    expect(kidWorking(["67 \\times 8"])).toEqual(["7 \\times 8 = 56", "60 \\times 8 = 480", "56 + 480 = 536"]);
+    expect(kidWorking(["87 \\times 55"])).toEqual(["87 \\times 5 = 435", "87 \\times 50 = 4350", "435 + 4350 = 4785"]);
+    // column by column, the ones first; a take-away that regroups is counted back instead
+    expect(kidWorking(["54 + 27"])).toEqual(["4 + 7 = 11", "50 + 20 = 70", "70 + 11 = 81"]);
+    expect(kidWorking(["771 + 96"])).toEqual(["1 + 6 = 7", "70 + 90 = 160", "700 + 160 + 7 = 867"]);
+    expect(kidWorking(["96 - 14"])).toEqual(["6 - 4 = 2", "90 - 10 = 80", "80 + 2 = 82"]);
+    expect(kidWorking(["72 - 35"])).toEqual(["72 - 30 = 42", "42 - 5 = 37"]);
     expect(kidWorking(["6 + 8"])).toEqual(["8 + 2 = 10", "10 + 4 = 14"]);
     expect(kidWorking(["13 - 7"])).toEqual(["13 - 3 = 10", "10 - 4 = 6"]);
     expect(kidWorking(["(6 + 7) \\times (10 - 6)"])).toEqual(["6 + 7 = 13", "10 - 6 = 4", "13 \\times 4 = 52"]);

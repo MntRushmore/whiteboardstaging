@@ -43,6 +43,9 @@ const plain = (markup: string) =>
     .replace(/&gt;/g, ">")
     .replace(/\s+/g, " ");
 
+/** raw text (a guide's own words) with its spacing as the page's text has it */
+const norm = (text: string) => text.replace(/\s+/g, " ").trim();
+
 const html = new Map<TopicId, string>();
 beforeAll(() => {
   for (const id of SKILL_IDS) html.set(id, renderToStaticMarkup(<SkillPage id={id} />));
@@ -174,8 +177,14 @@ describe("a skill page", () => {
       expect(JSON.stringify(data), id).not.toMatch(/aggregateRating|"review"/);
       const crumbs = data.find((d) => d["@type"] === "BreadcrumbList")!;
       const items = crumbs.itemListElement as { position: number; name: string; item: string }[];
-      expect(items[0].name).toBe("Math");
+      // Agathon › Math › its grade or course › the skill, as the level pages start theirs: at the home page
+      expect(items.slice(0, 2).map((i) => i.name)).toEqual(["Agathon", "Math"]);
+      expect(new URL(items[0].item).pathname).toBe("/");
+      expect(new URL(items[1].item).pathname).toBe(MATH_PATH);
+      if (w.level) expect(items[2]).toMatchObject({ name: w.level.label, position: 3 });
+      expect(items).toHaveLength(w.level ? 4 : 3);
       expect(items.at(-1)!.name).toBe(w.name);
+      expect(items.at(-1)!.item).toBe(resource.url);
       expect(items.map((i) => i.position)).toEqual(items.map((_, k) => k + 1));
       const faq = data.find((d) => d["@type"] === "FAQPage");
       const guide = skillGuide(id);
@@ -185,8 +194,8 @@ describe("a skill page", () => {
         expect(questions).toEqual(guide.faq.map((f) => [f.q, f.a]));
         const text = plain(page);
         for (const [q, a] of questions) {
-          expect(text).toContain(plain(q).trim());
-          expect(text).toContain(plain(a).trim());
+          expect(text).toContain(norm(q));
+          expect(text).toContain(norm(a));
         }
       } else expect(faq, id).toBeUndefined();
     }
@@ -196,9 +205,14 @@ describe("a skill page", () => {
     const division = html.get("long_division")!;
     expect(division).toContain(`href="${MATH_PATH}"`);
     expect(division).toContain('href="/math/4th-grade"');
-    expect(plain(division)).toMatch(/Math 4th grade Long division/);
+    const crumbs = division.match(/<nav aria-label="Breadcrumb"[\s\S]*?<\/nav>/)![0];
+    expect(plain(crumbs).trim()).toBe("Agathon Math 4th grade Long division");
+    expect(crumbs).toContain('href="/"');
+    expect(crumbs).toMatch(/<li aria-current="page">Long division<\/li>/);
     const derivatives = html.get("derivatives")!;
     expect(derivatives).toContain('href="/math/precalculus-and-calculus"');
+    // a course is named as its own level page names it
+    expect(plain(derivatives.match(/<nav aria-label="Breadcrumb"[\s\S]*?<\/nav>/)![0]).trim()).toBe("Agathon Math Precalculus and calculus Derivatives");
     for (const id of SKILL_IDS) {
       const page = html.get(id)!;
       const related = relatedSkills(id);
@@ -248,11 +262,16 @@ describe("a skill page", () => {
   it("is a worksheet when printed: the problems, then the answers, without the bar, the footer or the way in", () => {
     const css = fs.readFileSync(path.join(__dirname, "../skillPage.module.css"), "utf8");
     const print = css.slice(css.indexOf("@media print"));
-    expect(print).toMatch(/\.noPrint,\s*\.page \+ :global\(footer\)\s*\{\s*display: none !important;/);
+    expect(print).toMatch(/\.page > header,\s*\.noPrint,\s*\.page \+ :global\(footer\)\s*\{\s*display: none !important;/);
     expect(print).toMatch(/\.answerKey \{\s*break-before: page;/);
     const page = html.get("long_division")!;
-    // the bar, the top, the example, the way in and the related skills are left off the paper
-    for (const part of ["Agathon", "worked-example", "on-agathon", "related"]) expect(page).toMatch(new RegExp(`class="[^"]*noPrint[^"]*"[^>]*>[\\s\\S]{0,400}${part}|id="${part}" class="[^"]*noPrint`));
+    // the library's bar is the page's own header (hidden by `.page > header`)
+    expect(page).toMatch(/^<div class="[^"]*" data-skill-page="">(?:<script type="application\/ld\+json">[\s\S]*?<\/script>)+<header\b/);
+    // the top, the example, the steps, the slips, the way in, the questions and the related skills are left off the paper
+    for (const part of ["worked-example", "how-to", "slips", "on-agathon", "questions", "related"]) expect(page, part).toMatch(new RegExp(`id="${part}" class="[^"]*noPrint`));
+    expect(page).toMatch(/<header class="[^"]*hero[^"]*noPrint/);
+    // the practice set and its answer key are printed
+    expect(page).not.toMatch(/id="practice" class="[^"]*noPrint/);
   });
 
   it("uses no decorative gradients", () => {
@@ -288,9 +307,9 @@ describe("a skill without a guide yet", () => {
   it("each high-school skill has its guide's words on its page", () => {
     for (const [id, g] of Object.entries(HS_GUIDES) as [TopicId, NonNullable<(typeof HS_GUIDES)[TopicId]>][]) {
       const text = plain(html.get(id)!);
-      expect(text, id).toContain(plain(g.what).trim());
-      for (const s of g.steps) expect(text, id).toContain(plain(s).trim());
-      for (const s of g.slips) expect(text, id).toContain(plain(s.slip).trim());
+      expect(text, id).toContain(norm(g.what));
+      for (const s of g.steps) expect(text, id).toContain(norm(s));
+      for (const s of g.slips) expect(text, id).toContain(norm(s.slip));
     }
   });
 });

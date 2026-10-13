@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { BetaBadge } from "@/components/app/BetaBadge";
 import { HandMath, handMathMs } from "@/components/landing/HandMath";
 import { InkCheck, InkCircle } from "@/components/landing/InkMark";
 import { INK_START_SCRIPT } from "@/components/landing/inkStart";
@@ -9,15 +8,17 @@ import landing from "@/components/landing/landing.module.css";
 import { SKILLS } from "@/lib/learning/contracts";
 import { GRADE_IDS, GRADE_PATHS, GRADES, type Grade } from "@/lib/learning/grades";
 import { isTopicId, TOPIC_PROBLEMS, type TopicId } from "@/lib/learning/topics";
-import { LANDING_PATH, SIGN_IN_HREF, SIGN_UP_HREF, siteOrigin } from "@/lib/landing/links";
+import { LANDING_PATH, SIGN_UP_HREF, siteOrigin } from "@/lib/landing/links";
 import { planWords } from "@/lib/landing/plan";
 import { usEnglish } from "@/lib/landing/practice";
-import { COURSES } from "@/lib/onboarding/courses";
 import { pathSkillName } from "@/lib/path/pathView";
+import { levelName } from "@/lib/seo/levels";
 import { COURSE_SLUGS, coursePath, gradePath, MATH_PATH, skillPath, type SeoCourseId } from "@/lib/seo/routes";
+import { OPEN_GRAPH_DEFAULTS } from "@/lib/seo/site";
 import { skillGuide, type SkillGuide } from "@/lib/seo/skillGuide";
 import { PRACTICE_COUNT, skillContent, type MathLine, type SkillContent, type WorkedExample } from "@/lib/seo/skillContent";
 import { JsonLd, type JsonLdThing } from "./JsonLd";
+import { LibraryNav } from "./LevelPage";
 import styles from "./skillPage.module.css";
 
 /**
@@ -43,6 +44,7 @@ const countWord = (n: number) => COUNT_WORDS[n] ?? String(n);
 
 export const SKILL_PAGE_COPY = {
   breadcrumb: "Breadcrumb",
+  home: "Agathon",
   math: "Math",
   jump: {
     example: "Worked example",
@@ -90,7 +92,6 @@ export const SKILL_PAGE_COPY = {
   inCourses: (courses: string) => `It's in Agathon's ${courses} ${courses.includes(" and ") ? "courses" : "course"}, and any student can pick it as a topic.`,
   anyTopic: "Any student can pick it as a topic.",
   join: "Join Agathon",
-  signIn: "Sign in",
   faqTitle: "Questions parents ask",
   relatedTitle: "Related skills",
   allSkills: (level: string) => `Every ${level} skill`,
@@ -116,7 +117,8 @@ function coursesOf(id: TopicId): SeoCourseId[] {
 }
 
 const gradeName = (g: Grade) => GRADES.find((x) => x.id === g)!.label;
-const courseName = (c: SeoCourseId) => COURSES.find((x) => x.id === c)!.label;
+/** A course as the library's level pages name it ("Algebra 1", "Precalculus and calculus"). */
+const courseName = (c: SeoCourseId) => levelName({ kind: "course", course: c, slug: COURSE_SLUGS[c] });
 
 function joinWords(words: readonly string[]): string {
   return words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : (words[0] ?? "");
@@ -263,19 +265,26 @@ function origin(): string {
   return siteOrigin(process.env.NEXT_PUBLIC_SITE_URL);
 }
 
+/** Agathon › Math › 4th grade › Long division, as the library's level pages start theirs; the last step is this page. */
+export function skillCrumbs(w: Pick<SkillWords, "level" | "name" | "path">): { name: string; path: string }[] {
+  return [
+    { name: SKILL_PAGE_COPY.home, path: LANDING_PATH },
+    { name: SKILL_PAGE_COPY.math, path: MATH_PATH },
+    ...(w.level ? [{ name: w.level.label, path: w.level.path }] : []),
+    { name: w.name, path: w.path },
+  ];
+}
+
 export function skillMetadata(id: TopicId): Metadata {
   const w = skillWords(id);
   return {
-    metadataBase: new URL(origin()),
     title: w.title,
     description: w.description,
     alternates: { canonical: w.path },
     robots: { index: true, follow: true },
     openGraph: {
-      type: "article",
+      ...OPEN_GRAPH_DEFAULTS,
       url: w.path,
-      siteName: "Agathon",
-      locale: "en_US",
       title: `${w.title}${TITLE_SUFFIX}`,
       description: w.description,
     },
@@ -290,12 +299,9 @@ export function skillMetadata(id: TopicId): Metadata {
 /** The page's JSON-LD: the resource itself, where it sits, and the guide's questions (only what the page shows). */
 export function skillJsonLd(w: SkillWords): JsonLdThing[] {
   const base = origin();
-  const url = `${base}${w.path}`;
-  const crumbs = [
-    { name: SKILL_PAGE_COPY.math, url: `${base}${MATH_PATH}` },
-    ...(w.level ? [{ name: w.level.label, url: `${base}${w.level.path}` }] : []),
-    { name: w.name, url },
-  ];
+  const absolute = (path: string) => new URL(path, `${base}/`).toString();
+  const url = absolute(w.path);
+  const crumbs = skillCrumbs(w).map((c) => ({ name: c.name, url: absolute(c.path) }));
   const things: JsonLdThing[] = [
     {
       "@context": "https://schema.org",
@@ -356,7 +362,8 @@ export function SkillPage({ id }: { id: TopicId }) {
       {skillJsonLd(w).map((data) => (
         <JsonLd key={String(data["@type"])} data={data} />
       ))}
-      <SkillNav />
+      {/* the library's bar, as on the hub and the level pages */}
+      <LibraryNav />
       <main>
         <header className={`${styles.hero} ${styles.noPrint}`}>
           <BoardDots id="sp-hero-dots" />
@@ -411,41 +418,23 @@ export function SkillPage({ id }: { id: TopicId }) {
   );
 }
 
-/** The bar on top: the name (home), Sign in, Join Agathon. Sticky, as on the landing page. */
-function SkillNav() {
-  return (
-    <header className={`${landing.nav} ${styles.noPrint}`}>
-      <nav aria-label="Agathon" className={`${landing.inner} ${landing.navInner} ${styles.navInner}`}>
-        <Link href={LANDING_PATH} className={landing.brand}>
-          Agathon
-          <BetaBadge className={landing.beta} />
-        </Link>
-        <div className={landing.navLinks}>
-          <Link href={SIGN_IN_HREF} className={landing.navSignIn}>
-            {SKILL_PAGE_COPY.signIn}
-          </Link>
-          <Link href={SIGN_UP_HREF} className={`${landing.pill} ${landing.navCta}`}>
-            {SKILL_PAGE_COPY.join}
-          </Link>
-        </div>
-      </nav>
-    </header>
-  );
-}
-
+/** Agathon › Math › 4th grade › Long division: every step a link but the last, which is this page. */
 function Breadcrumbs({ w }: { w: SkillWords }) {
+  const steps = skillCrumbs(w);
   return (
     <nav aria-label={SKILL_PAGE_COPY.breadcrumb} className={styles.crumbs}>
       <ol>
-        <li>
-          <Link href={MATH_PATH}>{SKILL_PAGE_COPY.math}</Link>
-        </li>
-        {w.level && (
-          <li>
-            <Link href={w.level.path}>{w.level.label}</Link>
-          </li>
+        {steps.map((step, i) =>
+          i < steps.length - 1 ? (
+            <li key={step.path}>
+              <Link href={step.path}>{step.name}</Link>
+            </li>
+          ) : (
+            <li key={step.path} aria-current="page">
+              {step.name}
+            </li>
+          ),
         )}
-        <li aria-current="page">{w.name}</li>
       </ol>
     </nav>
   );
