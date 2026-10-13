@@ -20,15 +20,15 @@ import styles from "@/components/landing/landing.module.css";
  * sees, and the link parents send each other. What Agathon is (the hero's replay), a problem from
  * every grade, how it works, Ask, the devices it runs on, what kids practice, what grown-ups see,
  * the price and the questions, ending in the way in (the Join band); the platform layout adds the
- * legal footer. Its canonical URL is /parents until agathon.app/ itself serves it (the root rewrite,
- * feat/lp3-root); then it becomes "/".
+ * legal footer. Its address is agathon.app/ itself (a rewrite serves it to a signed-out "/";
+ * /parents keeps working), so that is its canonical URL.
  * Server-rendered and static: no auth wait, nothing on it depends on who is looking. Its words are
  * in src/components/landing/copy.ts; its ink draws itself as it comes into view (inkStart.ts).
  */
 
 const copy = LANDING_COPY.meta;
 
-/** Where the page lives: /parents, until the root rewrite ships (then "/"). */
+/** Where the page lives: the site's root (LANDING_PATH). */
 const CANONICAL = LANDING_PATH;
 
 export const metadata: Metadata = {
