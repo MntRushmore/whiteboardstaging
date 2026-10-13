@@ -25,9 +25,9 @@ import styles from "./practice.module.css";
 
 /**
  * What they'll practice: a grade picker (Kindergarten to 8th, and High school) over each grade's
- * real skill path. It needs no script: the chips are a native radio group (arrow keys move between
- * grades) and CSS shows the chosen grade's path (`practice.module.css`). Without `:has()` every
- * path is simply listed.
+ * real skill path, laid out on a card in the path's own purple tint. It needs no script: the chips
+ * are a native radio group (arrow keys move between grades) and CSS shows the chosen grade's path
+ * (`practice.module.css`). Without `:has()` every path is simply listed.
  */
 
 /** A stop's sign: the same pictures the app's skill path draws (src/components/path/PathTrail.tsx). */
@@ -134,10 +134,12 @@ export function PracticePicker() {
               </label>
             ))}
           </fieldset>
-          <div className={styles.panels}>
-            {tabs.map((tab) => (
-              <Panel key={tab.id} tab={tab} />
-            ))}
+          <div className={styles.board}>
+            <div className={styles.panels}>
+              {tabs.map((tab) => (
+                <Panel key={tab.id} tab={tab} />
+              ))}
+            </div>
           </div>
         </div>
       </div>

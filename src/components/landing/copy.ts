@@ -63,8 +63,11 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
     hero: {
       eyebrow: "Kindergarten to 8th grade",
       title: "Math practice kids actually do.",
-      /** the title in three parts: the tutor's pen circles the middle one (InkMark) */
-      titleParts: ["Math practice kids ", "actually", " do."],
+      /**
+       * The title's words in four parts, joined by spaces: the first always ends its own line, the
+       * tutor's pen circles the third (InkCircle) and checks the last (InkCheck).
+       */
+      titleParts: ["Math practice", "kids", "actually", "do."],
       lede: "Kids write by hand. A tutor checks every line and answers their questions.",
       start: START,
       /** the secondary link, to How it works on this page */
@@ -223,6 +226,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
       price: p.price,
       per: p.per,
       trial: `Free for the first ${p.days}.`,
+      includesLabel: "What's included",
       includes: [
         "Each kid's own profile, path and boards",
         "Help me and Ask, with voice, on every board",
@@ -275,9 +279,8 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
         },
       ],
     },
-    /** the last band: the way in, big */
+    /** the last band: the way in, big (no eyebrow: its button already says "Join Agathon") */
     join: {
-      eyebrow: "Join Agathon",
       title: "Their first problem\nis waiting.",
       body: "Sign up with an email, pick their grade, and the first problems are on the board.",
       terms: p.terms,

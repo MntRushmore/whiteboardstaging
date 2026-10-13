@@ -14,20 +14,44 @@ const { default: PrivacyPage } = await import("@/app/(platform)/privacy/page");
 const { landingCopy, LANDING_COPY } = await import("../copy");
 const { MAX_KIDS } = await import("@/lib/family/contracts");
 const { PLAN_REFERRAL_COPY, REFERRAL_TRIAL_DAYS } = await import("@/lib/billing/planChoice");
+const { SIGN_UP_HREF } = await import("@/lib/landing/links");
+const { JOIN_ID } = await import("../bands");
 
 const html = renderToStaticMarkup(<ParentsPage />);
 /** the page's text, entities read back (apostrophes are escaped) */
 const plain = (markup: string) => markup.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/\s+/g, " ");
 const text = plain(html);
 
+/** Every link on the page: its href and its words. */
+const links = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map((m) => ({
+  href: m[1].match(/href="([^"]*)"/)?.[1] ?? "",
+  words: plain(m[2]).trim(),
+}));
+
+/** The markup from the element with `id` to the end of its section (the next `</section>` at its depth). */
+function sectionById(id: string): string {
+  const start = html.indexOf(`id="${id}"`);
+  if (start < 0) return "";
+  const open = html.lastIndexOf("<section", start);
+  let depth = 0;
+  const tag = /<(\/?)section\b/g;
+  tag.lastIndex = open;
+  for (let m = tag.exec(html); m; m = tag.exec(html)) {
+    depth += m[1] ? -1 : 1;
+    if (depth === 0) return html.slice(open, m.index);
+  }
+  return html.slice(open);
+}
+
 describe("/parents", () => {
   it("takes the price, the trial and the plan's name from UNLIMITED_PLAN", () => {
     expect(text).toContain("$31");
     expect(text).toContain(`Free for 10 days, then $31 a month for up to ${MAX_KIDS} kids.`);
     expect(text).toContain("Agathon Test Plan");
+    expect(text).toContain("Free for the first 10 days.");
     // one name for the main button everywhere; the trial's length is said beside it
-    expect(text).toContain("Start free trial");
-    expect(text).not.toMatch(/Try it free(?! for)|Start your free/);
+    expect(text).toContain("Join Agathon");
+    expect(text).not.toMatch(/Start free trial|Try it free(?! for)|Start your free/);
     expect(text).not.toMatch(/\$25|7-day|7 days|free week/);
     expect(String(metadata.description)).toContain("Free for 10 days");
   });
@@ -46,15 +70,27 @@ describe("/parents", () => {
 
   it("says nothing it cannot back: no testimonials, ratings, user counts or results", () => {
     const words = JSON.stringify(landingCopy({ name: "Agathon Unlimited", monthlyUsd: 25, trialDays: 7 }));
-    expect(words).not.toMatch(/\d+\s?%|\b\d[\d,]*\+|testimonial|rated|review|trusted by|thousands|millions|#1|best|guarantee|proven|raise[sd]? (their )?grades/i);
+    // a count is a number with a "+" after it and then a space or the end ("10,000+ families"); the
+    // maths on the page ("3+2=5", "3x+5=20") is not a count
+    expect(words).not.toMatch(/\d+\s?%|\b\d[\d,]*\+(?=\s|$|[".,;:!?)])|testimonial|rated|review|trusted by|thousands|millions|#1|best|guarantee|proven|raise[sd]? (their )?grades/i);
     expect(text).not.toMatch(/★|⭐|4\.\d\/5/);
+    // the tightened count still catches a count
+    expect("Loved by 10,000+ families").toMatch(/\b\d[\d,]*\+(?=\s|$|[".,;:!?)])/);
+    expect('"1000+"').toMatch(/\b\d[\d,]*\+(?=\s|$|[".,;:!?)])/);
   });
 
-  it("has one h1 and headings in order", () => {
+  it("has exactly one h1, the hero's, and headings in order", () => {
     const levels = [...html.matchAll(/<h([1-6])\b/g)].map((m) => Number(m[1]));
     expect(levels.filter((l) => l === 1)).toHaveLength(1);
     expect(levels[0]).toBe(1);
     for (let i = 1; i < levels.length; i++) expect(levels[i] - levels[i - 1]).toBeLessThanOrEqual(1);
+    const h1 = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/)?.[1] ?? "";
+    expect(plain(h1).trim()).toBe(LANDING_COPY.hero.title);
+  });
+
+  it("writes the hero's title from its parts, so the ink marks the words the title says", () => {
+    expect(LANDING_COPY.hero.titleParts.join(" ")).toBe(LANDING_COPY.hero.title);
+    expect(LANDING_COPY.hero.titleParts[2]).toBe("actually");
   });
 
   it("describes every picture", () => {
@@ -66,16 +102,49 @@ describe("/parents", () => {
       if (img.includes("board-ipad")) expect(alt).toBe("");
       else expect(alt && alt.length > 20, img).toBe(true);
     }
-    expect(html).toMatch(/role="img" aria-label="An Agathon board on an iPad/);
-    // How it works' two boards are vector ink: each one is a labelled picture
-    const boards = [...html.matchAll(/<figure[^>]*role="img"[^>]*aria-label="([^"]*)"/g)].map((m) => m[1]);
-    expect(boards).toHaveLength(3);
-    for (const label of boards) expect(label.length).toBeGreaterThan(40);
+    // every labelled picture (the iPad, How it works' boards, and whatever the other parts add)
+    // says what is in it, and the hero's iPad is one of them
+    const pictures = [...html.matchAll(/role="img"[^>]*?aria-label="([^"]*)"|aria-label="([^"]*)"[^>]*?role="img"/g)].map((m) => m[1] ?? m[2]);
+    expect(pictures.length).toBeGreaterThanOrEqual(3);
+    for (const label of pictures) expect(label.length, label).toBeGreaterThan(40);
+    expect(pictures).toContain(LANDING_COPY.replay.label);
   });
 
-  it("sends Start to the sign-up form and Sign in to the sign-in form", () => {
+  it("sends Join to the sign-up form and Sign in to the sign-in form", () => {
     expect(html).toContain('href="/login?mode=signup"');
     expect(html).toContain('href="/login"');
+  });
+
+  it("calls every way in Join Agathon: the bar, the hero, the pricing card, the Join band and the phone's bottom bar", () => {
+    const joins = links.filter((l) => l.href === SIGN_UP_HREF);
+    expect(joins.length).toBeGreaterThanOrEqual(5);
+    for (const link of joins) expect(link.words).toBe("Join Agathon");
+    const copy = LANDING_COPY;
+    expect(new Set([copy.nav.cta, copy.hero.start, copy.pricing.start, copy.join.start, copy.sticky.start])).toEqual(new Set(["Join Agathon"]));
+    // the Join band has the button, Sign in and the terms
+    const join = sectionById(JOIN_ID);
+    expect(join).toContain(`href="${SIGN_UP_HREF}"`);
+    expect(plain(join)).toContain("Join Agathon");
+    expect(plain(join)).toContain(copy.join.aside);
+    expect(join).toContain('href="/login"');
+    expect(plain(join)).toContain(copy.join.terms);
+    // the bottom bar says the trial beside its button
+    expect(text).toContain(`${copy.sticky.note} Join Agathon`);
+  });
+
+  it("points the bar's links at parts that are on the page", () => {
+    const nav = html.match(/<header\b[\s\S]*?<\/header>/)?.[0] ?? "";
+    for (const link of LANDING_COPY.nav.links) {
+      expect(nav, link.label).toContain(`href="#${link.id}"`);
+      expect(html.match(new RegExp(`\\bid="${link.id}"`, "g")), link.id).toHaveLength(1);
+    }
+    // and "See how it works" too
+    expect(html).toContain(`href="#${LANDING_COPY.nav.links[0].id}"`);
+  });
+
+  it("says agathon.app itself is the page's address", () => {
+    expect(metadata.alternates?.canonical).toBe("/");
+    expect(metadata.openGraph?.url).toBe("/");
   });
 
   it("lets a parent pick any grade without a script", () => {
@@ -90,6 +159,12 @@ describe("/parents", () => {
   it("is in US English, for US parents: practice, math, a check mark", () => {
     expect(text).not.toMatch(/practis|\bmaths\b|\bticks?\b|\bticked\b|\brings?\b|\bringed\b|ring round|colour|centre|\bbrackets?\b|the way round|favourite/i);
     expect(String(metadata.description)).not.toMatch(/\bticks?\b|\brings?\b/);
+  });
+
+  it("answers whether it is only for math", () => {
+    const item = LANDING_COPY.faq.items.find((i) => i.q === "Is it only for math?");
+    expect(item?.a).toContain("The board is for math.");
+    expect(text).toContain("Is it only for math?");
   });
 
   it("links the privacy answer to the Privacy Policy", () => {
@@ -131,6 +206,7 @@ describe("/parents for a visitor a friend invited", () => {
 
   it("the server's HTML says the usual trial: the page stays static, the friend's month is swapped in by the island", () => {
     expect(text).toContain(LANDING_COPY.hero.terms);
+    expect(text).toContain(LANDING_COPY.sticky.note);
     for (const words of Object.values(invited)) expect(text).not.toContain(words);
   });
 
@@ -139,7 +215,7 @@ describe("/parents for a visitor a friend invited", () => {
     expect(invited.trial).toContain(PLAN_REFERRAL_COPY.friendFree);
     expect(invited.fine).toContain(`Nothing is charged for ${REFERRAL_TRIAL_DAYS} days.`);
     expect(invited.start).toMatch(/free month/);
-    expect(invited.closing).toMatch(/first month is free/);
+    expect(invited.sticky).toBe(PLAN_REFERRAL_COPY.friendFree);
     const card = LANDING_COPY.faq.items.find((i) => "invited" in i);
     expect(card && "invited" in card ? card.invited.a : "").toContain(`nothing is charged for ${REFERRAL_TRIAL_DAYS} days`);
     // nothing in the friend's words is the usual trial
