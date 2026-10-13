@@ -6,7 +6,7 @@
 export const KID_COPY = {
   /** the switch in Board options and at the top of More */
   simpleBoard: "Simple board",
-  simpleBoardHint: "Fewer, bigger buttons for young kids",
+  simpleBoardHint: "Big buttons and the tools you need. Off: the full toolbar",
   /** the bar's Back */
   back: "Back to my boards",
   /** the screen strip's New topic, in More on the simple board */

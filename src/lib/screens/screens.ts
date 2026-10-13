@@ -17,17 +17,18 @@ export const SCREEN_ASPECT = SCREEN.w / SCREEN.h;
 const LEGACY_PAD = 40;
 /**
  * Screen-space gap between the screen edge and the board's edge. Taller than wide: the top bar
- * (16 + 36 px) and tldraw's toolbar (48 + 8 px) float over the board, and on a laptop or a monitor —
- * where the 16:9 screen is fitted by height — a 16 px gap put the first line's top-left corner
- * under the help tabs and the bottom of the screen under the tools. 64 px clears both. An iPad
- * (fitted by width, with room to spare above and below) is unaffected. See `screenViewPadding`.
+ * (16 + 48 px on the simple board) and the dock (10 + 66 px) float over the board, and on a laptop or
+ * a monitor — where the 16:9 screen is fitted by height — a 16 px gap put the first line's top-left
+ * corner under the bar and the bottom of the screen under the tools. 84 px clears both with a little
+ * table showing between, so the screen sits in an even margin. An iPad (fitted by width, with room to
+ * spare above and below) is unaffected. See `screenViewPadding`.
  */
-export const SCREEN_VIEW_PADDING = { x: 16, y: 64 } as const;
+export const SCREEN_VIEW_PADDING = { x: 16, y: 84 } as const;
 
 /**
- * The gap for a board this tall. Clearing the chrome costs 96 px of screen height, a few per cent on
+ * The gap for a board this tall. Clearing the chrome costs 168 px of screen height, a few per cent on
  * a monitor but over a quarter on a phone on its side (358 → 262 px tall at 390), where the screen
- * is better big with the bar over its edge. So the vertical gap is 64 px from a 640 px tall board
+ * is better big with the bar over its edge. So the vertical gap is 84 px from a 740 px tall board
  * up (every laptop), the edge gap of 16 px at 400 px and below, and in between in proportion.
  */
 export function screenViewPadding(boardHeight: number): { x: number; y: number } {

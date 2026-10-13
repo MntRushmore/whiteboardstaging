@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useEditor, createShapeId } from "tldraw";
 import {
   Dialog,
@@ -49,19 +49,70 @@ export function pdfReadErrorFor(e: unknown): PdfInlineError {
   return { message: PDF_COPY.unreadable, retryable: true, step: "read" };
 }
 
+/** What is wrong with a file before it is read, or null: not a PDF, or too large. */
+export function pdfFileError(f: Pick<File, "type" | "name" | "size">): PdfInlineError | null {
+  if (f.type !== "application/pdf" && !f.name.toLowerCase().endsWith(".pdf")) return { message: PDF_COPY.notPdf, retryable: false, step: "read" };
+  if (f.size > MAX_BYTES) return { message: PDF_COPY.tooLarge, retryable: false, step: "read" };
+  return null;
+}
+
+/** Feature Labs' PDF button (the classic bar): the page picker behind its own trigger. */
 export function PdfUpload() {
-  const editor = useEditor();
   const [open, setOpen] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  return (
+    <PdfDialog
+      open={open}
+      onOpenChange={setOpen}
+      trigger={
+        <Button variant="outline" size="sm" className="bg-white shadow-sm h-9" title="Upload a PDF worksheet">
+          <Upload className="w-4 h-4 mr-1.5" />
+          PDF
+        </Button>
+      }
+    />
+  );
+}
+
+/**
+ * The PDF page picker: drop or choose a PDF, pick a page, and it goes on the current screen, locked
+ * and protected from the tutor. Opened by its own trigger (`PdfUpload`), or with a file already
+ * chosen (`initialFile`: the simple board's Picture, whose one file picker takes a photo or a PDF),
+ * which it starts reading as it mounts. A new file is a new dialog: the caller keys it.
+ */
+export function PdfDialog({
+  open,
+  onOpenChange: setOpen,
+  trigger,
+  initialFile = null,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  trigger?: ReactNode;
+  initialFile?: File | null;
+}) {
+  const editor = useEditor();
+  const [initialError] = useState(() => (initialFile ? pdfFileError(initialFile) : null));
+  const [file, setFile] = useState<File | null>(initialError ? null : initialFile);
   const [thumbs, setThumbs] = useState<PdfPagePreview[]>([]);
   const [selectedPage, setSelectedPage] = useState<number>(1);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(initialFile) && !initialError);
   const [inserting, setInserting] = useState(false);
-  const [error, setError] = useState<PdfInlineError | null>(null);
+  const [error, setError] = useState<PdfInlineError | null>(initialError);
   const inputRef = useRef<HTMLInputElement>(null);
   // The file whose read failed, so Retry can re-run it after `reset()` cleared `file`.
-  const lastFileRef = useRef<File | null>(null);
+  const lastFileRef = useRef<File | null>(initialError ? null : initialFile);
   const [dragOver, setDragOver] = useState(false);
+  // the file chosen before the dialog opened: read once, as it mounts (its state starts as "loading")
+  const [firstFile] = useState(initialError ? null : initialFile);
+  useEffect(() => {
+    if (!firstFile) return;
+    let live = true;
+    void readPdf(firstFile, () => live);
+    // a read that lands after the dialog is gone (or StrictMode's second mount) sets nothing
+    return () => {
+      live = false;
+    };
+  }, [firstFile]);
 
   function reset() {
     setFile(null);
@@ -74,12 +125,9 @@ export function PdfUpload() {
 
   async function handleFile(f: File) {
     if (!f) return;
-    if (f.type !== "application/pdf" && !f.name.toLowerCase().endsWith(".pdf")) {
-      setError({ message: PDF_COPY.notPdf, retryable: false, step: "read" });
-      return;
-    }
-    if (f.size > MAX_BYTES) {
-      setError({ message: PDF_COPY.tooLarge, retryable: false, step: "read" });
+    const invalid = pdfFileError(f);
+    if (invalid) {
+      setError(invalid);
       return;
     }
     lastFileRef.current = f;
@@ -88,12 +136,17 @@ export function PdfUpload() {
     setLoading(true);
     setThumbs([]);
     setSelectedPage(1);
+    await readPdf(f);
+  }
 
+  /** Reads the pages' previews; `live` says whether the dialog is still there to show them. */
+  async function readPdf(f: File, live: () => boolean = () => true) {
     try {
       const previews = await loadPdfThumbnails(f);
-      setThumbs(previews);
+      if (live()) setThumbs(previews);
     } catch (e) {
       console.error("PDF load failed", e);
+      if (!live()) return;
       // Back to the drop zone, with the reason and (for transient failures) a Retry.
       setFile(null);
       setThumbs([]);
@@ -102,7 +155,7 @@ export function PdfUpload() {
       // a damaged file or a reader that did not load (a password is the file's, not ours)
       if (failure.retryable) reportUserError({ kind: "live.pdf", code: "unreadable", message: failure.message });
     } finally {
-      setLoading(false);
+      if (live()) setLoading(false);
     }
   }
 
@@ -218,17 +271,7 @@ export function PdfUpload() {
         if (!v) reset();
       }}
     >
-      <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="bg-white shadow-sm h-9"
-          title="Upload a PDF worksheet"
-        >
-          <Upload className="w-4 h-4 mr-1.5" />
-          PDF
-        </Button>
-      </DialogTrigger>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="max-w-2xl" aria-busy={loading || inserting}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

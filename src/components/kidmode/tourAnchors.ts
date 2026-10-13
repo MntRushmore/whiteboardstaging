@@ -1,7 +1,7 @@
 /**
  * Where the guided first board's coach marks (src/components/onboarding/BoardTour.tsx) find the
- * simple board's buttons. A K–3 kid's guided board is a simple board: tldraw's toolbar, and with it
- * its `tools.draw`, gives way to the kid dock, and the help dial waits behind More. Kept here, apart
+ * simple board's buttons. A guided board is a simple board (every student's by default): tldraw's
+ * toolbar, and with it its `tools.draw`, gives way to the kid dock, and the help dial waits behind More. Kept here, apart
  * from the lazy components that wear them, so the tour does not load the dock or More to find them.
  */
 

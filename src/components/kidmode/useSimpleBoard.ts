@@ -1,16 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useSyncExternalStore } from "react";
-import {
-  gradeFromProfile,
-  needsGrade,
-  parseSimpleBoardStore,
-  rememberChoice,
-  rememberGrade,
-  SIMPLE_BOARD_KEY,
-  simpleBoardOn,
-  type SimpleBoardStore,
-} from "./simpleBoard";
+import { useCallback, useSyncExternalStore } from "react";
+import { LEGACY_SIMPLE_BOARD_KEYS, parseSimpleBoardStore, rememberChoice, SIMPLE_BOARD_KEY, simpleBoardOn, type SimpleBoardStore } from "./simpleBoard";
 
 /**
  * The simple board's device store (`simpleBoard.ts`): localStorage behind an external store, so the
@@ -38,6 +29,8 @@ function write(next: SimpleBoardStore): void {
   cached = next;
   try {
     window.localStorage.setItem(SIMPLE_BOARD_KEY, JSON.stringify(next));
+    // the first key's grades are never read again (simpleBoard.ts): not left behind either
+    for (const key of LEGACY_SIMPLE_BOARD_KEYS) window.localStorage.removeItem(key);
   } catch {
     /* quota / private mode: kept in memory for this tab */
   }
@@ -61,8 +54,8 @@ function subscribe(cb: () => void): () => void {
 }
 
 /**
- * Is the board simple for this user? `null` while neither their choice nor their grade is known on
- * this device (`simpleBoardOn`): the board shows the grown-up bar meanwhile.
+ * Is the board simple for this user? Their switch, else on (`simpleBoardOn`): known at once, with
+ * nothing to read first. `null` only without a user (signed out: no board to show).
  */
 export function useSimpleBoard(userId: string | undefined): boolean | null {
   const snapshot = useCallback(() => (userId ? simpleBoardOn(read()[userId]) : null), [userId]);
@@ -72,24 +65,4 @@ export function useSimpleBoard(userId: string | undefined): boolean | null {
 /** The switch (Board options, More): the user's own choice, remembered on this device. */
 export function setSimpleBoard(userId: string, on: boolean): void {
   write(rememberChoice(read(), userId, on));
-}
-
-/**
- * Reads the student's grade for the simple board's default, once per board and only while they have
- * not made a choice. Lazily: the profile module is a dynamic import (it is not otherwise in the
- * board's first load) and nothing waits on it; the board page starts it beside its own load.
- */
-export function useSimpleBoardGrade(userId: string | undefined): void {
-  useEffect(() => {
-    if (!userId || !needsGrade(read()[userId])) return;
-    void import("@/lib/learning/profile")
-      .then(({ readLearnerProfile }) => readLearnerProfile(userId))
-      .then((profile) => {
-        const grade = gradeFromProfile(profile);
-        if (grade !== "unknown") write(rememberGrade(read(), userId, grade));
-      })
-      .catch(() => {
-        /* a chunk that would not load: the bar stays as it is */
-      });
-  }, [userId]);
 }

@@ -101,19 +101,21 @@ export default function GrownUpMore({
   const { auto } = controls;
 
   return (
-    // level with the bar's 56 px Help me (the bar starts 16 px down)
-    <div ref={ref} className="pointer-events-auto absolute right-4 top-5">
+    // level with the bar's 48 px Back and Help me: the bar starts 16 px down
+    <div ref={ref} className="pointer-events-auto absolute right-4 top-4">
       <button
         type="button"
         aria-expanded={open}
         aria-controls="grown-up-more"
         {...{ [GROWN_UP_MORE_ATTR]: "" }}
         title={MORE_COPY.hint}
+        aria-label={MORE_COPY.more}
         onClick={() => onOpenChange(!open)}
-        className="flex h-12 cursor-pointer select-none items-center gap-1.5 rounded-full border border-slate-200 bg-white/95 pl-3.5 pr-4 text-sm font-medium text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-slate-100 aria-expanded:text-slate-800 motion-reduce:transition-none"
+        // a phone's bar (under 448 px) is one row of Back, Help me, the day's pill and this: its "…" alone there
+        className="flex h-12 w-12 cursor-pointer select-none items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white/95 text-sm font-medium text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-slate-100 aria-expanded:text-slate-800 @md/bar:w-auto @md/bar:pl-3.5 @md/bar:pr-4 motion-reduce:transition-none"
       >
         <Ellipsis className="size-5" aria-hidden />
-        {MORE_COPY.more}
+        <span className="hidden @md/bar:inline">{MORE_COPY.more}</span>
       </button>
       <section
         id="grown-up-more"
@@ -225,7 +227,7 @@ export interface LayerNode {
  * A layer over More, which takes Escape first and whose taps are not taps outside More: a menu
  * (Board options) or a modal dialog (the ink dialog, the help-mode explainer, the tour's finish
  * card). Not a non-modal dialog beside the board (`aria-modal="false"`): the guided board's coach
- * mark, up through most of a K–3 kid's first board, or the daily board's cheer. More neither waits
+ * mark, up through most of a student's first board, or the daily board's cheer. More neither waits
  * for one of those on Escape nor counts a tap on it as a tap inside.
  */
 export function layerOverMore(el: Pick<LayerNode, "getAttribute">): boolean {

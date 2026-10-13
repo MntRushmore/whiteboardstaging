@@ -21,7 +21,7 @@ export const ASK_BUTTON_ATTR = "data-ask-button";
  * Hovered with a mouse or focused from the keyboard, it outlines the problem it would act on
  * (`liveStore.askHover`, `ProblemHighlight`). A touch has no hover: a tap is the ask itself.
  *
- * `big`: the simple board's (src/components/kidmode), a 56 px target for a young kid's finger.
+ * `big`: the simple board's (src/components/kidmode), a 48 px pill the height of its bar, with its words bold.
  */
 export function AskButton({ kind, glow, onAsk, big = false }: { kind: "help" | "solve"; glow: number; onAsk: () => boolean; big?: boolean }) {
   const solve = kind === "solve";
@@ -37,7 +37,7 @@ export function AskButton({ kind, glow, onAsk, big = false }: { kind: "help" | "
     <Button
       key={glow}
       size="sm"
-      className={`${big ? "h-14 gap-2.5 px-6 text-lg font-bold [&_svg]:size-6!" : "h-8 px-3.5 font-semibold"} rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700${glow > 0 ? " ask-glow" : ""}`}
+      className={`${big ? "h-12 gap-2 px-4 text-[17px] font-bold @md/bar:px-5 [&_svg]:size-[22px]!" : "h-8 px-3.5 font-semibold"} rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700${glow > 0 ? " ask-glow" : ""}`}
       title={`${solve ? LIVE_COPY.ask.solveHint : LIVE_COPY.ask.helpHint}. ${LIVE_COPY.ask.pickHint}`}
       {...{ [ASK_BUTTON_ATTR]: kind }}
       onPointerEnter={(e) => e.pointerType === "mouse" && point({ hover: true })}

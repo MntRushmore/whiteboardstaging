@@ -44,6 +44,22 @@
   pointer-events: none;
   user-select: none;
 }
+/* the simple board's: as tall as its bar's buttons (48 px), "Today" before the stars */
+.pill[data-big] {
+  height: 48px;
+  gap: 10px;
+  padding: 0 18px 0 16px;
+  font-size: 15px;
+}
+/* ...short, where the bar's row is (a phone): one star and "0/5" */
+.pill[data-compact] {
+  gap: 6px;
+  padding: 0 14px 0 12px;
+}
+.today {
+  color: var(--b-secondary);
+  font-weight: 600;
+}
 .pill[data-complete] {
   border-color: oklch(85% 0.1 80);
   background: var(--b-gold-soft);

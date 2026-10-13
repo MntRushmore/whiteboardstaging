@@ -222,7 +222,9 @@ describe("applyScreenCamera", () => {
     expect(at(390)).toBe(16);
     expect(at(520)).toBe(40);
     expect(at(640)).toBe(64);
-    expect(at(1080)).toBe(64);
+    expect(at(720)).toBe(80);
+    expect(at(740)).toBe(84);
+    expect(at(1080)).toBe(84);
     expect(screenViewPadding(300)).toEqual({ x: 16, y: 16 });
   });
 });

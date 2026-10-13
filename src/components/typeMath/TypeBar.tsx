@@ -88,7 +88,7 @@ export interface TypeBarProps {
   tour?: boolean;
   /** Ask's panel is open (beside the board, or a sheet under it) */
   chatOpen?: boolean;
-  /** the simple board (K–3): its dock is the bottom row */
+  /** the simple board (every student's by default): its dock is the bottom row */
   simple?: boolean;
   parser?: TypeParser;
   /** where the bar starts (the markup tests show a typed line, a hint, a line being changed) */

@@ -4,19 +4,23 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 /**
- * The guided first board's coach marks point at real buttons, found by selector (BoardTour). A K–3
- * kid's guided board is a simple board: tldraw's toolbar gives way to the kid dock (with its big Ask),
+ * The guided first board's coach marks point at real buttons, found by selector (BoardTour). A guided
+ * board is a simple board (every student's by default): tldraw's toolbar gives way to the kid dock (with its big Ask),
  * the bar is a big Help me, and the dial waits behind More. Each coach mark's
  * anchor must be on that board too, or the mark points at whatever is in the middle of the screen.
  */
 
-// the kid dock reads the board through tldraw's hooks: a board with the pen in hand and one page
+// the kid dock reads the board through tldraw's hooks: a board with the pen in hand and one page,
+// as wide as `board.width` (a laptop unless a test says otherwise)
+const board = vi.hoisted(() => ({ width: 1440 }));
 const editor = vi.hoisted(() => ({
   getCurrentToolId: () => "draw",
   getStyleForNextShape: () => "black",
   getCanUndo: () => false,
+  getCanRedo: () => false,
   getPages: () => [{ id: "page:1" }],
   getCurrentPageId: () => "page:1",
+  getViewportScreenBounds: () => ({ w: board.width, h: 900 }),
 }));
 vi.mock("tldraw", async (importOriginal) => ({
   ...(await importOriginal<typeof import("tldraw")>()),
@@ -101,6 +105,16 @@ describe("the guided board's coach marks on the simple board", () => {
     // the tour finds Ask by the same marker
     const source = fs.readFileSync(path.join(__dirname, "../BoardTour.tsx"), "utf8");
     expect(source).toContain("const ASK = `[${CHAT_TOGGLE_ATTR}]`");
+  });
+
+  it("on every board: the pen and Ask are found once, whether the dock is one row or a phone's two", () => {
+    for (const width of [1440, 820, 390]) {
+      board.width = width;
+      const dock = renderToStaticMarkup(<KidDock />);
+      expect(openingTags(dock).filter((t) => matches(t, PEN_SELECTOR)), `${width}px`).toHaveLength(1);
+      expect(openingTags(dock).filter((t) => matches(t, `[${CHAT_TOGGLE_ATTR}]`)), `${width}px`).toHaveLength(1);
+    }
+    board.width = 1440;
   });
 
   it("the tour looks for the pen and More with these selectors", () => {
