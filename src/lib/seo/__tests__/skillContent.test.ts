@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { drawLadder } from "@/lib/learning/generators";
 import { createEngine } from "@/lib/live/engine";
 import { SKILL_IDS } from "../routes";
-import { checkAnswer, CONTENT_SEED, latexToPlain, LENGTH_SKILLS, PRACTICE_COUNT, skillContent, type SkillContent } from "../skillContent";
+import { checkAnswer, CONTENT_SEED, kidWorking, latexToPlain, LENGTH_SKILLS, PRACTICE_COUNT, skillContent, workingChecks, type SkillContent } from "../skillContent";
 
 // the engine works every problem of every skill: generous limits for a busy runner
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 180_000 });
@@ -118,14 +118,51 @@ describe("every skill's worked example", () => {
       expect(ex, id).not.toBeNull();
       expect(ex!.steps.length, id).toBeGreaterThan(0);
       if (ex!.steps.length === 1) oneLine.push(id);
-      // the answer is the last line the tutor writes (a system's gathers its letters' values)
       const last = ex!.steps.at(-1)!.latex;
-      if (id !== "systems") expect(ex!.answer.latex, id).toBe(last.replace(/^\s*=\s*/, "").trim());
+      // the tutor's working ends in the answer (a system's gathers its letters' values); a kid's last line is `… = answer`
+      if (ex!.by === "kid") expect(last.endsWith(`= ${ex!.answer.latex}`), `${id}: ${last}`).toBe(true);
+      else if (id !== "systems") expect(ex!.answer.latex, id).toBe(last.replace(/^\s*=\s*/, "").trim());
     }
     // skills worked in more than one line on the board (algebra and up) show every line
     for (const id of ["two_step_equations", "multi_step_equations", "systems", "quadratic_equations", "pythagorean", "derivatives", "integrals", "trig_equations"]) {
       expect(oneLine, id).not.toContain(id);
     }
+    // only single facts (and a few one-line skills) are one line: a fact is its own working
+    expect(oneLine.sort()).toEqual(
+      ["add_tens", "add_within_10", "area_perimeter", "division_facts", "factoring", "negative_numbers", "one_step_equations", "powers_roots", "simplify_expressions", "subtract_within_10", "times_tables", "units"].sort(),
+    );
+  });
+
+  it("shows a kid's working where the tutor's is the answer alone, every line checked by the board's checker", () => {
+    const kid = SKILL_IDS.filter((id) => content(id).example?.by === "kid");
+    expect(kid).toEqual(expect.arrayContaining(["long_division", "multiply_multi_digit", "add_within_100", "add_fractions_unlike", "order_of_operations", "decimals_multiply", "divide_fractions"]));
+    const engine = createEngine(mathjs);
+    for (const id of kid) {
+      const ex = content(id).example!;
+      const problem = ex.problem.map((l) => l.latex);
+      const lines = ex.steps.map((l) => l.latex);
+      expect(lines.length, id).toBeGreaterThanOrEqual(2);
+      expect(workingChecks(engine, problem, lines), id).toBe(true);
+      // a slip in any line is caught: the checker is not a rubber stamp
+      for (let i = 0; i < lines.length; i++) {
+        const slipped = lines.map((l, k) => (k === i ? l.replace(/(\d+)(?!.*\d)/, (n) => String(Number(n) + 1)) : l));
+        expect(workingChecks(engine, problem, slipped), `${id} line ${i + 1}: ${slipped[i]}`).toBe(false);
+      }
+    }
+    expect(content("long_division").example!.steps.map((l) => l.text)).toEqual(["3 × 10 = 30", "48 − 30 = 18", "3 × 6 = 18", "10 + 6 = 16"]);
+  });
+
+  it("makes a kid's working from the problem's own numbers", () => {
+    expect(kidWorking(["570 \\div 6"])).toEqual(["6 \\times 90 = 540", "570 - 540 = 30", "6 \\times 5 = 30", "90 + 5 = 95"]);
+    expect(kidWorking(["67 \\times 8"])).toEqual(["60 \\times 8 = 480", "7 \\times 8 = 56", "480 + 56 = 536"]);
+    expect(kidWorking(["6 + 8"])).toEqual(["8 + 2 = 10", "10 + 4 = 14"]);
+    expect(kidWorking(["13 - 7"])).toEqual(["13 - 3 = 10", "10 - 4 = 6"]);
+    expect(kidWorking(["(6 + 7) \\times (10 - 6)"])).toEqual(["6 + 7 = 13", "10 - 6 = 4", "13 \\times 4 = 52"]);
+    expect(kidWorking(["\\frac{7}{12} - \\frac{1}{4}"])).toEqual(["\\frac{1}{4} = \\frac{3}{12}", "\\frac{7}{12} - \\frac{3}{12} = \\frac{4}{12}", "\\frac{4}{12} = \\frac{1}{3}"]);
+    expect(kidWorking(["1.44 + 4.7"])).toEqual(["1.44 + 4 = 5.44", "5.44 + 0.7 = 6.14"]);
+    expect(kidWorking(["15\\% \\times 200"])).toEqual(["15\\% = 0.15", "0.15 \\times 200 = 30"]);
+    // a fact is its own working
+    for (const p of ["6 \\times 7", "21 \\div 3", "3 + 4", "\\frac{3}{5} + \\frac{1}{5}", "x + 3 = 5"]) expect(kidWorking([p]), p).toBeNull();
   });
 
   it("gives a system's answer as every unknown's value", () => {

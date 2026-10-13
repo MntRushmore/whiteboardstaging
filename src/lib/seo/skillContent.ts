@@ -29,7 +29,7 @@ import { drawLadder } from "@/lib/learning/generators";
 import { localWorkFor } from "@/lib/learning/topicExample";
 import type { TopicId } from "@/lib/learning/topics";
 import { answerOf, handCanWrite, verifyProblem } from "@/lib/live/chat/verify";
-import type { LiveEngine } from "@/lib/live/contracts";
+import type { LineAnalysis, LiveEngine } from "@/lib/live/contracts";
 import { createEngine } from "@/lib/live/engine";
 import { splitRelations } from "@/lib/live/engine/latex";
 import { createMathInstance, translate } from "@/lib/live/engine/math";
@@ -45,10 +45,16 @@ export interface MathLine {
 export interface WorkedExample {
   /** the problem, one line (a system or a function and a question about it: two or three) */
   problem: MathLine[];
-  /** what the tutor writes under it, in order; the last is the answer */
+  /** the working under it, in order; the last line ends in the answer */
   steps: MathLine[];
   /** the final answer on its own (`x = 7`, `16`; a system's letters together) */
   answer: MathLine;
+  /**
+   * Whose working: `tutor`, the lines the tutor writes working it (`localWorkFor`); `kid`, a kid's
+   * working where the tutor's own is the answer alone (`48 ÷ 3` → `= 16`), every line of it checked
+   * by the board's checker and given a check mark (`kidWorking`).
+   */
+  by: "tutor" | "kid";
 }
 
 export interface PracticeItem {
@@ -142,21 +148,20 @@ const HAND_HELPS = /\\frac|\\sqrt|\^|_\{|\\int|\\lim|\\log_/;
 
 /**
  * The topic board's choice (`pickLocalExample`): of the candidates, the first the engine works out
- * on the device. Here the first with more than one step to watch wins over a one-line one, and the
- * hand must be able to write every line. The first seed's candidates first, then the next seed's.
+ * on the device. Here one with more than one line to watch wins over a one-line one (the first
+ * seed's candidates, then the next seed's), and the hand must be able to write every line.
  */
 function pickExample(engine: LiveEngine, candidateSets: readonly PracticeProblem[][], opts: CheckOptions): WorkedExample | null {
+  let oneLine: WorkedExample | null = null;
   for (const candidates of candidateSets) {
-    let oneLine: WorkedExample | null = null;
     for (const c of candidates) {
       const worked = workedExample(engine, c, opts);
       if (!worked) continue;
       if (worked.steps.length > 1) return worked;
       oneLine ??= worked;
     }
-    if (oneLine) return oneLine;
   }
-  return null;
+  return oneLine;
 }
 
 function workedExample(engine: LiveEngine, problem: PracticeProblem, opts: CheckOptions): WorkedExample | null {
@@ -164,7 +169,35 @@ function workedExample(engine: LiveEngine, problem: PracticeProblem, opts: Check
   if (steps.length === 0 || !handCanWrite(problem) || !handCanWrite(steps)) return null;
   const answer = finalAnswer(problem, steps);
   if (!answer || !checkAnswer(problem, answer, steps, opts)) return null;
-  return { problem: problem.map(mathLine), steps: steps.map(mathLine), answer: mathLine(answerShown(answer)) };
+  const shown = mathLine(answerShown(answer));
+  // the tutor writes the answer alone: a kid's working instead, when the board's checker passes every line of it
+  if (steps.length === 1) {
+    const working = kidWorking(problem);
+    if (working && workingChecks(engine, problem, working)) return { problem: problem.map(mathLine), steps: working.map(mathLine), answer: shown, by: "kid" };
+  }
+  return { problem: problem.map(mathLine), steps: steps.map(mathLine), answer: shown, by: "tutor" };
+}
+
+/**
+ * The board's checker on a kid's working (`engine.judgeWork`, engine/primaryWork.ts: the lines
+ * under a problem with no letters, judged against the problem): every line a right step (a check
+ * mark), the last one solving the problem, and every line one the hand can write.
+ */
+export function workingChecks(engine: LiveEngine, problem: readonly string[], lines: readonly string[]): boolean {
+  if (!engine.judgeWork || lines.length < 2 || !handCanWrite(lines)) return false;
+  const above: string[] = [];
+  for (const [i, latex] of lines.entries()) {
+    let a: LineAnalysis | null = null;
+    try {
+      a = engine.judgeWork({ problem, above: [...above], latex, ctx: { mode: "answer" } });
+    } catch {
+      return false;
+    }
+    if (!a || a.verdict !== "ok") return false;
+    if (i === lines.length - 1 && a.solved !== true) return false;
+    above.push(latex);
+  }
+  return true;
 }
 
 function practiceItem(engine: LiveEngine, problem: PracticeProblem, opts: CheckOptions): PracticeItem | null {
@@ -606,6 +639,299 @@ function checkInequality(own: readonly string[], answers: readonly string[]): bo
     if (want !== got) return false;
   }
   return true;
+}
+
+// ------------------------------------------------------------------ a kid's working
+
+/**
+ * How a kid works an arithmetic problem on the board, one line at a time, where the tutor's own Solve
+ * writes the answer alone: the operations in order, a ten made first, adding or taking away by place
+ * value, multiplying by parts, partial quotients for long division, the decimal point taken out and
+ * put back, a percent as a decimal, a common denominator, a fraction simplified, keep-change-flip.
+ * Made from the problem's own numbers; never shown unless the board's checker gives every line a
+ * check mark (`workingChecks`). Null when the problem has no working worth more than one line.
+ */
+export function kidWorking(problem: readonly string[]): string[] | null {
+  if (problem.length !== 1) return null;
+  const p = problem[0].trim();
+  try {
+    return orderOfOperations(p) ?? wholeNumbers(p) ?? decimals(p) ?? percentOf(p) ?? fractions(p);
+  } catch {
+    return null;
+  }
+}
+
+const OP_LATEX: Readonly<Record<string, string>> = { "+": "+", "-": "-", "*": "\\times", "/": "\\div" };
+const WHOLE = /^\d+$/;
+
+function gcd(a: number, b: number): number {
+  a = Math.abs(a);
+  b = Math.abs(b);
+  while (b) [a, b] = [b, a % b];
+  return a;
+}
+
+/** The nonzero place-value parts of a whole number, largest first: 4785 → 4000, 700, 80, 5. */
+function placeParts(n: number): number[] {
+  const digits = String(n);
+  return [...digits].map((d, i) => Number(d) * 10 ** (digits.length - 1 - i)).filter((v) => v > 0);
+}
+
+/** Two or more operations on whole numbers (`19 + 2 \times 5`, `(6 + 7) \times (10 - 6)`): one operation a line, in order. */
+function orderOfOperations(p: string): string[] | null {
+  const tokens = p.replace(/\\times/g, "*").replace(/\\div/g, "/").match(/\d+|[-+*/()]/g);
+  if (!tokens || tokens.join("") !== p.replace(/\\times/g, "*").replace(/\\div/g, "/").replace(/\s+/g, "")) return null;
+  if (tokens.filter((t) => /^[-+*/]$/.test(t)).length < 2) return null;
+  const list: string[] = [...tokens];
+  const lines: string[] = [];
+  // the first operation to do: inside the innermost parentheses, × and ÷ before + and −, left to right
+  for (let guard = 0; guard < 20; guard++) {
+    // a number alone in parentheses loses them
+    for (let i = 0; i + 2 < list.length; i++) if (list[i] === "(" && WHOLE.test(list[i + 1]) && list[i + 2] === ")") list.splice(i, 3, list[i + 1]);
+    if (list.length === 1) break;
+    // the first group to close, left to right, is an innermost one
+    let from = 0;
+    let to = list.length;
+    const close = list.indexOf(")");
+    if (close !== -1) {
+      from = list.lastIndexOf("(", close) + 1;
+      to = close;
+    }
+    const span = list.slice(from, to);
+    let k = span.findIndex((t) => t === "*" || t === "/");
+    if (k === -1) k = span.findIndex((t) => t === "+" || t === "-");
+    if (k <= 0) return null;
+    const at = from + k;
+    const a = Number(list[at - 1]);
+    const b = Number(list[at + 1]);
+    const op = list[at];
+    const value = op === "+" ? a + b : op === "-" ? a - b : op === "*" ? a * b : a / b;
+    if (!Number.isInteger(value) || value < 0) return null;
+    lines.push(`${a} ${OP_LATEX[op]} ${b} = ${value}`);
+    list.splice(at - 1, 3, String(value));
+  }
+  return lines.length >= 2 ? lines : null;
+}
+
+/** Two whole numbers and one operation. */
+function wholeNumbers(p: string): string[] | null {
+  const m = /^(\d+) (\+|-|\\times|\\div) (\d+)$/.exec(p);
+  if (!m) return null;
+  const a = Number(m[1]);
+  const b = Number(m[3]);
+  const op = m[2];
+  if (op === "+") {
+    // make a ten: 6 + 8 → 8 + 2 = 10, 10 + 4 = 14
+    if (a < 10 && b < 10 && a + b > 10) {
+      const [big, small] = a >= b ? [a, b] : [b, a];
+      return [`${big} + ${10 - big} = 10`, `10 + ${small - (10 - big)} = ${a + b}`];
+    }
+    return countOn(a, placeParts(b), "+");
+  }
+  if (op === "-") {
+    // back to ten: 13 - 7 → 13 - 3 = 10, 10 - 4 = 6
+    if (a > 10 && a < 20 && b < 10 && a - b < 10) return [`${a} - ${a - 10} = 10`, `10 - ${b - (a - 10)} = ${a - b}`];
+    return countOn(a, placeParts(b), "-");
+  }
+  if (op === "\\times") return multiply(a, b);
+  return divide(a, b);
+}
+
+/** Adding or taking away one place at a time: 54 + 27 → 54 + 20 = 74, 74 + 7 = 81. */
+function countOn(a: number, parts: readonly number[], op: "+" | "-"): string[] | null {
+  if (parts.length < 2) return null;
+  const lines: string[] = [];
+  let at = a;
+  for (const part of parts) {
+    const next = op === "+" ? at + part : at - part;
+    if (next < 0) return null;
+    lines.push(`${at} ${op} ${part} = ${next}`);
+    at = next;
+  }
+  return lines;
+}
+
+function multiply(a: number, b: number): string[] | null {
+  // multiples of ten: 3 × 40 → 3 × 4 = 12, 12 × 10 = 120
+  const zeros = (n: number) => String(n).length - String(n).replace(/0+$/, "").length;
+  const za = zeros(a);
+  const zb = zeros(b);
+  if (za + zb > 0) {
+    const a1 = a / 10 ** za;
+    const b1 = b / 10 ** zb;
+    if (a1 >= 10 || b1 >= 10 || a1 < 2 || b1 < 2) return null;
+    return [`${a1} \\times ${b1} = ${a1 * b1}`, `${a1 * b1} \\times ${10 ** (za + zb)} = ${a * b}`];
+  }
+  // by parts: 67 × 8 → 60 × 8 = 480, 7 × 8 = 56, 480 + 56 = 536
+  if (b < 10 && placeParts(a).length >= 2) {
+    const parts = placeParts(a);
+    return [...parts.map((part) => `${part} \\times ${b} = ${part * b}`), `${parts.map((part) => part * b).join(" + ")} = ${a * b}`];
+  }
+  if (a < 10 && placeParts(b).length >= 2) {
+    const parts = placeParts(b);
+    return [...parts.map((part) => `${a} \\times ${part} = ${a * part}`), `${parts.map((part) => a * part).join(" + ")} = ${a * b}`];
+  }
+  // two numbers of two digits or more: 87 × 55 → 87 × 50 = 4350, 87 × 5 = 435, 4350 + 435 = 4785
+  if (a >= 10 && b >= 10) {
+    const parts = placeParts(b);
+    if (parts.length < 2) return null;
+    return [...parts.map((part) => `${a} \\times ${part} = ${a * part}`), `${parts.map((part) => a * part).join(" + ")} = ${a * b}`];
+  }
+  return null;
+}
+
+/** Partial quotients: 48 ÷ 3 → 3 × 10 = 30, 48 − 30 = 18, 3 × 6 = 18, 10 + 6 = 16. */
+function divide(a: number, b: number): string[] | null {
+  if (b === 0 || a % b !== 0) return null;
+  const parts = placeParts(a / b);
+  if (parts.length < 2) return null;
+  const lines: string[] = [];
+  let left = a;
+  parts.forEach((part, i) => {
+    lines.push(`${b} \\times ${part} = ${b * part}`);
+    if (i < parts.length - 1) {
+      lines.push(`${left} - ${b * part} = ${left - b * part}`);
+      left -= b * part;
+    }
+  });
+  lines.push(`${parts.join(" + ")} = ${a / b}`);
+  return lines;
+}
+
+/** A decimal as a whole number of `places` decimal places (exact, no floating point). */
+function scaled(s: string, places: number): number {
+  const [w, f = ""] = s.split(".");
+  return Number(w + f.padEnd(places, "0"));
+}
+
+function decimalText(n: number, places: number): string {
+  const sign = n < 0 ? "-" : "";
+  const digits = String(Math.abs(n)).padStart(places + 1, "0");
+  const whole = digits.slice(0, digits.length - places);
+  const frac = digits.slice(digits.length - places).replace(/0+$/, "");
+  return `${sign}${whole}${frac ? `.${frac}` : ""}`;
+}
+
+function placesOf(s: string): number {
+  return s.includes(".") ? s.split(".")[1].length : 0;
+}
+
+/** Decimals: add or take away the whole part, then the rest; multiply without the point, then put it back. */
+function decimals(p: string): string[] | null {
+  const m = /^(\d+(?:\.\d+)?) (\+|-|\\times) (\d+(?:\.\d+)?)$/.exec(p);
+  if (!m || !(m[1].includes(".") || m[3].includes("."))) return null;
+  const [, x, op, y] = m;
+  if (op === "\\times") {
+    // a power of ten or a tenth moves the point: one line is the working
+    if (/^(?:10+|0\.0*1)$/.test(y) || /^(?:10+|0\.0*1)$/.test(x)) return null;
+    const places = placesOf(x) + placesOf(y);
+    const product = Number(x.replace(".", "")) * Number(y.replace(".", ""));
+    return [`${Number(x.replace(".", ""))} \\times ${Number(y.replace(".", ""))} = ${product}`, `${product} \\div ${10 ** places} = ${decimalText(product, places)}`];
+  }
+  const places = Math.max(placesOf(x), placesOf(y));
+  const [whole, frac = ""] = y.split(".");
+  if (Number(whole) === 0 || !frac.replace(/0/g, "")) return null;
+  const a = scaled(x, places);
+  const w = Number(whole) * 10 ** places;
+  const f = scaled(`0.${frac}`, places);
+  const step = op === "+" ? a + w : a - w;
+  const end = op === "+" ? step + f : step - f;
+  if (step < 0 || end < 0) return null;
+  return [`${x} ${op} ${whole} = ${decimalText(step, places)}`, `${decimalText(step, places)} ${op} 0.${frac} = ${decimalText(end, places)}`];
+}
+
+/** A percent of a number: 15% × 200 → 15% = 0.15, 0.15 × 200 = 30. */
+function percentOf(p: string): string[] | null {
+  const m = /^(\d+)\\% \\times (\d+)$/.exec(p);
+  if (!m) return null;
+  const pct = Number(m[1]);
+  const n = Number(m[2]);
+  const d = decimalText(pct, 2);
+  const value = (pct * n) / 100;
+  if (!Number.isInteger(value)) return null;
+  return [`${m[1]}\\% = ${d}`, `${d} \\times ${n} = ${value}`];
+}
+
+interface Frac {
+  n: number;
+  d: number;
+}
+
+const frac = (f: Frac) => (f.d === 1 ? String(f.n) : `\\frac{${f.n}}{${f.d}}`);
+
+function simplest(f: Frac): Frac {
+  const g = gcd(f.n, f.d) || 1;
+  return { n: f.n / g, d: f.d / g };
+}
+
+const FRAC = String.raw`\\frac\{(\d+)\}\{(\d+)\}`;
+const NUMBER = String.raw`(?:${FRAC}|(\d+))`;
+
+/** Fractions: simplify, add over a common denominator, multiply, keep-change-flip. */
+function fractions(p: string): string[] | null {
+  let m: RegExpExecArray | null;
+  // simplify one fraction: 2/10 = (2 ÷ 2)/(10 ÷ 2) = 1/5
+  if ((m = new RegExp(`^${FRAC}$`).exec(p))) {
+    const n = Number(m[1]);
+    const d = Number(m[2]);
+    const g = gcd(n, d);
+    if (g <= 1) return null;
+    const over = `\\frac{${n} \\div ${g}}{${d} \\div ${g}}`;
+    return [`\\frac{${n}}{${d}} = ${over}`, `${over} = ${frac({ n: n / g, d: d / g })}`];
+  }
+  // two fractions added or taken away
+  if ((m = new RegExp(`^${FRAC} (\\+|-) ${FRAC}$`).exec(p))) {
+    const a: Frac = { n: Number(m[1]), d: Number(m[2]) };
+    const op = m[3];
+    const b: Frac = { n: Number(m[4]), d: Number(m[5]) };
+    const l = (a.d * b.d) / gcd(a.d, b.d);
+    const a2: Frac = { n: (a.n * l) / a.d, d: l };
+    const b2: Frac = { n: (b.n * l) / b.d, d: l };
+    const lines: string[] = [];
+    if (a.d !== l) lines.push(`${frac(a)} = \\frac{${a2.n}}{${l}}`);
+    if (b.d !== l) lines.push(`${frac(b)} = \\frac{${b2.n}}{${l}}`);
+    const sum: Frac = { n: op === "+" ? a2.n + b2.n : a2.n - b2.n, d: l };
+    if (sum.n <= 0) return null;
+    lines.push(`\\frac{${a2.n}}{${l}} ${op} \\frac{${b2.n}}{${l}} = \\frac{${sum.n}}{${l}}`);
+    const s = simplest(sum);
+    if (s.d !== sum.d) lines.push(`\\frac{${sum.n}}{${l}} = ${frac(s)}`);
+    return lines.length >= 2 ? lines : null;
+  }
+  // mixed numbers with one denominator, added: 2 1/3 + 1 2/3 → 2 + 1 = 3, 1/3 + 2/3 = 1, 3 + 1 = 4
+  if ((m = new RegExp(`^(\\d+)${FRAC} \\+ (\\d+)${FRAC}$`).exec(p)) && m[3] === m[6]) {
+    const w = Number(m[1]) + Number(m[4]);
+    const d = Number(m[3]);
+    const n = Number(m[2]) + Number(m[5]);
+    const lines = [`${m[1]} + ${m[4]} = ${w}`];
+    if (n === d) return [...lines, `\\frac{${m[2]}}{${d}} + \\frac{${m[5]}}{${d}} = 1`, `${w} + 1 = ${w + 1}`];
+    if (n < d) {
+      const s = simplest({ n, d });
+      return [...lines, `\\frac{${m[2]}}{${d}} + \\frac{${m[5]}}{${d}} = ${frac(s)}`, `${w} + ${frac(s)} = ${w}${frac(s)}`];
+    }
+    const s = simplest({ n: n - d, d });
+    return [...lines, `\\frac{${m[2]}}{${d}} + \\frac{${m[5]}}{${d}} = 1${frac(s)}`, `${w} + 1${frac(s)} = ${w + 1}${frac(s)}`];
+  }
+  // multiplying: 2 × 5/6 = 10/6 = 5/3
+  if ((m = new RegExp(`^${NUMBER} \\\\times ${NUMBER}$`).exec(p))) {
+    const a: Frac = m[3] ? { n: Number(m[3]), d: 1 } : { n: Number(m[1]), d: Number(m[2]) };
+    const b: Frac = m[6] ? { n: Number(m[6]), d: 1 } : { n: Number(m[4]), d: Number(m[5]) };
+    if (a.d === 1 && b.d === 1) return null;
+    const product: Frac = { n: a.n * b.n, d: a.d * b.d };
+    const s = simplest(product);
+    if (s.n === product.n && s.d === product.d) return null;
+    return [`${p} = \\frac{${product.n}}{${product.d}}`, `\\frac{${product.n}}{${product.d}} = ${frac(s)}`];
+  }
+  // dividing: keep, change, flip — 9 ÷ 1/5 = 9 × 5, 9 × 5 = 45
+  if ((m = new RegExp(`^${NUMBER} \\\\div ${NUMBER}$`).exec(p))) {
+    const a: Frac = m[3] ? { n: Number(m[3]), d: 1 } : { n: Number(m[1]), d: Number(m[2]) };
+    const b: Frac = m[6] ? { n: Number(m[6]), d: 1 } : { n: Number(m[4]), d: Number(m[5]) };
+    if ((a.d === 1 && b.d === 1) || b.n === 0) return null;
+    const flipped: Frac = { n: b.d, d: b.n };
+    const times = `${frac(a)} \\times ${flipped.d === 1 ? flipped.n : `\\frac{${flipped.n}}{${flipped.d}}`}`;
+    const result = simplest({ n: a.n * flipped.n, d: a.d * flipped.d });
+    return [`${p} = ${times}`, `${times} = ${frac(result)}`];
+  }
+  return null;
 }
 
 // ------------------------------------------------------------------ plain text

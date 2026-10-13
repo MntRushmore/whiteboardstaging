@@ -93,7 +93,7 @@
   line-height: 1.02;
   text-wrap: balance;
 }
-.titleCheck {
+.title .titleCheck {
   width: 0.7em;
   height: 0.7em;
   margin-left: 0.12em;
@@ -227,12 +227,40 @@
   padding-bottom: 1.25rem;
 }
 .workHand {
+  display: flex;
   min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+/* the tutor's check mark after a kid's line */
+.workHand .workCheck {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  margin: 0;
+}
+.workAnswer {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.625rem;
+  margin-top: 1.25rem;
+  border-top: 1px dashed var(--border);
+  padding-top: 1rem;
+  font-size: 1.125rem;
+}
+.workAnswer .workLabel {
+  color: var(--lp-accent);
 }
 /* the hand's natural size on a wide screen; never wider than the board */
 .workHand svg {
   max-width: 100%;
   height: auto;
+}
+.workHand > svg:first-child {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .workText {
   display: flex;

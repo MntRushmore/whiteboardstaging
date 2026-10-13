@@ -51,6 +51,7 @@ export const SKILL_PAGE_COPY = {
   },
   exampleTitle: "Watch one worked out",
   exampleLede: "The tutor writes the problem, then works it under it, one line at a time, as it does on the board.",
+  exampleLedeKid: "Worked one line at a time, the way kids write it on the board. The tutor checks each line as it's written, and every line here gets a check mark.",
   problemLabel: "Problem",
   answerLabel: "Answer",
   stepsTitle: "How to do it",
@@ -484,18 +485,22 @@ function BoardDots({ id }: { id: string }) {
 const EXAMPLE_SIZE = 40;
 const LINE_GAP_MS = 280;
 const SPEED = 1.3;
+const CHECK_MS = 260;
 
 function ExampleSection({ example }: { example: WorkedExample }) {
   const copy = SKILL_PAGE_COPY;
-  const lines: { line: MathLine; ink: "kid" | "tutor"; label: string | null }[] = [
-    ...example.problem.map((line, i) => ({ line, ink: "kid" as const, label: i === 0 ? copy.problemLabel : null })),
-    ...example.steps.map((line, i) => ({ line, ink: "tutor" as const, label: i === example.steps.length - 1 ? copy.answerLabel : null })),
+  const kid = example.by === "kid";
+  const lines: { line: MathLine; ink: "kid" | "tutor"; label: string | null; checked: boolean }[] = [
+    ...example.problem.map((line, i) => ({ line, ink: "kid" as const, label: i === 0 ? copy.problemLabel : null, checked: false })),
+    ...example.steps.map((line) => ({ line, ink: kid ? ("kid" as const) : ("tutor" as const), label: null, checked: kid })),
   ];
   let at = 0;
   const timed = lines.map((l, i) => {
     const startMs = at;
-    at += handMathMs(l.line.latex, { size: EXAMPLE_SIZE, seed: i + 1, speed: SPEED }) + LINE_GAP_MS;
-    return { ...l, startMs };
+    const writeMs = handMathMs(l.line.latex, { size: EXAMPLE_SIZE, seed: i + 1, speed: SPEED });
+    // a checked line: the tutor's check mark lands once the line is written
+    at += writeMs + LINE_GAP_MS + (l.checked ? CHECK_MS : 0);
+    return { ...l, startMs, checkMs: startMs + writeMs + 120 };
   });
   return (
     <section id={IDS.example} className={`${styles.band} ${styles.noPrint}`} aria-labelledby="sp-example-title">
@@ -504,15 +509,16 @@ function ExampleSection({ example }: { example: WorkedExample }) {
           <h2 id="sp-example-title" className={styles.h2}>
             {copy.exampleTitle}
           </h2>
-          <p className={styles.sectionLede}>{copy.exampleLede}</p>
+          <p className={styles.sectionLede}>{kid ? copy.exampleLedeKid : copy.exampleLede}</p>
         </div>
         <figure className={styles.board}>
           <BoardDots id="sp-board-dots" />
           <ol className={styles.work}>
-            {timed.map(({ line, ink, label, startMs }, i) => (
-              <li key={i} className={`${styles.workLine} ${ink === "tutor" ? styles.workStep : styles.workProblem}`}>
+            {timed.map(({ line, ink, label, startMs, checked, checkMs }, i) => (
+              <li key={i} className={`${styles.workLine} ${i >= example.problem.length ? styles.workStep : styles.workProblem}`}>
                 <div className={styles.workHand}>
                   <HandMath latex={line.latex} size={EXAMPLE_SIZE} ink={ink} seed={i + 1} speed={SPEED} draw={`sp-ex-${i}`} startMs={startMs} />
+                  {checked && <InkCheck className={styles.workCheck} draw={`sp-ex-check-${i}`} atMs={checkMs} forMs={CHECK_MS} />}
                 </div>
                 <p className={styles.workText}>
                   {label && <span className={styles.workLabel}>{label}</span>}
@@ -521,6 +527,9 @@ function ExampleSection({ example }: { example: WorkedExample }) {
               </li>
             ))}
           </ol>
+          <figcaption className={styles.workAnswer}>
+            <span className={styles.workLabel}>{copy.answerLabel}</span> <strong className={styles.math}>{example.answer.text}</strong>
+          </figcaption>
         </figure>
       </div>
     </section>
