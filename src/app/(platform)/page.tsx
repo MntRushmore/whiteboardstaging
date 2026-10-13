@@ -34,7 +34,9 @@ import { TodaySkeleton } from '@/components/daily/TodaySkeleton';
 import { PathSkeleton } from '@/components/path/PathSkeleton';
 import { useWelcome } from '@/components/onboarding/useWelcome';
 import { useHomeArrival } from '@/components/onboarding/useHomeArrival';
-import { usePlanGate } from '@/components/billing/usePlanGate';
+import { useFreeBoard } from '@/components/billing/useFreeBoard';
+import { FreeBoardBanner } from '@/components/billing/FreeBoardBanner';
+import { mayMakeBoard } from '@/lib/billing/newBoards';
 import { homeView } from '@/lib/onboarding/state';
 import { Alert } from '@/registry/components/alert/alert';
 import { Button } from '@/registry/components/button/button';
@@ -246,6 +248,8 @@ export default function Dashboard() {
 
   async function createWhiteboard() {
     if (creating || !user) return;
+    // on the free board (no plan): a new board is the plan screen instead (useFreeBoard holds them)
+    if (!mayMakeBoard()) return;
     setCreating(true);
     setCreateError(null);
     try {
@@ -360,9 +364,15 @@ export default function Dashboard() {
     listState === 'loading' ? 'loading' : listState === 'error' ? 'error' : whiteboards.length,
   );
   const dashboardState = homeView(listState, welcome.decision);
-  // No free plan: without Agathon Unlimited the home sends the student to the plan screen. Not
-  // while the welcome may show: a new student's guided first board comes before the plan.
-  usePlanGate({ enabled: welcome.decision === 'hide', page: 'home' });
+  // No free plan, one free board (src/lib/billing/freeBoard.ts): without Agathon Unlimited the home
+  // keeps an account on its free board (its progress, and Start your free trial; a new board goes to
+  // the plan screen), and sends it to the plan screen once that board is used up. Not while the
+  // welcome may show: a new student's guided first board comes before the plan.
+  const freeBoard = useFreeBoard({
+    enabled: welcome.decision === 'hide',
+    page: 'home',
+    boards: listState === 'list' || listState === 'empty' ? whiteboards : undefined,
+  });
 
   const groups = useMemo(
     () => groupBoards(sortBoards(filterBoards(whiteboards, searchQuery), sort), sort, now),
@@ -414,6 +424,10 @@ export default function Dashboard() {
       <main className={`${APP_CONTENT_CLASS} ${styles.main}`}>
         <div className={styles.banners}>
           <AuthErrorBanner />
+          {/* once its problems are read, so the words do not change under the student */}
+          {freeBoard.gate === 'free' && freeBoard.freeBoardId && freeBoard.done !== null && (
+            <FreeBoardBanner boardId={freeBoard.freeBoardId} done={freeBoard.doneUnknown ? null : freeBoard.done} goal={freeBoard.goal} />
+          )}
         </div>
 
         {/* Today's practice, then the skill path: first, whatever the boards list is doing. Their

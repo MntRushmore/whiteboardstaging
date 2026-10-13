@@ -24,11 +24,14 @@ type Phase = { kind: "idle" } | { kind: "open"; outOfInk: boolean } | { kind: "d
  *  - "Get ink" on the meter or the status pill (openInkDialog): at once, as often as asked.
  * After "Not now" the status pill keeps the short version, with its own "Get ink".
  *
+ * Not for a 402 on an account's free board (`freeBoard`, src/lib/billing/freeBoard.ts): that is the
+ * free board's end, and the board shows its own sheet (FreeBoardSheet) instead.
+ *
  * Never for an Agathon Unlimited subscriber: their help spends no ink, so there is nothing to
  * buy and no reason to cover the board. A 402 can still reach a subscriber in the moments around
  * the plan starting or lapsing; the meter (unlimited) clears it once the plan is read.
  */
-export function OutOfInkWatcher({ editor }: { editor: Editor }) {
+export function OutOfInkWatcher({ editor, freeBoard = false }: { editor: Editor; freeBoard?: boolean }) {
   const inkError = useValue("live ink error", () => {
     const err = liveStore.lastError.get();
     return err?.code === "ink" ? err : null;
@@ -58,7 +61,8 @@ export function OutOfInkWatcher({ editor }: { editor: Editor }) {
     return () => window.removeEventListener(OPEN_INK_DIALOG_EVENT, onOpen);
   }, [unlimited]);
 
-  const wanted = !unlimited && inkDialogWanted(inkError, shownFor402 || phase.kind === "open");
+  // on the free board (`freeBoard`), a 402 is its end: the board shows the free board's sheet instead
+  const wanted = !unlimited && !freeBoard && inkDialogWanted(inkError, shownFor402 || phase.kind === "open");
 
   useEffect(() => {
     if (!wanted) return;

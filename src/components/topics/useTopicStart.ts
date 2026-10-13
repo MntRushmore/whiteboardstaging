@@ -14,6 +14,7 @@ import { writePracticeMarker } from "@/lib/learning/practiceMarker";
 import { loadTopicData, type TopicData } from "@/lib/learning/topicData";
 import { matchTopic, TOPIC_COPY, TOPIC_PROBLEMS, topicBoardTitle, type TopicId } from "@/lib/learning/topics";
 import { asOnboardingClient, createFirstBoard } from "@/lib/onboarding/storage";
+import { mayMakeBoard } from "@/lib/billing/newBoards";
 
 const client = asOnboardingClient(supabase);
 
@@ -141,6 +142,8 @@ export function useTopicActions(userId: string | undefined, grade: Grade | null 
 
   const startTopic = useCallback(
     (id: TopicId) => {
+      // on the free board (no plan), a topic's new board is the plan screen instead (`newBoards.ts`)
+      if (topicOpening() || !mayMakeBoard()) return;
       if (!claimTopicOpen(owner, id)) return;
       void import("@/lib/learning/practiceSet").then(
         ({ topicSet }) => {
@@ -165,7 +168,7 @@ export function useTopicActions(userId: string | undefined, grade: Grade | null 
 
   const ask = useCallback(
     (text: string) => {
-      if (topicOpening()) return;
+      if (topicOpening() || !mayMakeBoard()) return;
       const topic = matchTopic(text, grade);
       if (topic) {
         clientMetric("topics.ask", { routed: true });

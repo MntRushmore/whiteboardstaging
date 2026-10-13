@@ -1,8 +1,9 @@
 /**
  * The paywall: whether a signed-in page may show, or sends the student to the plan screen. There is
  * no free plan (owner, 2026-10-05): the app is Agathon Unlimited, free for 7 days, then $25 a month
- * (`unlimited.ts`). The guided first board is the one way in without it, and the plan screen comes
- * right after it.
+ * (`unlimited.ts`). The ways in without it: the guided first board (the plan screen comes right
+ * after it), and since 2026-10-13 one free board, until 5 problems are done on it or its starter
+ * ink runs out (`freeBoard.ts`, which narrows this gate's `locked` for the home and the boards).
  *
  * Pure: no React, no storage of its own, no network. `usePlanGate` (src/components/billing) feeds
  * it and does the redirect. It fails OPEN on anything it does not know, because a student wrongly
