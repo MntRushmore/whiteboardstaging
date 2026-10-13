@@ -4,11 +4,22 @@ import { ContactBlock, ContactEmail, LegalPage, LegalSection } from "@/component
 import styles from "@/components/legal/legal.module.css";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { LEGAL } from "@/lib/legal";
+import { OPEN_GRAPH_DEFAULTS } from "@/lib/seo/site";
 import { SPEAK_MAX_CHARS } from "@/lib/speech/contracts";
 
-export const metadata: Metadata = {
+const META = {
   title: "Privacy Policy",
-  description: "What Agathon collects, why, who it is shared with, the emails it sends, and the choices you and parents have.",
+  description:
+    "What Agathon, the AI math tutor for kids, collects and why, who it shares it with, the emails it sends, and the choices you and parents have.",
+};
+
+/** Indexable (docs/SEO.md): parents and answer engines look for a product's privacy policy. */
+export const metadata: Metadata = {
+  ...META,
+  alternates: { canonical: "/privacy" },
+  robots: { index: true, follow: true },
+  openGraph: { ...OPEN_GRAPH_DEFAULTS, url: "/privacy", ...META },
+  twitter: { card: "summary", ...META },
 };
 
 const plan = UNLIMITED_PLAN.name;
