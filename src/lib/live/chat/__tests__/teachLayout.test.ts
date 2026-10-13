@@ -3,7 +3,7 @@ import type { Rect } from "../../contracts";
 import { planFigure } from "../../figureDraw";
 import { wallMsOf } from "../../handwriting";
 import { freeAreas, layoutClearOf, layoutTeach, TEACH_LAYOUT, teachArea, type TeachLayout } from "../teachLayout";
-import { LINEAR_TEACH, OWNER_FIGURE, OWNER_TEACH } from "./teachFixtures";
+import { AVG_RATE_TEACH, LINEAR_TEACH, OWNER_FIGURE, OWNER_TEACH, WORKSHEET_PAGE } from "./teachFixtures";
 
 /**
  * Where a worked solution goes on a 1600×900 screen (`layoutTeach`): inside the screen's margins,
@@ -99,6 +99,29 @@ describe("layoutTeach", () => {
     const layout = layoutTeach({ area: rooms[0], steps: steps(LINEAR_TEACH), answer: LINEAR_TEACH.answer, seed: 3 })!;
     expect(layoutClearOf(layout, taken)).toBe(true);
     expect(layoutClearOf(layout, [layout.pieces[0].rect])).toBe(false);
+  });
+
+  it("a worksheet page in the middle of the screen leaves a column either side: the work fits there, whole and legible, clear of the page", () => {
+    // the 2026-10-13 demo: a 634×820 PDF page at x 483 left ~380 px either side, under the old
+    // 560 px minimum, so every worked solution took the student to a new screen, away from the page
+    const page: Rect = { ...WORKSHEET_PAGE };
+    const rooms = freeAreas(AREA, [page]);
+    expect(rooms).toHaveLength(2);
+    for (const r of rooms) {
+      expect(overlap(r, page)).toBe(false);
+      expect(r.w).toBeGreaterThanOrEqual(TEACH_LAYOUT.besideMin);
+      expect(r.h).toBe(AREA.h);
+    }
+    for (const room of rooms) {
+      const layout = layoutTeach({ area: room, steps: steps(AVG_RATE_TEACH), answer: AVG_RATE_TEACH.answer, seed: 11 })!;
+      expect(layout.rest).toBe(AVG_RATE_TEACH.steps.length);
+      expect(layout.answer).not.toBeNull();
+      expect(layout.size).toBeGreaterThanOrEqual(TEACH_LAYOUT.besideMinSize);
+      expect(layoutClearOf(layout, [page])).toBe(true);
+      expectClean(layout, room);
+    }
+    // the legible minimum beside other work is the smallest hand a whole screen is written in
+    expect(TEACH_LAYOUT.besideMinSize).toBe(TEACH_LAYOUT.sizes[TEACH_LAYOUT.sizes.length - 1]);
   });
 
   it("too long for one screen even at the smallest hand: the steps that fit, and where the next screen starts", () => {

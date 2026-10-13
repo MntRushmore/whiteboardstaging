@@ -71,9 +71,15 @@ export const TEACH_LAYOUT = {
   pace: { naturalUpToMs: 3000, maxWallMs: 4500, maxPace: 5, totalMaxWallMs: 24_000 },
   /** the pause between two steps (the writer's) */
   stepPauseMs: 550,
-  /** the least room beside other work worth teaching in (else a new screen), and the least hand there */
-  minArea: { w: 560, h: 320 },
-  besideMinSize: 34,
+  /**
+   * The least room beside other work worth teaching in (else a new screen), and the least hand
+   * there. A new screen takes the student away from their problems (a pasted worksheet page leaves
+   * ~380 px either side of it on a 1600 px screen), so one column is enough room (`besideMin`, as
+   * beside a figure) and the hand may shrink to the smallest a whole screen uses, as a drawing
+   * shrinks to fit before a new screen (docs/ASK-V2.md, "Placement").
+   */
+  minArea: { w: 360, h: 320 },
+  besideMinSize: 28,
 } as const;
 
 export interface TeachLayoutStep {

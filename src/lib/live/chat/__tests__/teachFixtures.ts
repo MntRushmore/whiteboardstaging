@@ -43,3 +43,20 @@ export const LINEAR_TEACH: TeachInput = {
   ],
   answer: "x = 4",
 };
+
+/**
+ * Problem 1 of a pasted worksheet page (the 2026-10-13 demo): the average rate of change of
+ * y = x² − x + 1 over [0, 3], worked as the tutor works it.
+ */
+export const AVG_RATE_TEACH: TeachInput = {
+  steps: [
+    { say: "The average rate of change is the slope between the two endpoints.", math: ["\\frac{f(b) - f(a)}{b - a}"] },
+    { say: "Find the y-value at x = 0.", math: ["f(0) = 0^{2} - 0 + 1", "= 1"] },
+    { say: "Find the y-value at x = 3.", math: ["f(3) = 3^{2} - 3 + 1", "= 9 - 3 + 1", "= 7"] },
+    { say: "Divide the change in y by the change in x.", math: ["\\frac{f(3) - f(0)}{3 - 0} = \\frac{7 - 1}{3 - 0}", "= \\frac{6}{3}", "= 2"] },
+  ],
+  answer: "2",
+};
+
+/** A worksheet page pasted in the middle of a 1600×900 screen, as on the demo board (a PDF page, 634×820). */
+export const WORKSHEET_PAGE = { x: 483, y: 40, w: 634, h: 820 } as const;
