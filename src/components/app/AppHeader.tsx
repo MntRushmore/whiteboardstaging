@@ -7,6 +7,8 @@ import { ArrowLeftRight, CalendarCheck, ChartColumn, CreditCard, FlaskConical, I
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { reportUserError } from "@/lib/reportAppError";
+import { markLeaving } from "@/lib/landing/leaving";
+import { LANDING_PATH } from "@/lib/landing/links";
 import { useAuth } from "@/components/AuthProvider";
 import { FeatureLabsPanel } from "@/components/FeatureLabsPanel";
 import { BugReportButton } from "@/components/BugReportButton";
@@ -111,16 +113,21 @@ export function AppHeader({ className }: { className?: string }) {
   const name = headerName({ profile, user, email, kid });
   const avatarSrc = avatarImage(profile?.avatar);
 
-  // The menu shows "Signing out" until this settles, then closes.
+  // The menu shows "Signing out" until this settles, then closes. Signed out, `/` is the landing
+  // page: a full load there, since this tab's router still knows `/` as the app. The page is marked as
+  // leaving first, so nothing on it reacts to the sign-out on the way out (a page's own "signed out →
+  // /login" would race the full load; AuthProvider keeps the signed-in state until the page goes).
   async function signOut() {
-    const { error } = await supabase.auth.signOut();
+    markLeaving(true);
+    const { error } = await supabase.auth.signOut().catch((err: unknown) => ({ error: err }));
     if (error) {
+      markLeaving(false);
       const message = "Couldn't sign you out. Try again in a moment.";
       toast.error(message);
       reportUserError({ kind: "live.auth", code: "signout_failed", message });
       return;
     }
-    router.replace("/login");
+    window.location.replace(LANDING_PATH);
   }
 
   return (

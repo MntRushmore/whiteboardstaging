@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import type { NextConfig } from "next";
+import { ROOT_LANDING_REWRITE } from "./src/lib/landing/links";
 import { SECURITY_HEADERS } from "./src/lib/securityHeaders";
 
 /** Where every page lives (`redirects`): the old host sends people here. */
@@ -39,7 +40,21 @@ const nextConfig: NextConfig = {
   devIndicators: { position: "bottom-right" },
   // Anti-framing and the other headers that cannot break the board (src/lib/securityHeaders.ts).
   async headers() {
-    return [{ source: "/:path*", headers: [...SECURITY_HEADERS] }];
+    return [
+      { source: "/:path*", headers: [...SECURITY_HEADERS] },
+      // `/` is two pages, chosen per request by the rewrite below. Vercel picks before its cache, so
+      // each page is cached under its own route. Cloudflare in front caches no HTML by default; this
+      // keeps it from caching `/` should a "cache everything" rule ever cover it (it would hand one
+      // visitor's page to everyone). Only Cloudflare reads it, and it does not pass it on.
+      { source: "/", headers: [{ key: "Cloudflare-CDN-Cache-Control", value: "no-store" }] },
+    ];
+  },
+  // The landing page at agathon.app/ itself (docs/LANDING-V3.md "Root"): `/` is the landing page for
+  // a request with no `agathon_session` cookie and no email link's parameters in the query, and the
+  // app (the boards home) for everyone else. Before the filesystem, so it wins over the boards home's
+  // own route. The rule and the browser side of it are in src/lib/landing/links.ts.
+  async rewrites() {
+    return { beforeFiles: [ROOT_LANDING_REWRITE], afterFiles: [], fallback: [] };
   },
   // One home: www.agathon.app (2026-10-09). A sign-in lives on one origin, so a grown-up who signed
   // in on agathon.app and came back from checkout on the old host looked signed out. Every page on

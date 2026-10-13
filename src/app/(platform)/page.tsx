@@ -21,7 +21,7 @@ import {
   type BoardSort,
 } from '@/app/dashboardState';
 import { describeError } from '@/lib/errorMessage';
-import { SIGNED_OUT_GATE_SCRIPT, signedOutDestination } from '@/lib/landing/links';
+import { leaveSignedOut, SIGNED_OUT_GATE_SCRIPT } from '@/lib/landing/links';
 import { reportUserError } from '@/lib/reportAppError';
 import { AppHeader, APP_CONTENT_CLASS } from '@/components/app/AppHeader';
 import { ButtonLink } from '@/components/app/ButtonLink';
@@ -165,18 +165,22 @@ export default function Dashboard() {
   const renameInputRef = useRef<HTMLInputElement>(null);
   const deleteCancelRef = useRef<HTMLButtonElement>(null);
 
-  // Auth gate: a signed-out visitor goes to the parent landing page, keeping the query (?ref=,
-  // utm_*), or to /login when an email link brought them (signedOutDestination). When the sign-in
-  // service could not be reached we show a banner with Retry instead, so a
-  // flaky connection does not bounce a signed-in student to /login.
+  // Auth gate: a signed-out visitor gets the parent landing page, keeping the query (?ref=, utm_*)
+  // and hash, or goes to /login when an email link brought them (leaveSignedOut). The landing page
+  // is this same address: the session cookie is cleared and `/` reloads, so the server serves the
+  // landing page there (/parents when that could come back here). Once per mount. When the sign-in
+  // service could not be reached we show a banner with Retry instead, so a flaky connection does
+  // not bounce a signed-in student to /login.
+  const leftSignedOut = useRef(false);
   useEffect(() => {
-    if (!authLoading && !user && !authError) {
-      router.replace(signedOutDestination(window.location.search, window.location.hash));
+    if (!authLoading && !user && !authError && !leftSignedOut.current) {
+      leftSignedOut.current = true;
+      leaveSignedOut((to) => router.replace(to));
     }
   }, [user, authLoading, authError, router]);
-  // Before all that, the server HTML's gate (SIGNED_OUT_GATE_SCRIPT) sends a device with no stored
-  // session on before the first paint, with the page hidden. Rendered only into that HTML (and kept
-  // through hydration so it matches), never by a client render, where a script would not run.
+  // Before all that, the server HTML's gate (SIGNED_OUT_GATE_SCRIPT) does the same before the first
+  // paint, with the page hidden, for a device with no stored session. Rendered only into that HTML
+  // (and kept through hydration so it matches), never by a client render, where a script would not run.
   const serverHtml = useSyncExternalStore(subscribeNever, () => false, () => true);
   // If the gate hid the page and its own navigation never happened, the page must not stay blank:
   // shown again once someone is signed in, and on the way out (the redirect above).
