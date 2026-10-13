@@ -63,3 +63,22 @@ The old in-app welcome and the three-tip tour are skipped for anyone who came th
 ## Contract
 
 `src/lib/start/contracts.ts`.
+
+## The free board (owner, 2026-10-13: "create a account after onboarding and get 1 free board so they try it then subscribe")
+
+**What a new account gets:** one free board, with no card.
+- It is the board `/start` makes at the end: Sam's first skill.
+- It ends at whichever comes first:
+  - **5 problems done** on it;
+  - **the starter ink runs out.** That is the 100 ink every new account gets (`ink_starter_amount()`), and the AI routes already enforce it on the server, so the cost is bounded whatever the page does.
+
+**When it ends:** at the moment of the win, a calm sheet says "Nice work, Sam finished 5 problems. Start your free trial to keep going". Its one button goes to `/welcome/plan`. The plan screen is unchanged: the trial with a card, then the monthly price, all from `UNLIMITED_PLAN`.
+
+**The paywall (`planGate`) for an account with no plan:**
+- **The free board** stays open while it is not used up.
+- **Any other board, or a new one,** goes to `/welcome/plan`.
+- **Home** shows the free board (with its progress, for example "2 of 5") and a **Start your free trial** button. It does not bounce the account to the plan screen while the free board has problems left. Once the board is used up, the home goes to the plan screen as today.
+- **Progress** is gated as today.
+- **What counts as the free board:** the account's oldest live board. Problems done on it come from its learning attempts, and "used up" also reads the ink summary every page already loads (balance 0).
+
+**Old accounts:** accounts from before this, and the old `/login?mode=signup` path, get the same rule. Their first board is the guided board, and the guided-tour exemption stays as it is.
