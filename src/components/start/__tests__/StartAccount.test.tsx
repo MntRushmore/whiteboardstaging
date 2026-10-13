@@ -109,7 +109,10 @@ class Screen {
   onDone = vi.fn();
   onBack = vi.fn();
   /** one screen at a time: a new one starts with fresh state */
-  constructor(public answers: StartAnswers) {
+  constructor(
+    public answers: StartAnswers,
+    public startIn?: "ask" | "form",
+  ) {
     hooks.slots = [];
   }
   render(): this {
@@ -117,7 +120,7 @@ class Screen {
     hooks.effects = [];
     hooks.live = true;
     try {
-      this.tree = StartAccount({ answers: this.answers, onDone: this.onDone, onBack: this.onBack });
+      this.tree = StartAccount({ answers: this.answers, onDone: this.onDone, onBack: this.onBack, startIn: this.startIn });
     } finally {
       hooks.live = false;
     }
@@ -306,6 +309,12 @@ describe("a kid on their own", () => {
     expect(s.button("Send it to my grown-up")).toBeTruthy();
     expect(s.all().some((el) => el.type === "form")).toBe(false);
     expect(fakes.record).toHaveBeenCalledWith("start_account_shown", { role: "kid" });
+  });
+
+  it("a grown-up who opened the kid's link: the form at once, worded for the grown-up", () => {
+    const s = new Screen(KID, "form").render();
+    expect(s.view()).toBe("form");
+    expect(s.text()).toContain("Grown-up: use your email and a password to save Sam’s plan.");
   });
 
   it("'My grown-up is here': the same form, worded for the grown-up; Back returns to the two choices", async () => {

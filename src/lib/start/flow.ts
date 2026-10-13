@@ -250,9 +250,7 @@ export function flowCopy(a: Pick<StartAnswers, "role" | "name" | "choice">, from
     },
     proof: {
       title: name ? `${name} does the math. You see how it’s going.` : "They do the math. You see how it’s going.",
-      lede: name
-        ? `The tutor checks every line ${name} writes. Progress shows ${possessive(name)} path and week: problems worked, and how many ${name} solved without help.`
-        : "The tutor checks every line they write. Progress shows their path and week: problems worked, and how many they solved without help.",
+      lede: name ? `Progress shows ${possessive(name)} path, and how many problems ${name} solved without help.` : "Progress shows their path, and how many problems they solved without help.",
       next: "Sounds good",
       alt: "Agathon’s Progress page: a 3rd grade path with 2 of 4 skills mastered, and this week’s 47 minutes of practice, 31 problems worked on, 28 solved on their own and 2 days of math in a row.",
     },
@@ -272,19 +270,24 @@ export function flowCopy(a: Pick<StartAnswers, "role" | "name" | "choice">, from
       title: fromLink ? (name ? `${name} made a math plan` : "Your kid made a math plan") : kid ? "Your plan is ready" : name ? `${possessive(name)} plan is ready` : "The plan is ready",
       lede: fromLink
         ? name
-          ? `Save it to start practicing. It’s ${possessive(name)}: the grade and the skills ${name} picked.`
-          : "Save it to start practicing. It’s theirs: the grade and the skills they picked."
+          ? `Save it so ${name} can start practicing.`
+          : "Save it so they can start practicing."
         : kid
-          ? "The tutor checks every line you write, and helps when you get stuck."
+          ? "Made from your answers. Save it to start."
           : name
-            ? `The tutor checks every line ${name} writes, and helps when ${name} gets stuck.`
-            : "The tutor checks every line, and helps when they get stuck.",
+            ? `Made from your answers, for ${name}. Save it to start.`
+            : "Made from your answers. Save it to start.",
       whose: kid ? "Your plan" : name ? possessive(name) + " plan" : "The plan",
       startHere: "Start here",
       next: "Next",
       then: "Then",
-      picked: "Picked",
-      firstBoard: "First board",
+      firstBoardNote: (skill: string) =>
+        kid
+          ? `Your first board starts with ${skill}, ready to write on. The tutor checks each line.`
+          : name
+            ? `${possessive(name)} first board starts with ${skill}, ready to write on. The tutor checks each line.`
+            : `The first board starts with ${skill}, ready to write on. The tutor checks each line.`,
+      free: "Free to save. No card needed.",
       open: "The tutor starts with a few problems to see where things are, then picks what comes next.",
       tried: (solved: boolean) => (solved ? "Solved one already" : "Tried one already"),
       save: kid ? "Save my plan" : name ? `Save ${possessive(name)} plan` : "Save the plan",

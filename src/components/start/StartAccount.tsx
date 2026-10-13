@@ -41,6 +41,11 @@ export interface StartAccountProps {
   onDone: (next: string) => void;
   /** back to the plan */
   onBack: () => void;
+  /**
+   * Where a kid's screen starts: "ask" (fetch a grown-up, the default for a kid) or "form" (the
+   * grown-up is here: they opened the kid's link). A parent always starts on the form.
+   */
+  startIn?: "ask" | "form";
 }
 
 /**
@@ -53,10 +58,10 @@ export interface StartAccountProps {
  * (email confirmation on) says to check the email, and the first sign-in on this device saves them
  * (`StartResume`). "Already have an account? Sign in" keeps the answers on the device for the same.
  */
-export function StartAccount({ answers, onDone, onBack }: StartAccountProps) {
+export function StartAccount({ answers, onDone, onBack, startIn }: StartAccountProps) {
   const kid = answers.role === "kid";
   const name = answers.name;
-  const [view, setView] = useState<View>(kid ? "ask" : "form");
+  const [view, setView] = useState<View>(kid && startIn !== "form" ? "ask" : "form");
   // A kid who fetched a grown-up: the form, worded for the grown-up
   const grownUpHere = kid && view === "form";
   // The form is in the server HTML: submit stays disabled until hydration (as LoginForm's)
@@ -184,7 +189,7 @@ export function StartAccount({ answers, onDone, onBack }: StartAccountProps) {
       <section data-start="account" data-view="ask" className={styles.screen}>
         {heading(COPY.askTitle, COPY.askLede)}
         <div className={styles.choices}>
-          <Button size="lg" className={styles.choice} onClick={() => go("form")}>
+          <Button size="lg" className={`${styles.choice} ${styles.choicePrimary}`} onClick={() => go("form")}>
             {COPY.grownUpHere}
           </Button>
           <Button size="lg" variant="secondary" className={styles.choice} onClick={() => void sendToGrownUp()}>

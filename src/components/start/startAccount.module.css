@@ -1,6 +1,7 @@
-/* /start's account screen (StartAccount): layout and type from Arc's tokens (src/registry/foundation.css).
-   Deliberately plain: the warm visual pass comes from the owner's Figma. Mobile first: every tap
-   target at least 44 px. Flat fills only (no gradients). */
+/* /start's account screen (StartAccount): Arc's form controls (src/registry/foundation.css) inside the
+   flow's look (src/components/start/start.module.css): the same centred title, the blue pill for the
+   one button, the tutor's blue for a chosen chip. Mobile first: every tap target at least 44 px. Flat
+   fills only (no gradients). */
 
 .screen {
   display: grid;
@@ -12,29 +13,27 @@
 
 .heading {
   display: grid;
-  gap: var(--space-2);
+  justify-items: center;
+  gap: 0.625rem;
+  text-align: center;
 }
 .title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-3xl);
-  font-weight: 500;
-  letter-spacing: var(--tracking-display);
-  line-height: var(--leading-display);
+  font-size: clamp(1.75rem, 1.3rem + 1.9vw, 2.5rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
   text-wrap: balance;
 }
 .title:focus {
   outline: none;
 }
-@media (max-width: 479px) {
-  .title {
-    font-size: var(--text-2xl);
-  }
-}
 .lede {
+  max-width: 24rem;
   margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-base);
+  color: var(--st-muted, var(--text-secondary));
+  font-size: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
   line-height: 1.5;
   text-wrap: pretty;
 }
@@ -74,13 +73,33 @@
   gap: var(--space-2);
   margin-top: var(--space-2);
 }
-.chip {
+.screen .chip {
   min-height: 44px;
   border-radius: 999px;
+  font-size: 0.9375rem;
+}
+.screen .chip[aria-pressed="true"] {
+  border-color: var(--st-pen, #4465e9);
+  background: var(--st-pen-tint, #f2f5ff);
+  color: var(--st-ink, #1b1a17);
 }
 
-.wide {
+/* the one button: the flow's blue pill */
+.screen .wide {
   width: 100%;
+  min-height: 3.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--st-blue, #0562ef);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+@media (hover: hover) and (pointer: fine) {
+  .screen .wide:not(:disabled):hover {
+    background: var(--st-blue-strong, #074db7);
+  }
 }
 
 /* a kid on their own: two big choices */
@@ -88,9 +107,18 @@
   display: grid;
   gap: var(--space-3);
 }
-.choice {
+.screen .choice {
   width: 100%;
-  min-height: 3.5rem;
+  min-height: 3.75rem;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+.screen .choicePrimary {
+  border: 0;
+  background: var(--st-blue, #0562ef);
+  color: #fff;
 }
 
 /* "Email it": a mailto link that looks like the secondary button beside it */
