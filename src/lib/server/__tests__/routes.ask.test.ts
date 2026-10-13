@@ -60,6 +60,7 @@ import { LIVE_MODELS } from "@/lib/live/contracts";
 import { logger } from "@/lib/logger";
 import { loadAskContext, MEMORY_ATTEMPT_MS, rememberFromTurn, saveAskTurns, STORE_TIMEOUT_MS, type AskLearnerContext } from "@/lib/server/ask/store";
 import { resetBillingWarnings } from "@/lib/server/billing";
+import { GRAPH_NOT_DRAWN, GRAPH_NOT_DRAWN_REPLY } from "@/lib/server/chatGate";
 import { recordEvent } from "@/lib/server/events";
 import {
   chatJsonWithFallback,
@@ -227,6 +228,16 @@ describe("live/ask: the stream", () => {
     expect([primary, fallback]).toEqual([LIVE_MODELS.ask, LIVE_MODELS.askFallback]);
     expect(watchdogMs).toBeLessThanOrEqual(6_000);
     expect(limits).toMatchObject({ fallbackWatchdogMs: expect.any(Number), deadline: expect.any(Number) });
+    // a primary that is thinking is alive: it may think past the first-words watchdog (an "explain"
+    // ask on Sonnet 5.5 thinks ~3.5 s and speaks at 5–6 s), but not into the fallback's time
+    expect(limits!.primaryThinkingMs).toBeGreaterThanOrEqual(10_000);
+    expect(limits!.primaryThinkingMs! + limits!.fallbackWatchdogMs!).toBeLessThan(limits!.deadline! - Date.now());
+    // a long thinker races the fallback no later than a silent primary is given up on, well before its thinking runs out
+    expect(limits!.hedgeMs).toBeGreaterThan(0);
+    expect(limits!.hedgeMs!).toBeLessThanOrEqual(watchdogMs);
+    expect(limits!.hedgeMs!).toBeLessThan(limits!.primaryThinkingMs!);
+    // the fallback is the fast one: it never thinks
+    expect(opts.reasoningFor?.(LIVE_MODELS.askFallback)).toBe("none");
     expect(limits!.deadline! - Date.now()).toBeLessThan(60_000);
     expect(opts).toMatchObject({ temperature: 0.4, maxTokens: 4000, title: "Agathon Live - ask" });
     // each model streams with the reasoning eval:ask measured for it (askReasoningFor)
@@ -382,7 +393,7 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     expect(repair.title).toBe("Agathon Live - ask problems");
     // Anthropic's primary is sent no reasoning in a repair either; OpenAI's fallback the least
     expect(repair.reasoningFor?.(LIVE_MODELS.ask)).toBe("minimal");
-    expect(repair.reasoningFor?.(LIVE_MODELS.askFallback)).toBe("minimal");
+    expect(repair.reasoningFor?.(LIVE_MODELS.askFallback)).toBe("none");
     // its model events are the board chat's, as Ask is metered
     expect(modelEventKind(repair.title)).toBe("model.live.chat");
     expect(repair.deadline! - Date.now()).toBeLessThanOrEqual(50_000);
@@ -433,6 +444,42 @@ describe("live/ask: the board's actions through the engine's gates", () => {
     expect(exchange).toEqual({ message: asked.message, reply: "Sure, [name]! Let's work it out.", memory: ["[name] likes animal problems"], memoryAt: LEARNER.memoryAt });
     // the saved chat is the kid's own (no model reads it)
     expect(vi.mocked(saveAskTurns).mock.calls[0][2][0].text).toBe(body.message);
+  });
+
+  it("the demo's graph (y = sin x with the line y = √2/2, from 0 to 2π, beside #1) passes the gate as sent: the reply stands", async () => {
+    const graph = { type: "graph", relations: ["y = \\sin x", "y = \\frac{\\sqrt{2}}{2}"], window: { xMin: 0, xMax: 6.2832 }, near: 1 };
+    const reply = "I graphed $y = \\sin x$ and the line $y = \\frac{\\sqrt{2}}{2}$ beside #1, from 0 to 2π. Where do they cross?";
+    scripts = [{ chunks: [reply, block([graph])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "explain this visually please", screen: { empty: false, student: [], tutor: [], problems: ["\\sin x = \\frac{\\sqrt{2}}{2}"] } })));
+    expect(only(out, "actions")).toEqual({ actions: [graph], notes: [] });
+    expect(only(out, "reply")).toEqual({ text: reply });
+    expect(calls("refund_ink_for")).toEqual([]);
+  });
+
+  it("a graph the board cannot draw (a vertical line) is dropped by the gate: its claim goes, the student hears so", async () => {
+    const explanation = "The parabola $y = x^{2}$ is symmetric about the y-axis, and its lowest point is the vertex at the origin.";
+    scripts = [{ chunks: [`${explanation} I graphed it with the line $x = 2$ beside #1.`, block([{ type: "graph", relations: ["y = x^{2}", "x = 2"], near: 1 }])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "show me the parabola and x = 2" })));
+    expect(only(out, "actions")).toEqual({ actions: [], notes: [] });
+    expect(only(out, "reply")).toEqual({ text: `${explanation}\n\n${GRAPH_NOT_DRAWN_REPLY}` });
+    // a real explanation stays: the charge is kept
+    expect(calls("refund_ink_for")).toEqual([]);
+    expect(vi.mocked(saveAskTurns).mock.calls[0][2][1]).toMatchObject({ text: `${explanation}\n\n${GRAPH_NOT_DRAWN_REPLY}`, wrote: [] });
+  });
+
+  it("'try graphing it on a new page' with a graph the board cannot draw: no blank screen either, and the ink back", async () => {
+    scripts = [{ chunks: ["Here's the graph on a new page!", block([{ type: "new_screen" }, { type: "graph", relations: ["x = 3"] }])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "try graphing it on a new page" })));
+    expect(only(out, "actions")).toEqual({ actions: [], notes: [] });
+    expect(only(out, "reply")).toEqual({ text: GRAPH_NOT_DRAWN_REPLY });
+    expect(only(out, "done")).toMatchObject({ refunded: true });
+  });
+
+  it("a graph dropped beside one that is drawn: the drawn one goes on, with a note for the other", async () => {
+    const good = { type: "graph", relations: ["y = \\cos x", "y = 0.5"] };
+    scripts = [{ chunks: ["Two graphs coming up.", block([good, { type: "graph", relations: ["x = 1"] }])] }];
+    const out = await frames(await ask(request({ ...BODY, message: "graph cos x and 0.5, then x = 1" })));
+    expect(only(out, "actions")).toEqual({ actions: [good], notes: [GRAPH_NOT_DRAWN] });
   });
 
   it("help_board passes the gate untouched (the board runs Help me / Solve it on the student's own work)", async () => {
@@ -486,16 +533,52 @@ describe("live/ask: the models", () => {
     expect(out.filter((f) => f.event === "model").map((f) => f.data.model)).toEqual([LIVE_MODELS.ask, LIVE_MODELS.askFallback]);
     expect(deltas(out)).toBe("Hi! Let's work on it.");
     expect(only(out, "done")).toMatchObject({ model: LIVE_MODELS.askFallback, turnId: "turn-tutor" });
-    // Anthropic's primary is sent no reasoning; OpenAI's fallback the least
+    // each model with its own reasoning: the primary the least it takes, the fallback none
     expect(asked).toEqual([
       { model: LIVE_MODELS.ask, reasoning: { effort: "minimal" } },
-      { model: LIVE_MODELS.askFallback, reasoning: { effort: "minimal" } },
+      { model: LIVE_MODELS.askFallback, reasoning: { effort: "none" } },
     ]);
     // filed with the board chat Ask is metered as; the call's own name says it was Ask
     expect(events()).toEqual([
       expect.objectContaining({ level: "warn", kind: "model.live.chat", code: "fallback", meta: expect.objectContaining({ reason: "timeout", call: "ask" }) }),
     ]);
     expect(calls("refund_ink_for")).toEqual([]);
+  });
+
+  it("a primary that is thinking past the first-words watchdog is kept: its words, no handover, no fallback event", async () => {
+    asked.length = 0;
+    const encoder = new TextEncoder();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as { model: string; reasoning?: unknown };
+        asked.push({ model: body.model, reasoning: body.reasoning });
+        // thinking at once, then its words only after the (shortened) first-words watchdog
+        const frame = (delta: object) => encoder.encode(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`);
+        const stream = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(frame({ reasoning: "The student wants problem 4 explained." }));
+            await new Promise((r) => setTimeout(r, 120));
+            controller.enqueue(frame({ content: "First, get cos x by itself." }));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+      }),
+    );
+    const actual = await vi.importActual<typeof import("@/lib/server/openrouter")>("@/lib/server/openrouter");
+    vi.mocked(streamWithFallback).mockImplementation((primary, fallback, opts, _watchdogMs, limits) =>
+      // the route's limits, the first-words watchdog shortened under the time it thinks (it would have been cut off before)
+      actual.streamWithFallback(primary, fallback, opts, 40, limits),
+    );
+
+    const out = await frames(await ask(request()));
+    expect(out.filter((f) => f.event === "model").map((f) => f.data.model)).toEqual([LIVE_MODELS.ask]);
+    expect(deltas(out)).toBe("First, get cos x by itself.");
+    expect(only(out, "done")).toMatchObject({ model: LIVE_MODELS.ask });
+    expect(asked.map((a) => a.model)).toEqual([LIVE_MODELS.ask]);
+    expect(events()).toEqual([]);
   });
 
   it("an upstream failure is an `error` event with its code, the ink back in full, nothing saved", async () => {

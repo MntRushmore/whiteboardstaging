@@ -46,7 +46,7 @@ import { lenientModelAction } from "./model";
 
 /** How a graph is asked for: relations in LaTeX, and a window only when a range was asked for. */
 export const GRAPH_ACTION =
-  '{"type": "graph", "relations": ["<LaTeX>", ...], "window": {"xMin": -6.2832, "xMax": 6.2832}} — sketches a graph. Relations in x and y: y = x^{2}, y = 2x + 1, 2x + 3y = 6, y < 2x + 1, y \\ge x^{2} - 1, x^{2} + y^{2} = 25, y = \\sin x, f(x) = \\frac{1}{x - 2}; two or three of them are a system (drawn with where they cross); one inequality in x alone (x > 3, -2 \\le x < 3) is a number line. "window" only when a range is asked for: numbers (π = 3.14159…), yMin/yMax optional.';
+  '{"type": "graph", "relations": ["<LaTeX>", ...], "window": {"xMin": -6.2832, "xMax": 6.2832}} — sketches a graph. Relations in x and y: y = x^{2}, y = 2x + 1, 2x + 3y = 6, y < 2x + 1, y \\ge x^{2} - 1, x^{2} + y^{2} = 25, y = \\sin x, f(x) = \\frac{1}{x - 2}, a horizontal line y = 3 or y = \\frac{\\sqrt{2}}{2}; two or three of them are a system (drawn with where they cross); one inequality in x alone (x > 3, -2 \\le x < 3) is a number line. Never a vertical line (x = 2): the board cannot draw one (an asymptote is drawn with its curve anyway). "window" only when a range is asked for: numbers (π = 3.14159…), yMin/yMax optional.';
 
 /** How a geometry figure is asked for (its format is `FIGURE_FORMAT`). */
 export const DRAW_FIGURE_ACTION = '{"type": "draw_figure", "figure": {...}} — a geometry figure, drawn true to scale (format below).';
@@ -269,7 +269,7 @@ export const HELP_PROBLEM_ACTION =
 export const WRITE_PROOF_ACTION =
   '{"type": "write_proof", "figure": {...}, "given": ["<statement>", ...], "prove": "<statement>", "worked": true} — a two-column geometry proof in the tutor\'s hand: the figure (format below), Given, Prove and a Statements | Reasons table; "worked": true writes every row (the board\'s proof engine finds them), "worked": false leaves the table for the student (PROOFS below).';
 export const TEACH_ACTION =
-  '{"type": "teach", "figure": {...}, "steps": [{"say": "<one short sentence>", "math": ["<LaTeX>", "= <LaTeX>", ...]}, ...], "answer": "<LaTeX>"} — the tutor TEACHES a problem on the board: the whole worked solution written the way a teacher writes it, each step a short sentence with its maths under it, the answer boxed at the end, the figure (geometry only) top right. The board\'s engine checks every line of the maths before any of it is written (TEACHING below).';
+  '{"type": "teach", "near": 2, "figure": {...}, "steps": [{"say": "<one short sentence>", "math": ["<LaTeX>", "= <LaTeX>", ...]}, ...], "answer": "<LaTeX>"} — the tutor TEACHES a problem on the board: the whole worked solution written the way a teacher writes it, each step a short sentence with its maths under it, the answer boxed at the end, the figure (geometry only) top right. "near": the number of the problem it works when that problem is listed under "Problems the tutor wrote here" (the board writes the work in that problem\'s space, under it); leave it out otherwise. The board\'s engine checks every line of the maths before any of it is written (TEACHING below).';
 export const PROBLEM_COUNT_RULE =
   'Problems are what a student at the level asked for can solve by hand. Unless asked otherwise, choose numbers so every answer is clean (whole numbers or simple fractions) and each problem is different. Match the count asked for; "a few" or no count is 4.';
 export const PROBLEM_FORM_RULE =
@@ -428,6 +428,13 @@ export function chatScreenLines(screen: ChatRequest["screen"]): string[] {
   // numbered as on the board ("help me with 7" on a screen holding 5 to 8 of a set)
   const numbers = problemNumbers(screen);
   if (problems.length) out.push("Problems the tutor wrote here:", ...problems.map((p, i) => `${numbers[i]}. ${p}`));
+  // a screen the tutor started for its work: the problems of the screen the student came from
+  const from = !problems.length ? screen.from : undefined;
+  if (from?.problems.length) {
+    const at = problemNumbers(from);
+    const where = from.screen ? `Screen ${from.screen}` : "the screen before";
+    out.push(`Problems on ${where} (this screen holds the tutor's work for them; "#2", "problem 3" mean these):`, ...from.problems.map((p, i) => `${at[i]}. ${p}`));
+  }
   if (student.length) out.push("The student's lines (as read):", ...student.map((l) => `- ${l}`));
   if (tutor.length) out.push("The tutor's other lines:", ...tutor.map((l) => `- ${l}`));
   // what lecture mode heard on this screen: speech, fenced as data (one run of words: it may not

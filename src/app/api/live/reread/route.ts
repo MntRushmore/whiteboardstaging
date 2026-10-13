@@ -10,8 +10,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-/** One attempt per model; the benchmark's p95 for the reread models was ≤ 1.3 s. */
-const REREAD_ATTEMPT_MS = 8_000;
+/**
+ * One attempt per model; the benchmark's p95 for the reread models was ≤ 1.3 s (Gemini 3.5 Flash
+ * Lite 1.0–1.4 s with a picture on 2026-10-13). At 8 s a stuck primary held the mark on a messy line
+ * for ~9.5 s before Haiku answered (six times in the week to 2026-10-13, once in a demo); at 4 s
+ * the fallback has it in ~5.5 s.
+ */
+const REREAD_ATTEMPT_MS = 4_000;
 
 /**
  * POST /api/live/reread — the second reader. The client sends it only on a signal (a read the

@@ -366,6 +366,16 @@ export interface NumberLineIntent {
   marks: Array<{ at: number; latex: string }>;
 }
 export type GraphIntent = PlaneGraphIntent | NumberLineIntent;
+/** How `graphFor` reads its lines. */
+export interface GraphForOptions {
+  /**
+   * Every line is a relation someone asked to see drawn (the board chat's `graph`), not a column of
+   * work: `y = c` is a horizontal line (under a function in a column it is a value put in), and a
+   * line the sketch cannot draw (`x = 2`, a value, words) fails the whole graph instead of being
+   * left out of it — nothing is said to be graphed that is not drawn.
+   */
+  explicit?: boolean;
+}
 export interface LiveEngine {
   analyzeLine(latex: string, ctx: AnalyzeContext): LineAnalysis;
   /** compiled y=f(x) sampler for graph shapes; null when the expression does not parse */
@@ -395,10 +405,11 @@ export interface LiveEngine {
    * What to graph for a column of work (the student's lines, then any solution under them),
    * top to bottom: `y = f(x)` / `f(x) = …`, a line in any form, two or three of them (with where
    * they cross), a region (`y < 2x + 1`), a circle, or — from the last line — a one-variable
-   * inequality answer as a number line. Null when there is nothing to graph. Optional so engine
-   * doubles need not implement it.
+   * inequality answer as a number line. Null when there is nothing to graph. `explicit`: the lines
+   * are relations asked for by name (`GraphForOptions`). Optional so engine doubles need not
+   * implement it.
    */
-  graphFor?(lines: readonly string[]): GraphIntent | null;
+  graphFor?(lines: readonly string[], opts?: GraphForOptions): GraphIntent | null;
   /**
    * A line of a young student's working under a problem with no letters (`engine/primaryWork.ts`),
    * judged against the PROBLEM rather than the line above: a true side calculation (`10 \times 7 =
@@ -756,15 +767,19 @@ export const LIVE_MODELS = {
    *  - Sonnet 5.5 ("minimal"): the best tutor — judge 4.82 correct · 4.32 tutoring · 4.59 grade ·
    *    4.13 warmth · 5.00 safety, 83/85 automatic checks; first words 0.98 s p50, 1.48 s p95, none
    *    over 3 s; $0.0043 an ask with the prompt cached, $0.033 cold.
-   *  - Gemini 3.8 Flash ("minimal", Google: another provider and other servers) the fallback: the
-   *    best of the rest — 4.84 · 4.15 · 4.61 · 4.01 · 4.98, 83/85; 1.65 s p50, 3.63 s p95; $0.0017.
-   *  - Not picked: Haiku 5.5 ("none": 0.58 s p50, 0.91 s p95, $0.0004; tutoring 3.93, 81/85 — the
-   *    cheap, fast alternative: LIVE_MODEL_ASK=anthropic/claude-haiku-5.5), DeepSeek V4.1 Flash
-   *    (0.30 s, but 76/85: problems promised and no board block), GPT-5.4 mini (76/85, tutoring
-   *    3.42, and it left 988 out of a reply to a child talking about suicide in all three runs).
+   *  - Haiku 5.5 ("none": it never thinks) the fallback since 2026-10-13: 0.58 s p50, 0.91 s p95,
+   *    $0.0004; tutoring 3.93, 81/85. A fallback is there to answer FAST when Sonnet is slow, and
+   *    OpenRouter serves Haiku from five providers (Anthropic, Bedrock, Vertex, Azure, AWS), so an
+   *    outage of one is not an outage of Ask. Gemini 3.8 Flash was the fallback before: in a demo on
+   *    2026-10-13 it missed its 10 s watchdog twice ("Your tutor took too long to answer"), and one
+   *    of its endpoints ran at a 13 s median that afternoon.
+   *  - Not picked: Gemini 3.8 Flash (4.84 · 4.15 · 4.61 · 4.01 · 4.98, 83/85, but 1.65 s p50,
+   *    3.63 s p95, and the timeouts above), DeepSeek V4.1 Flash (0.30 s, but 76/85: problems promised
+   *    and no board block), GPT-5.4 mini (76/85, tutoring 3.42, and it left 988 out of a reply to a
+   *    child talking about suicide in all three runs).
    */
   ask: "anthropic/claude-sonnet-5.5",
-  askFallback: "google/gemini-3.8-flash",
+  askFallback: "anthropic/claude-haiku-5.5",
   /** Ask's memory: after a turn, the few notes worth keeping about how the student learns (cheap, after the reply). */
   askMemory: "anthropic/claude-haiku-5.5",
   askMemoryFallback: "openai/gpt-5.4-nano",

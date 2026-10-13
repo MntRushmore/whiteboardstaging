@@ -48,7 +48,8 @@ export async function gateChatTeach(action: TeachAction, engine: LiveEngine, rep
     repaired = true;
     const fixed = await repair(teachProblems(judged)).catch(() => null);
     if (fixed) {
-      const next: TeachAction = { ...fixed, type: "teach" };
+      // the repair works the same problem: it keeps the problem it is written under
+      const next: TeachAction = { ...(action.near !== undefined ? { near: action.near } : {}), ...fixed, type: "teach" };
       const again = judge(engine, next);
       // the repair is taken when its maths holds — or when the first's did not either
       if (again.maths.ok || !judged.maths.ok) {

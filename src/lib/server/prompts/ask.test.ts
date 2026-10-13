@@ -208,6 +208,20 @@ describe("ask prompt: the messages", () => {
     expect(problem).toContain("THE PROBLEM THE STUDENT GAVE (earlier in the chat):\na ladder 13 ft long");
   });
 
+  it("a screen the tutor started for its work lists the problems of the screen it came from, numbered as there; a screen with its own does not", () => {
+    const from = { screen: 1, problems: ["2(3)^{2} - 5(3) + 1", "2\\cos x - \\sqrt{2} = 0"], numbers: [1, 4] };
+    const parsed = AskRequestSchema.parse(req({ screen: { empty: false, tutor: ["x = 4"], from } }));
+    expect(parsed.screen.from).toEqual(from);
+    const text = userText(buildAskMessages(parsed, ctx()).at(-1)!);
+    expect(text).toContain('Problems on Screen 1 (this screen holds the tutor\'s work for them; "#2", "problem 3" mean these):\n1. 2(3)^{2} - 5(3) + 1\n4. 2\\cos x - \\sqrt{2} = 0');
+    const own = userText(buildAskMessages(AskRequestSchema.parse(req({ screen: { empty: false, problems: ["x + 1 = 2"], from } })), ctx()).at(-1)!);
+    expect(own).not.toContain("Problems on Screen 1");
+    // the student's name never rides along in them
+    const scrubbed = userText(buildAskMessages(AskRequestSchema.parse(req({ screen: { empty: false, from: { problems: ["Maya has 3 apples"] } } })), ctx({ name: "Maya", nameWords: ["Maya"] })).at(-1)!);
+    expect(scrubbed).toContain("Problems on the screen before");
+    expect(scrubbed).not.toContain("Maya");
+  });
+
   it("the screen's picture goes as an image_url part, with the text beside it", () => {
     const messages = buildAskMessages(req({ screen: { empty: false, image: IMAGE } }), ctx());
     const content = messages.at(-1)!.content as Array<{ type: string; image_url?: { url: string }; text?: string }>;

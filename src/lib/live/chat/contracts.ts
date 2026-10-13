@@ -73,8 +73,22 @@ export const ChatScreenSchema = z.object({
    * "what did she say about X?" can be answered in the panel. Absent: no lecture on this screen.
    */
   lecture: z.string().max(CHAT_LIMITS.lecture).optional(),
+  /**
+   * A screen the tutor started for its own work (a worked solution with no room left beside the
+   * problems) lists none of its own: the problems of the screen it came from, numbered as there, so
+   * "explain #2" asked from the work still finds #2. Absent: this screen has problems, or no carry.
+   */
+  from: z
+    .object({
+      /** that screen's number on the board, from 1 */
+      screen: z.number().int().min(1).max(999).optional(),
+      problems: z.array(z.string().max(CHAT_LIMITS.lineLatex * CHAT_LIMITS.problemLines)).max(CHAT_LIMITS.problems),
+      numbers: z.array(z.number().int().min(1).max(999)).max(CHAT_LIMITS.problems).optional(),
+    })
+    .optional(),
 });
 export type ChatScreen = z.infer<typeof ChatScreenSchema>;
+export type ChatScreenFrom = NonNullable<ChatScreen["from"]>;
 
 export const ChatRequestSchema = z.object({
   boardId: z.string().min(1).max(64),
@@ -298,6 +312,8 @@ export const TeachStepSchema = z.object({
  */
 export const TeachSchema = z.object({
   type: z.literal("teach"),
+  /** the problem on this screen it works (its number): written in that problem's cell, under it, when it fits */
+  near: NearProblemSchema,
   figure: FigureSpecSchema.optional(),
   steps: z.array(TeachStepSchema).min(1).max(CHAT_LIMITS.teachSteps),
   answer: ChatLatexSchema.optional(),

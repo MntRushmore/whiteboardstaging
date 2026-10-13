@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import type { TLShape } from "tldraw";
+import { createShapeId, type TLShape } from "tldraw";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { writeLine as inkLine } from "../__fixtures__/strokes";
 import { settleStable, settleUntil } from "@/lib/live/__fixtures__/settle";
@@ -16,7 +16,7 @@ import { CHAT_PROBLEM_META, problemMetaOf } from "../chat/cells";
 import type { ChatAction, ChatRunReport } from "../chat/contracts";
 import { CHAT_BLOCK_META } from "../chat/desk";
 import { PROBE_FIGURE } from "../chat/figure";
-import { LINEAR_TEACH, OWNER_FIGURE, OWNER_TEACH } from "../chat/__tests__/teachFixtures";
+import { AVG_RATE_TEACH, GRID_PROBLEMS, LINEAR_TEACH, OWNER_FIGURE, OWNER_TEACH, TRIG_TEACH, WORKSHEET_PAGE } from "../chat/__tests__/teachFixtures";
 
 /**
  * The board chat's hand in the loop: a reply's actions written one block at a time, problems the
@@ -623,6 +623,21 @@ describe("live loop — the board chat", () => {
     });
     const metaOf = (s: TLShape) => s.meta as Record<string, unknown>;
     const blocksOf = (kind: string) => new Set(tutor().filter((s) => metaOf(s)[CHAT_BLOCK_META] === kind).map((s) => handBlockOf(s.meta)));
+    type Box = { x: number; y: number; w: number; h: number };
+    /** each block of a worked solution on this screen (a step, the answer, a figure): the rect round its strokes */
+    const blockRects = (): Map<string, Box> => {
+      const out = new Map<string, Box>();
+      for (const s of tutor().filter((t) => ["teach", "figure"].includes(String(metaOf(t)[CHAT_BLOCK_META])))) {
+        const b = editor.getShapePageBounds(s)!;
+        const key = handBlockOf(s.meta);
+        const r = out.get(key);
+        const x = Math.min(b.x, r?.x ?? Infinity);
+        const y = Math.min(b.y, r?.y ?? Infinity);
+        out.set(key, { x, y, w: Math.max(b.maxX, r ? r.x + r.w : -Infinity) - x, h: Math.max(b.maxY, r ? r.y + r.h : -Infinity) - y });
+      }
+      return out;
+    };
+    const touches = (a: Box, b: Box) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
     it("on an empty screen: the figure, each step (its sentence, then its maths) and the boxed answer, inside the screen, never marked", async () => {
       start();
@@ -664,7 +679,7 @@ describe("live loop — the board chat", () => {
       expect(tutor()).toEqual([]);
     });
 
-    it("beside the student's work when there is room, clear of it; a full screen gets a new one", async () => {
+    it("beside the student's work when there is room, clear of it; a second solution beside the first when it fits", async () => {
       start();
       await penLine("2x=8", 100, 200, "2x=8");
       const report = await run([teachAction(LINEAR_TEACH)]);
@@ -674,9 +689,98 @@ describe("live loop — the board chat", () => {
         const b = editor.getShapePageBounds(s)!;
         for (const i of ink) expect(b.x < i.maxX && b.maxX > i.x && b.y < i.maxY && b.maxY > i.y).toBe(false);
       }
-      // a second worked solution never goes beside the first: a new screen
+      // a second worked solution stays on this screen when it fits beside the first, clear of it
+      const first = blockRects();
       const second = await run([teachAction(OWNER_TEACH, OWNER_FIGURE)]);
-      expect(second).toMatchObject({ screensAdded: 1, outcomes: [{ type: "teach", ok: true }] });
+      expect(second).toMatchObject({ screensAdded: 0, outcomes: [{ type: "teach", ok: true }] });
+      expect(editor.getPages()).toHaveLength(1);
+      const added = [...blockRects()].filter(([block]) => !first.has(block));
+      expect(added.length).toBe(OWNER_TEACH.steps.length + 2);
+      for (const [, r] of added) for (const [, f] of first) expect(touches(r, f)).toBe(false);
+      for (const [, r] of added) for (const i of ink) expect(touches(r, { x: i.x, y: i.y, w: i.w, h: i.h })).toBe(false);
+    });
+
+    it("the tutor's 2×2 problem grid, \"explain how to do problem 4\": the work goes in problem 4's cell, under it, on this screen", async () => {
+      // the live replay (2026-10-13): every cell owned the screen, so the work took the student to a
+      // new screen and "#2", "problem 3" were never seen again
+      start();
+      const set = await run([{ type: "write_problems", problems: GRID_PROBLEMS }]);
+      expect(set).toMatchObject({ problemsWritten: 4, screensAdded: 0 });
+      const four = problems().find((p) => p.n === 4)!;
+      const home = editor.getCurrentPage().id;
+      for (const action of [{ ...teachAction(TRIG_TEACH), near: 4 }, teachAction(TRIG_TEACH)]) {
+        // with "near", and without it (its first line is problem 4's)
+        const before = blockRects();
+        const report = await run([action as ChatAction]);
+        expect(report).toMatchObject({ screensAdded: 0, outcomes: [{ type: "teach", ok: true }] });
+        expect(editor.getCurrentPage().id).toBe(home);
+        const added = [...blockRects()].filter(([block]) => !before.has(block)).map(([, r]) => r);
+        expect(added).toHaveLength(TRIG_TEACH.steps.length + 1);
+        const head = tutor().filter((s) => problemMetaOf(s.meta)?.n === 4).map((s) => editor.getShapePageBounds(s)!);
+        const headBottom = Math.max(...head.map((b) => b.maxY));
+        for (const r of added) {
+          // inside problem 4's cell, under its line
+          expect(r.x).toBeGreaterThanOrEqual(four.cell.x);
+          expect(r.x + r.w).toBeLessThanOrEqual(four.cell.x + four.cell.w);
+          expect(r.y).toBeGreaterThan(headBottom);
+          expect(r.y + r.h).toBeLessThanOrEqual(four.cell.y + four.cell.h);
+        }
+        // the problems are all still on this screen, as the next ask sees them
+        expect(loop.chatScreen().numbers).toEqual([1, 2, 3, 4]);
+        // the second time, the first solution fills the cell: clear the tutor's work for the next try
+        await run([{ type: "clear_tutor" }]);
+        await run([{ type: "write_problems", problems: GRID_PROBLEMS }]);
+        editor.switchPage(home);
+        await vi.advanceTimersByTimeAsync(50);
+      }
+    });
+
+    it("work that cannot stay with the problems goes on a new screen, and that screen's picture carries the problems it came from", async () => {
+      start();
+      await run([{ type: "write_problems", problems: GRID_PROBLEMS }]);
+      // the long solution fits neither in a cell nor anywhere else on the screen
+      const report = await run([teachAction(OWNER_TEACH, OWNER_FIGURE)]);
+      expect(report).toMatchObject({ screensAdded: 1, outcomes: [{ type: "teach", ok: true }] });
+      const work = loop.chatScreen();
+      expect(work.problems).toEqual([]);
+      expect(work.from).toEqual({ screen: 1, problems: GRID_PROBLEMS.map((p) => p.join("; ")), numbers: [1, 2, 3, 4] });
+      // a second solution sent on from the work's screen still carries the problems of screen 1
+      const again = await run([teachAction(OWNER_TEACH, OWNER_FIGURE)]);
+      expect(again).toMatchObject({ screensAdded: 1 });
+      expect(loop.chatScreen().from).toEqual(work.from);
+      // a screen with problems of its own carries none
+      editor.switchPage(editor.getPages()[0].id);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(loop.chatScreen().from).toBeUndefined();
+    });
+
+    it("a worksheet page in the middle of the screen: the work goes beside it, the next beside it on the other side, and only a full screen gets a new one", async () => {
+      // the 2026-10-13 demo: every worked solution went to a new screen, the student with it, and
+      // the next ask ("explain #2") saw only the work — the worksheet was on the screen left behind
+      start();
+      editor.createShapes([{ id: createShapeId("worksheet"), type: "image", x: WORKSHEET_PAGE.x, y: WORKSHEET_PAGE.y, props: { w: WORKSHEET_PAGE.w, h: WORKSHEET_PAGE.h, playing: true, url: "", assetId: null, crop: null, flipX: false, flipY: false, altText: "" } }]);
+      const home = editor.getCurrentPage().id;
+      const one = await run([teachAction(AVG_RATE_TEACH)]);
+      expect(one).toMatchObject({ screensAdded: 0, outcomes: [{ type: "teach", ok: true }] });
+      const firstBlocks = blockRects();
+      expect(firstBlocks.size).toBe(AVG_RATE_TEACH.steps.length + 1);
+      const two = await run([teachAction(LINEAR_TEACH)]);
+      expect(two).toMatchObject({ screensAdded: 0, outcomes: [{ type: "teach", ok: true }] });
+      expect(editor.getCurrentPage().id).toBe(home);
+      const all = [...blockRects().values()];
+      expect(all.length).toBe(firstBlocks.size + LINEAR_TEACH.steps.length + 1);
+      // all of it on the screen, clear of the page, one solution either side of it
+      for (const r of all) {
+        expect(touches(r, WORKSHEET_PAGE)).toBe(false);
+        expect(r.x).toBeGreaterThanOrEqual(0);
+        expect(r.x + r.w).toBeLessThanOrEqual(1600);
+        expect(r.y + r.h).toBeLessThanOrEqual(900);
+      }
+      const sides = new Set(all.map((r) => (r.x + r.w <= WORKSHEET_PAGE.x ? "left" : "right")));
+      expect(sides).toEqual(new Set(["left", "right"]));
+      // nothing left beside the page: the third goes on a new screen
+      const three = await run([teachAction(LINEAR_TEACH)]);
+      expect(three).toMatchObject({ screensAdded: 1, outcomes: [{ type: "teach", ok: true }] });
       expect(editor.getPages()).toHaveLength(2);
     });
   });

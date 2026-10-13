@@ -71,9 +71,15 @@ export const TEACH_LAYOUT = {
   pace: { naturalUpToMs: 3000, maxWallMs: 4500, maxPace: 5, totalMaxWallMs: 24_000 },
   /** the pause between two steps (the writer's) */
   stepPauseMs: 550,
-  /** the least room beside other work worth teaching in (else a new screen), and the least hand there */
-  minArea: { w: 560, h: 320 },
-  besideMinSize: 34,
+  /**
+   * The least room beside other work worth teaching in (else a new screen), and the least hand
+   * there. A new screen takes the student away from their problems (a pasted worksheet page leaves
+   * ~380 px either side of it on a 1600 px screen), so one column is enough room (`besideMin`, as
+   * beside a figure) and the hand may shrink to the smallest a whole screen uses, as a drawing
+   * shrinks to fit before a new screen (docs/ASK-V2.md, "Placement").
+   */
+  minArea: { w: 360, h: 320 },
+  besideMinSize: 28,
 } as const;
 
 export interface TeachLayoutStep {
@@ -84,6 +90,8 @@ export interface TeachLayoutStep {
 export interface TeachLayoutInput {
   /** where it may be written (page px), margins already kept: `teachArea(screen)` or a part of it */
   area: Rect;
+  /** columns to write in; absent: two when the area is wide enough (`twoColumnsFrom`), else one */
+  columns?: 1 | 2;
   steps: readonly TeachLayoutStep[];
   answer?: string;
   /** the figure drawn into a box (px from 0, 0); null when it cannot be; absent: no figure */
@@ -235,7 +243,7 @@ function layoutAt(input: TeachLayoutInput, size: number, box: { w: number; h: nu
   const area = input.area;
   const seed = input.seed;
   const wordsSize = Math.max(L.minWords, Math.round(size * L.wordsShare));
-  const n = area.w >= L.twoColumnsFrom ? 2 : 1;
+  const n = input.columns ?? (area.w >= L.twoColumnsFrom ? 2 : 1);
   const colW = (area.w - (n - 1) * L.columnGap) / n;
   const columns: Column[] = Array.from({ length: n }, (_, k) => ({ x: area.x + k * (colW + L.columnGap), w: colW, top: area.y }));
   const pieces: TeachPiece[] = [];

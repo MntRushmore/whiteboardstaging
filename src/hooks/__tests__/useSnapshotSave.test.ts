@@ -11,6 +11,7 @@ import {
   hasInlineImages,
   idleSyncState,
   isNetworkFailure,
+  measureSerialized,
   measureSnapshot,
   offloadAssetsOnce,
   persistErrorResult,
@@ -125,6 +126,11 @@ describe("measureSnapshot", () => {
     const m = measureSnapshot(snap);
     expect(m.inlineAssets).toBe(1);
     expect(m.bytes).toBe(Buffer.byteLength(JSON.stringify(snap), "utf8"));
+  });
+
+  it("measureSerialized gives the same numbers from the JSON already made (non-ASCII ink and titles too)", () => {
+    const snap = editorSnapshot([asset("asset:a", PNG_1x1), asset("asset:b", "https://cdn.test/é—✓.png")]);
+    expect(measureSerialized(snap, JSON.stringify(snap))).toEqual(measureSnapshot(snap));
   });
 });
 

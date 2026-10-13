@@ -4,8 +4,8 @@ import type { FigurePlanOptions, FigurePlanResult, FigureSpec } from "../figureD
 import { GRAPH, graphPaceFor, planGraph, type GraphWindowHint } from "../graphing";
 import { HAND_LINE_META, planHandwriting, placeHandPlan, placeHandPlanOnBaseline, type HandPlan } from "../handwriting";
 import { CHAT_PROBLEM_META, problemMetaOf } from "./cells";
-import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow, DrawModelAction } from "./contracts";
-import { CHAT_LIMITS, noProblemNote } from "./limits";
+import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatScreenFrom, ChatWindow, DrawModelAction } from "./contracts";
+import { CHAT_GRAPH_READ, CHAT_LIMITS, noProblemNote } from "./limits";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
 import type * as Verify from "./verify";
 import type * as Models from "./models";
@@ -107,6 +107,8 @@ export interface ChatHost {
   screen(): Rect;
   /** the current screen's id: a run stops when the student moves to another one */
   pageId(): string;
+  /** the current screen's number on the board, from 1 (null without screens) */
+  screenIndex?(): number | null;
   /** the student's lines on this screen as read, in reading order */
   studentLines(): string[];
   handwriting(): boolean;
@@ -197,6 +199,8 @@ export class ChatDesk {
   private running = 0;
   private verify: Promise<typeof Verify> | null = null;
   private models: Promise<typeof Models> | null = null;
+  /** a screen the tutor started for its work (by page id): the problems of the screen it came from */
+  private readonly carried = new Map<string, ChatScreenFrom>();
 
   constructor(host: ChatHost) {
     this.host = host;
@@ -243,6 +247,8 @@ export class ChatDesk {
       ...(numbered.length > 0 ? { numbers: numbered.map(([n]) => n) } : {}),
       // "what did she say about enzymes?": the end of what lecture mode heard on this screen
       ...(heard ? { lecture: tailAtWord(heard, CHAT_LIMITS.lecture) } : {}),
+      // the work the tutor moved here for: "explain #2" still finds the screen it came from's #2
+      ...(numbered.length === 0 && this.carried.has(this.host.pageId()) ? { from: this.carried.get(this.host.pageId()) } : {}),
     };
   }
 
@@ -376,6 +382,7 @@ export class ChatDesk {
       writeBlock: (plan: HandPlan, meta: JsonObject) => this.writeBlock(plan, meta),
       onScreen: () => this.host.pageId() === this.expectedPage,
       obstacles: () => this.obstacles(),
+      problem: (n: number) => this.problemOnScreen(n),
     };
   }
 
@@ -383,8 +390,13 @@ export class ChatDesk {
 
   private async newScreen(report: Report): Promise<boolean> {
     await this.waitForHand();
+    // the problems the student leaves behind (this screen's, or those it carries itself)
+    const here = this.picture();
+    const at = this.host.screenIndex?.() ?? null;
+    const from: ChatScreenFrom | undefined = here.problems.length > 0 ? { ...(at ? { screen: at } : {}), problems: here.problems, ...(here.numbers ? { numbers: here.numbers } : {}) } : here.from;
     if (!this.host.addScreen()) return false;
     this.expectedPage = this.host.pageId();
+    if (from) this.carried.set(this.expectedPage, from);
     report.screensAdded++;
     // nothing is written until the loop has moved to the new screen with us
     for (let waited = 0; !this.host.screenReady() && waited < CHAT_WRITE.screenWaitMaxMs; waited += CHAT_WRITE.screenWaitStepMs) {
@@ -672,7 +684,8 @@ export class ChatDesk {
     if (!this.host.handwriting()) return { type: "graph", ok: false, note: "The tutor's handwriting is switched off, so I can't sketch a graph." };
     let intent: GraphIntent | null = null;
     try {
-      intent = engine.graphFor?.(clean) ?? null;
+      // every relation was asked for by name: `y = c` is a line to draw, not a value put in
+      intent = engine.graphFor?.(clean, CHAT_GRAPH_READ) ?? null;
     } catch {
       intent = null;
     }

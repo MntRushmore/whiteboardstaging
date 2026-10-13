@@ -326,6 +326,125 @@ describe("streamWithFallback: a thinking primary, the fallback's watchdog, the r
   });
 });
 
+const hedged = (limits: Parameters<typeof streamWithFallback>[4] = {}, signal?: AbortSignal) =>
+  streamWithFallback(PRIMARY, FALLBACK, { messages: [{ role: "user", content: "explain" }], requestId: "req-4", title: "Agathon Live - ask", signal }, 1000, { primaryThinkingMs: 2000, hedgeMs: 60, ...limits });
+const texts = (out: unknown[]) => out.filter((e): e is { type: "text"; text: string } => (e as { type: string }).type === "text").map((e) => e.text).join("");
+const models = (out: unknown[]) => out.filter((e): e is { type: "model"; model: string } => (e as { type: string }).type === "model").map((e) => e.model);
+
+describe("streamWithFallback: hedged (a slow primary races the fallback)", () => {
+  it("a primary that speaks before the hedge answers alone: the fallback is never asked", async () => {
+    answers[PRIMARY] = timed([20, delta("First, ")], [5, delta("get cos x alone.")], [5, "[DONE]"]);
+    answers[FALLBACK] = sse(delta("never"), "[DONE]");
+    const out = await drain(hedged());
+    expect(models(out)).toEqual([PRIMARY]);
+    expect(texts(out)).toBe("First, get cos x alone.");
+    expect(asked).toEqual([PRIMARY]);
+    expect(events()).toEqual([]);
+  });
+
+  it("a primary still thinking at the hedge: the fallback starts beside it and, speaking first, answers; the primary is stopped", async () => {
+    let primaryAborted = false;
+    const slow = timed([10, thinking()], [100, thinking()], [400, delta("too late")], [5, "[DONE]"]);
+    answers[PRIMARY] = async (init) => {
+      init.signal?.addEventListener("abort", () => (primaryAborted = true), { once: true });
+      return slow(init);
+    };
+    answers[FALLBACK] = timed([30, delta("Cosine is ")], [5, delta("positive in I and IV.")], [5, "[DONE]"]);
+    const out = await drain(hedged());
+    expect(models(out)).toEqual([PRIMARY, FALLBACK]);
+    expect(texts(out)).toBe("Cosine is positive in I and IV.");
+    expect(asked).toEqual([PRIMARY, FALLBACK]);
+    expect(primaryAborted).toBe(true);
+    expect(events()).toEqual([
+      // the call went as designed: info, not an issue for /admin
+      expect.objectContaining({ level: "info", kind: "model.live.chat", code: "hedge", meta: expect.objectContaining({ reason: "timeout", error: expect.stringContaining("the fallback spoke first") }) }),
+    ]);
+  });
+
+  it("the primary speaks first after all: it answers, the racing fallback is stopped, nothing recorded", async () => {
+    let fallbackAborted = false;
+    answers[PRIMARY] = timed([10, thinking()], [90, delta("Sonnet's answer")], [5, "[DONE]"]);
+    const slowFallback = timed([300, delta("Haiku's answer")], [5, "[DONE]"]);
+    answers[FALLBACK] = async (init) => {
+      init.signal?.addEventListener("abort", () => (fallbackAborted = true), { once: true });
+      return slowFallback(init);
+    };
+    const out = await drain(hedged());
+    expect(models(out)).toEqual([PRIMARY]);
+    expect(texts(out)).toBe("Sonnet's answer");
+    expect(asked).toEqual([PRIMARY, FALLBACK]);
+    expect(fallbackAborted).toBe(true);
+    expect(events()).toEqual([]);
+  });
+
+  it("a primary that fails before the hedge: the fallback starts at once, not at the hedge", async () => {
+    answers[PRIMARY] = status(500);
+    answers[FALLBACK] = sse(delta("x = 3"), "[DONE]");
+    const t0 = Date.now();
+    const out = await drain(hedged({ hedgeMs: 5_000 }));
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    expect(models(out)).toEqual([PRIMARY, FALLBACK]);
+    expect(texts(out)).toBe("x = 3");
+    expect(events()).toEqual([expect.objectContaining({ code: "fallback", meta: expect.objectContaining({ reason: "upstream" }) })]);
+  });
+
+  it("a fallback that fails in the race leaves the primary to answer", async () => {
+    answers[PRIMARY] = timed([10, thinking()], [150, delta("the primary's answer")], [5, "[DONE]"]);
+    answers[FALLBACK] = status(502, "Bad Gateway");
+    const out = await drain(hedged());
+    expect(models(out)).toEqual([PRIMARY]);
+    expect(texts(out)).toBe("the primary's answer");
+  });
+
+  it("both fail: one error, `both failed`, the fallback's error thrown", async () => {
+    answers[PRIMARY] = timed([10, thinking()], [100, { error: { code: 502, message: "Provider disconnected" } }]);
+    answers[FALLBACK] = timed([120, { error: { code: 503, message: "Overloaded" } }]);
+    await expect(drain(hedged())).rejects.toBeInstanceOf(UpstreamError);
+    expect(events()).toEqual([expect.objectContaining({ level: "error", code: "upstream", message: `${PRIMARY} and ${FALLBACK} both failed` })]);
+  });
+
+  it("each racer keeps its watchdogs: a silent primary and a silent fallback end as a timeout", async () => {
+    answers[PRIMARY] = hang;
+    answers[FALLBACK] = hang;
+    await expect(drain(hedged({ fallbackWatchdogMs: 80 }))).rejects.toBeInstanceOf(WatchdogTimeoutError);
+    expect(events()).toEqual([expect.objectContaining({ level: "error", code: "timeout" })]);
+  });
+
+  it("out of credits is never raced on: one error `credits`", async () => {
+    answers[PRIMARY] = status(402, "Insufficient credits");
+    answers[FALLBACK] = sse(delta("never"), "[DONE]");
+    await expect(drain(hedged())).rejects.toBeInstanceOf(CreditsExhaustedError);
+    expect(asked).toEqual([PRIMARY]);
+  });
+
+  it("the winner breaking off mid-answer is an error, never retried", async () => {
+    answers[PRIMARY] = hang;
+    answers[FALLBACK] = timed([20, delta("Cosine is ")], [20, { error: { code: 502, message: "Provider disconnected" } }]);
+    await expect(drain(hedged())).rejects.toBeInstanceOf(UpstreamError);
+    expect(events()).toEqual([
+      expect.objectContaining({ level: "info", code: "hedge" }),
+      expect.objectContaining({ level: "error", message: `${FALLBACK} failed mid-answer` }),
+    ]);
+  });
+
+  it("records nothing when the caller went away mid-race, and stops both", async () => {
+    const aborted: string[] = [];
+    for (const m of [PRIMARY, FALLBACK]) {
+      answers[m] = (init) => {
+        init.signal?.addEventListener("abort", () => aborted.push(m), { once: true });
+        return hang(init);
+      };
+    }
+    const caller = new AbortController();
+    const pending = drain(hedged({}, caller.signal));
+    await new Promise((r) => setTimeout(r, 120));
+    caller.abort();
+    await expect(pending).rejects.toThrow();
+    expect(aborted.sort()).toEqual([FALLBACK, PRIMARY].sort());
+    expect(events()).toEqual([]);
+  });
+});
+
 describe("modelFailureCode", () => {
   it("names each way a model call fails", () => {
     expect(modelFailureCode(new CreditsExhaustedError())).toBe("credits");

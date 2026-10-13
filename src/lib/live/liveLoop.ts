@@ -6351,6 +6351,7 @@ export class LiveLoop implements LiveController {
         }),
       screen: () => this.placementBounds(),
       pageId: () => this.pageKey(),
+      screenIndex: () => this.chatScreenIndex(),
       studentLines: () =>
         Object.values(liveStore.lines.get())
           .filter((s) => s.latex)

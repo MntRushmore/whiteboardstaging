@@ -257,12 +257,15 @@ export async function* streamChatText(opts: StreamChatOptions): AsyncGenerator<s
 }
 
 export class WatchdogTimeoutError extends Error {
-  /** `thinking`: it was streaming its reasoning, never content; `deadline`: the route's time ran out */
-  constructor(model: string, ms: number, how?: "thinking" | "deadline") {
+  /**
+   * `thinking`: it was streaming its reasoning, never content; `deadline`: the route's time ran out;
+   * `slower`: a hedged call's fallback spoke first (`hedgedStream`)
+   */
+  constructor(model: string, ms: number, how?: "thinking" | "deadline" | "slower") {
     super(
       how === "deadline"
         ? `${model} did not finish within ${ms} ms (the route's time ran out)`
-        : `No content from ${model} within ${ms} ms${how === "thinking" ? " (it was still thinking)" : ""}`,
+        : `No content from ${model} within ${ms} ms${how === "thinking" ? " (it was still thinking)" : how === "slower" ? " (the fallback spoke first)" : ""}`,
     );
     this.name = "WatchdogTimeoutError";
   }
@@ -386,15 +389,19 @@ const errorText = (err: unknown) => (err instanceof Error ? `${err.name}: ${err.
 /** What the call was for, from its title ("chat proof"), so `meta` tells a route's calls apart. */
 const callName = (title: string | undefined) => title?.replace(/^Agathon Live - /, "").slice(0, 40);
 
-/** The primary failed and the fallback answered: a warn, code `fallback` (fire and forget). */
-function recordModelFallback(call: ModelCall, primaryErr: unknown, primaryMs: number): void {
+/**
+ * The primary failed and the fallback answered: a warn, code `fallback` (fire and forget). A hedged
+ * call's fallback that only spoke first (`hedge`: the primary had not failed) is info, code `hedge`:
+ * the call went as designed, so it is no issue for /admin.
+ */
+function recordModelFallback(call: ModelCall, primaryErr: unknown, primaryMs: number, hedge = false): void {
   const reason = modelFailureCode(primaryErr);
   recordEvent({
     source: "server",
-    level: "warn",
+    level: hedge ? "info" : "warn",
     kind: modelEventKind(call.title),
-    code: "fallback",
-    message: `${call.primary} failed (${reason}); ${call.fallback} answered`,
+    code: hedge ? "hedge" : "fallback",
+    message: hedge ? `${call.fallback} spoke before ${call.primary}` : `${call.primary} failed (${reason}); ${call.fallback} answered`,
     requestId: call.requestId,
     meta: {
       primary: call.primary,
@@ -453,8 +460,13 @@ export type FallbackStreamEvent = { type: "model"; model: string } | { type: "te
  *                         this long before its first content (from the start of the attempt).
  *  - `fallbackWatchdogMs` the fallback's own first-content watchdog.
  *  - `deadline`           both attempts end by this time (epoch ms): the route's budget.
+ *  - `hedgeMs`            a primary with no words this long after the start (thinking, or silent)
+ *                         is not stopped: the fallback starts BESIDE it, and the first of the two to
+ *                         speak answers (the other is aborted). Each keeps its own watchdogs; a
+ *                         failure of one leaves the other to answer. Unset, the fallback starts only
+ *                         once the primary has failed.
  */
-export type StreamLimits = { primaryThinkingMs?: number; fallbackWatchdogMs?: number; deadline?: number };
+export type StreamLimits = { primaryThinkingMs?: number; fallbackWatchdogMs?: number; deadline?: number; hedgeMs?: number };
 
 export type StreamFallbackOptions = Omit<StreamChatOptions, "model"> & {
   /**
@@ -483,16 +495,21 @@ export async function* streamWithFallback(
   watchdogMs: number,
   limits: StreamLimits = {},
 ): AsyncGenerator<FallbackStreamEvent, void, undefined> {
-  const attempt = async function* (model: string, isPrimary: boolean): AsyncGenerator<string, void, undefined> {
+  const attempt = async function* (model: string, isPrimary: boolean, signal = opts.signal): AsyncGenerator<string, void, undefined> {
     const watch: AttemptWatch = isPrimary
       ? { firstMs: watchdogMs, thinkingMs: limits.primaryThinkingMs, deadline: limits.deadline }
       : { firstMs: limits.fallbackWatchdogMs, deadline: limits.deadline };
     const plain = watch.firstMs === undefined && watch.thinkingMs === undefined && watch.deadline === undefined;
-    const own: StreamChatOptions = reasoningFor ? { ...opts, model, reasoningEffort: reasoningFor(model) } : { ...opts, model };
+    const own: StreamChatOptions = reasoningFor ? { ...opts, signal, model, reasoningEffort: reasoningFor(model) } : { ...opts, signal, model };
     yield* plain ? streamChatText(own) : withWatchdog(own, watch);
   };
   const call: ModelCall = { primary, fallback, title: opts.title, requestId: opts.requestId, startedAt: Date.now() };
   const callerLeft = (err: unknown) => Boolean(opts.signal?.aborted) || isAbortError(err);
+
+  if (limits.hedgeMs !== undefined && fallback && fallback !== primary) {
+    yield* hedgedStream(primary, fallback, attempt, opts.signal, limits.hedgeMs, call);
+    return;
+  }
 
   let yieldedAny = false;
   let primaryErr: unknown;
@@ -529,6 +546,142 @@ export async function* streamWithFallback(
   }
   // an empty answer is still the fallback answering
   if (!answered) recordModelFallback(call, primaryErr, primaryMs);
+}
+
+/** One model in a hedged race (`hedgedStream`): its stream, its own abort, the read in flight. */
+type Racer = {
+  model: string;
+  isPrimary: boolean;
+  abort: AbortController;
+  stream: AsyncGenerator<string, void, undefined>;
+  next: Promise<RaceStep>;
+  startedAt: number;
+};
+type RaceStep = { racer: Racer; result?: IteratorResult<string, void>; err?: unknown };
+
+/**
+ * `streamWithFallback` with a hedge (StreamLimits.hedgeMs): the primary streams; with no words from
+ * it by `hedgeMs` the fallback starts beside it, and whichever speaks first answers — the other is
+ * aborted, and from then on the call is that model's stream, as unhedged (a break mid-answer is an
+ * error, never retried). A failure before any words leaves the other model to answer (the fallback
+ * starts at once if it had not yet); both failing is the fallback's error. A `model` event says which
+ * model answers: the primary's first, the fallback's only once it has won. Events as unhedged: a
+ * warn `fallback` when the fallback answers a primary that failed, an info `hedge` when it only spoke
+ * first, an error when the call fails for good, nothing when the caller left.
+ */
+async function* hedgedStream(
+  primary: string,
+  fallback: string,
+  attempt: (model: string, isPrimary: boolean, signal: AbortSignal) => AsyncGenerator<string, void, undefined>,
+  signal: AbortSignal | undefined,
+  hedgeMs: number,
+  call: ModelCall,
+): AsyncGenerator<FallbackStreamEvent, void, undefined> {
+  const racers: Racer[] = [];
+  const start = (model: string, isPrimary: boolean): Racer => {
+    const abort = new AbortController();
+    const onOuter = () => abort.abort();
+    signal?.addEventListener("abort", onOuter, { once: true });
+    abort.signal.addEventListener("abort", () => signal?.removeEventListener("abort", onOuter), { once: true });
+    if (signal?.aborted) abort.abort();
+    const racer = { model, isPrimary, abort, stream: attempt(model, isPrimary, abort.signal), startedAt: Date.now() } as Racer;
+    racer.next = read(racer);
+    racers.push(racer);
+    return racer;
+  };
+  const read = (racer: Racer): Promise<RaceStep> =>
+    racer.stream.next().then(
+      (result) => ({ racer, result }),
+      (err: unknown) => ({ racer, err }),
+    );
+  const stop = (racer: Racer) => {
+    racer.abort.abort();
+    // its read in flight rejects with the abort: nobody waits for it
+    void racer.next.catch(() => undefined);
+    void racer.stream.return(undefined).catch(() => undefined);
+  };
+  const callerLeft = (err: unknown) => Boolean(signal?.aborted) || isAbortError(err);
+
+  let hedgeTimer: ReturnType<typeof setTimeout> | null = null;
+  const hedge = new Promise<"hedge">((resolve) => {
+    hedgeTimer = setTimeout(() => resolve("hedge"), Math.max(0, hedgeMs));
+  });
+  let hedged = false;
+  let primaryErr: unknown;
+  let fallbackErr: unknown;
+  let winner: Racer | null = null;
+  let first: string | null = null;
+
+  yield { type: "model", model: primary };
+  start(primary, true);
+  try {
+    while (!winner) {
+      const live = racers.filter((r) => !r.abort.signal.aborted);
+      const step = await Promise.race<RaceStep | "hedge">([...live.map((r) => r.next), ...(hedged ? [] : [hedge])]);
+      if (step === "hedge") {
+        hedged = true;
+        if (!racers.some((r) => !r.isPrimary)) start(fallback, false);
+        continue;
+      }
+      const { racer, result, err } = step;
+      if (result && !result.done) {
+        winner = racer;
+        first = result.value;
+        break;
+      }
+      // finished with no words, or failed before any: out of the race
+      racer.abort.abort();
+      const why = err ?? new UpstreamError(502, `${racer.model} returned an empty answer`);
+      if (err !== undefined && callerLeft(err)) throw err;
+      if (err instanceof CreditsExhaustedError) {
+        recordModelFailure(call, racer.model, err, "only");
+        throw err;
+      }
+      if (racer.isPrimary) primaryErr = why;
+      else fallbackErr = why;
+      const others = racers.filter((r) => r !== racer && !r.abort.signal.aborted);
+      if (others.length > 0) continue;
+      if (racer.isPrimary && !racers.some((r) => !r.isPrimary)) {
+        // the primary failed before the hedge: the fallback at once, as unhedged
+        hedged = true;
+        start(fallback, false);
+        continue;
+      }
+      // everyone is out: an empty answer from the last is still an answer (as unhedged), a failure is the call's
+      if (err === undefined && result?.done) {
+        if (!racer.isPrimary) recordModelFallback(call, primaryErr, racer.startedAt - call.startedAt);
+        if (!racer.isPrimary) yield { type: "model", model: fallback };
+        return;
+      }
+      recordModelFailure(call, fallback, fallbackErr ?? why, racers.length > 1 ? "both" : "only", racers.length > 1 ? primaryErr : undefined);
+      throw fallbackErr ?? why;
+    }
+  } catch (err) {
+    for (const r of racers) stop(r);
+    throw err;
+  } finally {
+    if (hedgeTimer) clearTimeout(hedgeTimer);
+  }
+
+  // the first to speak answers; the other stops
+  for (const r of racers) if (r !== winner) stop(r);
+  if (!winner.isPrimary) {
+    recordModelFallback(call, primaryErr ?? new WatchdogTimeoutError(primary, Date.now() - call.startedAt, "slower"), winner.startedAt - call.startedAt, primaryErr === undefined);
+    yield { type: "model", model: fallback };
+  }
+  try {
+    yield { type: "text", text: first! };
+    for (;;) {
+      const next = await winner.stream.next();
+      if (next.done) break;
+      yield { type: "text", text: next.value };
+    }
+  } catch (err) {
+    if (!callerLeft(err)) recordModelFailure(call, winner.model, err, "mid-answer");
+    throw err;
+  } finally {
+    void winner.stream.return(undefined).catch(() => undefined);
+  }
 }
 
 /** Strip ```json fences and surrounding prose from a model reply and return the first JSON object. */
