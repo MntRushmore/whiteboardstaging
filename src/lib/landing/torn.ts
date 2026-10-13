@@ -137,10 +137,15 @@ const inset = (n: number) => (n === 0 ? "100%" : `calc(100% - ${n}px)`);
  * width). Clockwise from the top-left corner.
  */
 export function tornOutline({ seed, width, height, depth = 6, step = [6, 14] }: TornOutlineOptions): string {
-  const top = tear(width, { seed, depth, step });
-  const right = tear(height, { seed: seed + 1, depth, step });
-  const bottom = tear(width, { seed: seed + 2, depth, step });
-  const left = tear(height, { seed: seed + 3, depth, step });
+  // each edge's tear eases to nothing at its two corners, so neighboring edges meet at the corner
+  // itself (where they would otherwise cross, a sliver of paper sticks out)
+  const ramp = depth * 3;
+  const side = (length: number, s: number) =>
+    tear(length, { seed: s, depth, step }).map((p) => ({ at: p.at, bite: round1(p.bite * Math.min(1, p.at / ramp, (length - p.at) / ramp)) }));
+  const top = side(width, seed);
+  const right = side(height, seed + 1);
+  const bottom = side(width, seed + 2);
+  const left = side(height, seed + 3);
   const points = [
     ...top.map((p) => `${pct(p.at / width)} ${px(p.bite)}`),
     ...right.map((p) => `${inset(p.bite)} ${pct(p.at / height)}`),

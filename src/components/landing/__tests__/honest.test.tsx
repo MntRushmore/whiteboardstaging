@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { pathBounds } from "@/lib/landing/replay";
 import { HELP_SCENE } from "@/lib/landing/stepInk";
 
 const { default: ParentsPage } = await import("@/app/(platform)/parents/page");
@@ -45,12 +46,16 @@ describe("Not a cheat button (v4)", () => {
     expect(label).not.toMatch(/\bticks?\b|\brings?\b|\bringed\b/);
   });
 
-  it("carries the board's real ink: every stroke of the Help me scene, the tutor's drawn in after the kid's", () => {
+  it("carries the board's real ink: the Help me board's slip line, the tutor's ink drawn in after it", () => {
     const paths = [...html.matchAll(/<path\b[^>]*>/g)].map((m) => m[0]);
-    for (const stroke of HELP_SCENE.strokes) expect(html).toContain(`d="${stroke.d}"`);
+    // the slip, its circle and the written step, every stroke as the board stored it; not the first
+    // line, 3(x − 2) = 12 (How it works shows the whole board just above)
+    const slip = HELP_SCENE.strokes.filter((s) => pathBounds(s.d).minY > 45);
+    expect(slip.length).toBeGreaterThan(10);
+    for (const stroke of HELP_SCENE.strokes) expect(html.includes(`d="${stroke.d}"`)).toBe(slip.includes(stroke));
     // the tutor's strokes draw in order (the circle, then the step), then the check mark lands
     const at = paths.filter((p) => p.includes("--at")).map((p) => Number(p.match(/--at:(\d+)ms/)![1]));
-    const tutorCount = HELP_SCENE.strokes.filter((s) => s.ink === "tutor").length;
+    const tutorCount = slip.filter((s) => s.ink === "tutor").length;
     expect(at.length).toBe(tutorCount + 1);
     for (let i = 1; i < at.length; i++) expect(at[i]).toBeGreaterThan(at[i - 1]);
     // held until it is in view, with one key for the whole collage

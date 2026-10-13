@@ -74,7 +74,7 @@ export function Hero() {
         </p>
       </div>
       <div className={styles.heroStage}>
-        <HeroScene {...HERO_ART} className={styles.heroScene} />
+        <HeroScene {...HERO_ART} />
       </div>
     </section>
   );

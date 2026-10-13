@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { ChevronRight, Lightbulb } from "lucide-react";
+import { pathBounds } from "@/lib/landing/replay";
 import { HELP_SCENE } from "@/lib/landing/stepInk";
 import { tornOutline } from "@/lib/landing/torn";
 import { DARK_BAND_ATTR, HOW_ID } from "./bands";
@@ -16,9 +17,10 @@ import styles from "./honest.module.css";
  *
  * Its picture is a collage of torn paper scraps carrying a real board's ink (never a mark the
  * product would not make):
- *  - the biggest, the board itself (its white and its dot grid): 3(x − 2) = 12 opened up as
- *    3x − 2 = 12; the live tutor circles the slip and writes only the next step beside it,
- *    3x − 6 = 12 (stepInk.ts HELP_SCENE, Help me's own handwritten step);
+ *  - the biggest, a strip torn from the board (its white and its dot grid): the slip 3x − 2 = 12,
+ *    which the live tutor circles, and only the next step written beside it, 3x − 6 = 12 (stepInk.ts
+ *    HELP_SCENE without its first line: How it works shows that whole board just above, so this
+ *    quotes the one line that matters here);
  *  - a small one with the tutor's check mark (the board's own stroke, InkMark's InkCheck);
  *  - one with the Help me button, as the board draws it.
  *
@@ -30,18 +32,29 @@ import styles from "./honest.module.css";
 
 const KEY = "honest";
 
-/** Board units of paper round the scene's ink: a margin, so a scrap's tear never meets a stroke. */
-const PAD = { x: 44, y: 38 } as const;
+/** Board units of paper round the ink: a margin, so a scrap's tear never meets a stroke. */
+const PAD = { x: 36, y: 30 } as const;
 
-/** The tutor's strokes on the board scrap: the circle, a breath, then the step at its writing pace. */
+/** The slip's line of the Help me board: everything under its first line, 3(x − 2) = 12. */
+const SLIP = HELP_SCENE.strokes.filter((stroke) => pathBounds(stroke.d).minY > 45);
+/** The strip's ink box, in board units. */
+const BOX = SLIP.reduce(
+  (b, stroke) => {
+    const s = pathBounds(stroke.d);
+    return { minX: Math.min(b.minX, s.minX), minY: Math.min(b.minY, s.minY), maxX: Math.max(b.maxX, s.maxX), maxY: Math.max(b.maxY, s.maxY) };
+  },
+  { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+);
+
+/** The tutor's strokes on the strip: the circle, a breath, then the step at its writing pace. */
 function tutorTimes() {
   let t = 350;
-  return HELP_SCENE.strokes.map((stroke) => {
+  return SLIP.map((stroke) => {
     if (stroke.ink !== "tutor") return null;
     const ring = stroke.len > 200;
-    const forMs = ring ? 720 : Math.round(Math.min(380, Math.max(110, stroke.len * 7)));
+    const forMs = ring ? 680 : Math.round(Math.min(320, Math.max(100, stroke.len * 6)));
     const at = t;
-    t += forMs + (ring ? 240 : 70);
+    t += forMs + (ring ? 220 : 55);
     return { atMs: at, forMs };
   });
 }
@@ -51,27 +64,29 @@ const STEP_DONE_MS = Math.max(...TIMES.map((x) => (x ? x.atMs + x.forMs : 0)));
 
 /** Each scrap's torn outline, shaped at its size on a laptop. */
 const OUTLINES = {
-  board: tornOutline({ seed: 71, width: 540, height: 226, depth: 6, step: [6, 13] }),
-  check: tornOutline({ seed: 73, width: 150, height: 140, depth: 5, step: [5, 11] }),
+  board: tornOutline({ seed: 71, width: 560, height: 144, depth: 6, step: [6, 13] }),
+  check: tornOutline({ seed: 73, width: 120, height: 112, depth: 5, step: [5, 11] }),
   help: tornOutline({ seed: 79, width: 250, height: 96, depth: 5, step: [5, 11] }),
 } as const;
 
 const vars = (v: Record<string, string>) => v as CSSProperties;
 
-/** The board's scrap: its white, its dot grid, and the kid's lines with the tutor's ink on them. */
+/** The strip torn from the board: its white, its dot grid, the slip and the tutor's ink on it. */
 function BoardScrap() {
-  const w = HELP_SCENE.width + 2 * PAD.x;
-  const h = HELP_SCENE.height + 2 * PAD.y;
+  const x = Math.round(BOX.minX - PAD.x);
+  const y = Math.round(BOX.minY - PAD.y);
+  const w = Math.round(BOX.maxX - BOX.minX + 2 * PAD.x);
+  const h = Math.round(BOX.maxY - BOX.minY + 2 * PAD.y);
   return (
     <div className={`${styles.scrap} ${styles.board}`} style={{ clipPath: OUTLINES.board, aspectRatio: `${w} / ${h}` }}>
-      <svg className={styles.ink} viewBox={`${-PAD.x} ${-PAD.y} ${w} ${h}`}>
+      <svg className={styles.ink} viewBox={`${x} ${y} ${w} ${h}`}>
         <defs>
-          <pattern id="lp-honest-dots" width="24" height="24" patternUnits="userSpaceOnUse" x={-PAD.x} y={-PAD.y}>
+          <pattern id="lp-honest-dots" width="24" height="24" patternUnits="userSpaceOnUse" x={x} y={y}>
             <circle className={styles.dot} cx="12" cy="12" r="1.3" />
           </pattern>
         </defs>
-        <rect x={-PAD.x} y={-PAD.y} width={w} height={h} fill="url(#lp-honest-dots)" />
-        {HELP_SCENE.strokes.map((stroke, i) => {
+        <rect x={x} y={y} width={w} height={h} fill="url(#lp-honest-dots)" />
+        {SLIP.map((stroke, i) => {
           const time = TIMES[i];
           return time ? (
             <path key={i} d={stroke.d} pathLength={1} className={styles.tutor} style={vars({ "--at": `${time.atMs}ms`, "--for": `${time.forMs}ms` })} />

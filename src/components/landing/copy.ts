@@ -144,7 +144,7 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
       /** to How it works, whose third step shows Help me's three levels */
       link: "See how Help me works",
       helpButton: "Help me",
-      alt: "Scraps of paper from an Agathon board. On the biggest, 3(x − 2) = 12 is opened up as 3x − 2 = 12; the tutor circles the slip in blue and writes only the next step beside it, 3x − 6 = 12. A smaller scrap has the tutor's blue check mark on it, and another the Help me button.",
+      alt: "Scraps of paper torn from an Agathon board. On the biggest, a slip, 3x − 2 = 12, which the tutor circles in blue, with only the next step written beside it, 3x − 6 = 12. A smaller scrap has the tutor's blue check mark on it, and another the Help me button.",
     },
     ask: {
       eyebrow: "Just ask",

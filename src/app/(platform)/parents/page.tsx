@@ -21,11 +21,13 @@ import { LANDING_PATH, siteOrigin } from "@/lib/landing/links";
 import styles from "@/components/landing/landing.module.css";
 
 /**
- * The landing page (v3, 2026-10-12; docs/LANDING-V3.md): what a signed-out visitor to agathon.app
- * sees, and the link parents send each other. What Agathon is (the hero's replay), a problem from
- * every grade, how it works, Ask, the devices it runs on, what kids practice, what grown-ups see,
- * the price and the questions, ending in the way in (the Join band); the platform layout adds the
- * legal footer. Its address is agathon.app/ itself (a rewrite serves it to a signed-out "/";
+ * The landing page (v3, 2026-10-12, warmed up in v4, 2026-10-13; docs/LANDING-V3.md): what a
+ * signed-out visitor to agathon.app sees, and the link parents send each other. What Agathon is (the
+ * hero's painting with real ink on its tablet, then the replay on an iPad), a problem from every
+ * grade, how it works, what the help holds back ("Not a cheat button."), Ask, the devices it runs
+ * on, what kids practice, what grown-ups see, the price and the questions, ending in the way in (the
+ * Join band); the platform layout adds the legal footer. Paper bands meet along torn edges
+ * (TornEdge); the headlines' serif is loaded here only (`landingFontClass`). Its address is agathon.app/ itself (a rewrite serves it to a signed-out "/";
  * /parents keeps working), so that is its canonical URL.
  * Server-rendered and static: no auth wait, nothing on it depends on who is looking. Its words are
  * in src/components/landing/copy.ts; its ink draws itself as it comes into view (inkStart.ts).

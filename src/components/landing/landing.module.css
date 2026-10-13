@@ -300,7 +300,7 @@
   z-index: 30;
   top: 0;
   border-bottom: 1px solid var(--lp-hair);
-  background: rgb(251 247 239 / 0.9);
+  background: rgb(251 247 239 / 0.94);
   -webkit-backdrop-filter: saturate(160%) blur(18px);
   backdrop-filter: saturate(160%) blur(18px);
   transition:
@@ -422,6 +422,10 @@
 @media (max-width: 419px) {
   .beta {
     display: none;
+  }
+  /* the serif name is wider than the sans was: a size down, so the two ways in fit at 320 px */
+  .brand {
+    font-size: 1.25rem;
   }
   .navLinks {
     gap: 0.25rem;

@@ -14,6 +14,13 @@
 .text {
   max-width: 34rem;
 }
+/* Under a laptop the words are centered over the collage, as the page's other heads are. */
+@media (max-width: 959px) {
+  .text {
+    margin-inline: auto;
+    text-align: center;
+  }
+}
 .body {
   margin-top: 1.5rem;
   color: var(--lp-muted);
@@ -42,7 +49,7 @@
   position: relative;
   width: 100%;
   max-width: 38rem;
-  aspect-ratio: 20 / 17;
+  aspect-ratio: 20 / 13;
   margin: 0 auto;
 }
 .piece {
@@ -50,28 +57,28 @@
   filter: drop-shadow(0 1px 1px rgb(20 12 6 / 0.3)) drop-shadow(0 14px 16px rgb(20 12 6 / 0.32));
   rotate: var(--turn, 0deg);
 }
-/* the board: big, a little askew, across the middle */
+/* the strip torn from the board: wide, a little askew, across the middle */
 .pieceBoard {
   --turn: -2.5deg;
-  top: 21%;
+  top: 29%;
   left: 0;
-  width: 97%;
+  width: 100%;
 }
-/* the check mark: a small square tucked over the board's top right corner */
+/* the check mark: a small square over the strip's top right corner */
 .pieceCheck {
-  --turn: 7deg;
+  --turn: 6deg;
   z-index: 1;
-  top: 1%;
-  right: 3%;
-  width: 26%;
+  top: 3%;
+  right: 5%;
+  width: 21%;
 }
-/* the Help me button: under the board, its top over the board's bottom margin */
+/* the Help me button: under the strip, its top over the strip's bottom margin */
 .pieceHelp {
-  --turn: -5deg;
+  --turn: -4deg;
   z-index: 1;
-  top: 72%;
+  top: 66%;
   left: 7%;
-  width: 43%;
+  width: 41%;
 }
 
 /* A scrap of paper: torn on all four sides (its clip-path, Honest.tsx). */
@@ -84,7 +91,7 @@
   background: #fffefb;
 }
 .cream {
-  aspect-ratio: 15 / 14;
+  aspect-ratio: 120 / 112;
   background: #f5ecdc;
 }
 .butter {
