@@ -81,6 +81,9 @@ targets:
       testTargets:
         - AgathonTests
         - package: AgathonKit/AgathonKitTests
+        # The live flows skip unless TEST_RUNNER_AGATHON_INTEGRATION=1 (local stack only), so a plain
+        # `xcodebuild test` passes with no backend. See AgathonUITests/KitFlowUITests.swift.
+        - AgathonUITests
       gatherCoverageData: false
       environmentVariables:
         # Tick in Product > Scheme > Edit Scheme > Run > Arguments to call a local `npm run dev`.
@@ -111,3 +114,20 @@ targets:
         TARGETED_DEVICE_FAMILY: "2"
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/Agathon.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Agathon
         BUNDLE_LOADER: $(TEST_HOST)
+  AgathonUITests:
+    # Drives the app's screens (Phase 0: AgathonKit's debug screens) against the local stack.
+    # Note: iOS's Password AutoFill sheets get in the way of automation; the tests turn AutoFill off
+    # in the simulator's Settings first (it stays off on that simulator).
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AgathonUITests
+        type: syncedFolder
+    dependencies:
+      - target: Agathon
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.agathon.AgathonUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "2"
+        TEST_TARGET_NAME: Agathon
