@@ -84,7 +84,7 @@ extension DS {
             case .person: "Profile"
             case .book: "Sticker book"
             case .delete: "Delete"
-            case .sparkle: "New"
+            case .sparkle: "Sparkle"
             }
         }
     }

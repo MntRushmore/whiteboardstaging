@@ -58,6 +58,8 @@ extension DS {
         public static let onInk = ColorToken("onInk", P.white)
         /// Separators and resting parts on ink: white at 18 %, flattened.
         public static let onInkFaint = ColorToken("onInkFaint", P.ink.mixed(with: P.white, amount: 0.18))
+        /// Quieter text on ink: white at 72 %, flattened.
+        public static let onInkSecondary = ColorToken("onInkSecondary", P.ink.mixed(with: P.white, amount: 0.72))
         /// A tool that can't be used right now, on ink: white at 40 %, flattened.
         public static let onInkDisabled = ColorToken("onInkDisabled", P.ink.mixed(with: P.white, amount: 0.40))
         /// A thumbnail's inside edge. Blocks has no borders; this is the one functional line.
@@ -97,16 +99,18 @@ extension DS {
         public static let stickerEdge = ColorToken("stickerEdge", P.white)
         /// The flat lift under a sticker: depth as a colour change, not a blur.
         public static let stickerLift = ColorToken("stickerLift", P.chalk.mixed(with: P.ink, amount: 0.12))
+        /// The lift under a sticker on an ink page: a shade darker than ink.
+        public static let stickerLiftOnInk = ColorToken("stickerLiftOnInk", P.ink.mixed(with: P.black, amount: 0.6))
         /// An empty slot in the sticker book.
         public static let stickerSlot = ColorToken("stickerSlot", P.line)
 
         public static let all: [ColorToken] = [
             ground, paper, surface, surfaceSunken,
-            ink, inkSecondary, onInk, onInkFaint, onInkDisabled, line, divider,
+            ink, inkSecondary, onInk, onInkSecondary, onInkFaint, onInkDisabled, line, divider,
             sunny, tomato, cobalt, cobaltDeep, onCobaltFaint,
             tutorInk, tutorInkEmpty, helpMe,
             success, tryAgain, star, starEmpty, streak, focus,
-            stickerEdge, stickerLift, stickerSlot,
+            stickerEdge, stickerLift, stickerLiftOnInk, stickerSlot,
         ]
     }
 
@@ -120,6 +124,7 @@ extension DS {
         public static let ink = T.ink.color
         public static let inkSecondary = T.inkSecondary.color
         public static let onInk = T.onInk.color
+        public static let onInkSecondary = T.onInkSecondary.color
         public static let onInkFaint = T.onInkFaint.color
         public static let onInkDisabled = T.onInkDisabled.color
         public static let line = T.line.color
@@ -140,6 +145,7 @@ extension DS {
         public static let focus = T.focus.color
         public static let stickerEdge = T.stickerEdge.color
         public static let stickerLift = T.stickerLift.color
+        public static let stickerLiftOnInk = T.stickerLiftOnInk.color
         public static let stickerSlot = T.stickerSlot.color
 
         /// The kid's pens, in dock order.
@@ -239,6 +245,8 @@ extension DS {
             .init(T.inkSecondary, on: T.paper, .text, "Secondary text on cards"),
             .init(T.inkSecondary, on: T.ground, .text, "Secondary text on the ground"),
             .init(T.onInk, on: T.ink, .text, "Primary buttons, the dock"),
+            .init(T.onInkSecondary, on: T.ink, .text, "Quieter text on ink"),
+            .init(T.onInkSecondary, on: T.onInkFaint, .text, "A sticker book place still to earn"),
             .init(T.sunny, on: T.ink, .text, "A sunny tag on ink (Next up)"),
             .init(T.ink, on: T.sunny, .text, "Help me, sunny buttons, Nailed it."),
             .init(T.onInk, on: T.cobalt, .text, "The tutor's chat bubbles, the Today card"),

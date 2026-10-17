@@ -175,37 +175,44 @@ public struct StreakBadge: View {
     }
 }
 
-/// This week, one dot per day: done in sunny, today in white, the rest faint.
+/// This week, one dot per day: done in sunny, today standing out, the rest faint.
 public struct WeekDots: View {
     public enum Day: Sendable { case done, today, later }
+    /// What the dots sit on.
+    public enum Surface: Sendable { case cobalt, paper, ink }
 
     let days: [(letter: String, state: Day)]
-    let onCobalt: Bool
+    let surface: Surface
 
-    public init(_ days: [(letter: String, state: Day)], onCobalt: Bool = true) {
+    public init(_ days: [(letter: String, state: Day)], on surface: Surface = .cobalt) {
         self.days = days
-        self.onCobalt = onCobalt
+        self.surface = surface
     }
 
     public var body: some View {
         HStack(spacing: 5) {
             ForEach(Array(days.enumerated()), id: \.offset) { _, d in
+                let c = colors(d.state)
                 Text(d.letter)
                     .font(DS.Font.fixed(.caption, size: 11).weight(.semibold))
                     .frame(width: 24, height: 24)
-                    .foregroundStyle(color(d.state).text)
-                    .background(Circle().fill(color(d.state).fill))
+                    .foregroundStyle(c.text)
+                    .background(Circle().fill(c.fill))
             }
         }
         .accessibilityElement()
         .accessibilityLabel("\(days.filter { $0.state == .done }.count) days practised this week")
     }
 
-    private func color(_ s: Day) -> (fill: SwiftUI.Color, text: SwiftUI.Color) {
-        switch s {
-        case .done: (DS.Color.sunny, DS.Color.ink)
-        case .today: (onCobalt ? DS.Color.paper : DS.Color.ink, onCobalt ? DS.Color.cobalt : DS.Color.onInk)
-        case .later: (onCobalt ? DS.Color.onCobaltFaint : DS.Color.surfaceSunken, onCobalt ? DS.Color.onInk : DS.Color.inkSecondary)
+    private func colors(_ s: Day) -> (fill: SwiftUI.Color, text: SwiftUI.Color) {
+        switch (s, surface) {
+        case (.done, _): (DS.Color.sunny, DS.Color.ink)
+        case (.today, .cobalt): (DS.Color.paper, DS.Color.cobalt)
+        case (.today, .paper): (DS.Color.ink, DS.Color.onInk)
+        case (.today, .ink): (DS.Color.paper, DS.Color.ink)
+        case (.later, .cobalt): (DS.Color.onCobaltFaint, DS.Color.onInk)
+        case (.later, .paper): (DS.Color.surfaceSunken, DS.Color.inkSecondary)
+        case (.later, .ink): (DS.Color.onInkFaint, DS.Color.onInk)
         }
     }
 }
@@ -218,7 +225,7 @@ public struct InkMeter: View {
     public enum Style: Sendable {
         /// A bar with words, for a card or the grown-ups' area.
         case bar
-        /// Just the mark's bar standing up, for a top bar (56 pt tall target).
+        /// A small "Ink" pill with the bar laid down, for a top bar (56 pt tall).
         case compact
     }
 
@@ -270,14 +277,19 @@ public struct InkMeter: View {
     }
 
     private var compact: some View {
-        ZStack(alignment: .bottom) {
-            RoundedRectangle(cornerRadius: 4, style: .continuous).fill(DS.Color.tutorInkEmpty)
-            RoundedRectangle(cornerRadius: 4, style: .continuous).fill(DS.Color.tutorInk)
-                .frame(height: 40 * level)
+        HStack(spacing: 10) {
+            if level <= 0.001 { DSIcon(.pause, size: 14) }
+            Text("Ink").dsFont(.button, size: 15).fixedSize()
+            ZStack(alignment: .leading) {
+                Capsule().fill(DS.Color.tutorInkEmpty)
+                Capsule().fill(DS.Color.tutorInk).frame(width: level <= 0.001 ? 0 : max(10, 44 * level))
+            }
+            .frame(width: 44, height: 10)
         }
-        .frame(width: 14, height: 40)
-        .frame(width: DS.Size.minTarget, height: DS.Size.minTarget)
-        .background(Circle().fill(DS.Color.surface))
+        .foregroundStyle(DS.Color.ink)
+        .padding(.horizontal, 18)
+        .frame(minHeight: DS.Size.minTarget)
+        .background(Capsule().fill(DS.Color.surface))
         .dsAnimation(DS.Motion.snap, value: level)
         .accessibilityElement()
         .accessibilityLabel("Tutor's ink")

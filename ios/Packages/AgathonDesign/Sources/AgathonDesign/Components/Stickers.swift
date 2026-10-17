@@ -47,28 +47,33 @@ public struct Sticker: View {
     let face: Bool
     let tilt: Double?
     let landing: Int
+    let lift: SwiftUI.Color
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var landed = true
 
     /// `face` gives the star eyes and a smile (big moments only). Change `landing` to slap the
-    /// sticker down again.
-    public init(_ kind: Kind, size: CGFloat = 70, face: Bool = false, tilt: Double? = nil, landing: Int = 0) {
+    /// sticker down again. `lift` is the flat shade under it: `stickerLift` on light pages,
+    /// `stickerLiftOnInk` on ink. Stickers read best on a colour (ink, cobalt, sunny), where the
+    /// white edge shows.
+    public init(_ kind: Kind, size: CGFloat = 70, face: Bool = false, tilt: Double? = nil, landing: Int = 0,
+                lift: SwiftUI.Color = DS.Color.stickerLift) {
         self.kind = kind
         self.size = size
         self.face = face
         self.tilt = tilt
         self.landing = landing
+        self.lift = lift
     }
 
     public var body: some View {
         let edge = size * 0.085
-        let lift = landed ? size * 0.05 : size * 0.16
+        let raise = landed ? size * 0.05 : size * 0.16
         ZStack {
             StickerSilhouette(kind: kind)
-                .stroke(DS.Color.stickerLift, style: StrokeStyle(lineWidth: edge * 2, lineJoin: .round))
-                .background(StickerSilhouette(kind: kind).fill(DS.Color.stickerLift))
-                .offset(y: lift)
+                .stroke(lift, style: StrokeStyle(lineWidth: edge * 2, lineJoin: .round))
+                .background(StickerSilhouette(kind: kind).fill(lift))
+                .offset(y: raise)
             StickerSilhouette(kind: kind)
                 .stroke(DS.Color.stickerEdge, style: StrokeStyle(lineWidth: edge * 2, lineJoin: .round))
                 .background(StickerSilhouette(kind: kind).fill(DS.Color.stickerEdge))
@@ -119,7 +124,7 @@ public struct Sticker: View {
                     .frame(width: s * 0.46, height: s * 0.46)
             }
         case .mark:
-            AgathonMark(.color).frame(width: s * 1.3, height: s * 1.3)
+            AgathonMark(.color).frame(width: s * 1.18, height: s * 1.18)
         }
     }
 
@@ -157,7 +162,7 @@ struct StickerSilhouette: Shape {
         case .perfect:
             return Path(ellipseIn: centred(0.74))
         case .mark:
-            let box = centred(1.3)
+            let box = centred(1.18)
             var p = Path()
             p.addPath(MarkRing().path(in: box))
             p.addPath(MarkBar().path(in: box))
@@ -180,40 +185,49 @@ struct SmileArc: Shape {
     }
 }
 
-/// The sticker book: this week's practice wins, and the places still to fill. An empty place is a
-/// flat circle with its number.
+/// The sticker book: this week's practice wins, and the places still to fill. An ink page by
+/// default, so the white die-cut edges show; an empty place is a flat circle with its number.
 public struct StickerBook: View {
+    public enum Surface: Sendable { case ink, paper }
+
     let slots: [Sticker.Kind?]
     let columns: Int
     let newest: Int?
     let landing: Int
+    let surface: Surface
 
     /// `slots` in order; nil is a place still to earn. `newest` is the index that slaps down when
     /// `landing` changes.
-    public init(slots: [Sticker.Kind?], columns: Int = 6, newest: Int? = nil, landing: Int = 0) {
+    public init(slots: [Sticker.Kind?], columns: Int = 6, newest: Int? = nil, landing: Int = 0,
+                surface: Surface = .ink) {
         self.slots = slots
         self.columns = columns
         self.newest = newest
         self.landing = landing
+        self.surface = surface
     }
 
     public var body: some View {
         let earned = slots.compactMap { $0 }.count
+        let onInk = surface == .ink
         VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .firstTextBaseline) {
-                Text("My sticker book").dsFont(.headline, size: 28).foregroundStyle(DS.Color.ink)
+                Text("My sticker book").dsFont(.headline, size: 28)
+                    .foregroundStyle(onInk ? DS.Color.onInk : DS.Color.ink)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                Tag("\(earned) stickers", style: .chalk)
+                Tag("\(earned) stickers", style: onInk ? .sunny : .chalk)
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columns), spacing: 16) {
                 ForEach(Array(slots.enumerated()), id: \.offset) { i, kind in
                     ZStack {
-                        Circle().fill(DS.Color.stickerSlot).frame(width: 64, height: 64)
                         if let kind {
-                            Sticker(kind, size: 70, landing: i == newest ? landing : 0)
+                            Sticker(kind, size: 70, landing: i == newest ? landing : 0,
+                                    lift: onInk ? DS.Color.stickerLiftOnInk : DS.Color.stickerLift)
                         } else {
-                            Text("\(i + 1)").font(DS.Font.fixed(.numeral, size: 18)).foregroundStyle(DS.Color.inkSecondary)
+                            Circle().fill(onInk ? DS.Color.onInkFaint : DS.Color.stickerSlot).frame(width: 64, height: 64)
+                            Text("\(i + 1)").font(DS.Font.fixed(.numeral, size: 18))
+                                .foregroundStyle(onInk ? DS.Color.onInkSecondary : DS.Color.inkSecondary)
                         }
                     }
                     .frame(height: 84)
@@ -223,7 +237,8 @@ public struct StickerBook: View {
             }
         }
         .padding(DS.Space.xl)
-        .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Color.surface))
+        .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+            .fill(onInk ? DS.Color.ink : DS.Color.surface))
     }
 }
 

@@ -145,12 +145,17 @@ public struct Wordmark: View {
     }
 }
 
-/// The lockup: the mark and the wordmark, in Home's proportions (a 46 pt mark to 30 pt type).
+/// The lockup: the mark and the wordmark, in the brand page's lockup proportions (a 76 pt mark box
+/// to 58 pt type, 10 pt apart). With `assembles`, the mark comes together and then the name slides
+/// in; under Reduce Motion it's all simply there.
 public struct AgathonLogo: View {
     let size: CGFloat
     let wordmarkColor: SwiftUI.Color
     let assembles: Bool
     let replay: Int
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var named = true
 
     /// `size` is the wordmark's point size.
     public init(size: CGFloat = 30, wordmarkColor: SwiftUI.Color = DS.Color.ink, assembles: Bool = false,
@@ -162,13 +167,26 @@ public struct AgathonLogo: View {
     }
 
     public var body: some View {
-        HStack(spacing: size / 3) {
+        HStack(spacing: size * 10 / 58) {
             AgathonMark(.color, assembles: assembles, replay: replay)
-                .frame(width: size * 46 / 30, height: size * 46 / 30)
+                .frame(width: size * 76 / 58, height: size * 76 / 58)
             Wordmark(size: size, color: wordmarkColor)
+                .opacity(named ? 1 : 0)
+                .offset(x: named ? 0 : -size * 0.2)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Agathon")
+        .onAppear { if assembles { name() } }
+        .onChange(of: replay) { name() }
+    }
+
+    private func name() {
+        guard !reduceMotion else { named = true; return }
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) { named = false }
+        // After the dot lands.
+        withAnimation(DS.Motion.snap.delay(0.05 + DS.Motion.assembleDotDelay + 0.18)) { named = true }
     }
 }
 

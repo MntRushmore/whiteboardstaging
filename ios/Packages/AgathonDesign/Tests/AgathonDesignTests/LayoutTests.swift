@@ -55,6 +55,31 @@ struct TargetSizeTests {
         #expect(s.height >= 56)
     }
 
+    @Test func flowStackWrapsToTheWidth() {
+        let row = FlowStack(spacing: 10, lineSpacing: 10) {
+            ForEach(0..<5, id: \.self) { _ in SwiftUI.Color.red.frame(width: 100, height: 20) }
+        }
+        // Two to a line in 250 pt: three lines.
+        #expect(size(row.frame(width: 250)).height == 80)
+        // All on one line when there's room.
+        #expect(size(row.frame(width: 600)).height == 20)
+    }
+
+    @Test func segmentsFillTheWidthWhenTheyFit() {
+        let picker = SegmentedPicker(selection: .constant(1), options: [(1, "A"), (2, "B"), (3, "C")])
+        #expect(size(picker.frame(width: 600)).width == 600)
+    }
+
+    @Test func cardStacksItsViewsInOneCard() {
+        let one = size(Card { SwiftUI.Color.red.frame(width: 100, height: 40) }.frame(width: 300))
+        let two = size(Card {
+            SwiftUI.Color.red.frame(width: 100, height: 40)
+            SwiftUI.Color.red.frame(width: 100, height: 40)
+        }.frame(width: 300))
+        // One padded card that grows by the second view and the 12 pt gap, not two cards.
+        #expect(two.height == one.height + 40 + DS.Space.s)
+    }
+
     @Test func helpMeIsTheBiggestThingOnTheDock() {
         let help = size(HelpMeButton {})
         let tool = size(ToolButton(.pen, context: .dock) {})

@@ -150,7 +150,7 @@ struct ShapesPainter {
             happyEyes(c, [CGPoint(x: 46, y: 70), CGPoint(x: 64, y: 70)], r: 4.5 * eye)
         }
         bar(g, angle: still ? 8 : 8 + 4 * sin(t * 2 * .pi / 0.9)) { c in
-            happyEyes(c, [CGPoint(x: 125, y: 44), CGPoint(x: 134, y: 44)], r: 3.6 * eye)
+            happyEyes(c, [CGPoint(x: 124, y: 44), CGPoint(x: 134, y: 44)], r: 3.4 * eye, spread: 0.72)
         }
         // The dot hops, and squashes a little as it lands.
         let hop = still ? 10 : abs(sin(t * .pi / 0.9)) * 16
@@ -177,7 +177,7 @@ struct ShapesPainter {
         // The bar lies down; the dot rests on it.
         let lying = CGRect(x: 112, y: 100, width: 100, height: 22)
         g.fill(Path(roundedRect: lying, cornerRadius: 5), with: .color(DS.Color.tomato))
-        sleepyEyes(g, [CGPoint(x: 123, y: 110), CGPoint(x: 133, y: 110)], r: 3.6 * eye)
+        sleepyEyes(g, [CGPoint(x: 122, y: 110), CGPoint(x: 133, y: 110)], r: 3.4 * eye, spread: 0.72)
         transformed(g, pivot: CGPoint(x: 180, y: 100), angle: 0, sy: breathe) { c in
             c.fill(circle(CGPoint(x: 180, y: 78), Self.dotRadius), with: .color(DS.Color.sunny))
             sleepyEyes(c, [CGPoint(x: 173, y: 76), CGPoint(x: 187, y: 76)], r: 3.6 * eye)
@@ -266,20 +266,21 @@ struct ShapesPainter {
         }
     }
 
-    private func happyEyes(_ g: GraphicsContext, _ centers: [CGPoint], r: CGFloat) {
+    /// Arc eyes (happy ∩, sleepy ∪). `spread` narrows them where the eyes sit close (the bar).
+    private func happyEyes(_ g: GraphicsContext, _ centers: [CGPoint], r: CGFloat, spread: CGFloat = 1.05) {
         for p in centers {
             var path = Path()
-            path.move(to: CGPoint(x: p.x - r * 1.05, y: p.y + r * 0.55))
-            path.addQuadCurve(to: CGPoint(x: p.x + r * 1.05, y: p.y + r * 0.55), control: CGPoint(x: p.x, y: p.y - r * 1.35))
+            path.move(to: CGPoint(x: p.x - r * spread, y: p.y + r * 0.55))
+            path.addQuadCurve(to: CGPoint(x: p.x + r * spread, y: p.y + r * 0.55), control: CGPoint(x: p.x, y: p.y - r * 1.35))
             g.stroke(path, with: .color(ink), style: StrokeStyle(lineWidth: r * 0.72, lineCap: .round))
         }
     }
 
-    private func sleepyEyes(_ g: GraphicsContext, _ centers: [CGPoint], r: CGFloat) {
+    private func sleepyEyes(_ g: GraphicsContext, _ centers: [CGPoint], r: CGFloat, spread: CGFloat = 1.05) {
         for p in centers {
             var path = Path()
-            path.move(to: CGPoint(x: p.x - r * 1.05, y: p.y - r * 0.2))
-            path.addQuadCurve(to: CGPoint(x: p.x + r * 1.05, y: p.y - r * 0.2), control: CGPoint(x: p.x, y: p.y + r * 1.15))
+            path.move(to: CGPoint(x: p.x - r * spread, y: p.y - r * 0.2))
+            path.addQuadCurve(to: CGPoint(x: p.x + r * spread, y: p.y - r * 0.2), control: CGPoint(x: p.x, y: p.y + r * 1.15))
             g.stroke(path, with: .color(ink), style: StrokeStyle(lineWidth: r * 0.66, lineCap: .round))
         }
     }

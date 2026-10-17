@@ -34,23 +34,28 @@ public struct Card<Content: View>: View {
     let radius: CGFloat
     let padding: CGFloat
     let deco: Bool
+    let fillsHeight: Bool
     let content: Content
 
-    /// `deco` puts the mark's ring and dot, big and one shade deeper, in the bottom-right corner.
+    /// Several views inside stack top to bottom, 12 pt apart. `deco` puts the mark's ring and dot,
+    /// big and one shade deeper, in the bottom-right corner. `fillsHeight` stretches the card to the
+    /// height it's offered: cards in an `HStack` with `.fixedSize(horizontal: false, vertical: true)`
+    /// then come out the same height.
     public init(_ kind: Kind = .paper, radius: CGFloat = DS.Radius.card, padding: CGFloat = DS.Space.xl,
-                deco: Bool = false, @ViewBuilder content: () -> Content) {
+                deco: Bool = false, fillsHeight: Bool = false, @ViewBuilder content: () -> Content) {
         self.kind = kind
         self.radius = radius
         self.padding = padding
         self.deco = deco
+        self.fillsHeight = fillsHeight
         self.content = content()
     }
 
     public var body: some View {
-        content
+        VStack(alignment: .leading, spacing: DS.Space.s) { content }
             .foregroundStyle(kind.fill.foreground.color)
             .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: fillsHeight ? .infinity : nil, alignment: .topLeading)
             .background(alignment: .bottomTrailing) {
                 if deco { CardDeco(color: kind.deco.color).offset(x: 70, y: 90).accessibilityHidden(true) }
             }
@@ -182,12 +187,12 @@ public struct StatusPill: View {
         HStack(spacing: 9) {
             Circle().fill(dot).frame(width: 12, height: 12)
                 .scaleEffect(pulses && on && !reduceMotion ? 0.7 : 1)
-            Text(title).dsFont(.callout, size: 15).fontWeight(.medium).lineLimit(1)
+            Text(title).dsFont(.callout, size: 15).fontWeight(.medium).lineLimit(1).fixedSize()
         }
         .foregroundStyle(DS.Color.ink)
         .padding(.leading, 12)
         .padding(.trailing, 16)
-        .frame(height: 40)
+        .frame(minHeight: 40)
         .background(Capsule().fill(DS.Color.surface))
         .onAppear {
             guard pulses, !reduceMotion else { return }

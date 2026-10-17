@@ -19,7 +19,16 @@ public struct SegmentedPicker<Value: Hashable>: View {
     }
 
     public var body: some View {
-        HStack(spacing: 4) {
+        // Shares the width when the labels fit; at big Dynamic Type sizes it scrolls sideways
+        // instead of cutting words short.
+        ViewThatFits(in: .horizontal) {
+            track
+            ScrollView(.horizontal, showsIndicators: false) { track }
+        }
+    }
+
+    private var track: some View {
+        SegmentsLayout(spacing: 4) {
             ForEach(options, id: \.value) { option in
                 let on = option.value == selection
                 Button {
@@ -28,8 +37,9 @@ public struct SegmentedPicker<Value: Hashable>: View {
                     Text(option.title)
                         .dsFont(.button, size: 17)
                         .lineLimit(1)
+                        .fixedSize()
                         .foregroundStyle(on ? DS.Color.onInk : DS.Color.ink)
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, 16)
                         .frame(maxWidth: .infinity, minHeight: DS.Size.minTarget - 8)
                         .background {
                             if on {
@@ -50,6 +60,39 @@ public struct SegmentedPicker<Value: Hashable>: View {
     private struct SegmentStyle: ButtonStyle {
         func makeBody(configuration: Configuration) -> some View {
             configuration.label.pressEffect(configuration.isPressed)
+        }
+    }
+}
+
+/// Segments share the width equally when they all fit that way; otherwise each gets its own
+/// width plus an equal share of what's left, so a long label never truncates while short ones idle.
+struct SegmentsLayout: Layout {
+    let spacing: CGFloat
+
+    private func widths(_ subviews: Subviews, _ width: CGFloat?) -> [CGFloat] {
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified).width }
+        guard !ideal.isEmpty else { return [] }
+        let n = CGFloat(ideal.count)
+        guard let width, width.isFinite else { return ideal }
+        let available = width - spacing * (n - 1)
+        let equal = available / n
+        if ideal.allSatisfy({ $0 <= equal }) { return Array(repeating: equal, count: ideal.count) }
+        let total = ideal.reduce(0, +)
+        if total <= available { return ideal.map { $0 + (available - total) / n } }
+        return ideal
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let w = widths(subviews, proposal.width)
+        let height = zip(subviews, w).map { $0.sizeThatFits(ProposedViewSize(width: $1, height: nil)).height }.max() ?? 0
+        return CGSize(width: w.reduce(0, +) + spacing * CGFloat(max(w.count - 1, 0)), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        for (subview, w) in zip(subviews, widths(subviews, bounds.width)) {
+            subview.place(at: CGPoint(x: x, y: bounds.minY), proposal: ProposedViewSize(width: w, height: bounds.height))
+            x += w + spacing
         }
     }
 }
@@ -142,10 +185,13 @@ public struct PinKey: View {
     }
 
     let key: Key
+    let fill: DS.Fill
     let action: () -> Void
 
-    public init(_ key: Key, action: @escaping () -> Void) {
+    /// Keys are chalk circles, for a PIN pad on paper (a sheet); pass `.paper` on the ground.
+    public init(_ key: Key, fill: DS.Fill = .chalk, action: @escaping () -> Void) {
         self.key = key
+        self.fill = fill
         self.action = action
     }
 
@@ -156,7 +202,7 @@ public struct PinKey: View {
             case .delete: DSIcon(.delete, size: 28)
             }
         }
-        .buttonStyle(KeyStyle(quiet: key == .delete))
+        .buttonStyle(KeyStyle(fill: fill, quiet: key == .delete))
         .accessibilityLabel(label)
     }
 
@@ -168,9 +214,9 @@ public struct PinKey: View {
     }
 
     private struct KeyStyle: ButtonStyle {
+        let fill: DS.Fill
         let quiet: Bool
         func makeBody(configuration: Configuration) -> some View {
-            let fill = DS.Fill.paper
             configuration.label
                 .foregroundStyle(DS.Color.ink)
                 .frame(width: DS.Size.pinKey, height: DS.Size.pinKey)
@@ -186,11 +232,15 @@ public struct PinKey: View {
 public struct PinPad: View {
     @Binding var entry: String
     let length: Int
+    let keyFill: DS.Fill
     let onComplete: (String) -> Void
 
-    public init(entry: Binding<String>, length: Int = 4, onComplete: @escaping (String) -> Void = { _ in }) {
+    /// `keyFill`: chalk keys on paper (the default), paper keys on the ground.
+    public init(entry: Binding<String>, length: Int = 4, keyFill: DS.Fill = .chalk,
+                onComplete: @escaping (String) -> Void = { _ in }) {
         _entry = entry
         self.length = length
+        self.keyFill = keyFill
         self.onComplete = onComplete
     }
 
@@ -200,14 +250,14 @@ public struct PinPad: View {
                 GridRow {
                     ForEach(1...3, id: \.self) { col in
                         let d = row * 3 + col
-                        PinKey(.digit(d)) { type(d) }
+                        PinKey(.digit(d), fill: keyFill) { type(d) }
                     }
                 }
             }
             GridRow {
                 Color.clear.frame(width: DS.Size.pinKey, height: DS.Size.pinKey)
-                PinKey(.digit(0)) { type(0) }
-                PinKey(.delete) { if !entry.isEmpty { entry.removeLast() } }
+                PinKey(.digit(0), fill: keyFill) { type(0) }
+                PinKey(.delete, fill: keyFill) { if !entry.isEmpty { entry.removeLast() } }
                     .disabled(entry.isEmpty)
             }
         }
