@@ -336,6 +336,14 @@ describe("POST /api/client-errors: each report is an event", () => {
     expect(events()[3]).toMatchObject({ level: "warn" });
   });
 
+  it("the iPad app's reports: source ios, live with a kind, client.ios without one", async () => {
+    const ios = { ...REPORT, source: "ios", release: "ios-1.0-7", userAgent: "Agathon-iOS/1.0 (7; iPadOS 26.0.0)", path: "/boards" };
+    expect((await clientErrors(post({ ...ios, kind: "live.boards", code: "load_failed", message: "Couldn't load your boards" }))).status).toBe(204);
+    expect(events()[0]).toMatchObject({ source: "live", kind: "live.boards", code: "load_failed", route: "/boards", release: "ios-1.0-7" });
+    expect((await clientErrors(post({ ...ios, message: "Fatal error: index out of range" }))).status).toBe(204);
+    expect(events()[1]).toMatchObject({ source: "client", kind: "client.ios", level: "error", release: "ios-1.0-7" });
+  });
+
   it("noise (isNoise) from a tab on an older release is no event", async () => {
     const injected = { ...REPORT, message: "ReferenceError: Can't find variable: __firefox__", stack: "global code@https://www.agathon.app/login:1:12", path: "/login" };
     expect((await clientErrors(post(injected))).status).toBe(204);
