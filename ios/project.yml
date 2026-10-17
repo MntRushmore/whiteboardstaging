@@ -21,6 +21,10 @@ packages:
   # Agathon's own whiteboard engine (docs/BOARD-FORMAT.md).
   AgathonBoard:
     path: Packages/AgathonBoard
+  # The design system (docs/DESIGN-SYSTEM.md): Blocks tokens, the bundled fonts, components, the
+  # mark and the shapes. Local, so edits to it build with the app.
+  AgathonDesign:
+    path: Packages/AgathonDesign
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -40,6 +44,7 @@ targets:
       - package: AgathonBrain
       - package: AgathonKit
       - package: AgathonBoard
+      - package: AgathonDesign
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon

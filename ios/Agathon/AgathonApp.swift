@@ -11,6 +11,7 @@ struct AgathonApp: App {
             Group {
                 if BrainLab.isRequested { BrainLabView() } else { RootView() }
             }
+            .designGalleryOnLaunch() // `-designGallery` (Debug): the design system's gallery, ios/Agathon/Debug
             .environment(backend)
             .task { backend.auth.start() }
             // The site has no dark theme; the native screens around it match it.
