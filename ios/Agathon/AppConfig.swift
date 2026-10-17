@@ -1,15 +1,15 @@
+import AgathonKit
 import Foundation
 
 /// Where the app's backend lives: the Next.js API on Vercel and Supabase (docs/IPAD-NATIVE.md).
+/// The values come from AgathonKit's `AgathonEnvironment`: production, or a Debug run's
+/// AGATHON_API_URL / SUPABASE_URL + SUPABASE_ANON_KEY (in the scheme, unticked).
 enum AppConfig {
-    /// The API the app calls (`/api/*`). A Debug run can point it at `npm run dev` with
-    /// `AGATHON_API_URL` (the scheme has it, unticked).
-    static let apiBaseURL: URL = {
-        #if DEBUG
-        if let url = overrideURL("AGATHON_API_URL") { return url }
-        #endif
-        return URL(string: "https://www.agathon.app")!
-    }()
+    /// What this run talks to.
+    static var environment: AgathonEnvironment { .current }
+
+    /// The API the app calls (`/api/*`).
+    static var apiBaseURL: URL { environment.apiBaseURL }
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -19,12 +19,6 @@ enum AppConfig {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
     }
 
-    #if DEBUG
-    private static func overrideURL(_ key: String) -> URL? {
-        guard let raw = ProcessInfo.processInfo.environment[key],
-              let url = URL(string: raw), url.scheme != nil, url.host != nil
-        else { return nil }
-        return url
-    }
-    #endif
+    /// What error reports carry as `release`: `ios-<version>-<build>`.
+    static var release: AppRelease { AppRelease(version: version, build: build) }
 }

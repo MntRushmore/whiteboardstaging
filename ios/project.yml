@@ -11,8 +11,13 @@ options:
   developmentLanguage: en
   createIntermediateGroups: true
 packages:
+  # The board's logic, bundled TypeScript run in JavaScriptCore (docs/IPAD-NATIVE.md, "The brain").
   AgathonBrain:
     path: Packages/AgathonBrain
+  # The backend layer (docs/IPAD-NATIVE.md, "AgathonKit"): auth, API, SSE, models. Local, so edits
+  # to it build with the app.
+  AgathonKit:
+    path: Packages/AgathonKit
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -31,6 +36,7 @@ targets:
         type: syncedFolder
     dependencies:
       - package: AgathonBrain
+      - package: AgathonKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon
@@ -74,11 +80,21 @@ targets:
     scheme:
       testTargets:
         - AgathonTests
+        - package: AgathonKit/AgathonKitTests
       gatherCoverageData: false
       environmentVariables:
         # Tick in Product > Scheme > Edit Scheme > Run > Arguments to call a local `npm run dev`.
         - variable: AGATHON_API_URL
           value: http://localhost:3000
+          isEnabled: false
+        # The local Supabase stack (`npm run db:start`). Tick both or neither: a Debug run with one
+        # and not the other stops at launch (AgathonEnvironment). Paste the ANON_KEY that
+        # `npx supabase status -o env` prints (a public key, but not committed: secret scanners).
+        - variable: SUPABASE_URL
+          value: http://127.0.0.1:54321
+          isEnabled: false
+        - variable: SUPABASE_ANON_KEY
+          value: paste ANON_KEY from npx supabase status -o env
           isEnabled: false
   AgathonTests:
     type: bundle.unit-test

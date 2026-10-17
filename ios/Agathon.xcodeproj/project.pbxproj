@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2E48E6AE82AC7FE028DA3904 /* AgathonKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2EBB9398B5E77B93B1939A1D /* AgathonKit */; };
 		6CC073C52FF8D7A3F808FEFA /* AgathonBrain in Frameworks */ = {isa = PBXBuildFile; productRef = 065FF0609EBF448976CCA0A0 /* AgathonBrain */; };
 /* End PBXBuildFile section */
 
@@ -21,6 +22,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		52F39C285070ACC0A0DDBD65 /* AgathonKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonKit; path = Packages/AgathonKit; sourceTree = SOURCE_ROOT; };
 		5E5AA883F66340B900CB6ACA /* AgathonBrain */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonBrain; path = Packages/AgathonBrain; sourceTree = SOURCE_ROOT; };
 		62E57576A31112B07E977591 /* AgathonTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AgathonTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		73B45906A59F544D6AB84716 /* Agathon.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Agathon.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -53,6 +55,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				6CC073C52FF8D7A3F808FEFA /* AgathonBrain in Frameworks */,
+				2E48E6AE82AC7FE028DA3904 /* AgathonKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -63,6 +66,7 @@
 			isa = PBXGroup;
 			children = (
 				5E5AA883F66340B900CB6ACA /* AgathonBrain */,
+				52F39C285070ACC0A0DDBD65 /* AgathonKit */,
 			);
 			path = Packages;
 			sourceTree = "<group>";
@@ -129,6 +133,7 @@
 			name = Agathon;
 			packageProductDependencies = (
 				065FF0609EBF448976CCA0A0 /* AgathonBrain */,
+				2EBB9398B5E77B93B1939A1D /* AgathonKit */,
 			);
 			productName = Agathon;
 			productReference = 73B45906A59F544D6AB84716 /* Agathon.app */;
@@ -164,6 +169,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				CBD6CF59DC8B1285F2C460CF /* XCLocalSwiftPackageReference "Packages/AgathonBrain" */,
+				F912F11CC2BAD2680486BC66 /* XCLocalSwiftPackageReference "Packages/AgathonKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 91050FF09E3453A6A60CF333 /* Products */;
@@ -459,12 +465,20 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/AgathonBrain;
 		};
+		F912F11CC2BAD2680486BC66 /* XCLocalSwiftPackageReference "Packages/AgathonKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		065FF0609EBF448976CCA0A0 /* AgathonBrain */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AgathonBrain;
+		};
+		2EBB9398B5E77B93B1939A1D /* AgathonKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
