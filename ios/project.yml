@@ -10,6 +10,10 @@ options:
     iOS: "17.0"
   developmentLanguage: en
   createIntermediateGroups: true
+packages:
+  # Agathon's own whiteboard engine (docs/BOARD-FORMAT.md).
+  AgathonBoard:
+    path: Packages/AgathonBoard
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -26,6 +30,8 @@ targets:
     sources:
       - path: Agathon
         type: syncedFolder
+    dependencies:
+      - package: AgathonBoard
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon
@@ -69,6 +75,7 @@ targets:
     scheme:
       testTargets:
         - AgathonTests
+        - package: AgathonBoard/AgathonBoardTests
       gatherCoverageData: false
       environmentVariables:
         # Tick in Product > Scheme > Edit Scheme > Run > Arguments to call a local `npm run dev`.
