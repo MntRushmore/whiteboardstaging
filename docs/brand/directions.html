@@ -1,0 +1,1697 @@
+<title>Agathon Brand Directions</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=DynaPuff:wght@400..700&family=Figtree:wght@400..800&family=Fredoka:wght@400..700&family=Gochi+Hand&family=Kalam:wght@400;700&family=Lexend:wght@300..800&family=Nunito:wght@400..900&family=Playpen+Sans:wght@300..700&family=Shantell+Sans:wght@400..700&display=swap">
+<style>
+/* Layout: a quiet, theme-aware frame (header, glance, comparison, pick) around three full-width
+   direction bands; each band is its own fixed brand world: screens first, then the system sheet. */
+:root{
+  --bg:#F2F3F5; --fg:#17181C; --muted:#5C606A; --line:#D8DBE1; --card:#FFFFFF; --chip:#E7E9ED;
+  --chrome:"Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --bg:#111215; --fg:#ECEDF0; --muted:#A0A5AE; --line:#2C2F36; --card:#1A1C21; --chip:#24272D; color-scheme:dark }
+}
+:root[data-theme="dark"]{ --bg:#111215; --fg:#ECEDF0; --muted:#A0A5AE; --line:#2C2F36; --card:#1A1C21; --chip:#24272D; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--bg); color:var(--fg); font-family:var(--chrome); font-size:16px; line-height:1.55; margin:0}
+.wrap{max-width:1240px; margin:0 auto; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px))}
+h1,h2,h3,h4{text-wrap:balance; margin:0}
+p{margin:0}
+a{color:inherit}
+:focus-visible{outline:3px solid #2D5BFF; outline-offset:3px; border-radius:6px}
+
+/* ---------- page header ---------- */
+.top{padding-block:56px 40px}
+.eyebrow{font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted)}
+.top h1{font-size:clamp(34px, 5.4vw, 60px); line-height:1.02; letter-spacing:-.03em; font-weight:800; margin-top:14px; max-width:16ch}
+.lede{font-size:clamp(17px, 2vw, 20px); color:var(--muted); max-width:62ch; margin-top:18px}
+.glance{display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; margin-top:36px}
+.gl{display:flex; flex-direction:column; gap:14px; padding:22px; border-radius:22px; text-decoration:none; min-width:0; transition:transform .2s}
+.gl:hover{transform:translateY(-3px)}
+.gl .gl-h{display:flex; align-items:center; gap:14px}
+.gl svg.appicon{width:64px; height:64px; flex:none}
+.gl .gl-k{font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; opacity:.7}
+.gl .gl-n{font-size:28px; line-height:1; margin-top:4px}
+.gl .gl-m{font-size:15px; font-weight:600}
+.gl .gl-strip{display:flex; gap:3px; height:28px; padding:3px; border-radius:9px; background:#fff; box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)}
+.gl .gl-strip i{flex:1; border-radius:5px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)}
+.gl .gl-strip i.t{flex:1.6; position:relative}
+.gl .gl-go{font-size:14px; font-weight:700; margin-top:auto}
+.gl-a{background:#FFFFFF; color:#14151F; box-shadow:inset 0 0 0 1px #E2E4EB}
+.gl-a .gl-n{font-family:"Bricolage Grotesque", sans-serif; font-weight:800; letter-spacing:-.03em}
+.gl-b{background:#E8F4F2; color:#1E3442}
+.gl-b .gl-n{font-family:"Fredoka", sans-serif; font-weight:600}
+.gl-c{background:#FF8A3D; color:#231F2E}
+.gl-c .gl-n{font-family:"DynaPuff", sans-serif; font-weight:700}
+
+.rules{margin-top:28px; display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:10px}
+.rule{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; font-size:14px; line-height:1.4; min-width:0}
+.rule b{display:block; font-size:15px; margin-bottom:2px}
+.rule span{color:var(--muted)}
+
+/* ---------- direction band ---------- */
+.dir{color:var(--ink); background:var(--band)}
+.dir-in{max-width:1240px; margin:0 auto; padding-block:72px 80px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.dh{display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:32px; align-items:end; margin-bottom:40px}
+.dh-k{font:700 13px/1 var(--chrome); letter-spacing:.1em; text-transform:uppercase; opacity:.75}
+.dh-name{font-family:var(--disp); font-size:clamp(52px, 9vw, 112px); line-height:.92; margin-top:14px}
+.dh-mood{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+.dh-mood span{font:600 15px/1 var(--ui); padding:10px 16px; border-radius:999px; background:var(--moodbg); color:var(--moodfg)}
+.dh-who{font:400 18px/1.55 var(--ui); margin-top:18px; max-width:56ch}
+.dh-r{display:flex; flex-direction:column; align-items:flex-end; gap:14px; min-width:0}
+.lockup{display:flex; align-items:center; gap:22px; padding:22px 28px; border-radius:var(--r-card); background:var(--lockbg); max-width:100%}
+.lockup svg{flex:none}
+.lockup .lk-ic{width:96px; height:96px}
+.lockup .wm{font-family:var(--disp); font-size:clamp(38px, 5vw, 58px); line-height:1; white-space:nowrap}
+.lockup .lk-mark + .wm{margin-left:-12px}
+.dh-logo-note{font:400 14px/1.45 var(--ui); max-width:44ch; text-align:right; opacity:.85}
+
+/* ---------- mockups ---------- */
+.mocks{display:grid; gap:24px}
+.m-two{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:24px}
+.mock{margin:0; min-width:0}
+.frame{position:relative; width:100%; aspect-ratio:1238/878; max-width:100%; overflow:hidden; cursor:zoom-in; border-radius:3.6%/5.2%}
+.frame:focus-visible{outline:3px solid var(--ink); outline-offset:4px}
+.ipad{position:absolute; left:0; top:0; width:1238px; height:878px; padding:22px; border-radius:48px; background:#1B1C20; transform-origin:0 0; transform:scale(var(--s, .25))}
+.mock figcaption{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:baseline; margin-top:12px; font:400 15px/1.4 var(--ui)}
+.mock figcaption b{font-weight:700}
+.mock figcaption span{opacity:.75}
+
+.scr{position:relative; width:1194px; height:834px; border-radius:26px; overflow:hidden; background:var(--ground); color:var(--ink); font-family:var(--ui); -webkit-font-smoothing:antialiased; line-height:1.25}
+.scr *{box-sizing:border-box}
+.sb{position:absolute; left:0; right:0; top:0; height:30px; padding:0 24px; display:flex; align-items:center; justify-content:space-between; font:600 14px/1 -apple-system, system-ui, "Segoe UI", sans-serif; color:var(--sbc, var(--ink)); z-index:4}
+.sb .r{display:flex; align-items:center; gap:6px}
+.hi{position:absolute; bottom:8px; left:50%; width:150px; margin-left:-75px; height:5px; border-radius:3px; background:var(--ink); opacity:.3; z-index:4}
+.ico{width:26px; height:26px; fill:none; stroke:currentColor; stroke-width:var(--isw, 2.25); stroke-linecap:round; stroke-linejoin:round; flex:none; overflow:visible}
+.grow{flex:1}
+.fr{display:inline-flex; flex-direction:column; align-items:center; vertical-align:middle; line-height:1; font-family:var(--num); font-weight:700; font-size:.86em; margin:0 3px; position:relative; top:-1px}
+.fr i{font-style:normal; padding:0 4px}
+.fr i:first-child{border-bottom:2px solid currentColor; padding-bottom:2px}
+.fr i:last-child{padding-top:3px}
+
+/* the writing page's content (shared drawing, styled by tokens) */
+.pg{display:block; width:100%; height:100%}
+.hw{fill:none; stroke:var(--k1); stroke-width:5.2; stroke-linecap:round; stroke-linejoin:round}
+.tut{fill:none; stroke:var(--tutor); stroke-width:7; stroke-linecap:round; stroke-linejoin:round}
+.tut-t{fill:var(--tutor); font-family:var(--hand); font-size:54px}
+.th .hw{stroke-width:7}
+.th .tut{stroke-width:10}
+
+/* ---------- system sheet ---------- */
+.sheet{display:grid; grid-template-columns:repeat(12, minmax(0,1fr)); gap:20px; margin-top:56px}
+.panel{background:var(--panel); border-radius:var(--r-card); padding:28px; min-width:0; position:relative}
+.panel h4{font:700 13px/1 var(--chrome); letter-spacing:.1em; text-transform:uppercase; opacity:.7; margin-bottom:20px}
+.duo-panel{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:32px}
+.cv{grid-template-columns:minmax(0,5fr) minmax(0,7fr); gap:40px}
+.s7{grid-column:span 7}.s8{grid-column:span 8}.c4{grid-column:span 4}.s5{grid-column:span 5}.s4{grid-column:span 4}.s6{grid-column:span 6}.s12{grid-column:span 12}
+.swg{display:grid; gap:18px}
+.swg-row{display:grid; grid-template-columns:110px minmax(0,1fr); gap:14px; align-items:start}
+.swg-row > b{font:600 14px/1.3 var(--ui); padding-top:6px}
+.sws{display:flex; flex-wrap:wrap; gap:10px}
+.sw{display:flex; flex-direction:column; gap:6px; width:86px}
+.sw i{display:block; height:52px; border-radius:var(--r-sw); background:var(--c); box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.sw span{font:600 13px/1.2 var(--ui)}
+.sw code{font:500 12px/1 ui-monospace, "SF Mono", Menlo, monospace; opacity:.7}
+.sw.tutor{width:184px}
+.sw.tutor i{display:flex; align-items:center; padding:0 14px; font:700 14px/1.2 var(--ui); color:#fff}
+.pen{display:flex; flex-direction:column; align-items:center; gap:6px; width:58px}
+.pen i{width:40px; height:40px; border-radius:50%; background:var(--c)}
+.pen span{font:600 12px/1.1 var(--ui); text-align:center}
+.pen code{font:500 11px/1 ui-monospace, Menlo, monospace; opacity:.7}
+.note{font:400 14px/1.45 var(--ui); opacity:.8; margin-top:4px}
+
+.tscale{display:grid; gap:14px}
+.ts{display:grid; grid-template-columns:76px minmax(0,1fr); gap:12px; align-items:baseline}
+.ts small{font:600 12px/1.3 var(--ui); opacity:.65}
+.ts div{min-width:0; overflow-wrap:anywhere}
+.fontlist{display:grid; gap:8px; margin-top:18px; padding-top:18px; border-top:2px solid var(--rule)}
+.fontlist p{font:400 14px/1.4 var(--ui)}
+.fontlist b{font-weight:700}
+
+.shapes{display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end}
+.shp{display:flex; flex-direction:column; align-items:center; gap:8px; font:600 12px/1.2 var(--ui); text-align:center}
+.speclist{display:grid; gap:8px; margin-top:18px; font:400 14px/1.45 var(--ui)}
+.speclist b{font-weight:700}
+.icons{display:grid; grid-template-columns:repeat(4, 1fr); gap:12px}
+.icons figure{margin:0; display:flex; flex-direction:column; align-items:center; gap:8px; font:600 12px/1 var(--ui); white-space:nowrap}
+.dC .icons figure{font-size:11px}
+.demo{border-radius:calc(var(--r-card) - 8px); background:var(--demobg); padding:18px; min-height:228px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px}
+.demo-btn{font:700 14px/1 var(--ui); padding:12px 18px; border-radius:999px; border:0; cursor:pointer; background:var(--ink); color:var(--band)}
+.voice{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px}
+.vq{border-radius:calc(var(--r-card) - 10px); padding:16px 18px; background:var(--demobg); min-width:0}
+.vq small{display:block; font:700 12px/1 var(--chrome); letter-spacing:.08em; text-transform:uppercase; opacity:.65; margin-bottom:8px}
+.vq p{font:500 18px/1.4 var(--ui)}
+.vq.parent p{font-weight:400}
+.mascot-row{display:flex; gap:18px; align-items:flex-end; flex-wrap:wrap}
+.mascot-row figure{margin:0; display:flex; flex-direction:column; align-items:center; gap:6px; font:600 12px/1.2 var(--ui)}
+.p-txt{font:400 15px/1.5 var(--ui)}
+.p-txt + .p-txt{margin-top:10px}
+
+/* =====================================================================
+   A — BLOCKS
+   ===================================================================== */
+.dA{--band:#FFFFFF; --panel:#F1F2F6; --ground:#F1F2F6; --paper:#FFFFFF; --ink:#14151F; --ink2:#5B5E6E; --line2:#E2E4EB;
+  --cobalt:#2D5BFF; --cobalt2:#2148E3; --sunny:#FFD12E; --tomato:#FF5A36; --tutor:#2D5BFF; --ok:#12A150; --again:#FFD12E;
+  --k1:#14151F; --k2:#E5302A; --k3:#F58700; --k4:#12A150; --k5:#E9449A;
+  --disp:"Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif; --ui:"Lexend", ui-sans-serif, system-ui, sans-serif; --num:"Lexend", ui-sans-serif, sans-serif; --hand:"Kalam", "Comic Sans MS", cursive;
+  --r-card:28px; --r-sw:14px; --isw:2.6; --moodbg:#14151F; --moodfg:#FFFFFF; --lockbg:#F1F2F6; --demobg:#FFFFFF; --rule:#DFE1E8}
+.dA .dh-name{font-weight:800; letter-spacing:-.045em}
+.dA .tut-t{font-weight:700}
+
+.a-top{position:absolute; top:40px; left:40px; right:40px; height:56px; display:flex; align-items:center; justify-content:space-between}
+.a-logo{display:flex; align-items:center; gap:10px; font:800 30px/1 var(--disp); letter-spacing:-.04em}
+.a-logo svg{width:46px; height:46px}
+.a-top-r{display:flex; gap:10px}
+.a-chip{height:56px; display:flex; align-items:center; gap:10px; padding:0 22px 0 8px; border-radius:999px; background:#fff; font:600 17px/1 var(--ui)}
+.a-chip.g{padding:0 22px 0 18px}
+.a-av{width:40px; height:40px; border-radius:50%; background:var(--tomato); color:#fff; display:grid; place-items:center; font:800 19px/1 var(--disp)}
+.a-hello{position:absolute; top:118px; left:40px; right:40px; display:flex; align-items:flex-end; justify-content:space-between}
+.a-hello h1{font:800 66px/.95 var(--disp); letter-spacing:-.045em}
+.a-hello h1 span{color:var(--ink2)}
+.a-btn{height:60px; border-radius:999px; display:inline-flex; align-items:center; gap:12px; padding:0 26px 0 8px; font:600 19px/1 var(--ui)}
+.a-btn.ink{background:var(--ink); color:#fff}
+.a-btn .bd{width:44px; height:44px; border-radius:50%; background:var(--sunny); color:var(--ink); display:grid; place-items:center}
+.a-row{position:absolute; top:206px; left:40px; right:40px; height:288px; display:grid; grid-template-columns:604px 1fr; gap:20px}
+.a-today{background:var(--cobalt); color:#fff; border-radius:32px; padding:28px 30px; position:relative; overflow:hidden; display:grid; grid-template-columns:1fr 196px; gap:18px}
+.a-deco{position:absolute; right:-70px; bottom:-90px; width:260px; height:260px}
+.a-eye{font:600 14px/1 var(--ui); letter-spacing:.1em; text-transform:uppercase; color:var(--sunny)}
+.a-big{font:800 60px/.95 var(--disp); letter-spacing:-.04em; margin-top:12px}
+.a-sub{font:400 18px/1.3 var(--ui); opacity:.9; margin-top:10px}
+.a-today .a-btn{margin-top:30px; height:68px; background:var(--sunny); color:var(--ink); font:700 22px/1 var(--ui); padding:0 30px 0 10px}
+.a-today .a-btn .bd{background:var(--ink); color:var(--sunny); width:50px; height:50px}
+.a-tr{position:relative; z-index:1; display:flex; flex-direction:column; gap:16px}
+.a-stars{display:flex; gap:4px}
+.a-stars svg{width:36px; height:36px}
+.a-streak{display:flex; align-items:center; gap:10px}
+.a-streak b{font:800 46px/1 var(--disp); letter-spacing:-.03em}
+.a-streak span{font:500 15px/1.15 var(--ui)}
+.a-week{display:flex; gap:5px}
+.a-week i{width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font:600 11px/1 var(--num); font-style:normal; background:rgba(255,255,255,.18); color:#fff}
+.a-week i.d{background:var(--sunny); color:var(--ink)}
+.a-week i.t{background:#fff; color:var(--cobalt)}
+.a-path{background:var(--sunny); border-radius:32px; padding:28px 30px; display:flex; flex-direction:column}
+.a-path-h{display:flex; justify-content:space-between; align-items:baseline}
+.a-path-h b{font:800 30px/1 var(--disp); letter-spacing:-.03em}
+.a-path-h span{font:600 16px/1 var(--num)}
+.a-trail{margin-top:30px; width:100%; height:64px}
+.a-next{margin-top:auto; display:grid; grid-template-columns:auto 1fr; column-gap:14px; row-gap:6px; align-items:center}
+.a-next b{font:800 30px/1 var(--disp); letter-spacing:-.03em}
+.a-next span{grid-column:2; font:400 16px/1.2 var(--ui)}
+.a-next small{font:600 13px/1 var(--ui); letter-spacing:.08em; text-transform:uppercase; background:var(--ink); color:var(--sunny); padding:8px 12px; border-radius:999px}
+.a-boards{position:absolute; top:518px; left:40px; right:40px}
+.a-boards-h{display:flex; justify-content:space-between; align-items:baseline}
+.a-boards-h h2{font:800 32px/1 var(--disp); letter-spacing:-.035em}
+.a-boards-h span{font:600 16px/1 var(--ui); color:var(--ink2)}
+.a-grid{display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:20px; margin-top:16px}
+.a-tile{background:#fff; border-radius:24px; padding:10px 10px 16px}
+.a-tile .th{display:block; width:100%; aspect-ratio:16/9; border-radius:16px; background:var(--paper); box-shadow:inset 0 0 0 2px var(--line2)}
+.a-tile b{display:block; font:600 17px/1.2 var(--ui); margin:12px 6px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.a-tile span{font:400 14px/1 var(--ui); color:var(--ink2); margin:0 6px}
+
+.a-btop{position:absolute; top:38px; left:40px; right:40px; height:56px; display:flex; align-items:center; gap:14px}
+.a-round{width:56px; height:56px; border-radius:50%; background:#fff; display:grid; place-items:center; color:var(--ink); flex:none}
+.a-title{display:flex; flex-direction:column; gap:4px}
+.a-title b{font:800 24px/1 var(--disp); letter-spacing:-.03em}
+.a-title span{font:400 14px/1 var(--ui); color:var(--ink2)}
+.a-live{margin-left:12px; height:40px; padding:0 16px 0 12px; border-radius:999px; background:#fff; display:flex; align-items:center; gap:9px; font:500 15px/1 var(--ui)}
+.a-live i{width:12px; height:12px; border-radius:50%; background:var(--tutor)}
+.a-pill{height:56px; padding:0 22px 0 16px; border-radius:999px; background:#fff; display:flex; align-items:center; gap:10px; font:600 18px/1 var(--ui)}
+.a-page{position:absolute; left:40px; top:106px; width:1114px; height:627px; background:var(--paper); border-radius:18px; overflow:hidden}
+.a-dockrow{position:absolute; left:40px; right:40px; top:746px; height:72px; display:flex; gap:14px}
+.a-dock{flex:1; background:var(--ink); border-radius:999px; display:flex; align-items:center; padding:0 8px; gap:2px; color:#fff; min-width:0}
+.a-tool{width:56px; height:56px; border-radius:50%; display:grid; place-items:center; flex:none}
+.a-tool.on{background:var(--sunny); color:var(--ink)}
+.a-sep{width:2px; height:30px; background:rgba(255,255,255,.18); margin:0 7px; flex:none}
+.a-sw{width:42px; height:42px; border-radius:50%; display:grid; place-items:center; flex:none}
+.a-sw i{width:28px; height:28px; border-radius:50%; background:var(--c)}
+.a-sw.k1 i{box-shadow:inset 0 0 0 2px rgba(255,255,255,.45)}
+.a-sw.on{box-shadow:inset 0 0 0 3px #fff}
+.a-pg{display:flex; align-items:center; font:600 18px/1 var(--num); flex:none}
+.a-pg span{width:44px; text-align:center}
+.a-help{width:262px; flex:none; background:var(--sunny); border-radius:999px; display:flex; align-items:center; justify-content:center; gap:12px; font:800 28px/1 var(--disp); letter-spacing:-.03em; color:var(--ink)}
+.a-help svg{width:42px; height:42px}
+
+.a-ask .a-btop{right:426px}
+.a-ask .a-page{left:24px; width:746px; height:420px; top:184px; border-radius:16px}
+.a-ask .a-dockrow{left:24px; right:424px}
+.a-ask .a-help{width:210px; font-size:24px}
+.a-panel{position:absolute; top:0; right:0; bottom:0; width:400px; background:#fff; display:flex; flex-direction:column; padding:44px 22px 22px}
+.a-ph{display:flex; align-items:flex-start; gap:8px}
+.a-ph h3{font:800 26px/1 var(--disp); letter-spacing:-.03em}
+.a-ph small{display:inline-block; margin-top:8px; font:500 13px/1 var(--ui); background:var(--ground); padding:6px 10px; border-radius:999px}
+.a-ph .a-round{width:48px; height:48px; background:var(--ground)}
+.a-ph .a-round .ico{width:22px; height:22px}
+.a-msgs{display:flex; flex-direction:column; gap:12px; margin-top:22px}
+.a-m{max-width:90%; padding:14px 16px; border-radius:22px; font:400 17px/1.45 var(--ui)}
+.a-m.t{background:var(--cobalt); color:#fff; border-bottom-left-radius:6px}
+.a-m.k{align-self:flex-end; background:var(--ground); border-bottom-right-radius:6px; display:flex; gap:8px; align-items:center}
+.a-m.k .ico{width:18px; height:18px; opacity:.6}
+.a-read{display:flex; align-items:center; gap:6px; font:600 14px/1 var(--ui); color:var(--cobalt); margin-top:-2px; padding-left:4px}
+.a-read .ico{width:18px; height:18px}
+.a-chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:4px}
+.a-chips span{font:600 15px/1 var(--ui); padding:13px 16px; border-radius:999px; background:var(--ground)}
+.a-input{margin-top:auto; display:flex; gap:10px; align-items:center}
+.a-input div{flex:1; height:60px; border-radius:999px; background:var(--ground); display:flex; align-items:center; padding:0 20px; font:400 17px/1 var(--ui); color:var(--ink2)}
+.a-mic{width:64px; height:64px; border-radius:50%; background:var(--sunny); display:grid; place-items:center; flex:none}
+
+/* =====================================================================
+   B — PEBBLE
+   ===================================================================== */
+.dB{--band:#E8F4F2; --panel:#FFFFFF; --ground:#E8F4F2; --paper:#FFFFFF; --ink:#1E3442; --ink2:#5C7280;
+  --coral:#FF7566; --butter:#FFD45E; --lagoon:#0E9C91; --tutor:#0E9C91; --tc:#FFE2DD; --tm:#D6EEEA; --tb:#FFF0C2; --ok:#FFC93D; --again:#A8D2FF;
+  --k1:#1E3442; --k2:#E5484D; --k3:#F08019; --k4:#7A5CF5; --k5:#DB4B9B;
+  --disp:"Fredoka", ui-rounded, ui-sans-serif, system-ui, sans-serif; --ui:"Nunito", ui-rounded, ui-sans-serif, system-ui, sans-serif; --num:"Nunito", ui-rounded, sans-serif; --hand:"Playpen Sans", "Comic Sans MS", cursive;
+  --r-card:36px; --r-sw:18px; --isw:2.3; --moodbg:#FFFFFF; --moodfg:#1E3442; --lockbg:#FFFFFF; --demobg:#E8F4F2; --rule:#E2EFEC}
+.dB .dh-name{font-weight:600; letter-spacing:-.02em}
+.dB .tut-t{font-weight:500; font-size:50px}
+.duo{fill:var(--duo, none)}
+.dB .scr{--duo:var(--tb)}
+
+.b-rail{position:absolute; left:16px; top:44px; bottom:20px; width:96px; background:#fff; border-radius:34px; display:flex; flex-direction:column; align-items:center; padding:18px 0 16px; gap:6px}
+.b-rail .pipmark{width:58px; height:58px; margin-bottom:12px}
+.b-nav{width:76px; height:70px; border-radius:24px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; font:800 12.5px/1 var(--ui); color:var(--ink2)}
+.b-nav.on{background:var(--tc); color:var(--ink); --duo:#fff}
+.b-rail .bt{margin-top:auto; display:flex; flex-direction:column; align-items:center; gap:10px}
+.b-av{width:56px; height:56px; border-radius:50%; background:var(--coral); display:grid; place-items:center; font:600 24px/1 var(--disp); color:var(--ink)}
+.b-lock{width:56px; height:56px; border-radius:50%; background:var(--ground); display:grid; place-items:center}
+.b-main{position:absolute; left:132px; right:28px; top:44px; bottom:0}
+.b-hello{display:flex; align-items:center; gap:18px; height:92px}
+.b-hello .pip{width:78px; height:84px; flex:none}
+.b-bub{position:relative; background:#fff; border-radius:30px; padding:18px 26px; font:500 25px/1.15 var(--disp)}
+.b-bub::before{content:""; position:absolute; left:-9px; top:50%; width:24px; height:24px; background:#fff; border-radius:5px; transform:translateY(-50%) rotate(45deg)}
+.b-btn{height:64px; border-radius:999px; display:inline-flex; align-items:center; gap:12px; padding:0 28px 0 10px; font:800 20px/1 var(--ui); background:var(--coral); color:var(--ink)}
+.b-btn .bd{width:46px; height:46px; border-radius:50%; background:#fff; display:grid; place-items:center}
+.b-row{display:grid; grid-template-columns:590px 1fr; gap:20px; margin-top:20px; height:318px}
+.b-today{background:#fff; border-radius:36px; padding:26px 30px; display:grid; grid-template-columns:1fr 200px; gap:16px}
+.b-eye{display:inline-flex; align-items:center; gap:8px; font:800 15px/1 var(--ui); background:var(--tb); padding:9px 14px; border-radius:999px}
+.b-big{font:600 52px/1 var(--disp); margin-top:14px; letter-spacing:-.01em}
+.b-sub{font:600 18px/1.3 var(--ui); color:var(--ink2); margin-top:6px}
+.b-today .b-btn{margin-top:18px; height:66px; font-size:22px}
+.b-stars{display:flex; gap:4px; margin-top:12px}
+.b-stars svg{width:34px; height:34px}
+.b-tr{display:flex; flex-direction:column; gap:14px; background:var(--ground); border-radius:28px; padding:20px 18px; align-items:center; text-align:center}
+.b-flame{width:58px; height:58px; border-radius:50%; background:var(--tc); display:grid; place-items:center; color:var(--coral); --duo:var(--coral)}
+.b-tr b{font:600 40px/1 var(--disp)}
+.b-tr span{font:700 15px/1.2 var(--ui); color:var(--ink2)}
+.b-week{display:flex; gap:4px}
+.b-tr .best{font:800 14px/1 var(--ui); background:#fff; padding:8px 14px; border-radius:999px; color:var(--ink)}
+.b-week i{width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font:800 10px/1 var(--num); font-style:normal; background:#fff; color:var(--ink2)}
+.b-week i.d{background:var(--butter); color:var(--ink)}
+.b-week i.t{background:var(--coral); color:var(--ink)}
+.b-path{background:var(--butter); border-radius:36px; padding:26px 28px; display:flex; flex-direction:column}
+.b-path-h b{display:block; font:600 30px/1 var(--disp)}
+.b-path-h span{display:block; font:700 16px/1 var(--num); margin-top:8px}
+.b-trail{width:100%; height:112px; margin-top:6px}
+.b-next{margin-top:auto; display:grid; grid-template-columns:auto 1fr; column-gap:12px; row-gap:6px; align-items:center}
+.b-next b{font:600 26px/1 var(--disp)}
+.b-next span{grid-column:2; font:700 15px/1.2 var(--ui); color:var(--ink)}
+.b-next small{font:800 13px/1 var(--ui); background:#fff; padding:8px 12px; border-radius:999px}
+.b-boards-h{display:flex; justify-content:space-between; align-items:baseline; margin-top:22px}
+.b-boards-h h2{font:600 32px/1 var(--disp)}
+.b-boards-h span{font:800 16px/1 var(--ui); color:var(--ink2)}
+.b-grid{display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:18px; margin-top:16px}
+.b-tile{background:#fff; border-radius:30px; padding:10px 10px 16px}
+.b-tile .th{display:block; width:100%; aspect-ratio:16/9; border-radius:22px; background:var(--paper); box-shadow:inset 0 0 0 2px #E4EFED}
+.b-tile b{display:block; font:800 17px/1.2 var(--ui); margin:12px 8px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.b-tile span{font:600 14px/1 var(--ui); color:var(--ink2); margin:0 8px}
+
+.b-btop{position:absolute; top:40px; left:32px; right:32px; height:58px; display:flex; align-items:center; gap:14px}
+.b-round{width:58px; height:58px; border-radius:50%; background:#fff; display:grid; place-items:center; flex:none}
+.b-title b{display:block; font:600 25px/1 var(--disp)}
+.b-title span{display:block; font:700 14px/1 var(--ui); color:var(--ink2); margin-top:5px}
+.b-live{margin-left:10px; height:42px; padding:0 18px 0 12px; border-radius:999px; background:#fff; display:flex; align-items:center; gap:9px; font:800 15px/1 var(--ui)}
+.b-live i{width:14px; height:14px; border-radius:50%; background:var(--tutor); box-shadow:0 0 0 4px var(--tm)}
+.b-ask{height:58px; padding:0 24px 0 10px; border-radius:999px; background:var(--lagoon); color:#fff; display:flex; align-items:center; gap:10px; font:800 19px/1 var(--ui)}
+.b-ask .pipface{width:40px; height:40px}
+.b-page{position:absolute; left:32px; top:110px; width:1130px; height:636px; background:var(--paper); border-radius:30px; overflow:hidden}
+.b-dockrow{position:absolute; left:32px; right:32px; top:756px; height:70px; display:flex; gap:14px}
+.b-dock{flex:1; background:#fff; border-radius:28px; display:flex; align-items:center; padding:0 7px; gap:2px; min-width:0}
+.b-tool{width:58px; height:58px; border-radius:20px; display:grid; place-items:center; flex:none; color:var(--ink)}
+.b-tool.on{background:var(--ink); color:#fff; --duo:#46606F}
+.b-sep{width:2px; height:30px; background:var(--tm); margin:0 7px; flex:none; border-radius:1px}
+.b-sw{width:44px; height:44px; border-radius:50%; display:grid; place-items:center; flex:none}
+.b-sw i{width:30px; height:30px; border-radius:50%; background:var(--c)}
+.b-sw.on{box-shadow:inset 0 0 0 3px var(--ink)}
+.b-pg{display:flex; align-items:center; font:800 18px/1 var(--num); flex:none}
+.b-pg span{width:44px; text-align:center}
+.b-help{width:250px; flex:none; background:var(--coral); border-radius:28px; display:flex; align-items:center; justify-content:center; gap:10px; font:600 27px/1 var(--disp); color:var(--ink)}
+.b-help svg{width:44px; height:48px}
+
+.b-askv .b-btop{right:428px}
+.b-askv .b-page{left:28px; width:742px; height:417px; top:186px; border-radius:24px}
+.b-askv .b-dockrow{left:28px; right:424px}
+.b-askv .b-help{width:206px; font-size:24px}
+.b-panel{position:absolute; top:40px; right:20px; bottom:20px; width:384px; background:#fff; border-radius:36px; display:flex; flex-direction:column; padding:20px 18px 18px}
+.b-ph{display:flex; align-items:center; gap:10px}
+.b-ph .pip{width:48px; height:52px}
+.b-ph h3{font:600 25px/1 var(--disp)}
+.b-ph small{display:block; font:700 13px/1 var(--ui); color:var(--ink2); margin-top:5px}
+.b-ph .b-round{width:48px; height:48px; background:var(--ground)}
+.b-ph .b-round .ico{width:22px; height:22px}
+.b-msgs{display:flex; flex-direction:column; gap:12px; margin-top:20px}
+.b-m{max-width:88%; padding:14px 18px; border-radius:26px; font:600 17px/1.45 var(--ui)}
+.b-m.t{background:var(--tm); border-bottom-left-radius:8px}
+.b-m.k{align-self:flex-end; background:var(--tc); border-bottom-right-radius:8px; display:flex; gap:8px; align-items:center}
+.b-m.k .ico{width:18px; height:18px; opacity:.6}
+.b-read{display:flex; align-items:center; gap:6px; font:800 14px/1 var(--ui); color:#0B7F76; padding-left:6px; margin-top:-2px}
+.b-read .ico{width:18px; height:18px}
+.b-chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:2px}
+.b-chips span{font:800 15px/1 var(--ui); padding:13px 16px; border-radius:999px; background:var(--tb)}
+.b-input{margin-top:auto; display:flex; gap:10px; align-items:center}
+.b-input div{flex:1; height:62px; border-radius:999px; background:var(--ground); display:flex; align-items:center; padding:0 20px; font:600 17px/1 var(--ui); color:var(--ink2)}
+.b-mic{width:66px; height:66px; border-radius:50%; background:var(--lagoon); color:#fff; display:grid; place-items:center; flex:none; --duo:#3FB8AE}
+
+/* =====================================================================
+   C — STICKER BOOK
+   ===================================================================== */
+.dC{--band:#FF8A3D; --panel:#FFFFFF; --ground:#FF8A3D; --desk:#FFE7D3; --paper:#FFFFFF; --ink:#231F2E; --ink2:#6A6475;
+  --tang:#FF8A3D; --bub:#FF8DC4; --lime:#BEE34F; --sky:#7CCBFF; --tutor:#6B3BF2; --lilac:#E9E1FF; --note:#FFE873; --ok:#FFC83A; --again:#7CCBFF;
+  --k1:#231F2E; --k2:#EE3B2F; --k3:#F28A00; --k4:#1E9E52; --k5:#E8489A;
+  --disp:"DynaPuff", ui-rounded, system-ui, sans-serif; --ui:"Shantell Sans", ui-rounded, system-ui, sans-serif; --num:"Andika", ui-sans-serif, sans-serif; --hand:"Gochi Hand", "Comic Sans MS", cursive;
+  --r-card:22px; --r-sw:14px; --isw:2.5; --moodbg:#FFFFFF; --moodfg:#231F2E; --lockbg:#FFE7D3; --demobg:#FFE7D3; --rule:#F1E6DC;
+  --stk:0 4px 0 rgba(35,31,46,.22)}
+.dC .dh-name{font-weight:700; letter-spacing:-.01em}
+.dC .tut-t{font-size:58px}
+.dC .panel{box-shadow:var(--stk)}
+.dC .panel:nth-child(odd){transform:rotate(-.4deg)}
+.dC .panel:nth-child(even){transform:rotate(.35deg)}
+.dC .ico{filter:url(#wobble)}
+.tape{position:absolute; height:28px; width:96px; background:var(--tc, rgba(190,227,79,.85)); clip-path:polygon(0 8%,4% 0,8% 10%,12% 0,16% 10%,20% 0,80% 0,84% 10%,88% 0,92% 10%,96% 0,100% 8%,100% 92%,96% 100%,92% 90%,88% 100%,84% 90%,80% 100%,20% 100%,16% 90%,12% 100%,8% 90%,4% 100%,0 92%); z-index:2}
+.stk{background:#fff; border-radius:999px; box-shadow:var(--stk)}
+
+.c-top{position:absolute; top:40px; left:40px; right:40px; height:62px; display:flex; align-items:center; justify-content:space-between}
+.c-logo{display:flex; align-items:center; gap:4px; transform:rotate(-3deg)}
+.c-logo svg{width:62px; height:62px}
+.c-logo span{background:#fff; border-radius:16px; padding:8px 16px 10px; font:700 30px/1 var(--disp); box-shadow:var(--stk)}
+.c-top-r{display:flex; gap:12px; align-items:center}
+.c-pill{height:56px; display:flex; align-items:center; gap:10px; padding:0 22px 0 16px; border-radius:999px; background:#fff; font:700 17px/1 var(--ui); box-shadow:var(--stk)}
+.c-pill.ink{background:var(--ink); color:#fff; border:4px solid #fff}
+.c-av{width:58px; height:58px; border-radius:50%; background:var(--bub); border:5px solid #fff; display:grid; place-items:center; font:700 24px/1 var(--disp); box-shadow:var(--stk)}
+.c-hello{position:absolute; top:114px; left:44px; display:flex; align-items:baseline; gap:16px}
+.c-hello h1{font:700 60px/1 var(--disp)}
+.c-hello span{font:700 21px/1.2 var(--ui)}
+.c-row{position:absolute; top:200px; left:40px; right:40px; height:290px; display:grid; grid-template-columns:600px 1fr; gap:26px}
+.c-today{position:relative; background:#fff; border-radius:22px; padding:22px 28px; transform:rotate(-1deg); box-shadow:var(--stk); display:grid; grid-template-columns:1fr 210px; gap:14px}
+.c-eye{font:700 16px/1 var(--ui); color:#C9561A}
+.c-big{font:700 46px/1 var(--disp); margin-top:10px}
+.c-sub{font:500 17px/1.3 var(--ui); color:var(--ink2); margin-top:6px}
+.c-slots{display:flex; gap:8px; margin-top:16px}
+.c-slot{width:52px; height:52px; border-radius:50%; border:3px dashed #D6CCC2; display:grid; place-items:center; font:700 18px/1 var(--num); color:#B3A89D}
+.c-slot svg{width:62px; height:62px}
+.c-slot.f{border:0}
+.c-btn{display:inline-flex; align-items:center; gap:12px; height:66px; padding:0 30px 0 12px; border-radius:999px; background:var(--ink); color:#fff; font:700 22px/1 var(--disp); border:5px solid #fff; box-shadow:var(--stk)}
+.c-btn .bd{width:44px; height:44px; border-radius:50%; background:var(--lime); color:var(--ink); display:grid; place-items:center}
+.c-today .c-btn{margin-top:16px; height:62px}
+.c-tr{display:flex; flex-direction:column; align-items:center; gap:12px; background:var(--desk); border-radius:18px; padding:18px 12px; text-align:center}
+.c-tr b{font:700 38px/1 var(--disp)}
+.c-tr span{font:700 15px/1.2 var(--ui)}
+.c-week{display:flex; gap:4px}
+.c-tr .best{font:700 14px/1 var(--ui); background:#fff; padding:8px 14px; border-radius:999px; transform:rotate(-2deg); box-shadow:0 2px 0 rgba(35,31,46,.15)}
+.c-week i{width:24px; height:24px; display:grid; place-items:center; font:700 11px/1 var(--num); font-style:normal; border-radius:50%; background:#fff; color:var(--ink2)}
+.c-week i.d{background:var(--ok); color:var(--ink)}
+.c-week i.t{background:var(--bub); color:var(--ink)}
+.c-path{position:relative; background:var(--lime); border-radius:22px; padding:24px 26px; transform:rotate(.8deg); box-shadow:var(--stk); display:flex; flex-direction:column}
+.c-path-h b{display:block; font:700 28px/1 var(--disp)}
+.c-path-h span{display:block; font:700 16px/1 var(--num); margin-top:8px}
+.c-trail{width:100%; height:118px; margin-top:2px}
+.c-next{margin-top:auto; display:grid; grid-template-columns:auto 1fr; column-gap:12px; row-gap:6px; align-items:center}
+.c-next b{font:700 24px/1 var(--disp)}
+.c-next span{grid-column:2; font:600 15px/1.2 var(--ui)}
+.c-next small{font:700 14px/1 var(--ui); background:#fff; padding:8px 12px; border-radius:999px}
+.c-boards{position:absolute; top:524px; left:40px; right:40px}
+.c-boards-h{display:flex; justify-content:space-between; align-items:center}
+.c-boards-h h2{font:700 32px/1 var(--disp)}
+.c-book{display:flex; align-items:center; gap:8px; height:46px; padding:0 18px 0 8px; font:700 16px/1 var(--ui)}
+.c-book svg{width:40px; height:40px}
+.c-grid{display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:22px; margin-top:20px}
+.c-tile{position:relative; background:#fff; border-radius:16px; padding:10px 10px 14px; box-shadow:var(--stk)}
+.c-tile:nth-child(1){transform:rotate(-1.6deg)}.c-tile:nth-child(2){transform:rotate(1.1deg)}.c-tile:nth-child(3){transform:rotate(-.6deg)}.c-tile:nth-child(4){transform:rotate(1.5deg)}
+.c-tile .tape{top:-12px; left:50%; margin-left:-44px; width:88px; height:24px}
+.c-tile .th{display:block; width:100%; aspect-ratio:16/9; border-radius:10px; background:var(--paper); box-shadow:inset 0 0 0 2px #EADFD5}
+.c-tile b{display:block; font:700 17px/1.2 var(--ui); margin:10px 6px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.c-tile span{font:500 14px/1 var(--ui); color:var(--ink2); margin:0 6px}
+
+.c-board{--ground:var(--desk)}
+.c-btop{position:absolute; top:38px; left:40px; right:40px; height:58px; display:flex; align-items:center; gap:14px}
+.c-round{width:58px; height:58px; border-radius:50%; background:#fff; display:grid; place-items:center; flex:none; box-shadow:var(--stk)}
+.c-title b{display:block; font:700 25px/1 var(--disp)}
+.c-title span{display:block; font:600 14px/1 var(--ui); color:var(--ink2); margin-top:5px}
+.c-live{margin-left:10px; height:44px; padding:0 18px 0 10px; border-radius:999px; background:#fff; display:flex; align-items:center; gap:8px; font:700 15px/1 var(--ui); box-shadow:var(--stk); transform:rotate(-1.5deg); color:var(--tutor)}
+.c-live .ico{width:24px; height:24px}
+.c-askb{height:58px; padding:0 22px 0 16px; border-radius:999px; background:#fff; display:flex; align-items:center; gap:10px; font:700 18px/1 var(--ui); box-shadow:var(--stk)}
+.c-page{position:absolute; left:40px; top:108px; width:1114px; height:627px; background:var(--paper); border-radius:14px; box-shadow:0 0 0 6px #fff, 0 9px 0 rgba(35,31,46,.16); overflow:hidden}
+.c-dockrow{position:absolute; left:40px; right:40px; top:752px; height:68px; display:flex; gap:16px}
+.c-dock{flex:1; background:#fff; border-radius:24px; display:flex; align-items:center; padding:0 7px; gap:2px; box-shadow:var(--stk); min-width:0}
+.c-tool{width:56px; height:56px; border-radius:18px; display:grid; place-items:center; flex:none}
+.c-tool.on{background:var(--lime); transform:rotate(-4deg)}
+.c-sep{width:3px; height:30px; background:#F0E6DC; margin:0 7px; flex:none; border-radius:2px}
+.c-sw{width:44px; height:44px; display:grid; place-items:center; flex:none; position:relative}
+.c-sw svg{width:36px; height:36px}
+.c-sw.on::after{content:""; position:absolute; inset:0; border:3px solid var(--ink); border-radius:46% 54% 50% 50%/52% 46% 54% 48%}
+.c-pg{display:flex; align-items:center; font:700 18px/1 var(--num); flex:none}
+.c-pg span{width:44px; text-align:center}
+.c-help{width:256px; flex:none; background:var(--bub); border-radius:999px; border:5px solid #fff; box-shadow:var(--stk); display:flex; align-items:center; justify-content:center; gap:10px; font:700 27px/1 var(--disp); color:var(--ink); transform:rotate(-1.2deg)}
+.c-help .ico{width:34px; height:34px; stroke-width:2.4}
+
+.c-askv .c-btop{right:430px}
+.c-askv .c-page{left:30px; width:740px; height:416px; top:190px}
+.c-askv .c-dockrow{left:30px; right:430px}
+.c-askv .c-help{width:204px; font-size:24px}
+.c-panel{position:absolute; top:36px; right:22px; bottom:22px; width:384px; background:#fff; border-radius:22px; box-shadow:var(--stk); display:flex; flex-direction:column; padding:22px 18px 18px}
+.c-ph{display:flex; align-items:flex-start; gap:8px}
+.c-ph h3{font:700 26px/1 var(--disp)}
+.c-ph svg.ul{display:block; width:200px; height:12px; margin-top:4px}
+.c-ph small{display:block; font:600 13px/1 var(--ui); color:var(--ink2); margin-top:6px}
+.c-ph .c-round{width:48px; height:48px; background:var(--desk); box-shadow:none}
+.c-ph .c-round .ico{width:22px; height:22px}
+.c-msgs{display:flex; flex-direction:column; gap:14px; margin-top:20px}
+.c-m{max-width:90%; padding:14px 16px 16px; font:500 17px/1.45 var(--ui); border-radius:4px; box-shadow:0 3px 0 rgba(35,31,46,.12)}
+.c-m.t{background:var(--lilac); transform:rotate(-.8deg)}
+.c-m.k{align-self:flex-end; background:var(--note); transform:rotate(1.2deg); display:flex; gap:8px; align-items:center}
+.c-m.k .ico{width:18px; height:18px; opacity:.65}
+.c-read{display:flex; align-items:center; gap:6px; font:700 14px/1 var(--ui); color:var(--tutor); padding-left:4px}
+.c-read .ico{width:18px; height:18px}
+.c-chips{display:flex; flex-wrap:wrap; gap:8px}
+.c-chips span{font:700 15px/1 var(--ui); padding:12px 16px; border-radius:999px; background:var(--desk)}
+.c-input{margin-top:auto; display:flex; gap:10px; align-items:center}
+.c-input div{flex:1; height:60px; border-radius:999px; border:3px dashed #E2D6CB; display:flex; align-items:center; padding:0 18px; font:500 17px/1 var(--ui); color:var(--ink2)}
+.c-mic{width:66px; height:66px; border-radius:50%; background:var(--bub); border:5px solid #fff; box-shadow:var(--stk); display:grid; place-items:center; flex:none}
+
+/* ---------- motion demos ---------- */
+.dmA{width:100%; max-width:300px; height:140px}
+.dmA .tk{stroke-dasharray:190; stroke-dashoffset:0}
+.dmA.play .tk{animation:drawTick .42s cubic-bezier(.55,0,.3,1) .1s both}
+.dmA .mk-ring,.dmA .mk-dot,.dmA .mk-bar{transform-box:fill-box; transform-origin:center}
+.dmA.play .mk-ring{animation:snapIn .32s cubic-bezier(.2,1.6,.4,1) .55s both}
+.dmA.play .mk-dot{animation:dropIn .3s cubic-bezier(.2,1.6,.4,1) .78s both}
+.dmA.play .mk-bar{animation:slideUp .3s cubic-bezier(.2,1.6,.4,1) .68s both}
+@keyframes drawTick{from{stroke-dashoffset:190}to{stroke-dashoffset:0}}
+@keyframes snapIn{from{transform:scale(0)}to{transform:scale(1)}}
+@keyframes dropIn{from{transform:translateY(-40px);opacity:0}to{transform:none;opacity:1}}
+@keyframes slideUp{from{transform:translateY(30px) scaleY(.2);opacity:0}to{transform:none;opacity:1}}
+
+.dmB-btn{border:0; cursor:pointer; display:inline-flex; align-items:center; gap:10px; height:76px; padding:0 34px 0 16px; border-radius:28px; background:#FF7566; color:#1E3442; font:600 28px/1 "Fredoka", ui-rounded, sans-serif; transition:transform .12s}
+.dmB-btn svg{width:48px; height:52px}
+.dmB-btn:active,.dmB-btn.sq{animation:squish .45s cubic-bezier(.3,1.5,.5,1)}
+@keyframes squish{0%{transform:scale(1)}25%{transform:scale(1.08,.86)}55%{transform:scale(.95,1.06)}100%{transform:scale(1)}}
+.blink .eye{transform-box:fill-box; transform-origin:center; animation:blink 4.2s infinite}
+@keyframes blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+
+.dmC{position:relative; width:150px; height:130px; display:grid; place-items:center}
+.dmC .slot{position:absolute; width:96px; height:96px; border-radius:50%; border:3px dashed #D6CCC2}
+.dmC svg{width:118px; height:118px; position:relative}
+.dmC.play svg{animation:slap .55s cubic-bezier(.2,1.4,.4,1) both}
+@keyframes slap{0%{transform:translate(-34px,-46px) rotate(22deg) scale(1.35); filter:drop-shadow(0 18px 0 rgba(35,31,46,.18))}60%{transform:rotate(-6deg) scale(.96); filter:drop-shadow(0 3px 0 rgba(35,31,46,.22))}100%{transform:rotate(-3deg) scale(1); filter:drop-shadow(0 4px 0 rgba(35,31,46,.22))}}
+.dmC-count{font:700 15px/1.3 "Shantell Sans", sans-serif}
+
+@media (prefers-reduced-motion: reduce){
+  .dmA.play *, .dmC.play svg, .dmB-btn:active, .dmB-btn.sq, .blink .eye{animation:none !important}
+  .gl{transition:none}
+}
+
+/* ---------- compare + pick ---------- */
+.compare{padding-block:72px 32px}
+.compare h2,.pick h2{font-size:clamp(28px, 4vw, 40px); letter-spacing:-.025em; line-height:1.1; font-weight:800}
+.compare > p{color:var(--muted); margin-top:10px; max-width:62ch}
+.tbl{margin-top:28px; overflow-x:auto; border:1px solid var(--line); border-radius:18px; background:var(--card)}
+table{border-collapse:collapse; width:100%; min-width:760px; font-size:15px; line-height:1.4}
+th,td{text-align:left; vertical-align:top; padding:14px 18px; border-bottom:1px solid var(--line)}
+tr:last-child th, tr:last-child td{border-bottom:0}
+thead th{font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:700}
+tbody th{font-weight:700; width:150px; color:var(--muted); font-size:14px}
+.pick{padding-block:32px 96px}
+.pick-card{margin-top:22px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:28px; background:var(--card); border:1px solid var(--line); border-radius:24px; padding:32px}
+.pick-card h3{font-size:24px; letter-spacing:-.02em; line-height:1.2}
+.pick-card p{margin-top:12px; color:var(--fg)}
+.pick-card ul{margin:12px 0 0; padding-left:20px; display:grid; gap:8px}
+.pick-card li::marker{color:var(--muted)}
+.pick-card .muted{color:var(--muted)}
+.foot{color:var(--muted); font-size:14px; padding-block:0 48px}
+
+/* ---------- lightbox ---------- */
+.lb{position:fixed; inset:0; z-index:50; background:rgba(10,11,14,.88); overflow:auto; padding:calc(64px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px))}
+.lb-in{position:relative; margin:0 auto}
+.lb-in .ipad{transform:scale(var(--ls, .5))}
+.lb-x{position:fixed; top:calc(14px + env(safe-area-inset-top, 0px)); right:max(16px, env(safe-area-inset-right, 0px)); z-index:51; font:700 15px/1 var(--chrome); padding:12px 18px; border-radius:999px; border:0; background:#fff; color:#111; cursor:pointer}
+.lb-hint{position:fixed; top:calc(22px + env(safe-area-inset-top, 0px)); left:max(16px, env(safe-area-inset-left, 0px)); color:#fff; font:600 14px/1.2 var(--chrome); opacity:.8; max-width:60vw}
+
+/* ---------- responsive ---------- */
+@media (max-width: 980px){
+  .glance{grid-template-columns:1fr}
+  .rules{grid-template-columns:repeat(2, minmax(0,1fr))}
+  .dh{grid-template-columns:1fr}
+  .dh-r{align-items:flex-start}
+  .dh-logo-note{text-align:left}
+  .sheet{grid-template-columns:repeat(6, minmax(0,1fr))}
+  .s7,.s5,.s6,.s8,.c4,.s12{grid-column:span 6}
+  .s4{grid-column:span 3}
+  .pick-card{grid-template-columns:1fr}
+}
+@media (max-width: 720px){
+  .m-two{grid-template-columns:1fr}
+  .s4{grid-column:span 6}
+  .duo-panel,.cv{grid-template-columns:1fr; gap:28px}
+  .rules{grid-template-columns:1fr}
+  .voice{grid-template-columns:1fr}
+  .swg-row{grid-template-columns:1fr; gap:8px}
+  .swg-row > b{padding-top:0}
+  .sws{gap:8px}
+  .pen{width:54px}
+  .sw{width:80px}
+  .sw.tutor{width:168px}
+  .panel{padding:22px 18px}
+  .dir-in{padding-block:52px 60px}
+  .lockup{padding:16px 18px; gap:12px}
+  .lockup .lk-ic{width:72px; height:72px}
+  .lockup .lk-mark{display:none}
+  .lockup .lk-mark + .wm{margin-left:0}
+  .pick-card{padding:22px}
+  .dC .panel:nth-child(odd),.dC .panel:nth-child(even){transform:none}
+}
+</style>
+
+<!-- shared drawing parts: icons, marks, pattern, wobble filter -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <filter id="wobble" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence type="fractalNoise" baseFrequency=".06" numOctaves="2" seed="4"/><feDisplacementMap in="SourceGraphic" scale="1.6"/></filter>
+    <pattern id="gridC" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M50 0H0V50" fill="none" stroke="#D9E6F6" stroke-width="2"/></pattern>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path class="duo" d="M14.5 5.5l4 4L9 19l-5 1 1-5z"/><path d="M4 20l1-5L15.3 4.7a2.2 2.2 0 0 1 3.1 0l.9.9a2.2 2.2 0 0 1 0 3.1L9 19l-5 1z"/><path d="M13.5 6.5l4 4"/></symbol>
+    <symbol id="i-eraser" viewBox="0 0 24 24"><path class="duo" d="M5 13.6l4-4 6 6-3 3H8.5z"/><path d="M8 20h12"/><path d="M4.7 13.3l8.6-8.6a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8L12 18H8.5l-3.8-3.8a.6.6 0 0 1 0-.9z"/><path d="M9 9l6 6"/></symbol>
+    <symbol id="i-shapes" viewBox="0 0 24 24"><circle class="duo" cx="8" cy="8" r="4.6"/><circle cx="8" cy="8" r="4.6"/><rect x="12.2" y="12.2" width="8.6" height="8.6" rx="1.8"/></symbol>
+    <symbol id="i-picture" viewBox="0 0 24 24"><path class="duo" d="M5 18l5-5 3 3 2.5-2.5L20 17v1H5z"/><rect x="3.5" y="5" width="17" height="14" rx="2.6"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 18l5.5-5.2 3 3 2.5-2.4 4.5 4.3"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
+    <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="M14.5 5.5L8 12l6.5 6.5"/></symbol>
+    <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M9.5 5.5L16 12l-6.5 6.5"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.7" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path class="duo" d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-4.5 3.5v-3.5H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z"/><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-4.5 3.5v-3.5H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect class="duo" x="9" y="3" width="6" height="11" rx="3"/><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><path class="duo" d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect class="duo" x="5" y="10.5" width="14" height="10" rx="2.6"/><rect x="5" y="10.5" width="14" height="10" rx="2.6"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path class="duo" d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z"/><path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z"/></symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24"><path class="duo" d="M12 21c-3.8 0-6.5-2.7-6.5-6.2 0-3.6 2.6-5.6 3.7-8.6.5 1.8 1.4 3 2.5 3.6.3-2.8 1.7-5.2 3.7-6.8-.3 3.1 1 4.7 2.2 6.4 1 1.4 1.4 2.7 1.4 4.3 0 4.4-3.1 7.3-7 7.3z"/><path d="M12 21c-3.8 0-6.5-2.7-6.5-6.2 0-3.6 2.6-5.6 3.7-8.6.5 1.8 1.4 3 2.5 3.6.3-2.8 1.7-5.2 3.7-6.8-.3 3.1 1 4.7 2.2 6.4 1 1.4 1.4 2.7 1.4 4.3 0 4.4-3.1 7.3-7 7.3z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8.5 5.8v12.4l9.8-6.2z" fill="currentColor"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path class="duo" d="M4.5 11L12 4.8l7.5 6.2V19a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 19z"/><path d="M4 11.2l8-6.6 8 6.6V19a1.5 1.5 0 0 1-1.5 1.5H14v-5h-4v5H5.5A1.5 1.5 0 0 1 4 19z"/></symbol>
+    <symbol id="i-trail" viewBox="0 0 24 24"><path d="M6 18.5c3.5-.5 3.5-5.5 6.5-6.2S18 13 18 6.5"/><circle class="duo" cx="6" cy="18.5" r="2.4"/><circle cx="6" cy="18.5" r="2.4"/><path d="M18 3.5v6l3-1.8z" class="duo"/><path d="M18 9.5V3.5l3 2-3 1.6"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><rect class="duo" x="4" y="11" width="4" height="9" rx="1.2"/><rect x="4" y="11" width="4" height="9" rx="1.2"/><rect x="10" y="5" width="4" height="15" rx="1.2"/><rect x="16" y="14" width="4" height="6" rx="1.2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path class="duo" d="M8 13V6.5a1.5 1.5 0 0 1 3 0V11V4.5a1.5 1.5 0 0 1 3 0V11V5.5a1.5 1.5 0 0 1 3 0V12v-1.5a1.5 1.5 0 0 1 3 0V14c0 4-3 7-7 7h-1c-2.6 0-4.3-1.2-5.6-3.2L4 13.6a1.6 1.6 0 0 1 2.6-1.8L8 13.5z"/><path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V11M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V5.5a1.5 1.5 0 0 1 3 0V12M17 11.5v-1a1.5 1.5 0 0 1 3 0V14c0 4-3 7-7 7h-1c-2.6 0-4.3-1.2-5.6-3.2L4 13.6a1.6 1.6 0 0 1 2.6-1.8L8 13.5"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path class="duo" d="M12 3.5a8.5 8.5 0 0 0 0 17c1.4 0 2-1 1.6-2.1-.5-1.3.3-2.4 1.7-2.4h2.2a3 3 0 0 0 3-3A8.6 8.6 0 0 0 12 3.5z"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17c1.4 0 2-1 1.6-2.1-.5-1.3.3-2.4 1.7-2.4h2.2a3 3 0 0 0 3-3A8.6 8.6 0 0 0 12 3.5z"/><circle cx="8" cy="11" r="1.3" fill="currentColor" stroke="none"/><circle cx="11.5" cy="7.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="16" cy="8.8" r="1.3" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-pencil-doodle" viewBox="0 0 24 24"><path d="M4 20l1.2-4.6L15.6 5a2 2 0 0 1 2.9 0l.6.6a2 2 0 0 1 0 2.8L8.6 18.8z"/><path d="M13.6 7l3.4 3.4"/></symbol>
+    <!-- the mark: ring, dot, bar (from the current logo, 1024 -> 100) -->
+    <symbol id="mk" viewBox="0 0 100 100"><circle cx="50" cy="50" r="23" fill="none" stroke="currentColor" stroke-width="10"/><circle cx="50" cy="50" r="6.5" fill="currentColor"/><rect x="68" y="22" width="10" height="56" rx="2.5" fill="currentColor"/></symbol>
+  </defs>
+</svg>
+
+<header class="wrap top">
+  <p class="eyebrow">Agathon for iPad &middot; Brand lane &middot; Oct 17, 2026</p>
+  <h1>Three directions for the new Agathon</h1>
+  <p class="lede">The iPad app is a fresh start, so the brand gets one too. Each direction below has its own colours, type, shapes, motion, sound and voice, shown on the three screens kids use most: Home, the Board and Ask. Pick one and the design system gets built from it. Tap any screen to see it bigger.</p>
+
+  <nav class="glance" aria-label="The three directions">
+    <a class="gl gl-a" href="#blocks">
+      <div class="gl-h">
+        <svg class="appicon" viewBox="0 0 120 120" aria-hidden="true"><rect width="120" height="120" rx="27" fill="#14151F"/><g transform="translate(14 14) scale(.92)"><circle cx="50" cy="50" r="23" fill="none" stroke="#2D5BFF" stroke-width="10"/><circle cx="50" cy="50" r="6.5" fill="#FFD12E"/><rect x="68" y="22" width="10" height="56" rx="2.5" fill="#FF5A36"/></g></svg>
+        <div><div class="gl-k">Direction A</div><div class="gl-n">Blocks</div></div>
+      </div>
+      <div class="gl-m">Bold &middot; Bright &middot; Clear</div>
+      <div class="gl-strip" aria-hidden="true"><i style="background:#14151F"></i><i class="t" style="background:#2D5BFF"></i><i style="background:#FFD12E"></i><i style="background:#FF5A36"></i><i style="background:#F1F2F6"></i></div>
+      <div class="gl-go">Flat primaries built from the logo's own shapes. Tutor writes in cobalt. &rarr;</div>
+    </a>
+    <a class="gl gl-b" href="#pebble">
+      <div class="gl-h">
+        <svg class="appicon" viewBox="0 0 120 120" aria-hidden="true"><rect width="120" height="120" rx="27" fill="#FFD45E"/><g transform="translate(14 14) scale(.92)"><circle cx="50" cy="50" r="23" fill="none" stroke="#FF7566" stroke-width="11"/><rect x="67.5" y="22" width="11" height="56" rx="5.5" fill="#FF7566"/><circle cx="50" cy="50" r="9" fill="#0E9C91"/><circle cx="47" cy="49" r="1.6" fill="#1E3442"/><circle cx="53" cy="49" r="1.6" fill="#1E3442"/></g></svg>
+        <div><div class="gl-k">Direction B</div><div class="gl-n">Pebble</div></div>
+      </div>
+      <div class="gl-m">Soft &middot; Warm &middot; Encouraging</div>
+      <div class="gl-strip" aria-hidden="true"><i style="background:#1E3442"></i><i class="t" style="background:#0E9C91"></i><i style="background:#FF7566"></i><i style="background:#FFD45E"></i><i style="background:#FFFFFF"></i></div>
+      <div class="gl-go">Round, calm and friendly, with Pip, a drop of the tutor's ink. &rarr;</div>
+    </a>
+    <a class="gl gl-c" href="#sticker">
+      <div class="gl-h">
+        <svg class="appicon" viewBox="0 0 120 120" aria-hidden="true"><rect width="120" height="120" rx="27" fill="#FFE7D3"/><g transform="rotate(-8 60 60) translate(14 16) scale(.92)"><g transform="translate(0 4)" fill="rgba(35,31,46,.22)" stroke="rgba(35,31,46,.22)"><circle cx="50" cy="50" r="23" fill="none" stroke-width="24"/><rect x="61" y="15" width="24" height="70" rx="9"/></g><g fill="#fff" stroke="#fff"><circle cx="50" cy="50" r="23" fill="none" stroke-width="24"/><rect x="61" y="15" width="24" height="70" rx="9"/></g><circle cx="50" cy="50" r="23" fill="none" stroke="#6B3BF2" stroke-width="10"/><circle cx="50" cy="50" r="6.5" fill="#6B3BF2"/><rect x="68" y="22" width="10" height="56" rx="3" fill="#6B3BF2"/></g></svg>
+        <div><div class="gl-k">Direction C</div><div class="gl-n">Sticker Book</div></div>
+      </div>
+      <div class="gl-m">Playful &middot; Crafty &middot; Collectable</div>
+      <div class="gl-strip" aria-hidden="true"><i style="background:#231F2E"></i><i class="t" style="background:#6B3BF2"></i><i style="background:#FF8A3D"></i><i style="background:#FFE7D3"></i><i style="background:#FF8DC4"></i><i style="background:#BEE34F"></i></div>
+      <div class="gl-go">Die-cut stickers, tape and squared paper. Every win goes in a sticker book. &rarr;</div>
+    </a>
+  </nav>
+
+  <div class="rules" aria-label="What all three keep">
+    <p class="rule"><b>Flat colour</b><span>No decorative gradients anywhere. Fades only where they do a job.</span></p>
+    <p class="rule"><b>The tutor's own ink</b><span>One colour only the tutor writes in. No kid pen comes close to it.</span></p>
+    <p class="rule"><b>Big targets</b><span>Every kid control is 56 pt or more. Help me is the biggest thing on the board.</span></p>
+    <p class="rule"><b>Kind words</b><span>Short, US English, never "wrong". Try-again is never red.</span></p>
+    <p class="rule"><b>Grown-up money</b><span>Kids never see a price. Out of ink sends them to a grown-up.</span></p>
+  </div>
+</header>
+
+<!-- ===================================================================== A -->
+<section class="dir dA" id="blocks" aria-labelledby="blocks-name">
+<div class="dir-in">
+  <header class="dh">
+    <div>
+      <p class="dh-k">Direction A</p>
+      <h2 class="dh-name" id="blocks-name">Blocks</h2>
+      <div class="dh-mood"><span>Bold</span><span>Bright</span><span>Clear</span></div>
+      <p class="dh-who">For 7 to 14 year olds who would call a cute app babyish, and for parents who want it to look like a real tool. The logo's three parts, a ring, a dot and a bar, become every card, badge, trail and button in the app.</p>
+    </div>
+    <div class="dh-r">
+      <div class="lockup">
+        <svg class="lk-ic" viewBox="0 0 120 120" aria-label="App icon"><rect width="120" height="120" rx="27" fill="#14151F"/><g transform="translate(14 14) scale(.92)"><circle cx="50" cy="50" r="23" fill="none" stroke="#2D5BFF" stroke-width="10"/><circle cx="50" cy="50" r="6.5" fill="#FFD12E"/><rect x="68" y="22" width="10" height="56" rx="2.5" fill="#FF5A36"/></g></svg>
+        <svg class="lk-mark" viewBox="0 0 100 100" width="76" height="76" aria-hidden="true"><circle cx="50" cy="50" r="23" fill="none" stroke="#2D5BFF" stroke-width="10"/><circle cx="50" cy="50" r="6.5" fill="#FFD12E"/><rect x="68" y="22" width="10" height="56" rx="2.5" fill="#FF5A36"/></svg>
+        <span class="wm" style="font-weight:800; letter-spacing:-.05em">agathon</span>
+      </div>
+      <p class="dh-logo-note">The mark stays, split into its three parts and painted three colours. In motion the parts assemble: ring, then bar, then the dot drops in.</p>
+    </div>
+  </header>
+
+  <div class="mocks">
+    <figure class="mock">
+      <div class="frame" tabindex="0" role="button" aria-label="Enlarge Blocks: the Board"><div class="ipad"><div class="scr a-board">
+        <div class="sb"></div>
+        <div class="a-btop">
+          <span class="a-round"><svg class="ico"><use href="#i-chev-l"/></svg></span>
+          <div class="a-title"><b>Fractions practice</b><span>Screen 1 of 3</span></div>
+          <span class="a-live"><i></i>Checking…</span>
+          <span class="grow"></span>
+          <span class="a-pill"><svg class="ico"><use href="#i-chat"/></svg>Ask</span>
+          <span class="a-round"><svg class="ico"><use href="#i-more"/></svg></span>
+        </div>
+        <div class="a-page"><svg class="pg" viewBox="0 0 1600 900" data-board="a" role="img" aria-label="Handwritten 24 + 18 = 42 with a tick, and 3/4 + 1/8 = with a ring and a hint"></svg></div>
+        <div class="a-dockrow">
+          <div class="a-dock">
+            <span class="a-tool on"><svg class="ico"><use href="#i-pen"/></svg></span>
+            <span class="a-tool"><svg class="ico"><use href="#i-eraser"/></svg></span>
+            <span class="a-tool"><svg class="ico"><use href="#i-shapes"/></svg></span>
+            <span class="a-tool"><svg class="ico"><use href="#i-picture"/></svg></span>
+            <i class="a-sep"></i>
+            <span class="a-tool"><svg class="ico"><use href="#i-undo"/></svg></span>
+            <span class="a-tool" style="opacity:.4"><svg class="ico"><use href="#i-redo"/></svg></span>
+            <i class="a-sep"></i>
+            <span class="a-sw k1 on" style="--c:var(--k1)"><i></i></span>
+            <span class="a-sw" style="--c:var(--k2)"><i></i></span>
+            <span class="a-sw" style="--c:var(--k3)"><i></i></span>
+            <span class="a-sw" style="--c:var(--k4)"><i></i></span>
+            <span class="a-sw" style="--c:var(--k5)"><i></i></span>
+            <i class="a-sep"></i>
+            <span class="a-pg"><span class="a-tool" style="opacity:.4"><svg class="ico"><use href="#i-chev-l"/></svg></span><span>1/3</span><span class="a-tool"><svg class="ico"><use href="#i-chev-r"/></svg></span></span>
+          </div>
+          <div class="a-help"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="23" fill="none" stroke="#14151F" stroke-width="10"/><circle cx="50" cy="50" r="6.5" fill="#14151F"/><rect x="68" y="22" width="10" height="56" rx="2.5" fill="#14151F"/></svg>Help me</div>
+        </div>
+        <div class="hi"></div>
+      </div></div></div>
+      <figcaption><b>Board</b><span>The kid writes in black. Everything in cobalt is the tutor: the tick, the ring and the hint. Help me is the one yellow thing on the screen.</span></figcaption>
+    </figure>
+
+    <div class="m-two">
+      <figure class="mock">
+        <div class="frame" tabindex="0" role="button" aria-label="Enlarge Blocks: Home"><div class="ipad"><div class="scr a-home">
+          <div class="sb"></div>
+          <div class="a-top">
+            <div class="a-logo"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="23" fill="none" stroke="#2D5BFF" stroke-width="10"/><circle cx="50" cy="50" r="6.5" fill="#FFD12E"/><rect x="68" y="22" width="10" height="56" rx="2.5" fill="#FF5A36"/></svg>agathon</div>
+            <div class="a-top-r">
+              <span class="a-chip"><span class="a-av">M</span>Maya</span>
+              <span class="a-chip g"><svg class="ico"><use href="#i-lock"/></svg>Grown-ups</span>
+            </div>
+          </div>
+          <div class="a-hello"><h1>Hi Maya. <span>Ready?</span></h1><span class="a-btn ink"><span class="bd"><svg class="ico"><use href="#i-plus"/></svg></span>New board</span></div>
+          <div class="a-row">
+            <section class="a-today">
+              <svg class="a-deco" viewBox="0 0 260 260" aria-hidden="true"><circle cx="130" cy="130" r="95" fill="none" stroke="#2148E3" stroke-width="56"/><circle cx="130" cy="130" r="26" fill="#2148E3"/></svg>
+              <div style="position:relative;z-index:1">
+                <div class="a-eye">Today's practice</div>
+                <div class="a-big">5 problems</div>
+                <div class="a-sub">About 10 minutes &middot; 2 of 5 done</div>
+                <span class="a-btn"><span class="bd"><svg class="ico"><use href="#i-play"/></svg></span>Continue</span>
+              </div>
+              <div class="a-tr">
+                <div class="a-stars">
+                  <svg viewBox="0 0 24 24"><path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="#FFD12E" stroke="#FFD12E" stroke-width="2" stroke-linejoin="round"/></svg>
+                  <svg viewBox="0 0 24 24"><path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="#FFD12E" stroke="#FFD12E" stroke-width="2" stroke-linejoin="round"/></svg>
+                  <svg viewBox="0 0 24 24"><path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="rgba(255,255,255,.2)" stroke="rgba(255,255,255,.2)" stroke-width="2" stroke-linejoin="round"/></svg>
+                  <svg viewBox="0 0 24 24"><path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="rgba(255,255,255,.2)" stroke="rgba(255,255,255,.2)" stroke-width="2" stroke-linejoin="round"/></svg>
+                  <svg viewBox="0 0 24 24"><path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="rgba(255,255,255,.2)" stroke="rgba(255,255,255,.2)" stroke-width="2" stroke-linejoin="round"/></svg>
+                </div>
+                <div class="a-streak"><svg class="ico" style="width:40px;height:40px;color:var(--sunny);--isw:2.4"><use href="#i-flame"/></svg><b>4</b><span>day<br>streak</span></div>
+                <div class="a-week"><i class="d">M</i><i class="d">T</i><i class="d">W</i><i class="t">T</i><i>F</i><i>S</i><i>S</i></div>
+              </div>
+            </section>
+            <section class="a-path">
+              <div class="a-path-h"><b>Your 3rd grade path</b><span>12 of 30 done</span></div>
+              <svg class="a-trail" viewBox="0 0 450 64" aria-hidden="true">
+                <rect x="22" y="29" width="406" height="6" rx="3" fill="#14151F"/>
+                <g fill="#14151F"><circle cx="26" cy="32" r="20"/><circle cx="92" cy="32" r="20"/><circle cx="158" cy="32" r="20"/><circle cx="224" cy="32" r="20"/></g>
+                <g fill="none" stroke="#FFD12E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 32l6 6 11-12"/><path d="M83 32l6 6 11-12"/><path d="M149 32l6 6 11-12"/><path d="M215 32l6 6 11-12"/></g>
+                <circle cx="292" cy="32" r="25" fill="#fff"/><circle cx="292" cy="32" r="18" fill="none" stroke="#FF5A36" stroke-width="9"/><circle cx="292" cy="32" r="6" fill="#14151F"/>
+                <circle cx="360" cy="32" r="17" fill="#fff"/><circle cx="424" cy="32" r="17" fill="#fff"/>
+              </svg>
+              <div class="a-next"><small>Next up</small><b>Adding fractions</b><span>3 short lessons &middot; about 15 minutes</span></div>
+            </section>
+          </div>
+          <section class="a-boards">
+            <div class="a-boards-h"><h2>My boards</h2><span>See all 14</span></div>
+            <div class="a-grid">
+              <div class="a-tile"><svg class="th" viewBox="0 0 1600 900" data-thumb="fractions"></svg><b>Fractions practice</b><span>Today &middot; 3 screens</span></div>
+              <div class="a-tile"><svg class="th" viewBox="0 0 1600 900" data-thumb="times"></svg><b>Times tables</b><span>Yesterday</span></div>
+              <div class="a-tile"><svg class="th" viewBox="0 0 1600 900" data-thumb="daily"></svg><b>Today's practice &middot; Wednesday</b><span>Wednesday &middot; 5 stars</span></div>
+              <div class="a-tile"><svg class="th" viewBox="0 0 1600 900" data-thumb="perimeter"></svg><b>Perimeter</b><span>Monday</span></div>
+            </div>
+          </section>
+          <div class="hi"></div>
+        </div></div></div>
+        <figcaption><b>Home</b><span>Today's practice and the skill path come first. The path is the logo: done is a dot, now is the ring.</span></figcaption>
+      </figure>
+
+      <figure class="mock">
+        <div class="frame" tabindex="0" role="button" aria-label="Enlarge Blocks: Ask panel"><div class="ipad"><div class="scr a-board a-ask">
+          <div class="sb"></div>
+          <div class="a-btop">
+            <span class="a-round"><svg class="ico"><use href="#i-chev-l"/></svg></span>
+            <div class="a-title"><b>Fractions practice</b><span>Screen 1 of 3</span></div>
+            <span class="grow"></span>
+            <span class="a-round"><svg class="ico"><use href="#i-more"/></svg></span>
+          </div>
+          <div class="a-page"><svg class="pg" viewBox="0 0 1600 900" data-board="a" data-nocheer="1" aria-hidden="true"></svg></div>
+          <div class="a-dockrow">
+            <div class="a-dock">
+              <span class="a-tool on"><svg class="ico"><use href="#i-pen"/></svg></span>
+              <span class="a-tool"><svg class="ico"><use href="#i-eraser"/></svg></span>
+              <span class="a-tool"><svg class="ico"><use href="#i-more"/></svg></span>
+              <i class="a-sep"></i>
+              <span class="a-tool"><svg class="ico"><use href="#i-undo"/></svg></span>
+              <i class="a-sep"></i>
+              <span class="a-sw k1" style="--c:var(--k1)"><i></i></span>
+              <i class="a-sep"></i>
+              <span class="a-pg"><span class="a-tool" style="opacity:.4"><svg class="ico"><use href="#i-chev-l"/></svg></span><span>1/3</span><span class="a-tool"><svg class="ico"><use href="#i-chev-r"/></svg></span></span>
+            </div>
+            <div class="a-help"><svg viewBox="0 0 100 100" aria-hidden="true"><use href="#mk" style="color:#14151F"/></svg>Help me</div>
+          </div>
+          <aside class="a-panel">
+            <div class="a-ph">
+              <div><h3>Ask your tutor</h3><small>Screen 1</small></div>
+              <span class="grow"></span>
+              <span class="a-round"><svg class="ico"><use href="#i-speaker"/></svg></span>
+              <span class="a-round"><svg class="ico"><use href="#i-x"/></svg></span>
+            </div>
+            <div class="a-msgs">
+              <div class="a-m t">Hi Maya! Ask me anything, and I can write on your board too.</div>
+              <div class="a-m k"><svg class="ico"><use href="#i-mic"/></svg>why can't I just add the tops?</div>
+              <div class="a-m t">Because the pieces are different sizes. A fourth is the same as 2 eighths, so <span class="fr"><i>3</i><i>4</i></span> is <span class="fr"><i>6</i><i>8</i></span>. Now can you add <span class="fr"><i>6</i><i>8</i></span> + <span class="fr"><i>1</i><i>8</i></span>?</div>
+              <div class="a-read"><svg class="ico"><use href="#i-speaker"/></svg>Read it again</div>
+              <div class="a-chips"><span>3 more like these</span><span>Show me with pizza</span></div>
+            </div>
+            <div class="a-input"><div>Ask me anything…</div><span class="a-mic"><svg class="ico" style="width:30px;height:30px"><use href="#i-mic"/></svg></span></div>
+          </aside>
+          <div class="hi" style="margin-left:-275px"></div>
+        </div></div></div>
+        <figcaption><b>Ask</b><span>Cobalt bubbles are the tutor, as on the board. The dock folds Shapes, Picture and Redo behind More.</span></figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div class="sheet">
+    <div class="panel s7">
+      <h4>Colour</h4>
+      <div class="swg">
+        <div class="swg-row"><b>Surfaces</b><div class="sws">
+          <div class="sw" style="--c:#FFFFFF"><i></i><span>Paper</span><code>#FFFFFF</code></div>
+          <div class="sw" style="--c:#F1F2F6"><i></i><span>Chalk</span><code>#F1F2F6</code></div>
+          <div class="sw" style="--c:#14151F"><i></i><span>Ink</span><code>#14151F</code></div>
+        </div></div>
+        <div class="swg-row"><b>Brand</b><div class="sws">
+          <div class="sw" style="--c:#FFD12E"><i></i><span>Sunny</span><code>#FFD12E</code></div>
+          <div class="sw" style="--c:#FF5A36"><i></i><span>Tomato</span><code>#FF5A36</code></div>
+          <div class="sw tutor" style="--c:#2D5BFF"><i>Tutor ink only</i><span>Cobalt</span><code>#2D5BFF</code></div>
+        </div></div>
+        <div class="swg-row"><b>Kid pens</b><div class="sws">
+          <div class="pen" style="--c:#14151F"><i></i><span>Black</span><code>#14151F</code></div>
+          <div class="pen" style="--c:#E5302A"><i></i><span>Red</span><code>#E5302A</code></div>
+          <div class="pen" style="--c:#F58700"><i></i><span>Orange</span><code>#F58700</code></div>
+          <div class="pen" style="--c:#12A150"><i></i><span>Green</span><code>#12A150</code></div>
+          <div class="pen" style="--c:#E9449A"><i></i><span>Pink</span><code>#E9449A</code></div>
+        </div></div>
+        <div class="swg-row"><b>Feedback</b><div class="sws">
+          <div class="sw" style="--c:#12A150"><i></i><span>You got it</span><code>#12A150</code></div>
+          <div class="sw" style="--c:#FFD12E"><i></i><span>Look again</span><code>#FFD12E</code></div>
+        </div></div>
+      </div>
+      <p class="note" style="margin-top:16px">No kid pen is blue or purple, so a cobalt mark can only be the tutor's. Look again is yellow, the same as Help me: a nudge, not a stop sign.</p>
+    </div>
+    <div class="panel s5">
+      <h4>Type</h4>
+      <div class="tscale">
+        <div class="ts"><small>Display 64</small><div style="font:800 64px/.95 var(--disp); letter-spacing:-.045em">Hi Maya.</div></div>
+        <div class="ts"><small>Title 32</small><div style="font:800 32px/1 var(--disp); letter-spacing:-.035em">Today's practice</div></div>
+        <div class="ts"><small>Heading 22</small><div style="font:600 22px/1.2 var(--ui)">Your 3rd grade path</div></div>
+        <div class="ts"><small>Body 19</small><div style="font:400 19px/1.4 var(--ui)">A fourth is the same as 2 eighths.</div></div>
+        <div class="ts"><small>Label 14</small><div style="font:600 14px/1 var(--ui); letter-spacing:.1em; text-transform:uppercase">Next up</div></div>
+        <div class="ts"><small>Numerals</small><div style="font:600 30px/1 var(--num); font-variant-numeric:tabular-nums">0123456789 <span class="fr" style="font-size:22px"><i>3</i><i>4</i></span></div></div>
+      </div>
+      <div class="fontlist">
+        <p><b>Bricolage Grotesque</b> ExtraBold for display. Big, tight and a little quirky. OFL.</p>
+        <p><b>Lexend</b> for UI and numerals. Designed to make reading easier, with plain digits a kid can match to their own. OFL.</p>
+        <p><b>Tutor hand:</b> a neat marker print, like Kalam Bold.</p>
+      </div>
+    </div>
+
+    <div class="panel s7 duo-panel">
+      <div>
+      <h4>Shape</h4>
+      <div class="shapes">
+        <div class="shp"><div style="width:84px;height:60px;border-radius:28px;background:#FFFFFF"></div>Cards 28</div>
+        <div class="shp"><div style="width:60px;height:60px;border-radius:50%;background:#14151F"></div>Tools: circle</div>
+        <div class="shp"><div style="width:96px;height:56px;border-radius:999px;background:#FFD12E;display:grid;place-items:center;font:700 16px var(--ui)">Start</div>Buttons: pill</div>
+      </div>
+      <div class="speclist">
+        <p><b>Borders:</b> none. Shapes are made by colour alone.</p>
+        <p><b>Shadows:</b> none. Depth is a colour change.</p>
+        <p><b>Buttons:</b> solid pills. Press = shrink to 96% and darken.</p>
+        <p><b>Targets:</b> 56 pt tools, 64 pt main buttons, Help me 72 pt tall.</p>
+      </div>
+      </div>
+      <div>
+      <h4>Icons</h4>
+      <div class="icons" style="--isw:2.6">
+        <figure><span class="a-tool" style="background:#14151F;color:#fff"><svg class="ico"><use href="#i-pen"/></svg></span>Pen</figure>
+        <figure><span class="a-tool" style="background:#fff"><svg class="ico"><use href="#i-eraser"/></svg></span>Eraser</figure>
+        <figure><span class="a-tool" style="background:#fff"><svg class="ico"><use href="#i-shapes"/></svg></span>Shapes</figure>
+        <figure><span class="a-tool" style="background:#fff"><svg class="ico"><use href="#i-picture"/></svg></span>Picture</figure>
+        <figure><span class="a-tool" style="background:#FFD12E"><svg class="ico"><use href="#i-mic"/></svg></span>Talk</figure>
+        <figure><span class="a-tool" style="background:#fff"><svg class="ico"><use href="#i-star"/></svg></span>Star</figure>
+        <figure><span class="a-tool" style="background:#fff"><svg class="ico"><use href="#i-flame"/></svg></span>Streak</figure>
+        <figure><span class="a-tool" style="background:#fff"><svg class="ico"><use href="#i-lock"/></svg></span>Grown-ups</figure>
+      </div>
+      <p class="note" style="margin-top:14px">2.6 pt line icons, always sitting in a solid circle: the ring of the mark. The one in use fills with ink.</p>
+      </div>
+    </div>
+    <div class="panel s5">
+      <h4>Motion</h4>
+      <div class="demo">
+        <svg class="dmA play" id="dmA" viewBox="0 0 300 140" aria-label="A tick draws itself, then the mark assembles">
+          <g class="hw" data-t="42" data-x="20" data-y="30" data-s="1.3" data-seed="11" style="stroke-width:4.6"></g>
+          <path class="tk" d="M140 70 C150 80 158 92 164 104 C178 74 196 48 222 26" fill="none" stroke="#2D5BFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+          <g transform="translate(232 72) scale(.6)"><circle class="mk-ring" cx="50" cy="50" r="23" fill="none" stroke="#2D5BFF" stroke-width="10"/><rect class="mk-bar" x="68" y="22" width="10" height="56" rx="2.5" fill="#FF5A36"/><circle class="mk-dot" cx="50" cy="50" r="6.5" fill="#FFD12E"/></g>
+        </svg>
+        <button class="demo-btn" type="button" data-replay="dmA">Play it again</button>
+      </div>
+      <p class="p-txt" style="margin-top:16px"><b>Snap.</b> Fast and sure: 150 to 250 ms, one small overshoot, then still. The tutor's tick draws in one stroke and lands with a click.</p>
+    </div>
+
+    <div class="panel s12 duo-panel cv">
+      <div>
+      <h4>Character</h4>
+      <div class="mascot-row">
+        <figure>
+          <svg viewBox="0 0 220 130" width="300" height="177" style="max-width:100%;height:auto" aria-label="The ring, the bar and the dot with eyes">
+            <rect x="0" y="122" width="220" height="4" rx="2" fill="#E2E4EB"/>
+            <circle cx="56" cy="74" r="38" fill="none" stroke="#2D5BFF" stroke-width="18"/>
+            <circle cx="46" cy="70" r="4.5" fill="#14151F"/><circle cx="64" cy="70" r="4.5" fill="#14151F"/>
+            <rect x="118" y="22" width="22" height="100" rx="5" fill="#FF5A36"/>
+            <circle cx="125" cy="44" r="3.6" fill="#14151F"/><circle cx="134" cy="44" r="3.6" fill="#14151F"/>
+            <circle cx="186" cy="96" r="22" fill="#FFD12E"/>
+            <circle cx="179" cy="92" r="3.6" fill="#14151F"/><circle cx="193" cy="92" r="3.6" fill="#14151F"/>
+            <path d="M181 102 q5 5 10 0" fill="none" stroke="#14151F" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          The shapes
+        </figure>
+      </div>
+      <p class="p-txt" style="margin-top:14px">No mascot. The ring, the bar and the dot get eyes only for big moments: a finished set, a new streak, a skill mastered. Older kids get a tool; younger kids still get a wink.</p>
+      </div>
+      <div>
+      <h4>Voice and sound</h4>
+      <div class="voice">
+        <div class="vq"><small>Hint</small><p>Bottoms first. How many eighths make <span class="fr"><i>3</i><i>4</i></span>?</p></div>
+        <div class="vq"><small>Celebration</small><p>Nailed it. 5 for 5 today.</p></div>
+        <div class="vq"><small>Out of ink</small><p>Help is paused for now. Ask a grown-up to switch it back on.</p></div>
+        <div class="vq parent"><small>To a parent</small><p>Maya did 18 problems this week, 14 on her own. Adding fractions is her next skill.</p></div>
+      </div>
+      <p class="note" style="margin-top:14px">A coach: short, direct, sure of the kid. Full stops, few exclamation marks.</p>
+      <p class="p-txt" style="margin-top:14px"><b>Sound:</b> wood and bells. A marimba tap for tools, two notes stepping up for a tick, a short xylophone run for a finished set. Look again is one soft woodblock. No buzzers, ever.</p>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ===================================================================== B -->
+<section class="dir dB" id="pebble" aria-labelledby="pebble-name">
+<div class="dir-in">
+  <header class="dh">
+    <div>
+      <p class="dh-k">Direction B</p>
+      <h2 class="dh-name" id="pebble-name">Pebble</h2>
+      <div class="dh-mood"><span>Soft</span><span>Warm</span><span>Encouraging</span></div>
+      <p class="dh-who">For the youngest kids, 5 to 9, and for any kid who gets nervous about maths. Everything is round and nothing shouts. Pip, a drop of the tutor's ink, is always on the page and never in a hurry.</p>
+    </div>
+    <div class="dh-r">
+      <div class="lockup">
+        <svg class="lk-ic" viewBox="0 0 120 120" aria-label="App icon"><rect width="120" height="120" rx="27" fill="#FFD45E"/><g transform="translate(14 14) scale(.92)"><circle cx="50" cy="50" r="23" fill="none" stroke="#FF7566" stroke-width="11"/><rect x="67.5" y="22" width="11" height="56" rx="5.5" fill="#FF7566"/><circle cx="50" cy="50" r="9" fill="#0E9C91"/><circle cx="47" cy="49" r="1.6" fill="#1E3442"/><circle cx="53" cy="49" r="1.6" fill="#1E3442"/></g></svg>
+        <svg class="lk-mark" viewBox="0 0 100 100" width="76" height="76" aria-hidden="true"><circle cx="50" cy="50" r="23" fill="none" stroke="#FF7566" stroke-width="11"/><rect x="67.5" y="22" width="11" height="56" rx="5.5" fill="#FF7566"/><circle cx="50" cy="50" r="9" fill="#0E9C91"/><circle cx="47" cy="49" r="1.6" fill="#1E3442"/><circle cx="53" cy="49" r="1.6" fill="#1E3442"/></svg>
+        <span class="wm" style="font-weight:600; letter-spacing:-.02em">agathon</span>
+      </div>
+      <p class="dh-logo-note">Softer ends, a thicker ring, and the dot in the middle becomes Pip: open the a and the tutor is looking back at you.</p>
+    </div>
+  </header>
+
+  <div class="mocks">
+    <figure class="mock">
+      <div class="frame" tabindex="0" role="button" aria-label="Enlarge Pebble: the Board"><div class="ipad"><div class="scr b-board">
+        <div class="sb"></div>
+        <div class="b-btop">
+          <span class="b-round"><svg class="ico"><use href="#i-chev-l"/></svg></span>
+          <div class="b-title"><b>Fractions practice</b><span>Screen 1 of 3</span></div>
+          <span class="b-live"><i></i>Pip is reading…</span>
+          <span class="grow"></span>
+          <span class="b-ask"><svg class="pipface" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="20" fill="#fff"/><circle cx="20" cy="22" r="13" fill="#0E9C91"/><ellipse cx="15.5" cy="21" rx="2.2" ry="2.8" fill="#1E3442"/><ellipse cx="24.5" cy="21" rx="2.2" ry="2.8" fill="#1E3442"/><path d="M17.5 26.5q2.5 2 5 0" fill="none" stroke="#1E3442" stroke-width="1.6" stroke-linecap="round"/></svg>Ask Pip</span>
+          <span class="b-round"><svg class="ico"><use href="#i-more"/></svg></span>
+        </div>
+        <div class="b-page"><svg class="pg" viewBox="0 0 1600 900" data-board="b" role="img" aria-label="Handwritten 24 + 18 = 42 with a tick, and 3/4 + 1/8 = with a ring and a hint"></svg></div>
+        <div class="b-dockrow">
+          <div class="b-dock">
+            <span class="b-tool on"><svg class="ico"><use href="#i-pen"/></svg></span>
+            <span class="b-tool"><svg class="ico"><use href="#i-eraser"/></svg></span>
+            <span class="b-tool"><svg class="ico"><use href="#i-shapes"/></svg></span>
+            <span class="b-tool"><svg class="ico"><use href="#i-picture"/></svg></span>
+            <i class="b-sep"></i>
+            <span class="b-tool"><svg class="ico"><use href="#i-undo"/></svg></span>
+            <span class="b-tool" style="opacity:.35"><svg class="ico"><use href="#i-redo"/></svg></span>
+            <i class="b-sep"></i>
+            <span class="b-sw on" style="--c:var(--k1)"><i></i></span>
+            <span class="b-sw" style="--c:var(--k2)"><i></i></span>
+            <span class="b-sw" style="--c:var(--k3)"><i></i></span>
+            <span class="b-sw" style="--c:var(--k4)"><i></i></span>
+            <span class="b-sw" style="--c:var(--k5)"><i></i></span>
+            <i class="b-sep"></i>
+            <span class="b-pg"><span class="b-tool" style="opacity:.35"><svg class="ico"><use href="#i-chev-l"/></svg></span><span>1/3</span><span class="b-tool"><svg class="ico"><use href="#i-chev-r"/></svg></span></span>
+          </div>
+          <div class="b-help"><svg viewBox="0 0 120 130" aria-hidden="true"><use href="#pip"/></svg>Help me</div>
+        </div>
+        <div class="hi"></div>
+      </div></div></div>
+      <figcaption><b>Board</b><span>Rounded paper on a misty desk. Lagoon teal is the tutor's ink; the kid's pens skip every green and blue so the two never mix.</span></figcaption>
+    </figure>
+
+    <div class="m-two">
+      <figure class="mock">
+        <div class="frame" tabindex="0" role="button" aria-label="Enlarge Pebble: Home"><div class="ipad"><div class="scr b-home">
+          <div class="sb"></div>
+          <nav class="b-rail">
+            <svg class="pipmark" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="23" fill="none" stroke="#FF7566" stroke-width="11"/><rect x="67.5" y="22" width="11" height="56" rx="5.5" fill="#FF7566"/><circle cx="50" cy="50" r="9" fill="#0E9C91"/><circle cx="47" cy="49" r="1.6" fill="#1E3442"/><circle cx="53" cy="49" r="1.6" fill="#1E3442"/></svg>
+            <span class="b-nav on"><svg class="ico"><use href="#i-home"/></svg>Home</span>
+            <span class="b-nav"><svg class="ico"><use href="#i-star"/></svg>Practice</span>
+            <span class="b-nav"><svg class="ico"><use href="#i-trail"/></svg>Path</span>
+            <span class="b-nav"><svg class="ico"><use href="#i-chart"/></svg>Progress</span>
+            <div class="bt"><span class="b-av">M</span><span class="b-lock"><svg class="ico" style="width:24px;height:24px"><use href="#i-lock"/></svg></span></div>
+          </nav>
+          <div class="b-main">
+            <div class="b-hello">
+              <svg class="pip blink" viewBox="0 0 120 130" aria-hidden="true"><use href="#pip"/></svg>
+              <div class="b-bub">Morning, Maya! Want to finish today's practice?</div>
+              <span class="grow"></span>
+              <span class="b-btn"><span class="bd"><svg class="ico"><use href="#i-plus"/></svg></span>New board</span>
+            </div>
+            <div class="b-row">
+              <section class="b-today">
+                <div>
+                  <span class="b-eye"><svg class="ico" style="width:20px;height:20px;--duo:var(--butter)"><use href="#i-star"/></svg>Today's practice</span>
+                  <div class="b-big">5 problems</div>
+                  <div class="b-sub">About 10 minutes &middot; 2 of 5 done</div>
+                  <div class="b-stars">
+                    <svg viewBox="0 0 24 24"><path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="#FFC93D" stroke="#FFC93D" stroke-width="2.4" stroke-linejoin="round"/></svg>
+                    <svg viewBox="0 0 24 24"><path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="#FFC93D" stroke="#FFC93D" stroke-width="2.4" stroke-linejoin="round"/></svg>
+                    <svg viewBox="0 0 24 24"><path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="#E3F0EE" stroke="#E3F0EE" stroke-width="2.4" stroke-linejoin="round"/></svg>
+                    <svg viewBox="0 0 24 24"><path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="#E3F0EE" stroke="#E3F0EE" stroke-width="2.4" stroke-linejoin="round"/></svg>
+                    <svg viewBox="0 0 24 24"><path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="#E3F0EE" stroke="#E3F0EE" stroke-width="2.4" stroke-linejoin="round"/></svg>
+                  </div>
+                  <span class="b-btn"><span class="bd"><svg class="ico"><use href="#i-play"/></svg></span>Keep going</span>
+                </div>
+                <div class="b-tr">
+                  <span class="b-flame"><svg class="ico" style="width:32px;height:32px"><use href="#i-flame"/></svg></span>
+                  <div><b>4</b><br><span>day streak</span></div>
+                  <div class="b-week"><i class="d">M</i><i class="d">T</i><i class="d">W</i><i class="t">T</i><i>F</i><i>S</i><i>S</i></div>
+                  <span class="best">Best: 9</span>
+                </div>
+              </section>
+              <section class="b-path">
+                <div class="b-path-h"><b>Your 3rd grade path</b><span>12 of 30 done</span></div>
+                <svg class="b-trail" viewBox="0 0 400 120" aria-hidden="true">
+                  <path d="M24 96 C70 96 70 50 120 50 S190 92 236 88 S300 30 376 34" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-dasharray="1 20"/>
+                  <g fill="#fff"><ellipse cx="24" cy="96" rx="20" ry="17"/><ellipse cx="120" cy="50" rx="20" ry="17"/></g>
+                  <g fill="none" stroke="#1E3442" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 96l5 5 10-10"/><path d="M112 50l5 5 10-10"/></g>
+                  <ellipse cx="236" cy="88" rx="27" ry="23" fill="#FF7566"/>
+                  <use href="#pip" x="221" y="50" width="30" height="33"/>
+                  <g fill="#FFF7DC"><ellipse cx="312" cy="46" rx="17" ry="14"/><ellipse cx="376" cy="34" rx="17" ry="14"/></g>
+                </svg>
+                <div class="b-next"><small>Next up</small><b>Adding fractions</b><span>3 short lessons &middot; about 15 minutes</span></div>
+              </section>
+            </div>
+            <div class="b-boards-h"><h2>My boards</h2><span>See all 14</span></div>
+            <div class="b-grid">
+              <div class="b-tile"><svg class="th" viewBox="0 0 1600 900" data-thumb="fractions"></svg><b>Fractions practice</b><span>Today &middot; 3 screens</span></div>
+              <div class="b-tile"><svg class="th" viewBox="0 0 1600 900" data-thumb="times"></svg><b>Times tables</b><span>Yesterday</span></div>
+              <div class="b-tile"><svg class="th" viewBox="0 0 1600 900" data-thumb="daily"></svg><b>Wednesday's practice</b><span>5 stars</span></div>
+              <div class="b-tile"><svg class="th" viewBox="0 0 1600 900" data-thumb="perimeter"></svg><b>Perimeter</b><span>Monday</span></div>
+            </div>
+          </div>
+          <div class="hi"></div>
+        </div></div></div>
+        <figcaption><b>Home</b><span>A side rail with four big places to go. Pip says hello and points at today's practice.</span></figcaption>
+      </figure>
+
+      <figure class="mock">
+        <div class="frame" tabindex="0" role="button" aria-label="Enlarge Pebble: Ask panel"><div class="ipad"><div class="scr b-board b-askv">
+          <div class="sb"></div>
+          <div class="b-btop">
+            <span class="b-round"><svg class="ico"><use href="#i-chev-l"/></svg></span>
+            <div class="b-title"><b>Fractions practice</b><span>Screen 1 of 3</span></div>
+            <span class="grow"></span>
+            <span class="b-round"><svg class="ico"><use href="#i-more"/></svg></span>
+          </div>
+          <div class="b-page"><svg class="pg" viewBox="0 0 1600 900" data-board="b" data-nocheer="1" aria-hidden="true"></svg></div>
+          <div class="b-dockrow">
+            <div class="b-dock">
+              <span class="b-tool on"><svg class="ico"><use href="#i-pen"/></svg></span>
+              <span class="b-tool"><svg class="ico"><use href="#i-eraser"/></svg></span>
+              <span class="b-tool"><svg class="ico"><use href="#i-more"/></svg></span>
+              <i class="b-sep"></i>
+              <span class="b-tool"><svg class="ico"><use href="#i-undo"/></svg></span>
+              <i class="b-sep"></i>
+              <span class="b-sw" style="--c:var(--k1)"><i></i></span>
+              <i class="b-sep"></i>
+              <span class="b-pg"><span class="b-tool" style="opacity:.35"><svg class="ico"><use href="#i-chev-l"/></svg></span><span>1/3</span><span class="b-tool"><svg class="ico"><use href="#i-chev-r"/></svg></span></span>
+            </div>
+            <div class="b-help"><svg viewBox="0 0 120 130" aria-hidden="true"><use href="#pip"/></svg>Help me</div>
+          </div>
+          <aside class="b-panel">
+            <div class="b-ph">
+              <svg class="pip" viewBox="0 0 120 130" aria-hidden="true"><use href="#pip"/></svg>
+              <div><h3>Ask Pip</h3><small>Screen 1</small></div>
+              <span class="grow"></span>
+              <span class="b-round"><svg class="ico"><use href="#i-speaker"/></svg></span>
+              <span class="b-round"><svg class="ico"><use href="#i-x"/></svg></span>
+            </div>
+            <div class="b-msgs">
+              <div class="b-m t">Hi Maya! Ask me anything, and I can write on your board too.</div>
+              <div class="b-m k"><svg class="ico"><use href="#i-mic"/></svg>why can't I just add the tops?</div>
+              <div class="b-m t">The pieces are different sizes! A fourth is the same as 2 eighths, so <span class="fr"><i>3</i><i>4</i></span> is <span class="fr"><i>6</i><i>8</i></span>. Can you add <span class="fr"><i>6</i><i>8</i></span> + <span class="fr"><i>1</i><i>8</i></span> now?</div>
+              <div class="b-read"><svg class="ico"><use href="#i-speaker"/></svg>Read it again</div>
+              <div class="b-chips"><span>3 more like these</span><span>Show me with pizza</span></div>
+            </div>
+            <div class="b-input"><div>Ask me anything…</div><span class="b-mic"><svg class="ico" style="width:30px;height:30px"><use href="#i-mic"/></svg></span></div>
+          </aside>
+          <div class="hi" style="margin-left:-277px"></div>
+        </div></div></div>
+        <figcaption><b>Ask</b><span>The panel floats like a card. Pip's words sit on teal tint, the kid's on coral tint.</span></figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div class="sheet">
+    <div class="panel s7">
+      <h4>Colour</h4>
+      <div class="swg">
+        <div class="swg-row"><b>Surfaces</b><div class="sws">
+          <div class="sw" style="--c:#FFFFFF"><i></i><span>Paper</span><code>#FFFFFF</code></div>
+          <div class="sw" style="--c:#E8F4F2"><i></i><span>Mist</span><code>#E8F4F2</code></div>
+          <div class="sw" style="--c:#1E3442"><i></i><span>Deep sea</span><code>#1E3442</code></div>
+        </div></div>
+        <div class="swg-row"><b>Brand</b><div class="sws">
+          <div class="sw" style="--c:#FF7566"><i></i><span>Coral</span><code>#FF7566</code></div>
+          <div class="sw" style="--c:#FFD45E"><i></i><span>Butter</span><code>#FFD45E</code></div>
+          <div class="sw tutor" style="--c:#0E9C91"><i>Tutor ink only</i><span>Lagoon</span><code>#0E9C91</code></div>
+        </div></div>
+        <div class="swg-row"><b>Kid pens</b><div class="sws">
+          <div class="pen" style="--c:#1E3442"><i></i><span>Night</span><code>#1E3442</code></div>
+          <div class="pen" style="--c:#E5484D"><i></i><span>Cherry</span><code>#E5484D</code></div>
+          <div class="pen" style="--c:#F08019"><i></i><span>Orange</span><code>#F08019</code></div>
+          <div class="pen" style="--c:#7A5CF5"><i></i><span>Grape</span><code>#7A5CF5</code></div>
+          <div class="pen" style="--c:#DB4B9B"><i></i><span>Berry</span><code>#DB4B9B</code></div>
+        </div></div>
+        <div class="swg-row"><b>Feedback</b><div class="sws">
+          <div class="sw" style="--c:#FFC93D"><i></i><span>Gold star</span><code>#FFC93D</code></div>
+          <div class="sw" style="--c:#A8D2FF"><i></i><span>Look again</span><code>#A8D2FF</code></div>
+        </div></div>
+      </div>
+      <p class="note" style="margin-top:16px">Coral is the kid, lagoon is Pip. Success is a gold star; look again is a soft sky blue, so a slip never looks like an alarm.</p>
+    </div>
+    <div class="panel s5">
+      <h4>Type</h4>
+      <div class="tscale">
+        <div class="ts"><small>Display 60</small><div style="font:600 60px/1 var(--disp)">Morning!</div></div>
+        <div class="ts"><small>Title 32</small><div style="font:600 32px/1 var(--disp)">Today's practice</div></div>
+        <div class="ts"><small>Heading 22</small><div style="font:800 22px/1.2 var(--ui)">Your 3rd grade path</div></div>
+        <div class="ts"><small>Body 19</small><div style="font:600 19px/1.4 var(--ui)">A fourth is the same as 2 eighths.</div></div>
+        <div class="ts"><small>Label 15</small><div style="font:800 15px/1 var(--ui)">Next up</div></div>
+        <div class="ts"><small>Numerals</small><div style="font:800 30px/1 var(--num); font-variant-numeric:tabular-nums">0123456789 <span class="fr" style="font-size:22px"><i>3</i><i>4</i></span></div></div>
+      </div>
+      <div class="fontlist">
+        <p><b>Fredoka</b> SemiBold for display: round, chunky, happy. OFL.</p>
+        <p><b>Nunito</b> for UI and numerals: rounded ends, easy at small sizes. OFL. In the app, SF Pro Rounded is a free native option with Dynamic Type.</p>
+        <p><b>Tutor hand:</b> round school print, like Playpen Sans.</p>
+      </div>
+    </div>
+
+    <div class="panel s7 duo-panel">
+      <div>
+      <h4>Shape</h4>
+      <div class="shapes">
+        <div class="shp"><div style="width:84px;height:60px;border-radius:30px;background:#E8F4F2"></div>Cards 36</div>
+        <div class="shp"><div style="width:60px;height:60px;border-radius:20px;background:#1E3442"></div>Tools 20</div>
+        <div class="shp"><div style="width:104px;height:60px;border-radius:24px;background:#FF7566;display:grid;place-items:center;font:600 18px var(--disp)">Start</div>Buttons 24</div>
+      </div>
+      <div class="speclist">
+        <p><b>Borders:</b> none. Tinted layers do the separating.</p>
+        <p><b>Shadows:</b> none. White floats on mist.</p>
+        <p><b>Buttons:</b> fat rounded rectangles with a squish on press.</p>
+        <p><b>Targets:</b> 60 pt tools for small hands, Help me 70 pt tall.</p>
+      </div>
+      </div>
+      <div>
+      <h4>Icons</h4>
+      <div class="icons" style="--duo:#FFF0C2">
+        <figure><span class="b-tool on"><svg class="ico"><use href="#i-pen"/></svg></span>Pen</figure>
+        <figure><span class="b-tool" style="background:#E8F4F2"><svg class="ico"><use href="#i-eraser"/></svg></span>Eraser</figure>
+        <figure><span class="b-tool" style="background:#E8F4F2"><svg class="ico"><use href="#i-shapes"/></svg></span>Shapes</figure>
+        <figure><span class="b-tool" style="background:#E8F4F2"><svg class="ico"><use href="#i-picture"/></svg></span>Picture</figure>
+        <figure><span class="b-tool" style="background:#E8F4F2"><svg class="ico"><use href="#i-mic"/></svg></span>Talk</figure>
+        <figure><span class="b-tool" style="background:#E8F4F2"><svg class="ico"><use href="#i-star"/></svg></span>Star</figure>
+        <figure><span class="b-tool" style="background:#E8F4F2"><svg class="ico"><use href="#i-flame"/></svg></span>Streak</figure>
+        <figure><span class="b-tool" style="background:#E8F4F2"><svg class="ico"><use href="#i-lock"/></svg></span>Grown-ups</figure>
+      </div>
+      <p class="note" style="margin-top:14px">Rounded 2.3 pt lines with one soft butter fill inside each, like a colouring book coloured in.</p>
+      </div>
+    </div>
+    <div class="panel s5">
+      <h4>Motion</h4>
+      <div class="demo">
+        <button class="dmB-btn" type="button" id="dmB"><svg viewBox="0 0 120 130" aria-hidden="true" class="blink"><use href="#pip"/></svg>Help me</button>
+        <p class="note" style="margin:0">Press it.</p>
+      </div>
+      <p class="p-txt" style="margin-top:16px"><b>Squish.</b> Soft springs, 300 to 450 ms. Buttons squash and bounce back; Pip blinks, wiggles when you get one, and leans in to read.</p>
+    </div>
+
+    <div class="panel s12 duo-panel cv">
+      <div>
+      <h4>Character</h4>
+      <div class="mascot-row">
+        <figure><svg viewBox="0 0 120 130" width="124" height="134" class="blink" aria-label="Pip, happy"><use href="#pip"/></svg>Hello</figure>
+        <figure><svg viewBox="0 0 120 130" width="124" height="134" aria-label="Pip, thinking"><use href="#pip-think"/></svg>Thinking</figure>
+        <figure><svg viewBox="0 0 120 130" width="124" height="134" aria-label="Pip, asleep"><use href="#pip-sleep"/></svg>Out of ink</figure>
+      </div>
+      <p class="p-txt" style="margin-top:14px"><b>Pip</b> is a drop of the tutor's ink, the dot from the middle of the a. Pip reads your work, writes the hints and naps when help is paused. Three poses cover most of the app.</p>
+      </div>
+      <div>
+      <h4>Voice and sound</h4>
+      <div class="voice">
+        <div class="vq"><small>Hint</small><p>Let's make the bottoms match. Can fourths turn into eighths?</p></div>
+        <div class="vq"><small>Celebration</small><p>You did it! Pip is doing a happy wiggle.</p></div>
+        <div class="vq"><small>Out of ink</small><p>Pip needs a grown-up's help to keep going. Can you go find one?</p></div>
+        <div class="vq parent"><small>To a parent</small><p>Maya had 4 calm practice days this week. Fractions are starting to click.</p></div>
+      </div>
+      <p class="note" style="margin-top:14px">A patient friend: "let's", questions, and Pip talking in the first person.</p>
+      <p class="p-txt" style="margin-top:14px"><b>Sound:</b> water and chimes. A small bloop for taps, a warm two-note chime for a tick, Pip's tiny giggle for a finished set. Look again is a gentle rising "hmm?". Quiet by default.</p>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ===================================================================== C -->
+<section class="dir dC" id="sticker" aria-labelledby="sticker-name">
+<div class="dir-in">
+  <header class="dh">
+    <div>
+      <p class="dh-k">Direction C</p>
+      <h2 class="dh-name" id="sticker-name">Sticker Book</h2>
+      <div class="dh-mood"><span>Playful</span><span>Crafty</span><span>Collectable</span></div>
+      <p class="dh-who">For kids who collect and make things, 6 to 11. Practice earns stickers for a real sticker book, the board is squared maths paper, and the app looks like a craft table instead of a test.</p>
+    </div>
+    <div class="dh-r">
+      <div class="lockup">
+        <svg class="lk-ic" viewBox="0 0 120 120" aria-label="App icon"><rect width="120" height="120" rx="27" fill="#FF8A3D"/><g transform="rotate(-8 60 60) translate(14 16) scale(.92)"><g transform="translate(0 4)" fill="rgba(35,31,46,.22)" stroke="rgba(35,31,46,.22)"><circle cx="50" cy="50" r="23" fill="none" stroke-width="24"/><rect x="61" y="15" width="24" height="70" rx="9"/></g><g fill="#fff" stroke="#fff"><circle cx="50" cy="50" r="23" fill="none" stroke-width="24"/><rect x="61" y="15" width="24" height="70" rx="9"/></g><circle cx="50" cy="50" r="23" fill="none" stroke="#6B3BF2" stroke-width="10"/><circle cx="50" cy="50" r="6.5" fill="#6B3BF2"/><rect x="68" y="22" width="10" height="56" rx="3" fill="#6B3BF2"/></g></svg>
+        <span class="wm" style="display:inline-flex; gap:1px; font-weight:700"><span style="transform:rotate(-5deg) translateY(2px)">a</span><span style="transform:rotate(4deg)">g</span><span style="transform:rotate(-3deg) translateY(3px)">a</span><span style="transform:rotate(5deg)">t</span><span style="transform:rotate(-4deg) translateY(1px)">h</span><span style="transform:rotate(3deg) translateY(3px)">o</span><span style="transform:rotate(-2deg)">n</span></span>
+      </div>
+      <p class="dh-logo-note">The mark becomes a die-cut sticker in the tutor's violet, stuck on a little crooked. The name sets in bouncy letters, each one at its own angle.</p>
+    </div>
+  </header>
+
+  <div class="mocks">
+    <figure class="mock">
+      <div class="frame" tabindex="0" role="button" aria-label="Enlarge Sticker Book: the Board"><div class="ipad"><div class="scr c-board">
+        <div class="sb"></div>
+        <div class="c-btop">
+          <span class="c-round"><svg class="ico"><use href="#i-chev-l"/></svg></span>
+          <div class="c-title"><b>Fractions practice</b><span>Screen 1 of 3</span></div>
+          <span class="c-live"><svg class="ico"><use href="#i-pencil-doodle"/></svg>Checking…</span>
+          <span class="grow"></span>
+          <span class="c-askb"><svg class="ico"><use href="#i-chat"/></svg>Ask</span>
+          <span class="c-round"><svg class="ico"><use href="#i-more"/></svg></span>
+        </div>
+        <div class="c-page"><svg class="pg" viewBox="0 0 1600 900" data-board="c" role="img" aria-label="Handwritten 24 + 18 = 42 with a tick and a star sticker, and 3/4 + 1/8 = with a ring and a hint, on squared paper"></svg></div>
+        <div class="c-dockrow">
+          <div class="c-dock">
+            <span class="c-tool on"><svg class="ico"><use href="#i-pen"/></svg></span>
+            <span class="c-tool"><svg class="ico"><use href="#i-eraser"/></svg></span>
+            <span class="c-tool"><svg class="ico"><use href="#i-shapes"/></svg></span>
+            <span class="c-tool"><svg class="ico"><use href="#i-picture"/></svg></span>
+            <i class="c-sep"></i>
+            <span class="c-tool"><svg class="ico"><use href="#i-undo"/></svg></span>
+            <span class="c-tool" style="opacity:.35"><svg class="ico"><use href="#i-redo"/></svg></span>
+            <i class="c-sep"></i>
+            <span class="c-sw on"><svg viewBox="0 0 44 44"><use href="#blob" style="color:var(--k1)"/></svg></span>
+            <span class="c-sw"><svg viewBox="0 0 44 44"><use href="#blob" style="color:var(--k2)"/></svg></span>
+            <span class="c-sw"><svg viewBox="0 0 44 44"><use href="#blob2" style="color:var(--k3)"/></svg></span>
+            <span class="c-sw"><svg viewBox="0 0 44 44"><use href="#blob" style="color:var(--k4)"/></svg></span>
+            <span class="c-sw"><svg viewBox="0 0 44 44"><use href="#blob2" style="color:var(--k5)"/></svg></span>
+            <i class="c-sep"></i>
+            <span class="c-pg"><span class="c-tool" style="opacity:.35"><svg class="ico"><use href="#i-chev-l"/></svg></span><span>1/3</span><span class="c-tool"><svg class="ico"><use href="#i-chev-r"/></svg></span></span>
+          </div>
+          <div class="c-help"><svg class="ico"><use href="#i-hand"/></svg>Help me</div>
+        </div>
+        <div class="hi"></div>
+      </div></div></div>
+      <figcaption><b>Board</b><span>Squared maths paper keeps digits in line. The tutor writes in violet marker; a right line earns a star sticker, slapped on a little crooked.</span></figcaption>
+    </figure>
+
+    <div class="m-two">
+      <figure class="mock">
+        <div class="frame" tabindex="0" role="button" aria-label="Enlarge Sticker Book: Home"><div class="ipad"><div class="scr c-home">
+          <div class="sb"></div>
+          <div class="c-top">
+            <div class="c-logo"><svg viewBox="0 0 120 120" aria-hidden="true"><g transform="translate(10 10)"><g transform="translate(0 4)" fill="rgba(35,31,46,.22)" stroke="rgba(35,31,46,.22)"><circle cx="50" cy="50" r="23" fill="none" stroke-width="24"/><rect x="61" y="15" width="24" height="70" rx="9"/></g><g fill="#fff" stroke="#fff"><circle cx="50" cy="50" r="23" fill="none" stroke-width="24"/><rect x="61" y="15" width="24" height="70" rx="9"/></g><circle cx="50" cy="50" r="23" fill="none" stroke="#6B3BF2" stroke-width="10"/><circle cx="50" cy="50" r="6.5" fill="#6B3BF2"/><rect x="68" y="22" width="10" height="56" rx="3" fill="#6B3BF2"/></g></svg><span>agathon</span></div>
+            <div class="c-top-r">
+              <span class="c-pill"><svg class="ico" style="width:24px;height:24px"><use href="#i-lock"/></svg>Grown-ups</span>
+              <span class="c-pill ink"><svg class="ico" style="width:24px;height:24px"><use href="#i-plus"/></svg>New board</span>
+              <span class="c-av">M</span>
+            </div>
+          </div>
+          <div class="c-hello"><h1>Hi Maya!</h1><span>3 more stickers to earn today.</span></div>
+          <div class="c-row">
+            <section class="c-today">
+              <span class="tape" style="top:-12px; left:30px; transform:rotate(-6deg)"></span>
+              <div>
+                <div class="c-eye">Today's practice</div>
+                <div class="c-big">5 problems</div>
+                <div class="c-sub">About 10 minutes &middot; 2 of 5 done</div>
+                <div class="c-slots">
+                  <span class="c-slot f"><svg viewBox="0 0 70 70"><use href="#starstk"/></svg></span>
+                  <span class="c-slot f"><svg viewBox="0 0 70 70" style="transform:rotate(12deg)"><use href="#starstk"/></svg></span>
+                  <span class="c-slot">3</span><span class="c-slot">4</span><span class="c-slot">5</span>
+                </div>
+                <span class="c-btn"><span class="bd"><svg class="ico"><use href="#i-play"/></svg></span>Keep going</span>
+              </div>
+              <div class="c-tr">
+                <svg viewBox="0 0 70 70" width="62" height="62" aria-hidden="true"><use href="#flamestk"/></svg>
+                <div><b>4</b><br><span>day streak</span></div>
+                <div class="c-week"><i class="d">M</i><i class="d">T</i><i class="d">W</i><i class="t">T</i><i>F</i><i>S</i><i>S</i></div>
+                <span class="best">Best: 9</span>
+              </div>
+            </section>
+            <section class="c-path">
+              <span class="tape" style="top:-10px; right:36px; transform:rotate(5deg); --tc:rgba(255,141,196,.85)"></span>
+              <div class="c-path-h"><b>Your 3rd grade path</b><span>12 of 30 done</span></div>
+              <svg class="c-trail" viewBox="0 0 440 130" aria-hidden="true">
+                <path d="M20 102 C80 110 80 40 150 46 S220 112 280 92 S350 22 420 30" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-dasharray="14 12"/>
+                <g transform="translate(-6 76)"><svg width="52" height="52" viewBox="0 0 70 70"><use href="#starstk"/></svg></g>
+                <g transform="translate(124 20)"><svg width="52" height="52" viewBox="0 0 70 70"><use href="#starstk"/></svg></g>
+                <g transform="translate(250 58)"><circle cx="30" cy="32" r="28" fill="#fff"/><circle cx="30" cy="32" r="22" fill="#FF8DC4"/><path d="M24 44V18l14 6-14 6" fill="none" stroke="#231F2E" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/></g>
+                <g fill="none" stroke="#231F2E" stroke-width="3" stroke-dasharray="5 5"><circle cx="350" cy="52" r="17"/><circle cx="420" cy="30" r="17"/></g>
+              </svg>
+              <div class="c-next"><small>Next up</small><b>Adding fractions</b><span>Unlocks a new sticker sheet</span></div>
+            </section>
+          </div>
+          <section class="c-boards">
+            <div class="c-boards-h"><h2>My boards</h2><span class="c-book stk"><svg viewBox="0 0 70 70"><use href="#starstk"/></svg>My sticker book &middot; 12</span></div>
+            <div class="c-grid">
+              <div class="c-tile"><span class="tape" style="--tc:rgba(190,227,79,.9)"></span><svg class="th" viewBox="0 0 1600 900" data-thumb="fractions"></svg><b>Fractions practice</b><span>Today &middot; 3 screens</span></div>
+              <div class="c-tile"><span class="tape" style="--tc:rgba(124,203,255,.9)"></span><svg class="th" viewBox="0 0 1600 900" data-thumb="times"></svg><b>Times tables</b><span>Yesterday</span></div>
+              <div class="c-tile"><span class="tape" style="--tc:rgba(255,141,196,.9)"></span><svg class="th" viewBox="0 0 1600 900" data-thumb="daily"></svg><b>Wednesday's practice</b><span>5 stickers</span></div>
+              <div class="c-tile"><span class="tape" style="--tc:rgba(255,232,115,.95)"></span><svg class="th" viewBox="0 0 1600 900" data-thumb="perimeter"></svg><b>Perimeter</b><span>Monday</span></div>
+            </div>
+          </section>
+          <div class="hi"></div>
+        </div></div></div>
+        <figcaption><b>Home</b><span>Today's practice is a sticker sheet with empty slots to fill. Boards are notebook pages taped to the table.</span></figcaption>
+      </figure>
+
+      <figure class="mock">
+        <div class="frame" tabindex="0" role="button" aria-label="Enlarge Sticker Book: Ask panel"><div class="ipad"><div class="scr c-board c-askv">
+          <div class="sb"></div>
+          <div class="c-btop">
+            <span class="c-round"><svg class="ico"><use href="#i-chev-l"/></svg></span>
+            <div class="c-title"><b>Fractions practice</b><span>Screen 1 of 3</span></div>
+            <span class="grow"></span>
+            <span class="c-round"><svg class="ico"><use href="#i-more"/></svg></span>
+          </div>
+          <div class="c-page"><svg class="pg" viewBox="0 0 1600 900" data-board="c" data-nocheer="1" aria-hidden="true"></svg></div>
+          <div class="c-dockrow">
+            <div class="c-dock">
+              <span class="c-tool on"><svg class="ico"><use href="#i-pen"/></svg></span>
+              <span class="c-tool"><svg class="ico"><use href="#i-eraser"/></svg></span>
+              <span class="c-tool"><svg class="ico"><use href="#i-more"/></svg></span>
+              <i class="c-sep"></i>
+              <span class="c-tool"><svg class="ico"><use href="#i-undo"/></svg></span>
+              <i class="c-sep"></i>
+              <span class="c-sw"><svg viewBox="0 0 44 44"><use href="#blob" style="color:var(--k1)"/></svg></span>
+              <i class="c-sep"></i>
+              <span class="c-pg"><span class="c-tool" style="opacity:.35"><svg class="ico"><use href="#i-chev-l"/></svg></span><span>1/3</span><span class="c-tool"><svg class="ico"><use href="#i-chev-r"/></svg></span></span>
+            </div>
+            <div class="c-help"><svg class="ico"><use href="#i-hand"/></svg>Help me</div>
+          </div>
+          <aside class="c-panel">
+            <div class="c-ph">
+              <div><h3>Ask your tutor</h3><svg class="ul" viewBox="0 0 200 12" aria-hidden="true"><path d="M3 8 C40 3 90 4 130 6 S180 9 196 4" fill="none" stroke="#6B3BF2" stroke-width="5" stroke-linecap="round"/></svg><small>Screen 1</small></div>
+              <span class="grow"></span>
+              <span class="c-round"><svg class="ico"><use href="#i-speaker"/></svg></span>
+              <span class="c-round"><svg class="ico"><use href="#i-x"/></svg></span>
+            </div>
+            <div class="c-msgs">
+              <div class="c-m t">Hi Maya! Ask me anything, and I can write on your board too.</div>
+              <div class="c-m k"><svg class="ico"><use href="#i-mic"/></svg>why can't I just add the tops?</div>
+              <div class="c-m t">Psst, the pieces are different sizes. A fourth is 2 eighths, so <span class="fr"><i>3</i><i>4</i></span> is <span class="fr"><i>6</i><i>8</i></span>. Now try <span class="fr"><i>6</i><i>8</i></span> + <span class="fr"><i>1</i><i>8</i></span>.</div>
+              <div class="c-read"><svg class="ico"><use href="#i-speaker"/></svg>Read it again</div>
+              <div class="c-chips"><span>3 more like these</span><span>Show me with pizza</span></div>
+            </div>
+            <div class="c-input"><div>Ask me anything…</div><span class="c-mic"><svg class="ico" style="width:30px;height:30px"><use href="#i-mic"/></svg></span></div>
+          </aside>
+          <div class="hi" style="margin-left:-279px"></div>
+        </div></div></div>
+        <figcaption><b>Ask</b><span>Messages are sticky notes: violet tint for the tutor, yellow for the kid.</span></figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div class="sheet">
+    <div class="panel s7">
+      <h4>Colour</h4>
+      <div class="swg">
+        <div class="swg-row"><b>Surfaces</b><div class="sws">
+          <div class="sw" style="--c:#FF8A3D"><i></i><span>Tangerine</span><code>#FF8A3D</code></div>
+          <div class="sw" style="--c:#FFE7D3"><i></i><span>Desk</span><code>#FFE7D3</code></div>
+          <div class="sw" style="--c:#FFFFFF"><i></i><span>Paper</span><code>#FFFFFF</code></div>
+          <div class="sw" style="--c:#231F2E"><i></i><span>Liquorice</span><code>#231F2E</code></div>
+        </div></div>
+        <div class="swg-row"><b>Brand</b><div class="sws">
+          <div class="sw" style="--c:#FF8DC4"><i></i><span>Bubblegum</span><code>#FF8DC4</code></div>
+          <div class="sw" style="--c:#BEE34F"><i></i><span>Lime</span><code>#BEE34F</code></div>
+          <div class="sw tutor" style="--c:#6B3BF2"><i>Tutor ink only</i><span>Marker violet</span><code>#6B3BF2</code></div>
+        </div></div>
+        <div class="swg-row"><b>Kid pens</b><div class="sws">
+          <div class="pen" style="--c:#231F2E"><i></i><span>Black</span><code>#231F2E</code></div>
+          <div class="pen" style="--c:#EE3B2F"><i></i><span>Poppy</span><code>#EE3B2F</code></div>
+          <div class="pen" style="--c:#F28A00"><i></i><span>Orange</span><code>#F28A00</code></div>
+          <div class="pen" style="--c:#1E9E52"><i></i><span>Grass</span><code>#1E9E52</code></div>
+          <div class="pen" style="--c:#E8489A"><i></i><span>Pink</span><code>#E8489A</code></div>
+        </div></div>
+        <div class="swg-row"><b>Feedback</b><div class="sws">
+          <div class="sw" style="--c:#FFC83A"><i></i><span>Star sticker</span><code>#FFC83A</code></div>
+          <div class="sw" style="--c:#7CCBFF"><i></i><span>Look again</span><code>#7CCBFF</code></div>
+        </div></div>
+      </div>
+      <p class="note" style="margin-top:16px">Construction-paper brights on a tangerine table. The board itself stays white with a pale squared grid, so the work is the loudest thing on it.</p>
+    </div>
+    <div class="panel s5">
+      <h4>Type</h4>
+      <div class="tscale">
+        <div class="ts"><small>Display 60</small><div style="font:700 60px/1 var(--disp)">Hi Maya!</div></div>
+        <div class="ts"><small>Title 32</small><div style="font:700 32px/1 var(--disp)">My sticker book</div></div>
+        <div class="ts"><small>Heading 22</small><div style="font:700 22px/1.2 var(--ui)">Your 3rd grade path</div></div>
+        <div class="ts"><small>Body 19</small><div style="font:500 19px/1.4 var(--ui)">A fourth is the same as 2 eighths.</div></div>
+        <div class="ts"><small>Label 15</small><div style="font:700 15px/1 var(--ui)">Next up</div></div>
+        <div class="ts"><small>Numerals</small><div style="font:700 30px/1 var(--num); font-variant-numeric:tabular-nums">0123456789 <span class="fr" style="font-size:22px"><i>3</i><i>4</i></span></div></div>
+      </div>
+      <div class="fontlist">
+        <p><b>DynaPuff</b> for display: puffy letters that already look like stickers. OFL.</p>
+        <p><b>Shantell Sans</b> for UI: a marker hand that stays easy to read. OFL.</p>
+        <p><b>Andika</b> for numerals: made for early readers, with a plain 1, an open 4 and the a kids are taught. OFL.</p>
+        <p><b>Tutor hand:</b> a felt-tip marker, like Gochi Hand.</p>
+      </div>
+    </div>
+
+    <div class="panel s7 duo-panel">
+      <div>
+      <h4>Shape</h4>
+      <div class="shapes">
+        <div class="shp"><div style="width:84px;height:60px;border-radius:18px;background:#fff;box-shadow:0 0 0 1px #F1E6DC, 0 4px 0 rgba(35,31,46,.22);transform:rotate(-2deg)"></div>Sticker 18</div>
+        <div class="shp"><div style="width:60px;height:60px;border-radius:18px;background:#BEE34F;transform:rotate(-4deg)"></div>Tools 18</div>
+        <div class="shp"><div style="height:58px;padding:0 20px;border-radius:999px;background:#231F2E;color:#fff;border:4px solid #fff;box-shadow:0 0 0 1px #F1E6DC, 0 4px 0 rgba(35,31,46,.22);display:grid;place-items:center;font:700 17px var(--disp)">Start</div>Buttons</div>
+      </div>
+      <div class="speclist">
+        <p><b>Borders:</b> a white die-cut edge, 5 pt.</p>
+        <p><b>Shadows:</b> one flat 4 pt drop, no blur, like a sticker lifting off.</p>
+        <p><b>Tilt:</b> up to 2&deg; on cards and stickers; never on the page or text you read.</p>
+        <p><b>Targets:</b> 56 pt tools, Help me 68 pt tall.</p>
+      </div>
+      </div>
+      <div>
+      <h4>Icons</h4>
+      <div class="icons">
+        <figure><span class="c-tool on"><svg class="ico"><use href="#i-pen"/></svg></span>Pen</figure>
+        <figure><span class="c-tool" style="background:#FFE7D3"><svg class="ico"><use href="#i-eraser"/></svg></span>Eraser</figure>
+        <figure><span class="c-tool" style="background:#FFE7D3"><svg class="ico"><use href="#i-shapes"/></svg></span>Shapes</figure>
+        <figure><span class="c-tool" style="background:#FFE7D3"><svg class="ico"><use href="#i-picture"/></svg></span>Picture</figure>
+        <figure><span class="c-tool" style="background:#FFE7D3"><svg class="ico"><use href="#i-mic"/></svg></span>Talk</figure>
+        <figure><span class="c-tool" style="background:#FFE7D3"><svg class="ico"><use href="#i-hand"/></svg></span>Help</figure>
+        <figure><span class="c-tool" style="background:#FFE7D3"><svg class="ico"><use href="#i-palette"/></svg></span>Colors</figure>
+        <figure><span class="c-tool" style="background:#FFE7D3"><svg class="ico"><use href="#i-lock"/></svg></span>Grown-ups</figure>
+      </div>
+      <p class="note" style="margin-top:14px">Doodles: marker lines with a slight wobble, drawn as if by hand. The tool in use sits on a lime sticker, tipped a little.</p>
+      </div>
+    </div>
+    <div class="panel s5">
+      <h4>Motion</h4>
+      <div class="demo">
+        <div class="dmC" id="dmC"><span class="slot"></span><svg viewBox="0 0 70 70" style="transform:rotate(-3deg)" aria-label="A star sticker"><use href="#starstk"/></svg></div>
+        <span class="dmC-count" id="dmCc">12 stickers in your book</span>
+        <button class="demo-btn" type="button" data-stick="dmC">Earn a sticker</button>
+      </div>
+      <p class="p-txt" style="margin-top:16px"><b>Slap and stick.</b> Stickers land with a spin and a small overshoot, then press flat. The tutor writes at marker pace.</p>
+    </div>
+
+    <div class="panel s12 duo-panel cv">
+      <div>
+      <h4>Character</h4>
+      <div class="mascot-row">
+        <figure><svg viewBox="0 0 70 70" width="112" height="112" aria-label="Star sticker with a face"><use href="#starstk-face"/></svg>Star</figure>
+        <figure><svg viewBox="0 0 90 90" width="112" height="112" aria-label="Pencil stub sticker with a face"><use href="#pencilstk"/></svg>Stub</figure>
+        <figure><svg viewBox="0 0 120 120" width="112" height="112" aria-label="The a sticker"><g transform="rotate(-8 60 60) translate(10 10)"><g transform="translate(0 4)" fill="rgba(35,31,46,.22)" stroke="rgba(35,31,46,.22)"><circle cx="50" cy="50" r="23" fill="none" stroke-width="24"/><rect x="61" y="15" width="24" height="70" rx="9"/></g><g fill="#fff" stroke="#fff"><circle cx="50" cy="50" r="23" fill="none" stroke-width="24"/><rect x="61" y="15" width="24" height="70" rx="9"/></g><circle cx="50" cy="50" r="23" fill="none" stroke="#6B3BF2" stroke-width="10"/><circle cx="50" cy="50" r="6.5" fill="#6B3BF2"/><rect x="68" y="22" width="10" height="56" rx="3" fill="#6B3BF2"/></g></svg>The a</figure>
+      </div>
+      <p class="p-txt" style="margin-top:14px">No single mascot. The cast is the sticker set: a star for every problem done alone, a stub for one done with help, and rare ones for streaks. Each skill on the path unlocks a new sheet.</p>
+      </div>
+      <div>
+      <h4>Voice and sound</h4>
+      <div class="voice">
+        <div class="vq"><small>Hint</small><p>Psst. Fourths and eighths can't mix yet. Turn <span class="fr"><i>3</i><i>4</i></span> into eighths first.</p></div>
+        <div class="vq"><small>Celebration</small><p>Sticker! That's 13 in your book.</p></div>
+        <div class="vq"><small>Out of ink</small><p>Your tutor's marker ran dry. Ask a grown-up to fill it back up.</p></div>
+        <div class="vq parent"><small>To a parent</small><p>Maya filled a sticker page this week: 14 problems, 11 on her own.</p></div>
+      </div>
+      <p class="note" style="margin-top:14px">A cheeky art-class friend: playful, a little conspiratorial, always on the kid's side.</p>
+      <p class="p-txt" style="margin-top:14px"><b>Sound:</b> stationery. A sticker thwip, a rubber-stamp thunk for a tick, a marker squeak while the tutor writes, a ukulele strum for a finished set. Look again is two pencil taps.</p>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- sticker + character parts (rendered SVG defs) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="pip" viewBox="0 0 120 130"><path d="M60 8C60 8 18 54 18 82a42 42 0 0 0 84 0C102 54 60 8 60 8z" fill="#0E9C91"/><path d="M42 58c-4 6-7 12-8 18" fill="none" stroke="#5CC4BB" stroke-width="5" stroke-linecap="round"/><ellipse class="eye" cx="47" cy="84" rx="6" ry="8" fill="#1E3442"/><ellipse class="eye" cx="73" cy="84" rx="6" ry="8" fill="#1E3442"/><circle cx="49" cy="81" r="2.2" fill="#fff"/><circle cx="75" cy="81" r="2.2" fill="#fff"/><ellipse cx="36" cy="98" rx="7" ry="4.5" fill="#FF9C90"/><ellipse cx="84" cy="98" rx="7" ry="4.5" fill="#FF9C90"/><path d="M53 101q7 7 14 0" fill="none" stroke="#1E3442" stroke-width="3.6" stroke-linecap="round"/></symbol>
+    <symbol id="pip-think" viewBox="0 0 120 130"><path d="M60 8C60 8 18 54 18 82a42 42 0 0 0 84 0C102 54 60 8 60 8z" fill="#0E9C91"/><path d="M42 58c-4 6-7 12-8 18" fill="none" stroke="#5CC4BB" stroke-width="5" stroke-linecap="round"/><ellipse cx="50" cy="82" rx="6" ry="8" fill="#1E3442"/><ellipse cx="76" cy="82" rx="6" ry="8" fill="#1E3442"/><circle cx="53" cy="78" r="2.2" fill="#fff"/><circle cx="79" cy="78" r="2.2" fill="#fff"/><ellipse cx="38" cy="98" rx="7" ry="4.5" fill="#FF9C90"/><ellipse cx="86" cy="98" rx="7" ry="4.5" fill="#FF9C90"/><path d="M58 103h12" stroke="#1E3442" stroke-width="3.6" stroke-linecap="round"/><g fill="#FFD45E"><circle cx="100" cy="30" r="5"/><circle cx="110" cy="16" r="7"/></g></symbol>
+    <symbol id="pip-sleep" viewBox="0 0 120 130"><path d="M60 8C60 8 18 54 18 82a42 42 0 0 0 84 0C102 54 60 8 60 8z" fill="#0E9C91"/><path d="M42 58c-4 6-7 12-8 18" fill="none" stroke="#5CC4BB" stroke-width="5" stroke-linecap="round"/><g fill="none" stroke="#1E3442" stroke-width="3.6" stroke-linecap="round"><path d="M40 85q7 5 14 0"/><path d="M66 85q7 5 14 0"/><path d="M56 102q4 3 8 0"/></g><ellipse cx="36" cy="97" rx="7" ry="4.5" fill="#FF9C90"/><ellipse cx="84" cy="97" rx="7" ry="4.5" fill="#FF9C90"/><g fill="none" stroke="#1E3442" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M88 22h12l-12 12h12"/><path d="M104 6h8l-8 8h8"/></g></symbol>
+    <symbol id="starstk" viewBox="0 0 70 70"><path d="M35 9l7.6 15.4 17 2.5-12.3 12 2.9 16.9L35 47.8l-15.2 8 2.9-16.9-12.3-12 17-2.5z" transform="translate(0 3.5)" fill="rgba(35,31,46,.22)" stroke="rgba(35,31,46,.22)" stroke-width="14" stroke-linejoin="round"/><path d="M35 9l7.6 15.4 17 2.5-12.3 12 2.9 16.9L35 47.8l-15.2 8 2.9-16.9-12.3-12 17-2.5z" fill="#fff" stroke="#fff" stroke-width="14" stroke-linejoin="round"/><path d="M35 9l7.6 15.4 17 2.5-12.3 12 2.9 16.9L35 47.8l-15.2 8 2.9-16.9-12.3-12 17-2.5z" fill="#FFC83A" stroke="#FFC83A" stroke-width="3" stroke-linejoin="round"/><path d="M27 26l4-1" stroke="#FFE7A0" stroke-width="3" stroke-linecap="round"/></symbol>
+    <symbol id="starstk-face" viewBox="0 0 70 70"><use href="#starstk"/><circle cx="30" cy="34" r="2.6" fill="#231F2E"/><circle cx="40" cy="34" r="2.6" fill="#231F2E"/><path d="M31 40q4 4 8 0" fill="none" stroke="#231F2E" stroke-width="2.4" stroke-linecap="round"/></symbol>
+    <symbol id="flamestk" viewBox="0 0 70 70"><path d="M35 62c-11 0-19-8-19-18 0-10 7-16 11-25 1.5 5 4 8.5 7 10.5 1-8 5-15 11-20-1 9 3 14 6.5 19 3 4 4 8 4 12.5C55.5 53 47 62 35 62z" transform="translate(0 3.5)" fill="rgba(35,31,46,.22)" stroke="rgba(35,31,46,.22)" stroke-width="12" stroke-linejoin="round"/><path d="M35 62c-11 0-19-8-19-18 0-10 7-16 11-25 1.5 5 4 8.5 7 10.5 1-8 5-15 11-20-1 9 3 14 6.5 19 3 4 4 8 4 12.5C55.5 53 47 62 35 62z" fill="#fff" stroke="#fff" stroke-width="12" stroke-linejoin="round"/><path d="M35 62c-11 0-19-8-19-18 0-10 7-16 11-25 1.5 5 4 8.5 7 10.5 1-8 5-15 11-20-1 9 3 14 6.5 19 3 4 4 8 4 12.5C55.5 53 47 62 35 62z" fill="#FF6A3D"/><path d="M35 60c-5 0-8.5-3.5-8.5-8 0-5 4-7.5 6-12 2 5 6 6.5 8 9.5 1.6 2.4 2.5 4 2.5 5.5 0 3-3.4 5-8 5z" fill="#FFC83A"/></symbol>
+    <symbol id="pencilstk" viewBox="0 0 90 90"><g transform="rotate(-30 45 45)"><g transform="translate(0 4)" fill="rgba(35,31,46,.22)"><rect x="12" y="29" width="66" height="32" rx="12"/></g><rect x="12" y="29" width="66" height="32" rx="12" fill="#fff"/><path d="M58 35h10l8 10-8 10H58z" fill="#FFD9A8"/><path d="M71 41l5 4-5 4z" fill="#231F2E"/><rect x="18" y="35" width="40" height="20" rx="4" fill="#FF8DC4"/><rect x="18" y="35" width="8" height="20" rx="3" fill="#BEE34F"/><circle cx="37" cy="44" r="2.4" fill="#231F2E"/><circle cx="47" cy="44" r="2.4" fill="#231F2E"/><path d="M38 49q4 3 8 0" fill="none" stroke="#231F2E" stroke-width="2.2" stroke-linecap="round"/></g></symbol>
+    <symbol id="blob" viewBox="0 0 44 44"><path d="M23 3.5c6.6.3 11 4.4 13.6 9.8 1.4 2.9 4 3.8 3.8 7.4-.3 5.4-3.8 12.6-10.8 15.4-6.4 2.6-14.4 1.6-19.2-3.6C5.8 27.6 2.6 21 4.2 14.8 6.1 7.8 14.4 3.1 23 3.5z" fill="currentColor"/><path d="M12.5 14.5c1.6-2.6 4-4.2 6.8-4.8" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="3" stroke-linecap="round"/></symbol>
+    <symbol id="blob2" viewBox="0 0 44 44"><path d="M19 4.5c5.2-1.6 8.8 1.4 12.6 2.6 5.4 1.8 9 6.6 8.8 13.2-.2 7.6-5.6 15.6-14 18.4-7.4 2.4-16-.6-19.6-7.4C3.6 25.6 3.2 18.8 6 13.4 8.4 8.8 13.4 6.2 19 4.5z" fill="currentColor"/><path d="M11.5 16c1.2-3 3.6-5.2 6.6-6.2" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="3" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<!-- ===================================================================== compare + pick -->
+<section class="wrap compare" aria-labelledby="cmp">
+  <h2 id="cmp">Side by side</h2>
+  <p>Same product, same screens, three different feelings. The rows below are what changes.</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th scope="col"></th><th scope="col">A &middot; Blocks</th><th scope="col">B &middot; Pebble</th><th scope="col">C &middot; Sticker Book</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Feels like</th><td>A bright, clear tool</td><td>A calm, kind friend</td><td>A craft table and a sticker album</td></tr>
+        <tr><th scope="row">Best fit</th><td>Ages 5 to 14, and parents</td><td>Ages 5 to 9, nervous learners</td><td>Ages 6 to 11, collectors</td></tr>
+        <tr><th scope="row">Tutor ink</th><td>Cobalt #2D5BFF (blue, as today)</td><td>Lagoon #0E9C91</td><td>Marker violet #6B3BF2</td></tr>
+        <tr><th scope="row">Ground</th><td>White and chalk</td><td>Mist</td><td>Tangerine, with a pale desk on the board</td></tr>
+        <tr><th scope="row">Type</th><td>Bricolage Grotesque + Lexend</td><td>Fredoka + Nunito (or SF Pro Rounded)</td><td>DynaPuff + Shantell Sans + Andika</td></tr>
+        <tr><th scope="row">Motion</th><td>Snap</td><td>Squish</td><td>Slap and stick</td></tr>
+        <tr><th scope="row">Character</th><td>The logo's shapes, for big moments</td><td>Pip, a drop of the tutor's ink</td><td>The sticker set</td></tr>
+        <tr><th scope="row">Reward</th><td>Stars, streaks and the path</td><td>Stars and Pip's wiggle</td><td>Stickers in a sticker book</td></tr>
+        <tr><th scope="row">Build effort</th><td>Lowest: flat shapes, one icon set, no art</td><td>Medium: Pip needs poses and animation</td><td>Highest: sticker art, tilt rules, a sticker economy</td></tr>
+        <tr><th scope="row">Main risk</th><td>The least cute. Motion and sound have to carry the fun.</td><td>Older kids may find it young.</td><td>Busy. The board needs strict calm next to the noise.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="wrap pick" aria-labelledby="pick">
+  <h2 id="pick">Our pick</h2>
+  <div class="pick-card">
+    <div>
+      <h3>A, Blocks, with C's sticker book for practice.</h3>
+      <p>Blocks covers the whole K to 8 range without looking babyish to a 12 year old, and it reads as a serious tool to the parent paying $25 a month. It keeps the tutor blue that kids already know from the web app, and its whole look comes from the mark we already have.</p>
+      <p>It is also the fastest to build well in SwiftUI: flat shapes, one icon set, two font families, no illustration pipeline.</p>
+    </div>
+    <div>
+      <p class="muted" style="margin-top:0">What we would borrow and watch:</p>
+      <ul>
+        <li>Borrow C's reward: today's stars become stickers that fill a sticker book. It gives Blocks the collecting pull it lacks on its own.</li>
+        <li>Lean on motion and sound. Snap and the marimba ticks are where Blocks gets its fun, so they ship with the first build, not later.</li>
+        <li>Test the yellow Help me and the ink dock with two or three kids under 7 before locking them.</li>
+        <li>If you want it cuter, B is the safer second choice. Pip could even live inside Blocks as the tutor's face.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+<footer class="wrap foot"><p>All fonts are SIL Open Font License, free to embed in the iOS app. Mockups are drawn at iPad Pro 11-inch landscape, 1194 &times; 834 points. Every colour is a flat fill.</p></footer>
+
+<div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="Screen, enlarged">
+  <p class="lb-hint" id="lbh"></p>
+  <button class="lb-x" id="lbx" type="button">Close</button>
+  <div class="lb-in" id="lbin"></div>
+</div>
+
+<script>
+(function(){
+  /* ---------- kid handwriting: hand-drawn glyphs in a 40 x 60 box ---------- */
+  var GL = {
+    '0':'M21 4C9 4 4 20 5 34c1 15 7 23 16 23 11 0 15-14 14-28C34 13 29 4 20 5',
+    '1':'M10 14c5-3 9-7 12-11 0 18-1 37-1 54',
+    '2':'M6 17C7 7 15 2 23 3c9 1 13 9 10 18-3 10-17 23-28 36 11-1 22-1 33 0',
+    '3':'M7 10c5-7 20-9 25 0 4 9-5 16-15 18 13-1 21 7 20 17-1 11-15 14-25 10-3-1-5-3-6-5',
+    '4':'M26 3C20 14 12 26 4 37c11 0 22-1 34-2M28 18c0 13 0 27 1 40',
+    '5':'M33 4C26 4 18 4 11 5 10 13 9 20 8 27c7-5 17-5 23 1 7 7 6 20-2 26-8 5-19 4-25-2',
+    '6':'M30 4C18 9 8 23 7 39c-1 12 6 19 14 19 10 0 15-8 13-17-2-9-12-11-19-7-4 2-7 5-8 8',
+    '7':'M4 5c11-1 22-1 33-1-7 16-15 34-19 54',
+    '8':'M30 11C28 3 12 2 10 11c-2 10 23 16 24 29 1 12-9 18-16 18-9-1-14-8-12-16 2-10 24-15 24-27 0-2 0-3 0-4',
+    '9':'M33 18C33 8 24 3 16 4 7 6 5 19 12 24c7 5 18 1 21-6 1 14 0 28-2 40',
+    '+':'M5 31c10-1 20-1 30-2M20 17c0 9 0 19 1 28',
+    '=':'M6 24c10-1 20-2 29-2M7 38c10-1 20-2 29-2',
+    '-':'M6 31c10-1 20-1 29-1',
+    'x':'M9 20c8 8 15 16 23 24M32 20c-8 8-16 17-23 25'
+  };
+  function rng(seed){ var s = (seed || 1) * 7919 % 233280; return function(){ s = (s * 9301 + 49297) % 233280; return s / 233280; }; }
+  function glyph(ch, x, y, sc, r){
+    var d = GL[ch]; if(!d) return '';
+    var rot = (r() - .5) * 7, dy = (r() - .5) * 5, k = sc * (.95 + r() * .1);
+    return '<path d="' + d + '" transform="translate(' + x.toFixed(1) + ' ' + (y + dy).toFixed(1) + ') rotate(' + rot.toFixed(1) + ' ' + (20*sc).toFixed(1) + ' ' + (30*sc).toFixed(1) + ') scale(' + k.toFixed(3) + ')"/>';
+  }
+  function adv(c){ return /[0-9]/.test(c) ? 42 : c === ' ' ? 20 : 48; }
+  function hwLine(t, r){
+    var x = 0, out = '', toks = t.match(/\{[^}]+\}|./g) || [];
+    toks.forEach(function(tk){
+      if(tk.charAt(0) === '{'){
+        var p = tk.slice(1, -1).split('/'), s = .72;
+        var wn = p[0].length * 42 * s, wd = p[1].length * 42 * s, w = Math.max(wn, wd) + 18;
+        var xn = x + (w - wn) / 2; p[0].split('').forEach(function(c){ out += glyph(c, xn, -18, s, r); xn += 42 * s; });
+        out += '<path d="M' + (x + 2) + ' 31C' + (x + w * .35).toFixed(1) + ' ' + (29 + r() * 2).toFixed(1) + ' ' + (x + w * .65).toFixed(1) + ' ' + (32 - r() * 2).toFixed(1) + ' ' + (x + w - 2) + ' ' + (30 + r() * 2).toFixed(1) + '"/>';
+        var xd = x + (w - wd) / 2; p[1].split('').forEach(function(c){ out += glyph(c, xd, 38, s, r); xd += 42 * s; });
+        x += w + 16;
+      } else if(tk === ' '){ x += 20; }
+      else { out += glyph(tk, x, 0, 1, r); x += adv(tk); }
+    });
+    return out;
+  }
+  function hwGroup(t, x, y, s, seed, cls){
+    return '<g class="hw' + (cls ? ' ' + cls : '') + '" transform="translate(' + x + ' ' + y + ') scale(' + s + ')">' + hwLine(t, rng(seed)) + '</g>';
+  }
+
+  /* ---------- the tutor's marks on the page (1600 x 900) ---------- */
+  var TICK = '<path class="tut" d="M792 150C806 166 818 182 828 202C850 160 880 122 918 90"/>';
+  var RING = '<path class="tut" d="M226 302C198 282 140 288 126 342C112 398 132 452 180 460C224 467 248 420 245 366C243 326 230 302 198 293"/>';
+  var ARROW = '<path class="tut" d="M318 566C282 556 248 530 228 488"/><path class="tut" d="M214 512L227 484L254 498"/>';
+  var HINT =
+    '<text class="tut-t" x="330" y="582">Make the bottoms match first</text>' +
+    '<g class="tut-t" text-anchor="middle"><text x="372" y="660">3</text><text x="372" y="742">4</text><text x="440" y="702">=</text><text x="506" y="660">?</text><text x="506" y="742">8</text></g>' +
+    '<path class="tut" style="stroke-width:5" d="M344 676C360 674 384 675 400 673M478 676C494 674 518 675 534 673"/>';
+  var CHEER = {
+    a: '<g transform="translate(948 108)"><rect width="250" height="66" rx="33" fill="#FFD12E"/><text x="125" y="44" text-anchor="middle" style="font:600 30px Lexend, sans-serif; fill:#14151F">Nailed it.</text></g>',
+    b: '<g transform="translate(944 92)"><rect x="70" y="16" width="268" height="66" rx="33" fill="#FFF0C2"/><text x="214" y="59" text-anchor="middle" style="font:600 30px Fredoka, sans-serif; fill:#1E3442">You got it!</text><use href="#pip" x="-4" y="-6" width="94" height="102"/></g>',
+    c: '<g transform="translate(930 70) rotate(-9 60 60)"><svg width="132" height="132" viewBox="0 0 70 70"><use href="#starstk-face"/></svg></g><text x="1080" y="140" style="font:600 32px \'Shantell Sans\', sans-serif; fill:#231F2E" transform="rotate(-3 1080 140)">+1 sticker</text>'
+  };
+  function board(d, nocheer){
+    return (d === 'c' ? '<rect width="1600" height="900" fill="url(#gridC)"/>' : '') +
+      hwGroup('24 + 18 = 42', 150, 122, 1.35, 3) +
+      hwGroup('{3/4} + {1/8} =', 150, 330, 1.35, 7) +
+      TICK + RING + ARROW + HINT + (nocheer ? '' : CHEER[d]);
+  }
+  var THUMB = {
+    fractions: function(){ return hwGroup('24 + 18 = 42', 150, 122, 1.35, 3) + hwGroup('{3/4} + {1/8} =', 150, 330, 1.35, 7) + TICK + RING; },
+    times: function(){ return hwGroup('7 x 8 = 56', 160, 110, 1.5, 21) + '<path class="tut" d="M830 150C842 166 852 182 860 200C880 160 906 126 940 96"/>' + hwGroup('6 x 9 = 54', 160, 380, 1.5, 33) + '<path class="tut" d="M830 420C842 436 852 452 860 470C880 430 906 396 940 366"/>' + hwGroup('9 x 4 =', 160, 650, 1.5, 41); },
+    daily: function(){ return '<g class="tut-t" style="font-size:112px"><text x="150" y="190">12 + 9 =</text><text x="150" y="430">30 - 14 =</text><text x="150" y="670">5 x 6 =</text></g>' + hwGroup('21', 730, 112, 1.5, 5) + hwGroup('16', 790, 352, 1.5, 9) + hwGroup('30', 660, 592, 1.5, 13) + '<path class="tut" d="M900 140C912 156 922 172 930 190C950 150 976 116 1010 86"/><path class="tut" d="M960 380C972 396 982 412 990 430C1010 390 1036 356 1070 326"/>'; },
+    perimeter: function(){ return '<path class="hw" style="stroke-width:9" d="M220 170C420 166 620 172 800 168C804 300 798 430 802 560C600 566 400 558 216 564C222 430 214 300 220 170z"/>' + hwGroup('5', 480, 70, 1.4, 2) + hwGroup('3', 840, 330, 1.4, 4) + hwGroup('5 + 3 + 5 + 3 = 16', 220, 660, 1.25, 17) + '<path class="tut" d="M1260 690C1272 706 1282 722 1290 740C1310 700 1336 666 1370 636"/>'; }
+  };
+  document.querySelectorAll('svg.pg[data-board]').forEach(function(s){ s.innerHTML = board(s.getAttribute('data-board'), s.hasAttribute('data-nocheer')); });
+  document.querySelectorAll('svg.th[data-thumb]').forEach(function(s){
+    var dir = s.closest('.dC') ? 'c' : '';
+    s.innerHTML = (dir === 'c' ? '<rect width="1600" height="900" fill="url(#gridC)"/>' : '') + THUMB[s.getAttribute('data-thumb')]();
+  });
+  document.querySelectorAll('g.hw[data-t]').forEach(function(g){
+    var s = +g.getAttribute('data-s') || 1;
+    g.setAttribute('transform', 'translate(' + g.getAttribute('data-x') + ' ' + g.getAttribute('data-y') + ') scale(' + s + ')');
+    g.innerHTML = hwLine(g.getAttribute('data-t'), rng(+g.getAttribute('data-seed') || 1));
+  });
+
+  /* ---------- iPad status bar ---------- */
+  var SB = '<span>9:41&nbsp;&nbsp;Thu Oct 16</span><span class="r"><svg width="17" height="12" viewBox="0 0 17 12" aria-hidden="true"><path fill="currentColor" d="M8.5 11.6l2.5-3a3.7 3.7 0 0 0-5 0zM3.6 5.8l1.6 1.9a5.2 5.2 0 0 1 6.6 0l1.6-1.9a7.7 7.7 0 0 0-9.8 0zM1 2.7l1.6 1.9a9.3 9.3 0 0 1 11.8 0L16 2.7a11.8 11.8 0 0 0-15 0z"/></svg>100%<svg width="27" height="13" viewBox="0 0 27 13" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".45"/><rect x="2.5" y="2.5" width="19" height="8" rx="2" fill="currentColor"/><path d="M25 4.5v4a2 2 0 0 0 0-4z" fill="currentColor" opacity=".45"/></svg></span>';
+  document.querySelectorAll('.sb').forEach(function(e){ e.innerHTML = SB; });
+
+  /* ---------- scale each iPad to its frame ---------- */
+  function fit(f){ var w = f.getBoundingClientRect().width; if(w > 0) f.style.setProperty('--s', (w / 1238).toFixed(4)); }
+  var frames = [].slice.call(document.querySelectorAll('.frame'));
+  frames.forEach(fit);
+  if('ResizeObserver' in window){ var ro = new ResizeObserver(function(es){ es.forEach(function(e){ fit(e.target); }); }); frames.forEach(function(f){ ro.observe(f); }); }
+  else { window.addEventListener('resize', function(){ frames.forEach(fit); }); }
+
+  /* ---------- lightbox ---------- */
+  var lb = document.getElementById('lb'), lbin = document.getElementById('lbin'), lbx = document.getElementById('lbx'), lbh = document.getElementById('lbh'), opener = null;
+  function sizeLb(){
+    var vw = document.documentElement.clientWidth, vh = window.innerHeight;
+    var s = Math.min((vw - 32) / 1238, (vh - 96) / 878, 1);
+    if(vw < 760) s = Math.max(s, .6);
+    lbin.style.setProperty('--ls', s.toFixed(4));
+    lbin.style.width = Math.round(1238 * s) + 'px'; lbin.style.height = Math.round(878 * s) + 'px';
+    lbh.textContent = vw < 760 ? 'Scroll to look around' : '';
+  }
+  function openLb(f){
+    opener = f; lbin.innerHTML = '';
+    var dir = f.closest('.dir'), wrap = document.createElement('div');
+    wrap.className = dir.className.replace('dir', '').trim(); wrap.style.cssText = 'position:relative;width:100%;height:100%';
+    wrap.appendChild(f.querySelector('.ipad').cloneNode(true)); lbin.appendChild(wrap);
+    lb.hidden = false; sizeLb(); document.body.style.overflow = 'hidden'; lbx.focus();
+  }
+  function closeLb(){ lb.hidden = true; lbin.innerHTML = ''; document.body.style.overflow = ''; if(opener) opener.focus(); }
+  frames.forEach(function(f){
+    f.addEventListener('click', function(){ openLb(f); });
+    f.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openLb(f); } });
+  });
+  lbx.addEventListener('click', closeLb);
+  lb.addEventListener('click', function(e){ if(e.target === lb) closeLb(); });
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape' && !lb.hidden) closeLb(); });
+  window.addEventListener('resize', function(){ if(!lb.hidden) sizeLb(); });
+
+  /* ---------- motion demos ---------- */
+  function replay(el, cls){ el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); }
+  document.querySelectorAll('[data-replay]').forEach(function(b){ b.addEventListener('click', function(){ replay(document.getElementById(b.getAttribute('data-replay')), 'play'); }); });
+  var dmB = document.getElementById('dmB');
+  dmB.addEventListener('click', function(){ replay(dmB, 'sq'); });
+  var n = 12, dmC = document.getElementById('dmC'), dmCc = document.getElementById('dmCc');
+  document.querySelector('[data-stick]').addEventListener('click', function(){ replay(dmC, 'play'); n += 1; dmCc.textContent = n + ' stickers in your book'; });
+})();
+</script>
