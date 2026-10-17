@@ -503,7 +503,8 @@ public enum TldrawImporter {
             if geo != "rectangle" && geo != "ellipse" { keep["geo"] = .string(geo) }
             let label = TldrawRichText.plainText(props["richText"] ?? props["text"])
             if !label.isEmpty { keep["label"] = .string(label) }
-            keep["tldraw"] = .object(["type": "geo", "props": Self.props(props, without: ["w", "h", "growY", "geo", "color", "fill", "size", "scale", "dash"])])
+            // (`fill` stays: tldraw's pattern and lined-fill are both our `semi`)
+            keep["tldraw"] = .object(["type": "geo", "props": Self.props(props, without: ["w", "h", "growY", "geo", "color", "size", "scale", "dash"])])
             let kind: ShapeKind
             var points: [Vec2] = []
             if let outline = GeoOutline.polygon(geo, w: w, h: h) {
@@ -611,7 +612,7 @@ public enum TldrawImporter {
             if let t = targets["end"], !t.exact, let hit = clip(from: a0, to: b0, target: t.placed, box: t.box, arrow: placed.transform) { b = hit }
         }
         if !attach.isEmpty { keep["attach"] = .object(attach) }
-        keep["tldraw"] = .object(["type": "arrow", "props": Self.props(props, without: ["start", "end", "color", "fill", "size", "scale", "dash"])])
+        keep["tldraw"] = .object(["type": "arrow", "props": Self.props(props, without: ["start", "end", "color", "size", "scale", "dash"])])
         var points = [a, b]
         if bend != 0, let arc = arcPoints(a, b, bend: bend) { points = arc }
         return ShapeRecord(
