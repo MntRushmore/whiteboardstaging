@@ -52,8 +52,8 @@ public final class BoardStore {
         var change = ChangeSet(origin: .load)
         change.removed = records
         for (id, r) in document.records {
-            if change.removed.removeValue(forKey: id) != nil {
-                change.updated[id] = RecordUpdate(before: records[id]!, after: r)
+            if let old = change.removed.removeValue(forKey: id) {
+                change.updated[id] = RecordUpdate(before: old, after: r)
             } else {
                 change.added[id] = r
             }

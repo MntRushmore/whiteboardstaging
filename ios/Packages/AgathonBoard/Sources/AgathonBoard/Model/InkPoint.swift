@@ -165,9 +165,10 @@ public enum PointCodec {
             var qy: Int64 = 0
             var qt: Int64 = 0
             let scale = Float(positionScale)
+            // wrapping arithmetic: a corrupt string decodes to nonsense, never traps
             for _ in 0..<count {
-                qx += unzigzag(try varint())
-                qy += unzigzag(try varint())
+                qx &+= unzigzag(try varint())
+                qy &+= unzigzag(try varint())
                 var p = InkPoint(x: Float(qx) / scale, y: Float(qy) / scale)
                 if flags & 1 != 0 { p.pressure = Float(try byte()) / 255 }
                 if flags & 2 != 0 {
@@ -177,7 +178,7 @@ public enum PointCodec {
                     p.azimuth = Float(Double(z) / 256 * (2 * Double.pi))
                 }
                 if flags & 4 != 0 {
-                    qt += Int64(try varint())
+                    qt &+= Int64(truncatingIfNeeded: try varint())
                     p.t = Float(qt)
                 }
                 points.append(p)

@@ -1,4 +1,5 @@
 #if canImport(UIKit)
+import Combine
 import QuartzCore
 import UIKit
 
@@ -23,10 +24,16 @@ public final class TutorWriter {
     private var overlays: [[CAShapeLayer?]] = []
     private var driver: FrameDriver?
     private var onDone: (() -> Void)?
+    private var screenWatch: AnyCancellable?
 
     public init(controller: BoardController, canvas: BoardCanvasView) {
         self.controller = controller
         self.canvas = canvas
+        // the kid moved to another screen: what was begun is finished on its own screen, the rest
+        // dropped (the web's switchScreen), and nothing half-written is left showing
+        screenWatch = controller.$currentScreenID.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.cancel() }
+        }
     }
 
     public var isWriting: Bool { plan != nil }

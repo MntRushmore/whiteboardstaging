@@ -147,9 +147,12 @@ public final class BoardController: ObservableObject {
         let generation = sceneGeneration
         guard let screen = currentScreen else { return }
         let records = store.drawables(on: screen.id)
+        let seqAtStart = store.seq
         let started = CFAbsoluteTimeGetCurrent()
-        let finish: (SceneIndex) -> Void = { [weak self] index in
+        let finish: (SceneIndex) -> Void = { [weak self] built in
             guard let self, generation == self.sceneGeneration else { return }
+            // the board changed while it was laid out (a stroke drawn as it opened): lay it out again
+            let index = self.store.seq == seqAtStart ? built : SceneIndex.build(self.store.drawables(on: screen.id))
             self.scene = index
             let laidOut = CFAbsoluteTimeGetCurrent()
             guard let renderer = self.renderer else {

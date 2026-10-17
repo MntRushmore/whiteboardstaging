@@ -164,6 +164,18 @@ struct PointCodecTests {
         }
     }
 
+    @Test func corruptValuesNeverTrap() throws {
+        // two points whose deltas are the largest varints: wrapping, not a crash
+        var d: [UInt8] = [1, 4, 2]
+        for _ in 0..<2 {
+            PointCodec.putVarint(UInt64.max, &d)
+            PointCodec.putVarint(UInt64.max - 1, &d)
+            PointCodec.putVarint(UInt64.max, &d)
+        }
+        let pts = try PointCodec.decodeBytes(Data(d))
+        #expect(pts.count == 2)
+    }
+
     @Test func negativeAndLargeCoordinates() throws {
         let pts = [InkPoint(x: -3000.5, y: 12000.25), InkPoint(x: 4000, y: -9000), InkPoint(x: 0, y: 0)]
         #expect(try PointCodec.decode(PointCodec.encode(pts)) == PointCodec.normalize(pts))
