@@ -58,9 +58,11 @@ enum DebugFormat {
         return formatter
     }()
 
-    static func edited(_ date: Date?) -> String {
+    static func edited(_ date: Date?, now: Date = Date()) -> String {
         guard let date else { return "Never edited" }
-        return "Edited \(relative.localizedString(for: date, relativeTo: Date()))"
+        // The server's clock can be a moment ahead of the iPad's: never "in 0 seconds".
+        if now.timeIntervalSince(date) < 60 { return "Edited just now" }
+        return "Edited \(relative.localizedString(for: date, relativeTo: now))"
     }
 
     static func ink(_ value: Double) -> String {

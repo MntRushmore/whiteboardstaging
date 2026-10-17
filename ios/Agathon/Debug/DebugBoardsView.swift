@@ -282,7 +282,8 @@ struct DebugInkReadout: View {
             Group {
                 if let ink {
                     Text("\(DebugFormat.ink(ink.balance)) ink\(planText(ink))")
-                        .foregroundStyle(ink.tone == .empty ? .red : ink.tone == .low ? .orange : .primary)
+                        // The plan covers help: an empty balance is nothing to warn about.
+                        .foregroundStyle(color(ink))
                 } else if let error {
                     Text(error).foregroundStyle(.red)
                 } else {
@@ -293,8 +294,17 @@ struct DebugInkReadout: View {
         }
     }
 
+    private func color(_ ink: InkSummary) -> Color {
+        if ink.hasUnlimited { return .primary }
+        switch ink.tone {
+        case .empty: return .red
+        case .low: return .orange
+        case .ok: return .primary
+        }
+    }
+
     private func planText(_ ink: InkSummary) -> String {
-        guard let plan = ink.unlimited, let status = plan.status else { return " · no plan" }
+        guard let plan = ink.unlimited, let status = plan.status, status != "none" else { return " · no plan" }
         return ink.hasUnlimited ? " · Agathon Unlimited (\(status))" : " · plan \(status)"
     }
 }
