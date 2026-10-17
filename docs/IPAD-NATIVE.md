@@ -155,10 +155,9 @@ Rewriting the maths engine in Swift is the biggest risk in the project, so we do
 
 ## Owner to-dos
 
-1. **Enrol in the Apple Developer Program** ($99/yr). As an organization it needs a D-U-N-S number,
-   which takes days to weeks, so start now. It's needed for TestFlight, in-app purchase testing,
-   universal links and running on a real iPad for more than 7 days.
-2. **Pick a brand direction** from the three the brand lane makes.
+1. ~~Enrol in the Apple Developer Program~~ — already done: individual team `SG4YJW2K5Z` ("Rushil Chopra") is signed in to Xcode. An organization account (seller shown as the company, not a person) can come later.
+2. ~~Pick a brand direction~~ — **A · Blocks**, with C's sticker book for practice rewards
+   (2026-10-17; docs/brand/directions.html on the design branch).
 3. **Kids category:** recommend *not* listing in Apple's Kids category, because kid data goes to
    third-party AI providers. List under Education and gate the grown-up areas instead. Decide
    before submission.

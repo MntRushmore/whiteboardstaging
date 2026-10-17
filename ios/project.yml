@@ -23,9 +23,8 @@ settings:
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
-    # Set to the Apple Developer team ID once there is one (Xcode > Settings > Accounts).
-    # Simulator builds need none.
-    DEVELOPMENT_TEAM: ""
+    # The owner's Apple Developer team (individual, "Rushil Chopra"); signs device builds.
+    DEVELOPMENT_TEAM: SG4YJW2K5Z
     CODE_SIGN_STYLE: Automatic
 targets:
   Agathon:
