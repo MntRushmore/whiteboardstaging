@@ -3,9 +3,9 @@ import Foundation
 /// Made-up boards for tests, measurements and the Lab: no real kid's work in them.
 public enum SyntheticBoards {
     /// A screen of handwriting-like Pencil ink: `strokes` strokes in rows of digit-sized glyphs
-    /// (1–3 strokes each, 1.2 page units between samples, a Pencil's pressure, tilt and 240 Hz
-    /// times), layered when there are more than a screen holds. Spread over `screens` screens.
-    public static func handwriting(strokes: Int, screens: Int = 1, seed: UInt64 = 1, pencil: Bool = true) -> BoardDocument {
+    /// (1–3 strokes each, 1.2 page units between samples, a Pencil's pressure and 240 Hz times, its
+    /// tilt when `tilt`), layered when there are more than a screen holds. Spread over `screens` screens.
+    public static func handwriting(strokes: Int, screens: Int = 1, seed: UInt64 = 1, pencil: Bool = true, tilt: Bool = false) -> BoardDocument {
         var rng = SeededGenerator(seed: seed)
         func r(_ lo: Double, _ hi: Double) -> Double { lo + (hi - lo) * Double(rng.next() % 1_000_000) / 1_000_000 }
         var records: [BoardRecord] = []
@@ -44,7 +44,7 @@ public enum SyntheticBoards {
                         let p = pencil ? 0.35 + 0.45 * sin(t * .pi) + r(-0.03, 0.03) : 0.5
                         pts.append(InkPoint(
                             x: Float(x), y: Float(y), pressure: Float(p),
-                            altitude: pencil ? Float(r(0.9, 1.2)) : -1, azimuth: pencil ? Float(r(0.4, 0.9)) : 0,
+                            altitude: pencil && tilt ? Float(r(0.9, 1.2)) : -1, azimuth: pencil && tilt ? Float(r(0.4, 0.9)) : 0,
                             t: Float(Double(k) * 4.17)))
                     }
                     let stroke = StrokeRecord(

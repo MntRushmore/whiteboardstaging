@@ -277,8 +277,8 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         return Sample(
             view: pencil ? t.preciseLocation(in: self) : t.location(in: self),
             pressure: pencil ? InkStyle.pencilPressure(force: Double(t.force), maximumForce: Double(t.maximumPossibleForce)) : 0.5,
-            altitude: pencil ? Double(t.altitudeAngle) : -1,
-            azimuth: pencil ? Double(t.azimuthAngle(in: self)) : 0,
+            altitude: pencil && controller.storesTilt ? Double(t.altitudeAngle) : -1,
+            azimuth: pencil && controller.storesTilt ? Double(t.azimuthAngle(in: self)) : 0,
             timestamp: t.timestamp)
     }
 
@@ -531,7 +531,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
                 let i = sent
                 let t = start + duration * Double(i) / Double(points.count - 1)
                 let pressure = pencil ? 0.45 + 0.35 * sin(Double(i) / Double(points.count) * .pi) : 0.5
-                out.append(Sample(view: points[i], pressure: pressure, altitude: pencil ? 1.1 : -1, azimuth: pencil ? 0.6 : 0, timestamp: t))
+                out.append(Sample(view: points[i], pressure: pressure, altitude: pencil && controller.storesTilt ? 1.1 : -1, azimuth: pencil && controller.storesTilt ? 0.6 : 0, timestamp: t))
                 sent += 1
             }
             return out

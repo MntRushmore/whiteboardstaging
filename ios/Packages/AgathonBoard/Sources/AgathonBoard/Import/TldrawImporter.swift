@@ -383,12 +383,44 @@ public enum TldrawImporter {
 
     // MARK: - screens
 
-    /// The page-space bounds of converted records (nil when there are none).
+    /// The page-space bounds of converted records as tldraw measures a page's content
+    /// (`getShapePageBounds`): a stroke by its smoothed centre line, ink width left out, a speck as a
+    /// circle of its pen width; a box by its corners. (nil when there are none)
     static func contentBounds(_ records: [BoardRecord]) -> Box? {
         var box: Box?
-        for r in records {
-            guard let b = RenderGeometry.item(for: r)?.bounds, b.w.isFinite, b.h.isFinite else { continue }
+        func add(_ b: Box?) {
+            guard let b, b.w.isFinite, b.h.isFinite else { return }
             box = box.map { $0.union(b) } ?? b
+        }
+        func corners(_ x: Double, _ y: Double, _ w: Double, _ h: Double, _ r: Double) -> Box? {
+            let o = Vec2(x, y)
+            return Box.around([Vec2(0, 0), Vec2(w, 0), Vec2(w, h), Vec2(0, h)].map { $0.rotated(by: r) + o })
+        }
+        for r in records {
+            switch r {
+            case .stroke(let s):
+                let input = s.points.map { FreehandInput(Vec2(Double($0.x), Double($0.y)), Double($0.pressure)) }
+                guard let local = Box.around(input.map(\.p)) else { continue }
+                if local.w < s.width * 2 && local.h < s.width * 2 {
+                    add(corners(s.x - s.width, s.y - s.width, s.width * 2, s.width * 2, 0))
+                    continue
+                }
+                var o = InkStyle.options(width: s.width, pressure: s.pressure, complete: true)
+                o.size = s.width
+                if s.pressure == .real { o.streamline = 0.62 }
+                let pts = Freehand.strokePoints(input, o).map { s.pagePoint(InkPoint(x: Float($0.point.x), y: Float($0.point.y))) }
+                add(Box.around(pts))
+            case .shape(let s):
+                if s.kind == .line || s.kind == .arrow {
+                    add(Box.around(s.points.map { $0.rotated(by: s.rotation) + Vec2(s.x, s.y) }))
+                } else {
+                    add(corners(s.x, s.y, s.w, s.h, s.rotation))
+                }
+            case .image(let i): add(corners(i.x, i.y, i.w, i.h, i.rotation))
+            case .math(let m): add(Box(x: m.x, y: m.y, w: m.w, h: m.h))
+            case .graph(let g): add(Box(x: g.x, y: g.y, w: g.w, h: g.h))
+            default: break
+            }
         }
         return box
     }

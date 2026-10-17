@@ -64,6 +64,10 @@ public final class BoardController: ObservableObject {
 
     public var fingerDraws: Bool { drawWithFinger || !pencilSeen }
 
+    /// Keep the Pencil's altitude and azimuth on each point. Off: nothing draws with it yet, and it
+    /// costs 2 bytes a point (a fifth of a stroke). The model and the encoding carry it when on.
+    public var storesTilt = false
+
     public private(set) var scene = SceneIndex()
     private var subscription: StoreSubscription?
     private let defaults: UserDefaults
