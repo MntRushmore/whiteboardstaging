@@ -129,6 +129,20 @@ struct PointCodecTests {
         }
     }
 
+    /// The worked example in docs/BOARD-FORMAT.md: pins the byte layout other readers decode.
+    @Test func knownEncoding() throws {
+        let pts = [
+            InkPoint(x: 0, y: 0, pressure: 0.5, t: 0),
+            InkPoint(x: 1.5, y: -2, pressure: 1, t: 4.2),
+            InkPoint(x: 3.0625, y: -2, pressure: 0.25, t: 9),
+        ]
+        #expect(PointCodec.encode(pts) == "AQUDAACAADA//wQyAEAF")
+        let back = try PointCodec.decode("AQUDAACAADA//wQyAEAF")
+        #expect(back.map(\.x) == [0, 1.5, 3.0625])
+        #expect(back.map(\.y) == [0, -2, -2])
+        #expect(back.map(\.t) == [0, 4, 9])
+    }
+
     @Test func channelsAreLeftOutWhenUnused() throws {
         // a finger stroke: no pressure, no tilt, no time → 2 bytes header + count + xy only
         let pts = (0..<100).map { InkPoint(x: Float($0), y: Float($0) * 0.5) }

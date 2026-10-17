@@ -31,6 +31,10 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
 
     private let content = CALayer()
     private let paper = CALayer()
+    /// all ink, clipped to the screen (the last row of tiles overhangs it): a rectangular
+    /// `masksToBounds` (a scissor, no offscreen pass), its bounds the screen rect so its sublayers
+    /// stay in page space
+    private let inkRoot = CALayer()
     private let tiles = TileLayers()
     /// the tutor's writing in progress (`TutorWriter` puts its strokes here)
     public let tutorLayer = CALayer()
@@ -53,6 +57,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         var livePathMaxMs: Double = 0
     }
     private var live: Live?
+    private var flushMs = 0.0
     private var erasing: (last: Vec2, started: TimeInterval)?
 
     // frame timing while drawing
@@ -72,11 +77,19 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
             .sink { [weak self] _ in DispatchQueue.main.async { self?.applyInputRules() } }
             .store(in: &cancellables)
         controller.$tool.sink { [weak self] _ in self?.cancelLive() }.store(in: &cancellables)
+        tiles.index = { [weak controller] in controller?.scene ?? SceneIndex() }
         controller.renderer = self
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    /// Settled-ink tiles backed by IOSurfaces (shown without a copy) instead of CGImages (copied to
+    /// the render server on every change). Set before a canvas is made.
+    public static var surfaceTiles: Bool {
+        get { TileLayers.kind == .surface }
+        set { TileLayers.kind = newValue ? .surface : .image }
+    }
 
     /// The flat surface around the screen (flat colour, no gradient).
     static let surface = UIColor(red: 0.925, green: 0.918, blue: 0.898, alpha: 1)
@@ -93,13 +106,17 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         paper.shadowOffset = CGSize(width: 0, height: 2)
         paper.actions = ["position": NSNull(), "bounds": NSNull(), "shadowPath": NSNull()]
         content.addSublayer(paper)
-        content.addSublayer(tiles.root)
+        inkRoot.anchorPoint = .zero
+        inkRoot.masksToBounds = true
+        inkRoot.actions = ["sublayers": NSNull(), "position": NSNull(), "bounds": NSNull()]
+        content.addSublayer(inkRoot)
+        inkRoot.addSublayer(tiles.root)
         tutorLayer.actions = ["sublayers": NSNull()]
-        content.addSublayer(tutorLayer)
+        inkRoot.addSublayer(tutorLayer)
 
         liveLayer.lineWidth = 0
         liveLayer.actions = ["path": NSNull(), "fillColor": NSNull(), "contentsScale": NSNull()]
-        content.addSublayer(liveLayer)
+        inkRoot.addSublayer(liveLayer)
 
         eraserCursor.fillColor = UIColor(white: 0.5, alpha: 0.12).cgColor
         eraserCursor.strokeColor = UIColor(white: 0.35, alpha: 0.6).cgColor
@@ -180,16 +197,19 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         CATransaction.commit()
     }
 
-    private func updateDetail() {
-        guard bounds.width > 0 else { return }
-        tiles.updateDetail(visible: camera.visibleRect(viewSize: bounds.size), effectivePx: CGFloat(camera.scale) * contentScaleFactor)
+    private func updateDetail(done: (() -> Void)? = nil) {
+        guard bounds.width > 0 else {
+            done?()
+            return
+        }
+        tiles.updateDetail(visible: camera.visibleRect(viewSize: bounds.size), effectivePx: CGFloat(camera.scale) * contentScaleFactor, done: done)
     }
 
     /// Zoom: 1 = the whole screen fits.
     public var zoom: Double { constraintsInsets.zoom(of: camera, screen: screenRect, in: bounds.size) }
 
     /// Sets the zoom about a view point (the Lab's buttons; pinch does the same).
-    public func setZoom(_ z: Double, around p: CGPoint? = nil) {
+    public func setZoom(_ z: Double, around p: CGPoint? = nil, refreshDetail: Bool = true) {
         let fit = constraintsInsets.fit(screenRect, in: bounds.size)
         let anchor = p ?? CGPoint(x: bounds.midX, y: bounds.midY)
         let page = camera.toPage(anchor)
@@ -198,7 +218,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         c.offset = Vec2(anchor.x - page.x * c.scale, anchor.y - page.y * c.scale)
         camera = constraintsInsets.clamp(c, screen: screenRect, in: bounds.size)
         applyCamera()
-        updateDetail()
+        if refreshDetail { updateDetail() }
     }
 
     private var gestureStart: (camera: Camera, centroid: CGPoint)?
@@ -379,12 +399,15 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         CATransaction.setDisableActions(true)
         controller.commitStroke(stroke) // → store → scene → tiles, synchronously
         liveLayer.path = nil
+        let committed = CACurrentMediaTime()
         CATransaction.commit()
         live = nil
         let done = CACurrentMediaTime()
+        flushMs = (done - committed) * 1000
         BoardSignposts.signposter.endInterval("Commit", signpost)
         var stats = controller.stats
         stats.lastCommitWorkMs = (done - workStart) * 1000
+        stats.lastFlushMs = flushMs
         stats.lastTouchToCommitMs = (done - eventTime) * 1000
         stats.lastLivePathMaxMs = l.livePathMaxMs
         stats.commits.append(stats.lastTouchToCommitMs)
@@ -460,8 +483,9 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
             BoardSignposts.signposter.emitEvent("Frame", "\(ms, format: .fixed(precision: 2)) ms")
         }
         lastFrame = link.timestamp
-        let hz = 1 / max(1e-6, link.targetTimestamp - link.timestamp)
-        if hz.isFinite { controller.stats.displayHz = (hz).rounded() }
+        // published only when it changes: a change a frame would re-render whatever watches the stats
+        let hz = (1 / max(1e-6, link.targetTimestamp - link.timestamp)).rounded()
+        if hz.isFinite && hz != controller.stats.displayHz { controller.stats.displayHz = hz }
     }
 
     private func stopFrameMonitorSoon() {
@@ -490,6 +514,8 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         paper.frame = screen.rect.cgRect
+        inkRoot.position = screen.rect.cgRect.origin
+        inkRoot.bounds = screen.rect.cgRect
         paper.shadowPath = CGPath(rect: CGRect(origin: .zero, size: screen.rect.cgRect.size), transform: nil)
         CATransaction.commit()
         if bounds.width > 0 {
@@ -497,7 +523,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
             applyCamera()
         }
         let signpost = BoardSignposts.signposter.beginInterval("BoardLoad", "\(index.count) items")
-        tiles.reset(index: index, screen: screen.rect, px: bounds.width > 0 ? basePx : 2) { [weak self] in
+        tiles.reset(screen: screen.rect, px: bounds.width > 0 ? basePx : 2) { [weak self] in
             BoardSignposts.signposter.endInterval("BoardLoad", signpost)
             self?.updateDetail()
             done()
@@ -506,11 +532,51 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
 
     public func sceneChanged(_ delta: SceneDelta, index: SceneIndex) {
         if delta.appendsOnTop {
-            tiles.paintOnTop(delta.added, index: index)
+            tiles.paintOnTop(delta.added)
+            controller.stats.lastPaintMs = (tiles.lastPaintDrawMs, tiles.lastPaintImageMs)
         } else {
-            tiles.invalidate(delta.removedBounds + delta.added.map(\.bounds), index: index)
+            tiles.invalidate(delta.removedBounds + delta.added.map(\.bounds))
         }
     }
+
+    // MARK: - Camera sweep (the Lab's pan/zoom measurement)
+
+    /// Zooms from the fit to `maxZoom`× and back to `endZoom` over `duration` seconds while panning,
+    /// one camera change a display frame (a pinch: no tiles redrawn while it moves), then lets the
+    /// detail tiles render. Reports the frame intervals (ms), the slowest frame's own work, and how
+    /// long the detail tiles took to arrive after the camera stopped.
+    public func sweepCamera(maxZoom: Double = 4, endZoom: Double = 3, duration: TimeInterval = 3,
+                            completion: @escaping (_ frames: [Double], _ workMaxMs: Double, _ detailMs: Double) -> Void) {
+        let start = CACurrentMediaTime()
+        var last = start
+        var frames: [Double] = []
+        var workMax = 0.0
+        let driver = FrameDriver { [weak self] link in
+            guard let self else { return true }
+            let now = CACurrentMediaTime()
+            frames.append((link.timestamp - last) * 1000)
+            last = link.timestamp
+            let t = min(1, (now - start) / duration)
+            let w0 = CACurrentMediaTime()
+            let up = sin(min(1, t * 1.5) * .pi / 2) // out to maxZoom, then settle at endZoom
+            let z = t < 2.0 / 3 ? 1 + (maxZoom - 1) * up : maxZoom + (endZoom - maxZoom) * (t - 2.0 / 3) * 3
+            let anchor = CGPoint(x: self.bounds.width * (0.2 + 0.6 * t), y: self.bounds.height * (0.35 + 0.3 * sin(t * 2 * .pi)))
+            self.setZoom(z, around: anchor, refreshDetail: false)
+            workMax = max(workMax, (CACurrentMediaTime() - w0) * 1000)
+            if t >= 1 {
+                let stopped = CACurrentMediaTime()
+                self.updateDetail {
+                    completion(Array(frames.dropFirst()), workMax, (CACurrentMediaTime() - stopped) * 1000)
+                }
+                return true
+            }
+            return false
+        }
+        driver.start()
+    }
+
+    /// Detail tiles on screen now (the Lab's stats).
+    public var detailTileCount: Int { tiles.detailTileCount }
 
     // MARK: - Synthetic input (the Lab's measurements; the simulator has no Pencil)
 

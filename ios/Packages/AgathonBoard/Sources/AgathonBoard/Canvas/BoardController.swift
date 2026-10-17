@@ -49,7 +49,13 @@ public final class BoardController: ObservableObject {
     @Published public var penSize: InkStyle.PenSize = .regular
     @Published public private(set) var canUndo = false
     @Published public private(set) var canRedo = false
-    @Published public var stats = BoardStats()
+    /// The running numbers. Not published per change: SwiftUI re-laying out whatever shows them
+    /// inside a stroke's commit cost 4–8 ms (measured); `publishedStats` follows at most 4× a second.
+    public var stats = BoardStats() {
+        didSet { schedulePublishStats() }
+    }
+    @Published public private(set) var publishedStats = BoardStats()
+    private var statsPublishPending = false
     /// the screen's records are being laid out / rasterized (a big board opening)
     @Published public private(set) var isLoading = false
 
@@ -174,11 +180,22 @@ public final class BoardController: ObservableObject {
 
     // MARK: - Store changes → scene
 
+    private func schedulePublishStats() {
+        guard !statsPublishPending else { return }
+        statsPublishPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self else { return }
+            self.statsPublishPending = false
+            self.publishedStats = self.stats
+        }
+    }
+
     private func storeChanged(_ change: ChangeSet) {
-        canUndo = store.canUndo
-        canRedo = store.canRedo
+        if canUndo != store.canUndo { canUndo = store.canUndo }
+        if canRedo != store.canRedo { canRedo = store.canRedo }
         if change.origin == .load { return } // `load` resets the scene itself
 
+        let t0 = CFAbsoluteTimeGetCurrent()
         var screensChanged = false
         var delta = SceneDelta()
         var addedNew = Set<RecordID>()
@@ -203,9 +220,12 @@ public final class BoardController: ObservableObject {
         if !delta.isEmpty {
             delta.added.sort { $0.order != $1.order ? $0.order < $1.order : $0.id < $1.id }
             // on top only if every added item is new and they are the topmost records of the screen
-            let top = store.drawableIDs(on: currentScreenID).suffix(delta.added.count)
+            let top = store.topDrawableIDs(on: currentScreenID, count: delta.added.count)
             delta.appendsOnTop = delta.removedBounds.isEmpty && addedNew.count == delta.added.count && Set(top) == addedNew
+            let t1 = CFAbsoluteTimeGetCurrent()
             renderer?.sceneChanged(delta, index: scene)
+            stats.lastSceneMs = (t1 - t0) * 1000
+            stats.lastTilesMs = (CFAbsoluteTimeGetCurrent() - t1) * 1000
         }
         if screensChanged {
             if store[currentScreenID]?.screen == nil {
@@ -231,13 +251,14 @@ public final class BoardController: ObservableObject {
         scheduleDocBytes()
     }
 
-    /// The document's JSON size, measured off the main thread a moment after the last change.
+    /// The document's JSON size, measured off the main thread a moment after the last change. The
+    /// snapshot is taken when the timer fires, not per change: a snapshot held across changes would
+    /// make the next change copy the whole record table.
     private func scheduleDocBytes() {
         docBytesTask?.cancel()
-        let doc = store.document
         docBytesTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            if Task.isCancelled { return }
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled, let doc = self?.store.document else { return }
             let bytes = await Task.detached(priority: .utility) { (try? doc.encoded(sortedKeys: false).count) ?? 0 }.value
             self?.stats.docBytes = bytes
         }

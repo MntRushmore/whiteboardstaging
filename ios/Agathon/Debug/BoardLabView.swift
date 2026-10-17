@@ -8,19 +8,30 @@ import SwiftUI
 /// Launch arguments (all optional, for screenshots and measurements):
 ///   -boardLabFixture <kid-algebra|legacy-noscreen|legacy-small|synthetic-2000|dense-600|dense-5000|board-lab>
 ///   -boardLabScreen <n>      show screen n (1-based)
-///   -boardLabZoom <z>        zoom (1 = the whole screen)
+///   -boardLabZoom <z>        zoom (1 = the whole screen); -boardLabZoomAt x,y keeps that page point in place
 ///   -boardLabDemo YES        write a few lines through the input path, then the tutor marks them
+///   -boardLabErase YES       after the demo, rub out its middle line with the eraser
+///   -boardLabSave YES        save the board to Documents/board-lab.json afterwards (then `-boardLabFixture board-lab` loads it)
+///   -boardLabNoChrome YES    no tool strip or stats (measures the canvas without SwiftUI updating beside it)
+///   -boardLabTiles surface   settled ink in IOSurface tiles (default: CGImage tiles)
+///   -boardLabSweep YES       zoom 1× → 4× → 1× while panning, and report the frames
 ///   -boardLabStats YES       print the numbers to the console after loading / the demo
 struct BoardLabView: View {
     @StateObject private var lab = BoardLabModel()
 
+    init() {
+        BoardCanvasView.surfaceTiles = UserDefaults.standard.string(forKey: "boardLabTiles") == "surface"
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
-            BoardCanvas(controller: lab.controller, insets: CameraConstraints(top: 132, left: 16, bottom: 16, right: 16)) { canvas in
+            BoardCanvas(controller: lab.controller, insets: CameraConstraints(top: 150, left: 16, bottom: 16, right: 16)) { canvas in
                 lab.attach(canvas)
             }
             .ignoresSafeArea()
-            LabChrome(lab: lab, controller: lab.controller)
+            if !UserDefaults.standard.bool(forKey: "boardLabNoChrome") {
+                LabChrome(lab: lab, controller: lab.controller)
+            }
         }
         .task { await lab.start() }
     }
@@ -45,6 +56,12 @@ private struct LabChrome: View {
     }
 
     private var toolRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) { toolButtons }
+            .padding(8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var toolButtons: some View {
         HStack(spacing: 8) {
             Picker("Tool", selection: $controller.tool) {
                 Text("Pen").tag(BoardTool.pen)
@@ -77,16 +94,21 @@ private struct LabChrome: View {
             Text("\(controller.screenIndex) / \(controller.screenCount)").monospacedDigit()
             Button("›") { controller.nextScreen() }.disabled(controller.screenIndex >= controller.screenCount)
             Button("New screen") { controller.addScreen() }
-            Spacer()
             Toggle("Draw with finger", isOn: $controller.drawWithFinger)
                 .fixedSize()
         }
         .buttonStyle(.bordered)
-        .padding(8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .lineLimit(1)
+        .fixedSize()
     }
 
     private var labRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) { labButtons }
+            .padding(8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var labButtons: some View {
         HStack(spacing: 8) {
             Menu("Load fixture") {
                 ForEach(BoardLabModel.fixtures, id: \.self) { name in
@@ -103,19 +125,18 @@ private struct LabChrome: View {
             ForEach([1.0, 2.0, 4.0], id: \.self) { z in
                 Button("\(Int(z))×") { lab.canvas?.setZoom(z) }
             }
-            Spacer()
             Text(lab.status).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
         }
         .buttonStyle(.bordered)
-        .padding(8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .lineLimit(1)
+        .fixedSize()
     }
 
     private var statsPanel: some View {
-        let s = controller.stats
+        let s = controller.publishedStats
         return VStack(alignment: .leading, spacing: 2) {
             Text("strokes \(s.strokeCount) · records \(s.recordCount) · doc \(BoardLabModel.bytes(s.docBytes))")
-            Text(String(format: "touch→commit %.1f ms (p50 %.1f, p95 %.1f) · commit work %.2f ms", s.lastTouchToCommitMs, s.commitP50, s.commitP95, s.lastCommitWorkMs))
+            Text(String(format: "touch→commit %.1f ms (p50 %.1f, p95 %.1f) · commit work %.2f ms (scene %.2f, tiles %.2f)", s.lastTouchToCommitMs, s.commitP50, s.commitP95, s.lastCommitWorkMs, s.lastSceneMs, s.lastTilesMs))
             Text(String(format: "live path max %.2f ms · frames %.1f ms mean, %.1f max, %d dropped @ %.0f Hz", s.lastLivePathMaxMs, s.drawingFrameMeanMs, s.drawingFrameMaxMs, s.drawingFramesDropped, s.displayHz))
             Text(String(format: "load %.0f ms (%@) · erase %.2f ms", s.lastLoadMs, s.lastLoadBreakdown, s.lastEraseMs))
             Text("Pencil seen: \(controller.pencilSeen ? "yes" : "no") · finger draws: \(controller.fingerDraws ? "yes" : "no")")
@@ -158,6 +179,11 @@ final class BoardLabModel: ObservableObject {
     private var args: UserDefaults { .standard }
 
     func start() async {
+        // the canvas laid out and its first screen drawn before anything is written on it
+        while canvas == nil || (canvas?.bounds.width ?? 0) == 0 || controller.isLoading {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 300_000_000)
         guard let name = args.string(forKey: "boardLabFixture") else {
             if args.bool(forKey: "boardLabDemo") { await demo() }
             return
@@ -169,11 +195,26 @@ final class BoardLabModel: ObservableObject {
                 await drawn { controller.goToScreen(ids[n - 1]); controller.resetScene(onDrawn: $0) }
             }
         }
-        if let z = Double(args.string(forKey: "boardLabZoom") ?? ""), z > 1 {
+        if let z = Double(args.string(forKey: "boardLabZoom") ?? ""), z > 1, let canvas {
             try? await Task.sleep(nanoseconds: 300_000_000)
-            canvas?.setZoom(z)
+            // -boardLabZoomAt x,y: the page point to keep where it is
+            let at = (args.string(forKey: "boardLabZoomAt") ?? "").split(separator: ",").compactMap { Double($0) }
+            canvas.setZoom(z, around: at.count == 2 ? canvas.camera.toView(Vec2(at[0], at[1])) : nil)
         }
         if args.bool(forKey: "boardLabDemo") { await demo() }
+        if args.bool(forKey: "boardLabSweep"), let canvas {
+            let (frames, workMax, detailMs) = await withCheckedContinuation { (k: CheckedContinuation<([Double], Double, Double), Never>) in
+                canvas.sweepCamera { k.resume(returning: ($0, $1, $2)) }
+            }
+            let expected = 1000 / max(1, controller.stats.displayHz > 0 ? controller.stats.displayHz : 60)
+            let mean = frames.reduce(0, +) / Double(max(1, frames.count))
+            log(String(format: "BOARDLAB sweep 1×→4×→3× | %d frames, mean %.2f ms, max %.2f ms, %d over 1.5× budget | camera work max %.2f ms | detail tiles %d on screen %.0f ms after the camera stopped",
+                       frames.count, mean, frames.max() ?? 0, frames.filter { $0 > expected * 1.5 }.count, workMax, canvas.detailTileCount, detailMs))
+        }
+        if args.bool(forKey: "boardLabSave") {
+            saveJSON()
+            log("saved: \(status)")
+        }
     }
 
     /// Waits for `body`'s drawing to finish.
@@ -258,6 +299,19 @@ final class BoardLabModel: ObservableObject {
             if let box { boxes.append(box) }
         }
         tutorMarks(boxes: boxes)
+        if args.bool(forKey: "boardLabErase"), boxes.count > 1 {
+            // the eraser through the middle line, like a finger rubbing it out
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            controller.tool = .eraser
+            let b = boxes[1]
+            let path = stride(from: b.minX - 20, through: b.maxX + 20, by: 6).map { x in
+                canvas.camera.toView(Vec2(x, b.center.y + sin(x / 30) * b.h * 0.3))
+            }
+            await withCheckedContinuation { (k: CheckedContinuation<Void, Never>) in
+                canvas.simulateStroke(path, duration: 0.6, pencil: false) { k.resume() }
+            }
+            controller.tool = .pen
+        }
         if args.bool(forKey: "boardLabStats") {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             printStats("after demo")
@@ -285,9 +339,9 @@ final class BoardLabModel: ObservableObject {
     private func printStats(_ label: String) {
         let s = controller.stats
         let line = String(
-            format: "BOARDLAB %@ | strokes %d records %d doc %d B | touch→commit last %.2f p50 %.2f p95 %.2f ms (n=%d) | commit work %.2f ms | live path max %.2f ms | frames mean %.2f max %.2f dropped %d @ %.0f Hz | load %.0f ms (%@) | erase %.2f ms",
+            format: "BOARDLAB %@ | strokes %d records %d doc %d B | touch→commit last %.2f p50 %.2f p95 %.2f ms (n=%d) | commit work %.2f ms (scene %.2f tiles %.2f: draw %.2f image %.2f; flush %.2f) | live path max %.2f ms | frames mean %.2f max %.2f dropped %d @ %.0f Hz | load %.0f ms (%@) | erase %.2f ms",
             label, s.strokeCount, s.recordCount, s.docBytes, s.lastTouchToCommitMs, s.commitP50, s.commitP95, s.commits.count,
-            s.lastCommitWorkMs, s.lastLivePathMaxMs, s.drawingFrameMeanMs, s.drawingFrameMaxMs, s.drawingFramesDropped, s.displayHz,
+            s.lastCommitWorkMs, s.lastSceneMs, s.lastTilesMs, s.lastPaintMs.draw, s.lastPaintMs.image, s.lastFlushMs, s.lastLivePathMaxMs, s.drawingFrameMeanMs, s.drawingFrameMaxMs, s.drawingFramesDropped, s.displayHz,
             s.lastLoadMs, s.lastLoadBreakdown, s.lastEraseMs)
         log(line)
     }

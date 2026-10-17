@@ -16,7 +16,7 @@ public enum BoardSignposts {
 }
 
 /// Running numbers for the stats overlay and the spike report (all in ms).
-public struct BoardStats: Equatable, Sendable {
+public struct BoardStats: Sendable {
     public var strokeCount = 0
     public var recordCount = 0
     public var docBytes = 0
@@ -24,6 +24,13 @@ public struct BoardStats: Equatable, Sendable {
     public var lastTouchToCommitMs: Double = 0
     /// the commit's own work (store + outline + tiles), without event delivery
     public var lastCommitWorkMs: Double = 0
+    /// the last change's scene work (outlines + grid) and tile painting, ms
+    public var lastSceneMs: Double = 0
+    public var lastTilesMs: Double = 0
+    /// inside the tile paint: drawing the ink, and making the tiles' images
+    public var lastPaintMs: (draw: Double, image: Double) = (0, 0)
+    /// the layer transaction's commit at pen-up (layer changes handed to the render server)
+    public var lastFlushMs: Double = 0
     /// the slowest live-outline rebuild of the last stroke
     public var lastLivePathMaxMs: Double = 0
     /// mean and worst display-frame interval while the last stroke was drawn

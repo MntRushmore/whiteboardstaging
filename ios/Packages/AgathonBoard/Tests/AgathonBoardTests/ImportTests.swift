@@ -190,14 +190,21 @@ struct RenderComparisonTests {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("agathon-board-render", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let out = dir.appendingPathComponent("ours-\(reference)")
-        if let dest = CGImageDestinationCreateWithURL(out as CFURL, UTType.png.identifier as CFString, 1, nil) {
+        func write(_ image: CGImage, to url: URL) {
+            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { return }
             let flat = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
             flat.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
             flat.fill(CGRect(x: 0, y: 0, width: w, height: h))
-            flat.draw(ours, in: CGRect(x: 0, y: 0, width: w, height: h))
+            flat.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
             CGImageDestinationAddImage(dest, flat.makeImage()!, nil)
             CGImageDestinationFinalize(dest)
+        }
+        write(ours, to: out)
+        // and everything on the screen, for eyes
+        let all = result.document.drawables(on: screen.id).compactMap(RenderGeometry.item(for:))
+        if let full = TileRasterizer.render(all, rect: screen.rect, scale: 1)?.makeImage() {
+            write(full, to: dir.appendingPathComponent("ours-full-\(reference)"))
         }
         return (Double(aInB) / Double(max(1, a.count)), Double(a.count) / Double(max(1, bNearA)), out)
     }

@@ -52,6 +52,46 @@ confirm you are comfortable with GPL-2.0 terms, or (b) replace `potrace` with
 a permissively licensed tracer. Worth resolving before this repo is shared
 externally.
 
+## The iPad app (`ios/`)
+
+The iPad app has no third-party package dependencies. It contains one piece of ported code:
+
+- **perfect-freehand** 1.2.3 by Steve Ruiz (MIT). Its stroke algorithm (`getStrokePoints`,
+  `getStrokeOutlinePoints`) is rewritten in Swift in
+  `ios/Packages/AgathonBoard/Sources/AgathonBoard/Geometry/Freehand.swift`; the changes are marked
+  `Agathon:` there. Its licence:
+
+  > MIT License
+  >
+  > Copyright (c) 2021 Stephen Ruiz Ltd
+  >
+  > Permission is hereby granted, free of charge, to any person obtaining a copy
+  > of this software and associated documentation files (the "Software"), to deal
+  > in the Software without restriction, including without limitation the rights
+  > to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  > copies of the Software, and to permit persons to whom the Software is
+  > furnished to do so, subject to the following conditions:
+  >
+  > The above copyright notice and this permission notice shall be included in all
+  > copies or substantial portions of the Software.
+  >
+  > THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  > IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  > FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  > AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  > LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  > SOFTWARE.
+
+The fractional-index keys (`OrderKey.swift`) follow David Greenspan's algorithm as published in
+Rocicorp's `fractional-indexing` (CC0), rewritten in Swift.
+
+No tldraw code is in the app. The pen's option values match tldraw's draw shape, so converted boards
+look as they did, but the code is perfect-freehand's.
+`ios/Packages/AgathonBoard/Tools/fixtures/tldraw-reference.mjs` runs tldraw's own renderer from a
+local `node_modules`, read-only, to make the test reference images. It is a development tool and is
+not shipped.
+
 Regenerate a full dependency license inventory at any time with:
 
     npx license-checker-rseidelsohn --summary

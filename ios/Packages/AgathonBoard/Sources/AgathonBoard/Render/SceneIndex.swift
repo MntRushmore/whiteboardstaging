@@ -75,6 +75,12 @@ public enum TileRasterizer {
             space: RenderGeometry.colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         ) else { return nil }
+        preparePageSpace(ctx, rect: rect, scale: scale, pixelHeight: h)
+        return ctx
+    }
+
+    /// Sets a bitmap context of `pixelHeight` rows up to draw `rect` of page space (y down) at `scale`.
+    public static func preparePageSpace(_ ctx: CGContext, rect: Box, scale: CGFloat, pixelHeight h: Int) {
         // page space, y down: flip the bitmap's y-up space
         ctx.translateBy(x: 0, y: CGFloat(h))
         ctx.scaleBy(x: scale, y: -scale)
@@ -82,7 +88,6 @@ public enum TileRasterizer {
         ctx.setShouldAntialias(true)
         ctx.setAllowsAntialiasing(true)
         ctx.interpolationQuality = .high
-        return ctx
     }
 
     /// Clears `rect` (page units) of a tile context made by `makeContext`.

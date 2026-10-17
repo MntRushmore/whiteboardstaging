@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 
-// A Swift port of perfect-freehand 1.2.3 (getStrokePoints, getStrokeOutlinePoints) by Steve Ruiz,
-// MIT licence: see THIRD-PARTY-NOTICES.md. Changes from the original, all marked "Agathon:":
+// A Swift port of perfect-freehand 1.2.3 (getStrokePoints, getStrokeOutlinePoints).
+// Copyright (c) 2021 Stephen Ruiz Ltd. MIT licence; the full text is in THIRD-PARTY-NOTICES.md. Changes from the original, all marked "Agathon:":
 //  - the two-point case interpolates pressure as well as position;
 //  - real pressure can be rate-limited like simulated pressure (`smoothRealPressure`), so a
 //    Pencil's force does not make the outline jump from one sample to the next;

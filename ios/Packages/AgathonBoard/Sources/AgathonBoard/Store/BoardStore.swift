@@ -180,8 +180,11 @@ public final class BoardStore {
         nextObserver += 1
         observers[key] = handler
         return StoreSubscription { [weak self] in
-            let remove = { MainActor.assumeIsolated { _ = self?.observers.removeValue(forKey: key) } }
-            if Thread.isMainThread { remove() } else { DispatchQueue.main.async(execute: remove) }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { _ = self?.observers.removeValue(forKey: key) }
+            } else {
+                Task { @MainActor [weak self] in _ = self?.observers.removeValue(forKey: key) }
+            }
         }
     }
 
@@ -246,6 +249,12 @@ public final class BoardStore {
 
     public func drawableCount(on screen: RecordID) -> Int { drawIndex[screen]?.count ?? 0 }
 
+    /// The `count` topmost drawn records of `screen`, bottom to top.
+    public func topDrawableIDs(on screen: RecordID, count: Int) -> [RecordID] {
+        guard let list = drawIndex[screen] else { return [] }
+        return list.suffix(count).map(\.id)
+    }
+
     /// The order key for a record put on top of everything on `screen`.
     public func nextOrder(on screen: RecordID) -> OrderKey {
         OrderKey.after(drawIndex[screen]?.last?.order)
@@ -260,18 +269,17 @@ public final class BoardStore {
         return drawIndex[s]?.last?.id == id
     }
 
-    public var strokeCount: Int {
-        var n = 0
-        for r in records.values { if case .stroke = r { n += 1 } }
-        return n
-    }
+    /// Strokes on the board (kept as records come and go).
+    public private(set) var strokeCount = 0
 
     // MARK: - Indexes
 
     private func rebuildIndexes() {
         screenIndex = []
         drawIndex = [:]
+        strokeCount = 0
         for r in records.values {
+            if case .stroke = r { strokeCount += 1 }
             if case .screen(let s) = r {
                 screenIndex.append((s.order, s.id))
             } else if r.isDrawable, let s = r.screenID, let o = r.order {
@@ -290,6 +298,8 @@ public final class BoardStore {
         for id in change.ids {
             let before = change.before(id)
             let after = change.after(id)
+            if before?.type == .stroke { strokeCount -= 1 }
+            if after?.type == .stroke { strokeCount += 1 }
             if before?.type == .screen || after?.type == .screen {
                 if let b = before, let o = b.order { removeEntry(&screenIndex, (o, id)) }
                 if let a = after, let o = a.order { insertEntry(&screenIndex, (o, id)) }
