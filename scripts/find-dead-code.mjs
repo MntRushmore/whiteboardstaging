@@ -69,6 +69,8 @@ import ts from "typescript";
  */
 export const KEEP_FILES = Object.freeze({
   "src/components/SetupRequiredBanner.tsx": "documented drop-in for missing AI keys (SETUP.md); not mounted by any page yet",
+  "src/lib/brain/index.ts": "the iPad app's brain: the entry scripts/build-ios-brain.mjs bundles into ios/Packages/AgathonBrain (by path)",
+  "src/lib/brain/shims/tldraw.ts": "what `tldraw` resolves to inside the iPad brain bundle (scripts/build-ios-brain.mjs alias)",
 });
 
 const NEXT_ENTRY_BASENAMES = new Set([

@@ -4,9 +4,11 @@ import SwiftUI
 struct AgathonApp: App {
     var body: some Scene {
         WindowGroup {
-            RootView()
-                // The site has no dark theme; the native screens around it match it.
-                .preferredColorScheme(.light)
+            Group {
+                if BrainLab.isRequested { BrainLabView() } else { RootView() }
+            }
+            // The site has no dark theme; the native screens around it match it.
+            .preferredColorScheme(.light)
         }
     }
 }
