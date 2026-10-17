@@ -50,6 +50,17 @@
                ReferencedContainer = "container:Agathon.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AgathonKitTests"
+               BuildableName = "AgathonKitTests"
+               BlueprintName = "AgathonKitTests"
+               ReferencedContainer = "container:Packages/AgathonKit">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>
@@ -57,6 +68,16 @@
          <EnvironmentVariable
             key = "AGATHON_API_URL"
             value = "http://localhost:3000"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "SUPABASE_URL"
+            value = "http://127.0.0.1:54321"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "SUPABASE_ANON_KEY"
+            value = "paste ANON_KEY from npx supabase status -o env"
             isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
@@ -89,6 +110,16 @@
             value = "http://localhost:3000"
             isEnabled = "NO">
          </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "SUPABASE_URL"
+            value = "http://127.0.0.1:54321"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "SUPABASE_ANON_KEY"
+            value = "paste ANON_KEY from npx supabase status -o env"
+            isEnabled = "NO">
+         </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
@@ -113,6 +144,16 @@
          <EnvironmentVariable
             key = "AGATHON_API_URL"
             value = "http://localhost:3000"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "SUPABASE_URL"
+            value = "http://127.0.0.1:54321"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "SUPABASE_ANON_KEY"
+            value = "paste ANON_KEY from npx supabase status -o env"
             isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>

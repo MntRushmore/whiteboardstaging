@@ -174,6 +174,13 @@ public final class AuthService {
 
     // MARK: words
 
+    /// The person's own mistake (a wrong email or password, a weak password, an address already
+    /// used), not a failure of ours: shown, never reported (the web's loginFailureReport).
+    public nonisolated static func isUsersOwnMistake(_ error: Error) -> Bool {
+        guard let error = error as? AuthError else { return false }
+        return [.invalidCredentials, .emailNotConfirmed, .userAlreadyExists, .emailExists, .weakPassword].contains(error.errorCode)
+    }
+
     /// What a sign-in, sign-up or reset failure says (the web's LOGIN_COPY, src/lib/loginErrorMessage.ts).
     public nonisolated static func message(for error: Error) -> String {
         if let error = error as? AuthError {
