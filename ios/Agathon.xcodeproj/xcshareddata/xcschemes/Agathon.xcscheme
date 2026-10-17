@@ -72,6 +72,17 @@
                ReferencedContainer = "container:Agathon.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AgathonBoardTests"
+               BuildableName = "AgathonBoardTests"
+               BlueprintName = "AgathonBoardTests"
+               ReferencedContainer = "container:Packages/AgathonBoard">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

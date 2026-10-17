@@ -8,6 +8,20 @@ struct RootView: View {
     @Environment(AgathonBackend.self) private var backend
 
     var body: some View {
+        #if DEBUG
+        // The board lane's Board Lab (ios/Agathon/Debug), launched straight with `-boardLab`;
+        // otherwise the Labs button (Debug/LabsMenu.swift) opens it from any screen.
+        if ProcessInfo.processInfo.arguments.contains("-boardLab") {
+            BoardLabView()
+        } else {
+            home.labsButton()
+        }
+        #else
+        home
+        #endif
+    }
+
+    @ViewBuilder private var home: some View {
         switch backend.auth.phase {
         case .restoring:
             SplashView()
