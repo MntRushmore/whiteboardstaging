@@ -13,6 +13,7 @@ import { appleConfigFrom, isAppleConfigError, isProductionDeployment, type Apple
 import { APPLE_ROOT_CA_G2, APPLE_ROOT_CA_G3, appleRootCertificates } from "@/lib/server/apple/roots";
 import { appleStateOf, isFreeTrial, type AppleStateInput } from "@/lib/server/apple/state";
 import { AppleVerifyError, checkPinnedSignature, createAppleVerifier } from "@/lib/server/apple/verify";
+import { renewalPayload, transactionPayload } from "./fixtures";
 import { makeTestChain, selfSignedCert, signJws, ecKey, type TestChain } from "./testChain";
 
 const BUNDLE = APPLE_PLAN.bundleId;
@@ -22,52 +23,6 @@ const DAY = 86_400_000;
 
 function config(over: Partial<AppleConfig> = {}): AppleConfig {
   return { primary: "Production", environments: ["Production", "Sandbox"], bundleId: BUNDLE, appAppleId: APP_APPLE_ID, ...over };
-}
-
-export function transactionPayload(over: Record<string, unknown> = {}): Record<string, unknown> {
-  const now = Date.now();
-  return {
-    originalTransactionId: "2000000123456789",
-    transactionId: "2000000123456789",
-    webOrderLineItemId: "2000000011111111",
-    bundleId: BUNDLE,
-    productId: PRODUCT,
-    subscriptionGroupIdentifier: "21500000",
-    purchaseDate: now - 1000,
-    originalPurchaseDate: now - 1000,
-    expiresDate: now + 7 * DAY,
-    quantity: 1,
-    type: "Auto-Renewable Subscription",
-    appAccountToken: "6f0d2b7e-9c3a-4e2f-8a51-1b2c3d4e5f60",
-    inAppOwnershipType: "PURCHASED",
-    signedDate: now,
-    offerType: 1,
-    offerDiscountType: "FREE_TRIAL",
-    environment: "Sandbox",
-    storefront: "USA",
-    storefrontId: "143441",
-    transactionReason: "PURCHASE",
-    currency: "USD",
-    price: 0,
-    ...over,
-  };
-}
-
-export function renewalPayload(over: Record<string, unknown> = {}): Record<string, unknown> {
-  const now = Date.now();
-  return {
-    originalTransactionId: "2000000123456789",
-    autoRenewProductId: PRODUCT,
-    productId: PRODUCT,
-    autoRenewStatus: 1,
-    signedDate: now,
-    environment: "Sandbox",
-    recentSubscriptionStartDate: now - 1000,
-    renewalDate: now + 7 * DAY,
-    renewalPrice: 24990,
-    currency: "USD",
-    ...over,
-  };
 }
 
 describe("Apple's root certificates", () => {

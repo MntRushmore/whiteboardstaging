@@ -55,7 +55,7 @@ import type { AppleSubscriptionState } from "@/lib/server/apple/state";
 import type { AppleApplyOutcome, AppleEventRecord, AppleStore } from "@/lib/server/apple/store";
 import { createAppleVerifier } from "@/lib/server/apple/verify";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
-import { renewalPayload, transactionPayload } from "./apple.test";
+import { renewalPayload, transactionPayload } from "./fixtures";
 import { makeTestChain, selfSignedCert, signJws, type TestChain } from "./testChain";
 
 const APP_APPLE_ID = 6740000001;
