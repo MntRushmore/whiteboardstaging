@@ -113,7 +113,14 @@ export function BillingCard({ email }: { email: string }) {
             </Button>
           ))}
 
+        {(view.action === "manage" || view.action === "fix-payment") && state.provider === "apple" && (
+          <p className="text-sm text-muted-foreground" data-testid="plan-apple">
+            {PLAN_COPY.appleManage}
+          </p>
+        )}
+
         {(view.action === "manage" || view.action === "fix-payment") &&
+          state.provider !== "apple" &&
           (portal ? (
             <div className="space-y-1.5">
               <Button asChild size="sm" variant={view.action === "fix-payment" ? "default" : "outline"} className="pointer-coarse:h-11">

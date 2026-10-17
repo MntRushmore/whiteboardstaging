@@ -203,10 +203,14 @@ const CHARGING = new Set(["trialing", "active", "past_due", "unpaid"]);
 
 /**
  * True when one of these unlimited_subscriptions rows would charge again: the rule of
- * delete_own_account() in SQL (and of mustCancelBeforeDeleting for the hook's state).
+ * delete_own_account() in SQL (and of mustCancelBeforeDeleting for the hook's state). An Apple
+ * subscription (provider 'apple', bought in the iPad app) never blocks: we cannot cancel it, only the
+ * person can, in Settings (20261017200000_apple_subscriptions.sql); the dialog says so instead.
  */
 export function planBlocksDeletion(rows: ReadonlyArray<Record<string, unknown>> | null | undefined): boolean {
-  return (rows ?? []).some((r) => CHARGING.has(String(r.status)) && r.cancel_at_period_end !== true && (r.cancel_at === null || r.cancel_at === undefined));
+  return (rows ?? []).some(
+    (r) => r.provider !== "apple" && CHARGING.has(String(r.status)) && r.cancel_at_period_end !== true && (r.cancel_at === null || r.cancel_at === undefined),
+  );
 }
 
 /** True for a PlanStillActiveError or the database's own refusal (PostgREST passes the hint through). */
@@ -224,13 +228,20 @@ const MISSING_TABLE_RE = /could not find the table|relation .* does not exist/i;
  * fails for any other reason throws too: deletion never goes ahead unchecked.
  */
 export async function assertNoChargingPlan(client: DeleteAccountClient): Promise<void> {
-  const { data, error } = await client.from("unlimited_subscriptions").select("status,cancel_at_period_end,cancel_at");
+  let { data, error } = await client.from("unlimited_subscriptions").select("status,cancel_at_period_end,cancel_at,provider");
+  // A database without the Apple migration has no `provider` (and so no Apple rows): read without it.
+  if (error && MISSING_PROVIDER_RE.test(error.message)) {
+    ({ data, error } = await client.from("unlimited_subscriptions").select("status,cancel_at_period_end,cancel_at"));
+  }
   if (error) {
     if (MISSING_TABLE_RE.test(error.message)) return;
     throw error;
   }
   if (planBlocksDeletion(data)) throw new PlanStillActiveError();
 }
+
+/** PostgREST's answer for a column the database does not have yet. */
+const MISSING_PROVIDER_RE = /provider.*does not exist|column .*provider/i;
 
 /** What happened to the kids' saved images (`removeKidImages`), when there was a family step. */
 export type KidImagesResult = { removed: number; error: string | null };

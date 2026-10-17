@@ -109,7 +109,7 @@ describe("trialsEndingBetween (the one query against the subscriptions table)", 
     expect(await trialsEndingBetween(admin, from, to)).toEqual([]);
     expect(calls).toEqual([
       ["from", "unlimited_subscriptions"],
-      ["select", "stripe_subscription_id,user_id,status,trial_end,cancel_at_period_end,cancel_at,payer_email"],
+      ["select", "stripe_subscription_id,user_id,status,trial_end,cancel_at_period_end,cancel_at,payer_email,provider,apple_price_milliunits,apple_currency"],
       ["eq", "status", "trialing"],
       ["not", "user_id", "is", null],
       ["gte", "trial_end", from.toISOString()],

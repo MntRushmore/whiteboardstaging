@@ -48,14 +48,22 @@ export type StartedRow = {
   payerEmail: string | null;
   /** The account had an Unlimited plan before this one: its free trial grants nothing (has_unlimited()). */
   repeat: boolean;
+  /** `apple` for a plan bought in the iPad app (20261017200000_apple_subscriptions.sql). */
+  provider?: string | null;
 };
 
-export type StartedSkip = "no_subscription" | "no_user" | "not_trialing" | "no_trial_end" | "trial_over" | "cancelling";
+export type StartedSkip = "no_subscription" | "no_user" | "apple" | "not_trialing" | "no_trial_end" | "trial_over" | "cancelling";
 
-/** Pure: why this subscription gets no "has started" email now, or null when it should. */
+/**
+ * Pure: why this subscription gets no "has started" email now, or null when it should. A plan bought
+ * in the iPad app gets none from us: Apple sells it, and Apple's own subscription confirmation (the
+ * terms, the price, the renewal date, how to cancel) is the acknowledgment; the trial's reminder
+ * still goes, in Apple's words (trialReminders.ts).
+ */
 export function startedSkipReason(row: StartedRow | null, now: Date): StartedSkip | null {
   if (!row) return "no_subscription";
   if (!row.userId) return "no_user";
+  if (row.provider === "apple") return "apple";
   if (row.status !== "trialing") return "not_trialing";
   const end = row.trialEnd ? Date.parse(row.trialEnd) : NaN;
   if (Number.isNaN(end)) return "no_trial_end";
@@ -77,7 +85,7 @@ export function startedIdempotencyKey(subscriptionId: string): string {
   return `unlimited-started/${subscriptionId}`.slice(0, 256);
 }
 
-const SELECT = "id,stripe_subscription_id,user_id,status,trial_end,cancel_at_period_end,cancel_at,payer_email";
+const SELECT = "id,stripe_subscription_id,user_id,status,trial_end,cancel_at_period_end,cancel_at,payer_email,provider";
 
 function asString(v: unknown): string | null {
   return typeof v === "string" && v ? v : null;
@@ -115,6 +123,7 @@ export async function startedSubscription(admin: Pick<SupabaseClient, "from">, s
     cancelAt: asString(raw.cancel_at),
     payerEmail: asString(raw.payer_email),
     repeat,
+    ...(raw.provider === "apple" ? { provider: "apple" } : {}),
   };
 }
 
@@ -222,6 +231,11 @@ export async function runStartedSweep(deps: EmailDeps, opts: { dryRun: boolean; 
   for (const row of found) {
     if (logged.has(row.subscriptionId)) {
       summary.alreadySent++;
+      continue;
+    }
+    // Apple confirms its own subscriptions (startedSkipReason)
+    if (row.provider === "apple") {
+      summary.skipped++;
       continue;
     }
     if (opts.dryRun) {

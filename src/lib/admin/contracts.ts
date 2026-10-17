@@ -202,6 +202,12 @@ export const AdminOverviewSchema = z.object({
     started7d: z.number().int(),
     /** charges coming in the next 14 days, soonest first: a trial's first charge or a renewal (not set to cancel) */
     upcoming: z.array(z.object({ at: z.string(), kind: z.enum(["first", "renewal"]), usd: z.number() })),
+    /**
+     * Of `paying` and `trialing`, how many Apple bills (bought in the iPad app; counted in the MRR at the
+     * same price, before Apple's commission). Absent when none. Apple Sandbox and Xcode subscriptions
+     * (App Review, TestFlight) are left out of every number here.
+     */
+    apple: z.object({ paying: z.number().int(), trialing: z.number().int() }).optional(),
   }),
   /** how far accounts get: signed up, finished the welcome, started a trial (ever), paying now (admins left out of the last two) */
   funnel: z.object({ accounts: z.number().int(), onboarded: z.number().int(), trials: z.number().int(), paying: z.number().int() }),

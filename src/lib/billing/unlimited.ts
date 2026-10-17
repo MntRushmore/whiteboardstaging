@@ -49,6 +49,13 @@ export interface UnlimitedState {
    * database without it): the start button then waits, it never falls back to the user id.
    */
   checkoutRef: string | null;
+  /**
+   * Where the plan is billed (`ink_summary().unlimited.provider`, 20261017200000_apple_subscriptions.sql):
+   * `stripe` (the web's checkout), `apple` (bought in the iPad app: managed and cancelled in the
+   * iPad's Settings, never through Stripe's portal), or null/absent without a plan or on an older
+   * database.
+   */
+  provider?: "stripe" | "apple" | null;
 }
 
 export const NO_UNLIMITED: UnlimitedState = { status: "none", trialEnd: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, checkoutRef: null };
@@ -175,12 +182,14 @@ export function parseUnlimitedState(raw: unknown): UnlimitedState {
   }
   const cancelAt = isoOrNull(r.cancel_at);
   const periodEnd = isoOrNull(r.current_period_end);
+  const provider = r.provider === "apple" || r.provider === "stripe" ? r.provider : null;
   return {
     status,
     trialEnd: isoOrNull(r.trial_end),
     currentPeriodEnd: cancelAt ?? periodEnd,
     cancelAtPeriodEnd: r.cancel_at_period_end === true || cancelAt !== null,
     checkoutRef,
+    ...(provider ? { provider } : {}),
   };
 }
 
@@ -188,10 +197,20 @@ export function parseUnlimitedState(raw: unknown): UnlimitedState {
  * True while the plan would charge the card again (in its free trial, paid up, or retrying a failed
  * payment) and is not set to cancel. Deleting the account then must wait until it is cancelled in
  * the portal: nothing in the app can cancel a Stripe subscription (no server key), and
- * delete_own_account() refuses too.
+ * delete_own_account() refuses too. An Apple plan never blocks (only the person can cancel it, in
+ * Settings): `appleCancelFirst` says to cancel it there instead.
  */
-export function mustCancelBeforeDeleting(state: Pick<UnlimitedState, "status" | "cancelAtPeriodEnd"> | null | undefined): boolean {
-  if (!state || state.cancelAtPeriodEnd) return false;
+export function mustCancelBeforeDeleting(state: Pick<UnlimitedState, "status" | "cancelAtPeriodEnd" | "provider"> | null | undefined): boolean {
+  if (!state || state.cancelAtPeriodEnd || state.provider === "apple") return false;
+  return wouldChargeAgain(state);
+}
+
+/** An Apple plan that will charge again: deleting the account is allowed, but Apple keeps billing until it is cancelled in Settings. */
+export function appleCancelFirst(state: Pick<UnlimitedState, "status" | "cancelAtPeriodEnd" | "provider"> | null | undefined): boolean {
+  return !!state && state.provider === "apple" && !state.cancelAtPeriodEnd && wouldChargeAgain(state);
+}
+
+function wouldChargeAgain(state: Pick<UnlimitedState, "status">): boolean {
   return state.status === "trialing" || state.status === "repeat_trial" || state.status === "active" || state.status === "past_due";
 }
 
