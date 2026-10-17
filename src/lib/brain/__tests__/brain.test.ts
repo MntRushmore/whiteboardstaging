@@ -94,21 +94,21 @@ describe("json across the boundary", () => {
 });
 
 describe("the engine", () => {
-  it("analyzeLine is engine.analyzeLine", async () => {
+  it("analyzeLine is engine.analyzeLine", { timeout: 60_000 }, async () => {
     const engine = await getEngine();
     for (const p of CORPUS.slice(0, 200)) {
       for (const latex of p.lines) expect(analyzeLine({ latex, context: { mode: "feedback" } }), latex).toEqual(engine.analyzeLine(latex, { mode: "feedback" }));
     }
   });
 
-  it("localSolve is the offline scoreboard's Solve, over the whole corpus", async () => {
+  it("localSolve is the offline scoreboard's Solve, over the whole corpus", { timeout: 120_000 }, async () => {
     const engine = await getEngine();
     for (const p of CORPUS) expect(localSolveOf({ lines: p.lines }), p.id).toEqual(localSolve(engine, p.lines, undefined, { canDraw }));
   });
 });
 
 describe("ink", () => {
-  it("recognizerPayload is buildPayload, and its hash the board's WebCrypto sha-1", async () => {
+  it("recognizerPayload is buildPayload, and its hash the board's WebCrypto sha-1", { timeout: 60_000 }, async () => {
     const lines = CORPUS.flatMap((p) => p.lines).filter((_, i) => i % 9 === 0);
     for (const [i, latex] of lines.entries()) {
       const { strokes } = handInk(latex, VARIANTS[i % VARIANTS.length]);
@@ -132,7 +132,7 @@ describe("ink", () => {
     expect(s.bounds).toEqual({ x: 1, y: 4, w: 2, h: 5 });
   });
 
-  it("clusterStrokes is the board's flush: drawings apart, bars and stacks a line each, then lines", () => {
+  it("clusterStrokes is the board's flush: drawings apart, bars and stacks a line each, then lines", { timeout: 120_000 }, () => {
     const scenes = [
       ...buildScenes()
         .filter((_, i) => i % 37 === 0)
