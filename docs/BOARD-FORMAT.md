@@ -398,26 +398,67 @@ this format, against about 2 in tldraw's.
 **Per stroke**, about 230 bytes are record fields (id, screen, order, author, colour, width, origin,
 start). The rest is points.
 
-## Converting a tldraw board (first cut, `TldrawImporter`)
+## Converting a tldraw board (`TldrawImporter`, complete since 2026-10-17)
 
 It accepts both stored forms: `{document: {store, schema}, session}`, and a bare `{store, schema}`.
-The original is never changed.
+The original is never changed: it stays in `whiteboards.data`, and the app writes only `doc`. Converting
+the same board twice gives the same document, byte for byte (`ConverterTests`, `TldrawImportTests`).
+
+**What every converted record keeps.** Its tldraw `meta`, whole (the tutor's keys: `live`, `source`,
+`lineId`, `createdAt`, `mark`, `markWhy`, `handBlock`, `handLine`, `handPart`, `graphFor`, `figure`,
+`chatModel`, `proofTable`, `proofRows`, `chatProblem`, `chatBlock`, …), except a stroke's `t` / `t1`,
+which become its `start` and point times. Besides:
+
+| meta key | when |
+|---|---|
+| `opacity` | the shape's opacity was below 1 |
+| `locked` | the shape was locked (never a retired AI overlay: the web unlocks those) |
+| `parent` | the shape was inside a group or a frame (its id); the record is flattened to the page |
+| `dash` | tldraw's `dash` was not `draw` |
+| `label` | a geo shape's, an arrow's or a note's text, or a frame's name (plain text) |
+| `rotation` | a `math` or `graph` record that was rotated (they have no rotation field) |
+| `tldraw` | `{type, props, asset?, assetId?}`: what the board does not model yet (a label's rich text, an arrow's bend and heads, a crop, a text's font…), so the trip back to tldraw loses nothing |
 
 | tldraw | Agathon |
 |---|---|
 | `page` (by `index`) | `screen`: `rect` from `meta.screen`; a page without one gets the screen the web grows around its content (`screenForContent`: pad 40, keep 16:9, measured by stroke centre lines as tldraw measures them) |
 | `draw` | `stroke`. Points of every segment in order; a `straight` segment is interpolated as tldraw draws it. `isPen` → `real`. `size` and `scale` → `width`. `meta.t` / `t1` → `start` plus point times spread by length. The tutor's `createdAt` → `start`. `meta.live` → `author: tutor`, and tldraw `blue` → `tutor` only then |
 | `highlight` | `stroke` with `meta.highlight` (drawn at 35 %) |
-| shapes inside a `group` or `frame` | flattened, with the parent's position and rotation applied; the frame's own box is dropped |
-| `geo` rectangle / ellipse | `shape`; other `geo` kinds become `rect`, with `meta.geo` keeping the original |
-| `line`, `arrow` | `shape` (arrow bindings are not kept) |
-| `image` + its `asset` | `image` with `asset.src` |
-| `math` | `math`: `echo` → `readback`, `ai` → `answer`, `student` → `note`, and `size` → `fontSize` |
+| `geo` rectangle, ellipse | `shape` `rect`, `ellipse`; `w`, `h` (+ `growY`); `width` = STROKE_SIZES[size] × scale |
+| `geo` oval, cloud | `shape` `ellipse`, `meta.geo` |
+| `geo` x-box, check-box | `shape` `rect`, `meta.geo` |
+| `geo` triangle, diamond, pentagon, hexagon, octagon, star, rhombus, rhombus-2, trapezoid, arrow-right / left / up / down, heart | `shape` `line`: a closed outline (tldraw 4.2's own geometry, the heart's curves sampled) through the box `w` × `h`; `meta.geo` |
+| `line` | `shape` `line` through its handles (in index order); a cubic spline in `meta.spline` |
+| `arrow` | `shape` `arrow`, start to end; a bent arrow's arc sampled (17 points); its heads, kind, label in `meta.tldraw` |
+| arrow `binding`s | the end where tldraw draws it (the target's anchor, or its centre when not precise, clipped to its outline unless exact), and `meta.attach.start` / `.end`: `{to: <record id>, anchor: {x, y}, precise?, exact?, binding: <binding id>, snap?}` |
+| `note` | `shape` `rect` (200 × scale, grown by `growY`), `fill: semi` in the note's colour; `meta.note`, its text in `meta.label` |
+| `frame` | its own box: `shape` `rect`, `width` 1, `meta.frame`, its name in `meta.label`; its children flattened, above it |
+| `group` | flattened (its children carry the group's position and rotation, and `meta.parent`) |
+| `text` | `math`, role `note`, author as the shape's: `latex` is the text in LaTeX text mode (`\text{…}` a line, joined by `\\`), the plain text in `meta.text`; `fontSize` = FONT_SIZES[size] × scale, `w` = w × scale, `h` from its lines |
+| `image` + its `asset` | `image` with `asset.src` (an inline `data:` picture is uploaded through the `BoardAssetStore`, see below) |
+| the retired pipeline's AI overlays (`meta.aiOverlay`) | a suggest / answer overlay nobody accepted is left out, as the web drops it on load; the others are ordinary images (unlocked) |
+| `video` + asset | `image` placeholder: the video's URL in `asset.src`, `meta.video` |
+| `embed` | `image` placeholder with no picture (`asset.src` ""), the URL in `meta.link` |
+| `bookmark` + asset | `image` placeholder showing its preview picture, `meta.link`, `meta.title` |
+| `math` | `math`: `echo` → `readback`, `ai` → `answer`, `student` → `note`, and `size` → `fontSize`; `status`, `resultLatex`, `note`, `tone`, `anchorIds` in `meta.tldraw.props` |
 | an `echo` math's `anchorIds`, `lineId`, `status` | a `line` over those strokes, its verdict the echo's status |
 | tutor strokes with `meta.mark` (`check:` / `circle:` / `question:`) | a `mark` over those strokes, aimed at `line:<lineId>`, `why` from `meta.markWhy` |
-| `graph` | `graph` |
+| `graph` | `graph`; the web's hex colours (GRAPH_COLORS) become palette tokens, the hex kept in `meta.fnColors` by function id |
+| any other shape type | kept whole: an `UnknownRecord` `tldraw:<key>`, type `tldraw.shape`, `{screen, x, y, rotation, shape}` |
+| any other record (a binding that is not an arrow's, an asset nothing uses, a custom record) | kept whole: `tldraw:<id>`, type `tldraw.record`, `{record}` (an unused inline asset is left in the original) |
+| the `document` record and the snapshot's `schema` | the document's `meta.convertedFrom` (`{format: "tldraw", schema, document}`) |
 | fills | tldraw's `semi` → `paper`, `solid` → `semi`, `fill` → `solid` (tldraw's names mean other things) |
-| z-order | tldraw's index order, groups inline, re-keyed with fresh fractional keys |
+| z-order | tldraw's index order, groups and frames inline, re-keyed with fresh fractional keys |
+
+**Inline pictures.** Boards saved before the web's asset store hold pictures as `data:` URLs.
+`TldrawImporter.importSnapshot(_:boardId:assets:)` uploads each (once per picture) through the board's
+`BoardAssetStore` and points the record at its URL; one that fails stays inline (`failedUploads`) and the
+autosave tries again before every write, so nothing is lost.
+
+**The trip back.** `src/lib/boards/agathonDoc.ts` turns a document back into a tldraw snapshot in memory
+(never written): the web's read-only view of an iPad board, the replay, the weekly report and the admin
+viewer read boards through `loadBoardSnapshot(row)`. It uses the record's fields first and `meta.tldraw`
+for the rest; strokes get `meta.t` / `t1` back from `start` and their last point's time.
 
 **Checked against tldraw's own renderer.** The reference PNGs come from
 `ios/Packages/AgathonBoard/Tools/fixtures/tldraw-reference.mjs`, which uses tldraw's own `svgInk`
@@ -429,21 +470,14 @@ The original is never changed.
 
 These are the `RenderComparisonTests`. See `docs/qa-screenshots/ipad-board-vs-tldraw.png`.
 
-**Left for Phase 1 (the full converter):**
+**Fixtures** (all synthetic, `Tools/fixtures/make-fixtures.mjs`): kid-algebra, legacy-noscreen,
+legacy-small, synthetic-2000 and **all-shapes** (every shape kind above, bound / bent / elbow arrows,
+inline and cropped pictures, the AI overlays, video, embed, bookmark, the tutor's meta keys, a page from
+before screens). Their conversions are committed as Agathon JSON in `src/lib/boards/__fixtures__/agathon/`
+for the TypeScript reader (`AgathonFixtureExportTests`; regenerate with `WRITE_AGATHON_FIXTURES=1`).
 
-- **Not converted yet** (counted in the report): `text`, `note`, `embed`, `bookmark`, `video`, arrow
-  bindings, and a `frame`'s own box.
-- **Converted but not drawn faithfully yet:**
-  - dashed and dotted `dash` (kept in `meta.dash`, drawn solid);
-  - tldraw's highlighter colours and its double pass;
-  - `geo` shapes other than rectangle and ellipse;
-  - a `geo` shape's label (`richText`);
-  - the `rng(id)` width bump tldraw gives a one-point mouse stroke;
-  - tldraw dropping a pen stroke's leading points under z 0.025.
-- **Other old-board leftovers:**
-  - the AI overlays of the removed image pipeline (`meta.aiOverlay`);
-  - `data:` URL assets (reported, not offloaded);
-  - a `math` shape's `resultLatex` and `note`;
-  - `problem` records from the Live loop's state, which is not in the snapshot.
-- **The trip back:** writing an Agathon board back to tldraw, if the web must keep editing a board
-  the iPad has touched.
+**Drawn faithfully later (the board lane's renderer):** dashed and dotted `dash` (kept), tldraw's
+highlighter colours and double pass, a label's text on a shape, a note's text, a cubic line's curve, a
+crop, a video's frame, the `rng(id)` width bump of a one-point mouse stroke, and tldraw dropping a pen
+stroke's leading points under z 0.025. `problem` records from the Live loop's state are not in a
+snapshot, so there are none to convert.

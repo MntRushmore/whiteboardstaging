@@ -28,12 +28,19 @@
  *  - legacy-noscreen.tldraw.json  bare {store, schema}; one page with no meta.screen, ink past 1600x900
  *  - synthetic-2000.tldraw.json   syntheticBoard({ strokes: 2000 }) exactly as it returns it
  *  - legacy-small.tldraw.json     a byte copy of src/shapes/__tests__/fixtures/legacy-board-snapshot.json
+ *  - all-shapes.tldraw.json       wrapped; every shape kind the web ever saved (every geo kind, note, text,
+ *                                 frame, group, bound / bent / elbow arrows, a cubic line, highlight, inline
+ *                                 and cropped images, the retired pipeline's AI overlays, video, embed,
+ *                                 bookmark, echo / ai / student math, a graph in hex colours, the tutor's
+ *                                 hand and marks with the chat's and the proof's meta keys) on a screen,
+ *                                 and a page from before screens (the full converter's fixture, 2026-10-17)
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import zlib from "node:zlib";
 
 const NM = process.env.TLDRAW_NODE_MODULES;
 if (!NM || !fs.existsSync(path.join(NM, "tldraw/package.json"))) {
@@ -1028,6 +1035,235 @@ function legacyNoScreen() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// c. all-shapes.tldraw.json: every shape kind the web ever saved (the full converter's fixture)
+// ---------------------------------------------------------------------------------------------
+
+/** A tiny PNG (w x h of one colour), deterministic: a picture saved inline before the asset store. */
+function tinyPng(w, h, [r, g, b]) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (buf) => {
+    let c = 0xffffffff;
+    for (const x of buf) c = crcTable[(c ^ x) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const c = Buffer.alloc(4);
+    c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  const rows = [];
+  for (let y = 0; y < h; y++) rows.push(Buffer.from([0, ...Array.from({ length: w }, () => [r, g, b]).flat()]));
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(Buffer.concat(rows), { level: 9 })),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+  return `data:image/png;base64,${png.toString("base64")}`;
+}
+
+const GEO_KINDS = [
+  "rectangle", "ellipse", "triangle", "diamond", "pentagon", "hexagon", "octagon", "star", "rhombus", "rhombus-2",
+  "oval", "trapezoid", "arrow-right", "arrow-left", "arrow-up", "arrow-down", "x-box", "check-box", "heart", "cloud",
+];
+
+function geoProps(over = {}) {
+  return {
+    w: 100, h: 80, geo: "rectangle", dash: "draw", growY: 0, url: "", scale: 1, color: "black", labelColor: "black",
+    fill: "none", size: "m", font: "draw", align: "middle", verticalAlign: "middle", richText: richText(""), ...over,
+  };
+}
+
+function allShapes() {
+  const newId = makeIds(20261017);
+  const nextIndex = makeIndexer(17);
+  const rand = rng(1017);
+  const tutor = makeTutor(newId);
+  const store = {};
+  const put = (r) => {
+    if (r.typeName === "shape" && r.index == null) r.index = nextIndex(r.parentId);
+    store[r.id] = r;
+    return r;
+  };
+  put(documentRecord());
+  const page1 = newId("page");
+  const page2 = newId("page");
+  put(pageRecord(page1, "Every shape", "a1", { screen: { x: 0, y: 0, w: 1600, h: 900 } }));
+  put(pageRecord(page2, "Old page", "a2", {}));
+  let clock = Date.UTC(2026, 9, 15, 21, 0, 0, 0);
+  const tick = (ms) => Math.round((clock += ms));
+  const shape = (o) => put(shapeRecord({ index: null, ...o }));
+
+  // ---- every geo kind, a row of ten and a row of ten; some filled, dashed, labelled, coloured
+  const fills = ["none", "semi", "solid", "fill", "pattern"];
+  const dashes = ["draw", "solid", "dashed", "dotted"];
+  const colors = ["black", "blue", "green", "red", "violet", "orange", "light-blue", "grey"];
+  const geoIds = {};
+  GEO_KINDS.forEach((geo, i) => {
+    const id = newId("shape");
+    geoIds[geo] = id;
+    shape({
+      id, type: "geo", parentId: page1,
+      x: 40 + (i % 10) * 150, y: 40 + Math.floor(i / 10) * 130, rotation: i === 7 ? 0.3 : 0,
+      isLocked: i === 3, opacity: i === 4 ? 0.5 : 1,
+      props: geoProps({
+        geo, fill: fills[i % fills.length], dash: dashes[i % dashes.length], color: colors[i % colors.length],
+        size: ["s", "m", "l", "xl"][i % 4], growY: i === 9 ? 24 : 0,
+        richText: richText(i === 0 ? "start" : i === 1 ? "end" : i === 19 ? "two\nlines" : ""),
+      }),
+      meta: { t: tick(900) },
+    });
+  });
+
+  // ---- a sticky note, and one grown for its text
+  shape({ id: newId("shape"), type: "note", parentId: page1, x: 60, y: 320, props: { color: "yellow", labelColor: "black", size: "m", font: "draw", fontSizeAdjustment: 0, align: "middle", verticalAlign: "middle", growY: 0, url: "", richText: richText("Show your work!"), scale: 1 }, meta: { t: tick(4000) } });
+  shape({ id: newId("shape"), type: "note", parentId: page1, x: 290, y: 320, rotation: -0.05, props: { color: "light-green", labelColor: "black", size: "s", font: "sans", fontSizeAdjustment: 1, align: "start", verticalAlign: "start", growY: 60, url: "", richText: richText("Steps:\n1. read\n2. write\n3. check"), scale: 0.8 }, meta: { t: tick(4000) } });
+
+  // ---- text: multi-line, LaTeX's special characters, scaled; and an old one with a list
+  shape({ id: newId("shape"), type: "text", parentId: page1, x: 520, y: 330, props: { color: "black", size: "m", w: 260, font: "draw", textAlign: "start", autoSize: false, scale: 1, richText: richText("x_1 & y^2 {ok}\n100% $5 #1 ~ \\") }, meta: { t: tick(5000) } });
+  shape({
+    id: newId("shape"), type: "text", parentId: page1, x: 520, y: 430, rotation: 0.12,
+    props: {
+      color: "red", size: "l", w: 300, font: "sans", textAlign: "middle", autoSize: true, scale: 1.5,
+      richText: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Today" }, { type: "hardBreak" }, { type: "text", text: "fractions" }] }, { type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "halves" }] }] }, { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "quarters" }] }] }] }] },
+    },
+    meta: { t: tick(5000) },
+  });
+
+  // ---- a frame holding a kid's stroke and a box (children in the frame's space)
+  const frameId = newId("shape");
+  shape({ id: frameId, type: "frame", parentId: page1, x: 860, y: 300, props: { w: 320, h: 220, name: "Warm-up", color: "black" }, meta: { t: tick(3000) } });
+  {
+    const rec = recordStroke(densePath([{ x: 30, y: 60 }, { x: 140, y: 40 }, { x: 260, y: 90 }], 8), { pen: true, zoom: IPAD_ZOOM, size: "l", speed: 0.3, rand });
+    const t = tick(2000);
+    shape({ id: newId("shape"), type: "draw", parentId: frameId, x: rec.origin.x, y: rec.origin.y, props: drawProps({ color: "violet", size: "l", points: rec.points, isPen: true, isClosed: rec.isClosed }), meta: { t, t1: t + rec.durationMs } });
+    shape({ id: newId("shape"), type: "geo", parentId: frameId, x: 40, y: 120, props: geoProps({ w: 90, h: 60, color: "green" }), meta: { t: tick(2000) } });
+  }
+
+  // ---- a group of two boxes, moved and rotated
+  {
+    const groupId = newId("shape");
+    shape({ id: groupId, type: "group", parentId: page1, x: 1240, y: 300, rotation: 0.2, props: {}, meta: {} });
+    shape({ id: newId("shape"), type: "geo", parentId: groupId, x: 0, y: 0, props: geoProps({ w: 60, h: 60, color: "orange", fill: "solid" }), meta: { t: tick(1500) } });
+    shape({ id: newId("shape"), type: "geo", parentId: groupId, x: 80, y: 20, props: geoProps({ geo: "ellipse", w: 60, h: 60, color: "violet" }), meta: { t: tick(1500) } });
+  }
+
+  // ---- arrows: one straight between two boxes (both ends bound), one bent and labelled, one elbow
+  {
+    const from = geoIds.rectangle;
+    const to = geoIds.ellipse;
+    const a = shape({
+      id: newId("shape"), type: "arrow", parentId: page1, x: 140, y: 80,
+      props: { kind: "arc", elbowMidPoint: 0.5, dash: "draw", size: "m", fill: "none", color: "black", labelColor: "black", bend: 0, start: { x: 0, y: 0 }, end: { x: 90, y: 0 }, arrowheadStart: "none", arrowheadEnd: "arrow", richText: richText(""), labelPosition: 0.5, font: "draw", scale: 1 },
+      meta: { t: tick(2500) },
+    });
+    put({ id: newId("binding"), typeName: "binding", type: "arrow", fromId: a.id, toId: from, props: { terminal: "start", normalizedAnchor: { x: 0.5, y: 0.5 }, isExact: false, isPrecise: false, snap: "none" }, meta: {} });
+    put({ id: newId("binding"), typeName: "binding", type: "arrow", fromId: a.id, toId: to, props: { terminal: "end", normalizedAnchor: { x: 0.25, y: 0.75 }, isExact: false, isPrecise: true, snap: "none" }, meta: {} });
+    shape({
+      id: newId("shape"), type: "arrow", parentId: page1, x: 1220, y: 560,
+      props: { kind: "arc", elbowMidPoint: 0.5, dash: "dashed", size: "l", fill: "none", color: "red", labelColor: "red", bend: 40, start: { x: 0, y: 0 }, end: { x: 260, y: 40 }, arrowheadStart: "dot", arrowheadEnd: "triangle", richText: richText("look here"), labelPosition: 0.4, font: "sans", scale: 1 },
+      meta: { t: tick(2500) },
+    });
+    shape({
+      id: newId("shape"), type: "arrow", parentId: page1, x: 1220, y: 700,
+      props: { kind: "elbow", elbowMidPoint: 0.3, dash: "solid", size: "s", fill: "none", color: "blue", labelColor: "black", bend: 0, start: { x: 0, y: 0 }, end: { x: 200, y: 120 }, arrowheadStart: "none", arrowheadEnd: "arrow", richText: richText(""), labelPosition: 0.5, font: "draw", scale: 1 },
+      meta: { t: tick(2500) },
+    });
+  }
+
+  // ---- a cubic line, and a highlighter over the note's text
+  {
+    const [i0, i1, i2] = ["a1", "a2", "a3"];
+    shape({
+      id: newId("shape"), type: "line", parentId: page1, x: 60, y: 600,
+      props: { dash: "draw", size: "m", color: "light-red", spline: "cubic", scale: 1, points: { [i0]: { id: i0, index: i0, x: 0, y: 0 }, [i1]: { id: i1, index: i1, x: 120, y: -60 }, [i2]: { id: i2, index: i2, x: 260, y: 10 } } },
+      meta: { t: tick(2000) },
+    });
+    const r = recordStroke(densePath([{ x: 80, y: 410 }, { x: 260, y: 412 }], 9), { pen: false, zoom: IPAD_ZOOM, size: "l", speed: 0.7, rand });
+    const t = tick(2000);
+    shape({ id: newId("shape"), type: "highlight", parentId: page1, x: r.origin.x, y: r.origin.y, props: { color: "yellow", size: "l", segments: [{ type: "free", points: r.points }], isComplete: true, isPen: false, scale: 1 }, meta: { t, t1: t + r.durationMs } });
+  }
+
+  // ---- pictures: an inline one (saved before the asset store), a cropped and flipped one, the
+  //      retired image pipeline's overlays (one pending: dropped, one accepted and locked, one feedback)
+  {
+    const inline = newId("asset");
+    put({ id: inline, typeName: "asset", type: "image", props: { name: "sticker.png", src: tinyPng(4, 4, [224, 49, 49]), w: 4, h: 4, mimeType: "image/png", isAnimated: false }, meta: { source: "sticker" } });
+    shape({ id: newId("shape"), type: "image", parentId: page1, x: 380, y: 560, props: { w: 80, h: 80, assetId: inline, playing: true, url: "", crop: null, flipX: false, flipY: false, altText: "a red square" }, meta: { t: tick(3000) } });
+    const photo = newId("asset");
+    put({ id: photo, typeName: "asset", type: "image", props: { name: "worksheet.jpg", src: "https://example.com/agathon-fixtures/worksheet.jpg", w: 1200, h: 900, mimeType: "image/jpeg", isAnimated: false, fileSize: 120034 }, meta: {} });
+    shape({ id: newId("shape"), type: "image", parentId: page1, x: 500, y: 560, isLocked: true, props: { w: 240, h: 180, assetId: photo, playing: true, url: "", crop: { topLeft: { x: 0.1, y: 0 }, bottomRight: { x: 0.9, y: 1 } }, flipX: true, flipY: false, altText: "" }, meta: { t: tick(3000) } });
+    for (const [mode, accepted, locked] of [["suggest", false, false], ["answer", true, true], ["feedback", false, true]]) {
+      const asset = newId("asset");
+      put({ id: asset, typeName: "asset", type: "image", props: { name: `overlay-${mode}.png`, src: `https://example.com/agathon-fixtures/overlay-${mode}.png`, w: 1600, h: 900, mimeType: "image/png", isAnimated: false }, meta: {} });
+      shape({ id: newId("shape"), type: "image", parentId: page1, x: 0, y: 0, isLocked: locked, props: { w: 1600, h: 900, assetId: asset, playing: true, url: "", crop: null, flipX: false, flipY: false, altText: "" }, meta: { aiOverlay: true, mode, ...(accepted ? { accepted: true } : {}) } });
+    }
+  }
+
+  // ---- a video, an embed and a bookmark (kept as placeholders that keep their link)
+  {
+    const video = newId("asset");
+    put({ id: video, typeName: "asset", type: "video", props: { name: "lesson.mp4", src: "https://example.com/agathon-fixtures/lesson.mp4", w: 640, h: 360, mimeType: "video/mp4", isAnimated: true }, meta: {} });
+    shape({ id: newId("shape"), type: "video", parentId: page1, x: 780, y: 560, props: { w: 192, h: 108, time: 12.5, playing: false, autoplay: false, url: "", assetId: video, altText: "" }, meta: { t: tick(3000) } });
+    shape({ id: newId("shape"), type: "embed", parentId: page1, x: 1000, y: 560, props: { w: 192, h: 108, url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }, meta: { t: tick(3000) } });
+    const bm = newId("asset");
+    put({ id: bm, typeName: "asset", type: "bookmark", props: { title: "Fractions explained", description: "Halves and quarters", image: "https://example.com/agathon-fixtures/fractions.png", favicon: "https://example.com/favicon.ico", src: "https://example.com/fractions" }, meta: {} });
+    shape({ id: newId("shape"), type: "bookmark", parentId: page1, x: 1000, y: 690, props: { w: 300, h: 120, assetId: bm, url: "https://example.com/fractions" }, meta: { t: tick(3000) } });
+  }
+
+  // ---- the kid writes a line; the tutor reads it (echo), answers (ai math), plots (hex colours)
+  //      and writes in its hand with the chat's and the proof's meta keys
+  {
+    const ids = [];
+    let penUp = 0;
+    const lay = hand.layoutMath("y = 2x", { size: 70, seed: 77 });
+    for (const st of lay.strokes) {
+      const rec = recordStroke(st.points.map((p) => ({ x: 620 + p.x, y: 760 + p.y - lay.baseline })), { pen: true, zoom: IPAD_ZOOM, size: "l", speed: 0.3, rand });
+      const t = tick(400);
+      clock = t + rec.durationMs;
+      penUp = clock;
+      const id = newId("shape");
+      ids.push(id);
+      shape({ id, type: "draw", parentId: page1, x: rec.origin.x, y: rec.origin.y, props: drawProps({ color: "black", size: "l", points: rec.points, isPen: true, isClosed: rec.isClosed }), meta: { t, t1: t + rec.durationMs } });
+    }
+    const lineId = "ln_allshapes1";
+    const readAt = penUp + 1200;
+    shape({ id: newId("shape"), type: "math", parentId: page1, x: 620, y: 800, props: { w: 120, h: 40, latex: "y=2x", source: "echo", status: "ok", resultLatex: "", note: "", anchorIds: ids, lineId, size: "m", tone: "muted" }, meta: makeMeta("echo", lineId, readAt, { edited: false }) });
+    shape({ id: newId("shape"), type: "math", parentId: page1, x: 800, y: 790, rotation: 0.1, props: { w: 160, h: 44, latex: "x = \\frac{y}{2}", source: "ai", status: "solved", resultLatex: "x=\\frac{y}{2}", note: "solve for x", anchorIds: [], lineId, size: "l", tone: "accent" }, meta: makeMeta("ai", lineId, readAt + 800, { chatModel: "sonnet-5.5", chatProblem: "cp_1", chatBlock: "cb_1" }) });
+    shape({ id: newId("shape"), type: "math", parentId: page1, x: 1000, y: 800, props: { w: 100, h: 30, latex: "a+b", source: "student", status: "none", resultLatex: "", note: "", anchorIds: [], lineId: "", size: "s", tone: "normal" }, meta: { t: tick(1000) } });
+    shape({
+      id: newId("shape"), type: "graph", parentId: page1, x: 1300, y: 40 + 260, rotation: 0,
+      props: { w: 260, h: 200, fns: [{ id: "f_1", expr: "2*x", latex: "2x", color: "#2563eb" }, { id: "f_2", expr: "x^2", latex: "x^{2}", color: "#dc2626" }, { id: "f_3", expr: "1", latex: "1", color: "green" }], points: [{ x: 1, y: 2, label: "A" }], xMin: -4, xMax: 4, yMin: -2, yMax: 8, autoY: true, grid: false, title: "y = 2x", lineId },
+      meta: makeMeta("ai", lineId, readAt + 1500, { graphFor: "2x", figure: { points: { A: { x: 1, y: 2 } } } }),
+    });
+    const { plan } = hw.planHandwriting(["x = 3"], { size: 60, seed: 5 });
+    const at = readAt + 3000;
+    for (const s of tutor.write(hw.placeHandPlan(plan, { x: 1100, y: 820 }), { meta: makeMeta("ai", lineId, at), extraMeta: { proofTable: "pt_1", proofRows: 2, chatProblem: "cp_1", chatBlock: "cb_2" }, parentId: page1, now: at })) put(s);
+    for (const s of tutor.mark("check", { x: 600, y: 700, w: 180, h: 80 }, { lineId, parentId: page1, now: at + 400 })) put(s);
+  }
+
+  // ---- page 2, from before screens: a rotated text and a note far right grow its screen
+  shape({ id: newId("shape"), type: "text", parentId: page2, x: 1700, y: 1000, rotation: -0.2, props: { color: "black", size: "xl", w: 400, font: "serif", textAlign: "end", autoSize: true, scale: 1, richText: richText("Far away") }, meta: {} });
+  shape({ id: newId("shape"), type: "note", parentId: page2, x: 100, y: 100, props: { color: "violet", labelColor: "white", size: "l", font: "mono", fontSizeAdjustment: 0, align: "end", verticalAlign: "end", growY: 0, url: "https://example.com", richText: richText(""), scale: 1 }, meta: {} });
+
+  const schema = SCHEMA;
+  check("all-shapes", store, schema);
+  return { document: { store, schema }, session: sessionFor([page1, page2], page2, { x: 0, y: 0, z: 1 }) };
+}
+
+// ---------------------------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------------------------
 
@@ -1035,6 +1271,7 @@ const written = [];
 const kid = kidAlgebra();
 written.push(writeJson("kid-algebra.tldraw.json", kid.file));
 written.push(writeJson("legacy-noscreen.tldraw.json", legacyNoScreen()));
+written.push(writeJson("all-shapes.tldraw.json", allShapes()));
 {
   const board = synthetic.syntheticBoard({ strokes: 2000 });
   check("synthetic-2000", board.document.store, null);
