@@ -28,11 +28,12 @@ function summary(xs) {
 const fmt = (n) => n.toFixed(2).padStart(8);
 
 const code = fs.readFileSync(BRAIN, "utf8");
-const context = vm.createContext({ performance: { now: () => performance.now() } });
+// in node's own global scope, as a browser runs it: a `vm` context reaches its globals (Math,
+// JSON, Object…) through interceptors, which made V8 look several times slower than it is
 let t = performance.now();
-vm.runInContext(code, context, { filename: "brain.js" });
+new vm.Script(code, { filename: "brain.js" }).runInThisContext();
 const evaluateMs = performance.now() - t;
-const brain = context.AgathonBrain;
+const brain = globalThis.AgathonBrain;
 t = performance.now();
 brain.call("init", "{}");
 const engineMs = performance.now() - t;

@@ -168,6 +168,19 @@ struct BenchTests {
         rows.append(Row(name: "memory: + running every golden case (MB)", n: 1, median: mb(afterRun) - mb(before), p95: 0, max: 0, note: "garbage not yet collected"))
         rows.append(Row(name: "memory: + after a full GC (MB)", n: 1, median: mb(afterGC) - mb(before), p95: 0, max: 0, note: "what the brain keeps"))
 
+        // the same first calls on a brain that ran `warmUp()` after loading (after the memory rows: it is a second brain)
+        let warmed = Brain()
+        try await warmed.load()
+        let warmMs = try await warmed.warmUp()
+        var warmFirsts = 0.0
+        for name in ["analyzeLine/li-01/0", "analyzeLine/qu-01/0", "localSolve/li-01", "localSolve/qu-01", "layoutHandwriting/three-line", "clusterStrokes/page", "recognizerPayload/0/clean", "marks/check/0", "variantOf/add_within_20"] {
+            guard let c = Golden.named(name) else { continue }
+            let (_, ms) = try await timed { try await warmed.envelopeJSON(c.method, args: c.args) }
+            warmFirsts += ms
+        }
+        row("warmUp() after load", [warmMs])
+        row("first calls after load + warmUp()", [warmFirsts])
+
         // cold load: a new virtual machine each time, discarded after
         var evaluates: [Double] = [], engines: [Double] = [], totals: [Double] = []
         for _ in 0..<5 {

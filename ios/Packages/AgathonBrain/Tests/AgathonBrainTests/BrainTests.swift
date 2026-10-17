@@ -19,6 +19,11 @@ struct BrainTests {
         #expect(again == report)
     }
 
+    @Test func warmsUp() async throws {
+        try await brain.load()
+        #expect(try await brain.warmUp() > 0)
+    }
+
     @Test func callsBeforeLoadingFail() async {
         let fresh = Brain()
         await #expect(throws: BrainError.notLoaded) { _ = try await fresh.callJSON("version") }

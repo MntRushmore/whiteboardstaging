@@ -86,6 +86,32 @@ public actor Brain {
         return report
     }
 
+    /// Runs a few typical calls once, so the first real ones are not slow: mathjs builds most of its
+    /// functions on first use, which costs ~0.3 s across the first calls without a JIT (on an M4;
+    /// roughly 0.8 s on an A13). Call it right after `load()`, in the background, at launch.
+    /// Returns how long it took (ms).
+    @discardableResult
+    public func warmUp() throws -> Double {
+        let start = DispatchTime.now()
+        let linear = try analyzeLine("2x + 3 = 11")
+        _ = try analyzeLine("2x = 8", context: AnalyzeContext(previous: linear, original: linear))
+        _ = try analyzeLine("x^{2} - 5x + 6 = 0")
+        _ = try analyzeLine("\\frac{3}{4} + \\frac{1}{8} = \\frac{7}{8}")
+        _ = try localSolve(["x^{2} - 5x + 6 = 0"])
+        _ = try localSolve(["3(x + 2) - x"])
+        let hand = try layoutHandwriting(HandwritingRequest(steps: ["2x = 8", "x = 4"], size: 28, seed: 1))
+        var strokes: [BrainStroke] = []
+        for line in hand.plan?.lines ?? [] {
+            for stroke in line.strokes {
+                strokes.append(BrainStroke(id: "w\(strokes.count)", x: stroke.points.map { $0.x + line.x }, y: stroke.points.map { $0.y + line.y }))
+            }
+        }
+        _ = try clusterStrokes(ClusterRequest(strokes: strokes))
+        _ = try recognizerPayload(strokes)
+        _ = try mark(.check, around: Rect(x: 0, y: 0, w: 120, h: 30), seedKey: "warm")
+        return Self.ms(start, DispatchTime.now())
+    }
+
     // MARK: - the boundary
 
     /// The raw call: `args` as JSON in, the result as JSON out (`AgathonBrain.call` in
