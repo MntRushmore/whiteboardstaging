@@ -10,6 +10,11 @@ options:
     iOS: "17.0"
   developmentLanguage: en
   createIntermediateGroups: true
+packages:
+  # The design system (docs/DESIGN-SYSTEM.md): Blocks tokens, the bundled fonts, components, the
+  # mark and the shapes. Local, so edits to it build with the app.
+  AgathonDesign:
+    path: Packages/AgathonDesign
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -26,6 +31,8 @@ targets:
     sources:
       - path: Agathon
         type: syncedFolder
+    dependencies:
+      - package: AgathonDesign
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon
