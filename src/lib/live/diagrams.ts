@@ -219,6 +219,11 @@ export interface SplitOptions {
    * handwriting is judged by how big it looks on the student's screen. None: a desktop.
    */
   zoom?: number;
+  /**
+   * Where a new drawing's id comes from (`dg_…`). None: a random one, as on the board. The native
+   * app's brain (`src/lib/brain`) passes a seeded one so its parity tests compare exactly.
+   */
+  newId?: () => string;
 }
 
 export interface InkSplit {
@@ -1424,8 +1429,9 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
   }
   for (const d of diagrams) {
     if (d.id) continue;
-    let id = newDiagramId();
-    while (used.has(id)) id = newDiagramId();
+    const next = opts.newId ?? newDiagramId;
+    let id = next();
+    while (used.has(id)) id = next();
     d.id = id;
     used.add(id);
   }

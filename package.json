@@ -30,7 +30,10 @@
     "env:check": "node scripts/check-vercel-env.mjs",
     "bundle:check": "node scripts/check-bundle.mjs",
     "dead-code": "node scripts/find-dead-code.mjs",
-    "smoke:live": "node scripts/live-smoke.mjs"
+    "smoke:live": "node scripts/live-smoke.mjs",
+    "brain:build": "node scripts/build-ios-brain.mjs --report",
+    "brain:check": "node scripts/build-ios-brain.mjs --check",
+    "brain:golden": "BRAIN_GOLDEN_WRITE=1 vitest run src/__eval__/brain/golden.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.0.0",
@@ -67,6 +70,7 @@
     "@types/node": "^22.20.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "^16.2.4",
     "pino-pretty": "^13.1.3",
