@@ -55,7 +55,7 @@
       </CommandLineArguments>
       <EnvironmentVariables>
          <EnvironmentVariable
-            key = "AGATHON_URL"
+            key = "AGATHON_API_URL"
             value = "http://localhost:3000"
             isEnabled = "NO">
          </EnvironmentVariable>
@@ -85,7 +85,7 @@
       </CommandLineArguments>
       <EnvironmentVariables>
          <EnvironmentVariable
-            key = "AGATHON_URL"
+            key = "AGATHON_API_URL"
             value = "http://localhost:3000"
             isEnabled = "NO">
          </EnvironmentVariable>
@@ -111,7 +111,7 @@
       </CommandLineArguments>
       <EnvironmentVariables>
          <EnvironmentVariable
-            key = "AGATHON_URL"
+            key = "AGATHON_API_URL"
             value = "http://localhost:3000"
             isEnabled = "NO">
          </EnvironmentVariable>

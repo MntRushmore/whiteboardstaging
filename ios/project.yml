@@ -55,7 +55,7 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        # localhost only, for a Debug run pointed at `npm run dev` (AGATHON_URL in the scheme).
+        # localhost only, for a Debug run pointed at `npm run dev` (AGATHON_API_URL in the scheme).
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         # Ask's hold-to-talk mic and Lecture mode.
@@ -71,8 +71,8 @@ targets:
         - AgathonTests
       gatherCoverageData: false
       environmentVariables:
-        # Tick in Product > Scheme > Edit Scheme > Run > Arguments to load a local `npm run dev`.
-        - variable: AGATHON_URL
+        # Tick in Product > Scheme > Edit Scheme > Run > Arguments to call a local `npm run dev`.
+        - variable: AGATHON_API_URL
           value: http://localhost:3000
           isEnabled: false
   AgathonTests:
