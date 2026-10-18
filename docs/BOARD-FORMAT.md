@@ -365,9 +365,63 @@ updated (before and after) and removed. Within one change set a record appears a
 or nil once the log no longer reaches back (send the whole document instead). It is the hook for
 live sync later: phone as pen, a parent watching.
 
-**Phase 1** builds the autosave on these pieces, with the web's guarantees: a version-checked
-write, a record-level merge on conflict, a device backup of unsaved records, and waiting for the
-pen to lift.
+**Phase 1** builds the autosave on these pieces (`ios/Packages/AgathonSync`, below).
+
+## Where a board is kept, and how it is saved (AgathonSync, 2026-10-17)
+
+**The row.** `whiteboards.doc` (jsonb) holds this document, beside the tldraw `data`
+(supabase/migrations/20261017000000_agathon_doc.sql). The trigger keeps `doc_schema` (the
+document's `schema`) and `doc_version` (the row `version` it was written at). The doc **is the
+board** when `doc is not null and doc_version = version`: any later `data` write bumps `version`
+past it. Once a row has a doc, the database refuses a write that changes `data` alone
+(`board_edited_on_ipad`), so the web never overwrites an iPad board. History keeps the doc a write
+replaced (`whiteboard_snapshots.doc`), with the same 10-minute / pre-drop rule and retention as
+`data`; the first doc of a board replaces nothing and is not kept.
+
+**Opening** (`BoardSession.open`):
+
+| the row | the board on screen | written |
+|---|---|---|
+| a current doc | the doc | on the first edit |
+| no doc (an old web board) | `data` converted (`TldrawImporter`), its inline pictures uploaded | on the first edit: the whole converted document. Until then nothing is written and `data` is never touched |
+| `data` is `{}` (a new board) | one screen, id `screen:<board id>` (the same on every open) | on the first edit |
+| a doc of a newer schema | refused: "update the app" | never |
+| a database without the doc columns (production before the migration) | `data` converted, inline pictures kept inline | **never**: the queue is local-only, the indicator says "Not saved yet", edits are backed up on the device and saved on the first open after the migration |
+
+Then the device backup, if any, is put back record by record (below).
+
+**Saving** (`BoardSaveQueue`, a port of the web's `src/lib/sync/saveQueue.ts`):
+
+- 2 s after the last edit, never more than 10 s into a burst; the build waits up to 2 s for the
+  pen to lift (twice: before encoding, before the thumbnail).
+- The write is the whole document plus the thumbnail: `PATCH whiteboards?id=eq.<id>&version=eq.<v>`
+  with `{doc, preview, updated_at}`, the document's bytes spliced in as they are. A write with no
+  answer after 30 s + 1 ms per 20 bytes is cancelled and retried.
+- No row matched: if the board still exists it is a **conflict**: fetch the row (the doc, or `data`
+  converted), merge record by record (`RecordMerge`, the web's `mergeDocumentRecords`: this device's
+  dirty records win, the other device's adds and changes come in, its removals go out), write again;
+  after 3 rounds, "reload". Gone: stop.
+- Offline, timeout, any other failure: the dirty sets go back; retry after 2, 5, 15, 60, 60… s.
+  Too large (the 8 MB check, or above 4 MB here): refused until the board shrinks. The column
+  missing (PGRST204): local-only.
+- Nothing to save (every dirty record is as the server has it): no write.
+- **The backup:** the unsaved records, as a file per board in Application Support
+  (`AgathonBoardBackups/<user id>/<board id>.json`), written 0.5 s after an edit (2 s at most into a
+  burst) and at once when the app leaves the screen; cleared when a save lands. Each record carries
+  the server's copy at the backup's base (`base`) and what an unanswered write sent (`sent`), so a
+  restore keeps a record the server changed since (counted as stale) and restores the rest.
+- Leaving the screen saves at once (a background task); closing the board saves and stops.
+
+**The thumbnail.** The current screen, the typeset maths left out when there is ink beside it, on
+white, as `data:image/jpeg;base64,…` within `whiteboards.preview`'s 20,000 characters: 640, 480,
+then 320 px wide at quality 0.7 then 0.5 (iOS cannot encode WebP), starting at the rung that fitted
+last time (from the top again every minute). An empty board clears it; an empty current screen
+keeps the stored one.
+
+**Pictures** (`SupabaseBoardAssetStore`, the `BoardAssetStore` protocol): the public `board-assets`
+bucket at `<user id>/<board id>/<sha-256 of the bytes>.<ext>` (the same picture is one object; an
+upload that finds it there is a success) and a `board_assets` row for the GC; read back through a
+disk cache (`Caches/AgathonBoardAssets`), `data:` URLs decoded in place.
 
 ## Changing the schema
 

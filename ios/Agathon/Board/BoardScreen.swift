@@ -100,6 +100,8 @@ private struct BoardEditing: View {
         ZStack(alignment: .top) {
             BoardCanvas(controller: controller, insets: CameraConstraints(top: 76, left: 16, bottom: 16, right: 16)) { canvas in
                 canvas.accessibilityIdentifier = "board.canvas"
+                canvas.isAccessibilityElement = true
+                canvas.accessibilityLabel = "Board"
                 // a save is built between strokes: the canvas's gestures say when a pen or finger is down
                 session.isPenDown = { [weak canvas] in
                     canvas?.gestureRecognizers?.contains { $0.state == .began || $0.state == .changed } ?? false
