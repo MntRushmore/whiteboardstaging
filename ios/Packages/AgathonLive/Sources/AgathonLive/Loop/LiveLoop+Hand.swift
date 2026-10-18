@@ -114,7 +114,16 @@ extension LiveLoop {
 
     func hasAnswer(_ st: LiveLine, _ answer: String) -> Bool {
         board.store.liveRecords(on: board.currentScreenID, lineId: st.id).contains {
-            $0.meta.string(LiveMeta.answerFor) == st.latex && $0.meta.string(LiveMeta.answerLatex) == answer
+            ($0.meta.string(LiveMeta.answerFor) == st.latex && $0.meta.string(LiveMeta.answerLatex) == answer)
+                || $0.meta.string(LiveMeta.nextStepFor) == st.latex
+        }
+    }
+
+    /// Something of the tutor's already follows this line's `=`: its answer, or Help's step after it.
+    /// One answer, once.
+    func answeredAfterEquals(_ st: LiveLine) -> Bool {
+        board.store.liveRecords(on: board.currentScreenID, lineId: st.id).contains {
+            $0.meta.string(LiveMeta.answerFor) == st.latex || $0.meta.string(LiveMeta.nextStepFor) == st.latex
         }
     }
 
@@ -158,7 +167,7 @@ extension LiveLoop {
     func suggestNextStep(_ id: String, now: Bool = false) -> Bool {
         guard settings.enabled, settings.mode != .off else { return false }
         if !now && settings.mode != .suggest && settings.mode != .answer { return false }
-        guard let st = lines[id], !st.latex.isEmpty else { return false }
+        guard let st = lines[id], !st.latex.isEmpty, !unsureOfProblem(st) else { return false }
         if hasSuggestion(st) || (rt[id]?.stepFor == st.latex && rt[id]?.stepPen?.isWriting == true) { return true }
         if !now && !settled {
             pendingSuggestions.insert(id)
@@ -207,7 +216,8 @@ extension LiveLoop {
     /// after their `=`. False when the engine has none.
     func writeNextStep(_ st: LiveLine) -> Bool {
         guard let step = st.analysis?.nextStep, !step.isEmpty else { return false }
-        if board.store.liveRecords(on: board.currentScreenID, lineId: st.id).contains(where: { $0.meta.string(LiveMeta.nextStepFor) == st.latex }) { return true }
+        // the line's `=` is answered already (Solve, or the grown-ups' answers): nothing more to write
+        if answeredAfterEquals(st) { return true }
         let id = st.id
         track { [weak self] in
             guard let self else { return }

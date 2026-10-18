@@ -199,6 +199,8 @@ public final class LiveLoop: ObservableObject {
     var lastTouchedLineId: String?
     /// problems the tutor wrote, heading the columns under them (`problem` records)
     var heads: [ProblemHead] = []
+    /// which problem heads which column (`anchorAtProblems`)
+    var columnHeads: [Int: RecordID] = [:]
 
     // MARK: celebrations, practice
 
@@ -364,6 +366,7 @@ public final class LiveLoop: ObservableObject {
         lastTouchedLineId = nil
         diagrams = []
         heads = []
+        columnHeads = [:]
         lines = [:]
         checking = 0
         solving = 0

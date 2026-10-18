@@ -128,6 +128,7 @@ extension LiveLoop {
         let record = ProblemRecord(id: id, screen: board.currentScreenID, lines: [], latex: problem.joined(separator: "\n"), origin: origin, meta: meta)
         board.store.put(.problem(record), origin: .tutor)
         refreshHeads()
+        reanchorLines()
         startHandwriting(placed, lineId: "problem:\(id.key)")
         return true
     }

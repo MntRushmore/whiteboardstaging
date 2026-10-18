@@ -215,7 +215,9 @@ extension LiveLoop {
 
     func apply(_ result: ClusterResult, dirty: Set<String>, force: Set<String>, strokes: [BrainStroke]) {
         diagrams = result.diagrams
-        let next = result.lines
+        // the tutor's problems cut the columns: work beside or under one is judged against it
+        refreshHeads()
+        let next = anchorAtProblems(result.lines)
         let nextIds = Set(next.map(\.id))
         for id in Array(lines.keys) where !nextIds.contains(id) { dropLine(id) }
 
@@ -237,7 +239,6 @@ extension LiveLoop {
         }
         // where the kid last wrote: Help me acts there
         if let pen = penStrokeId, let line = next.first(where: { $0.strokeIds.contains(pen) }) { penLineId = line.id }
-        refreshHeads()
         for (line, moveOnly) in affected { processLine(line, moveOnly: moveOnly) }
     }
 
@@ -304,8 +305,10 @@ extension LiveLoop {
             guard let result = try? await self.brain.clusterStrokes(ClusterRequest(strokes: strokes, previousLines: seeds, zoom: zoom)),
                   gen == self.generation, screen == self.board.currentScreenID else { return }
             self.diagrams = result.diagrams
+            self.refreshHeads()
+            let anchored = self.anchorAtProblems(result.lines)
             var unread: [InkLine] = []
-            for ink in result.lines {
+            for ink in anchored {
                 var line = LiveLine(ink: ink, updatedAt: self.scheduler.now)
                 if let read = reads[ink.id], Set(seeds.first(where: { $0.id == ink.id })?.strokeIds ?? []) == Set(ink.strokeIds) {
                     line.latex = read.latex
@@ -317,7 +320,6 @@ extension LiveLoop {
                 }
                 self.lines[ink.id] = line
             }
-            self.refreshHeads()
             await self.analyzeAll(quiet: true)
             // what was on the screen before this session had its pauses then: Auto leaves it be
             for st in self.lines.values where !st.latex.isEmpty { _ = self.autoOnce(self.autoKey("check", st)) }
@@ -341,15 +343,100 @@ extension LiveLoop {
         heads = next
     }
 
-    /// The problem the tutor wrote above this column of the kid's work, if any: the nearest one
-    /// above its first line that overlaps it side to side.
+    /// The problem the tutor wrote heading this column of the kid's work, if any
+    /// (`anchorAtProblems`).
     func head(for column: Int) -> ProblemHead? {
-        let col = columnLines(column)
-        guard let top = col.first else { return nil }
-        let span = BrainRect.around(col.map(\.bounds)) ?? top.bounds
+        guard let id = columnHeads[column] else { return nil }
+        return heads.first { $0.id == id }
+    }
+
+    // MARK: - the tutor's problems are anchors
+
+    /// The lines with their columns cut at the problems the tutor wrote (Now you try, practice, the
+    /// chat's problems; the web's `splitColumnsAtProblems`): a line beside a problem on its row (the
+    /// kid's `= 79` after `36 + 43`), or under it, is in that problem's column and is judged against
+    /// it — never as the next step of the kid's own work above the problem. Columns renumbered left
+    /// to right, rows top to bottom; `columnHeads` says which problem heads which column.
+    func anchorAtProblems(_ input: [InkLine]) -> [InkLine] {
+        columnHeads = [:]
+        guard !heads.isEmpty, !input.isEmpty else { return input }
+        var homes = input.map { problemHome(for: $0.bounds) }
+        guard homes.contains(where: { $0 != nil }) else { return input }
+        // work under a problem but far below it is not its work (the column keeps its own)
+        for (i, l) in input.enumerated() {
+            guard let home = homes[i], let head = heads.first(where: { $0.id == home }), !Self.besideProblem(l.bounds, head.rect) else { continue }
+            let top = input.indices.filter { input[$0].column == l.column && homes[$0] == home }.map { input[$0].bounds.y }.min() ?? l.bounds.y
+            if top - head.rect.maxY >= 360 { homes[i] = nil }
+        }
+        var groups: [(key: String, head: RecordID?, lines: [InkLine])] = []
+        for (l, home) in zip(input, homes) {
+            let key = "\(l.column)|\(home?.rawValue ?? "")"
+            if let i = groups.firstIndex(where: { $0.key == key }) { groups[i].lines.append(l) } else { groups.append((key, home, [l])) }
+        }
+        groups.sort { a, b in
+            let ax = a.lines.map(\.bounds.x).min() ?? 0, bx = b.lines.map(\.bounds.x).min() ?? 0
+            let ay = a.lines.map(\.bounds.y).min() ?? 0, by = b.lines.map(\.bounds.y).min() ?? 0
+            return ax != bx ? ax < bx : ay < by
+        }
+        var out: [InkLine] = []
+        for (column, g) in groups.enumerated() {
+            for (row, line) in g.lines.sorted(by: { ($0.bounds.y, $0.bounds.x) < ($1.bounds.y, $1.bounds.x) }).enumerated() {
+                var l = line
+                l.column = column
+                l.row = row
+                out.append(l)
+            }
+            if let head = g.head { columnHeads[column] = head }
+        }
+        return out
+    }
+
+    /// The tutor's problem a line of the kid's belongs to: the one it is beside, on its row (an
+    /// answer after it), else the nearest one above it over the same stretch of the page.
+    func problemHome(for b: BrainRect) -> RecordID? {
+        if let beside = heads.first(where: { Self.besideProblem(b, $0.rect) }) { return beside.id }
         return heads
-            .filter { $0.rect.maxY <= top.bounds.y + top.bounds.h * 0.5 && $0.rect.x < span.maxX + 40 && $0.rect.maxX > span.x - 40 && top.bounds.y - $0.rect.maxY < 360 }
-            .max { $0.rect.maxY < $1.rect.maxY }
+            .filter { $0.rect.maxY <= b.y + b.h * 0.5 && $0.rect.x < b.maxX + 40 && $0.rect.maxX > b.x - 40 }
+            .max { $0.rect.maxY < $1.rect.maxY }?.id
+    }
+
+    /// Beside a problem: level with it (a third of the smaller height) and starting past its middle.
+    static func besideProblem(_ b: BrainRect, _ head: BrainRect) -> Bool {
+        let level = min(b.maxY, head.maxY) - max(b.y, head.y)
+        return level >= max(1, min(b.h, head.h)) / 3 && b.x >= head.x + head.w / 2
+    }
+
+    /// The problems changed (one written, one rubbed out): the lines on the screen are anchored
+    /// again, and analysed again when a column or its head moved.
+    func reanchorLines() {
+        let before = columnHeads
+        let next = anchorAtProblems(lines.values.map(\.ink))
+        var moved = before != columnHeads
+        for ink in next {
+            guard var st = lines[ink.id], st.ink.column != ink.column || st.ink.row != ink.row else { continue }
+            st.ink.column = ink.column
+            st.ink.row = ink.row
+            lines[ink.id] = st
+            moved = true
+        }
+        if moved { reanalyzeAll() }
+    }
+
+    /// A line the loop cannot place for sure (it never rings one: a right answer is never marked
+    /// wrong): level with a problem of the tutor's that does not head its column, or an answer
+    /// started with `=` under a line that already ends with one (`36 + 24 =` then `= 79`: whose
+    /// answer is that?).
+    func unsureOfProblem(_ st: LiveLine) -> Bool {
+        let mine = columnHeads[st.column]
+        for h in heads where h.id != mine {
+            let level = min(st.bounds.maxY, h.rect.maxY) - max(st.bounds.y, h.rect.y)
+            if level >= max(1, min(st.bounds.h, h.rect.h)) / 3 && st.bounds.x < h.rect.maxX + 4 * st.bounds.h && st.bounds.maxX > h.rect.x - st.bounds.h {
+                return true
+            }
+        }
+        guard mine == nil, LivePolicy.startsWithRelation(st.latex),
+              let above = columnLines(st.column).last(where: { $0.row < st.row && !$0.latex.isEmpty }) else { return false }
+        return LivePolicy.endsWithRelation(above.latex)
     }
 
     func columnLines(_ column: Int) -> [LiveLine] {
