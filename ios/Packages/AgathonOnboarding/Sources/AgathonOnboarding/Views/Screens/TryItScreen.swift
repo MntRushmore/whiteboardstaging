@@ -194,7 +194,7 @@ struct TryItScreen: View {
                 .frame(maxWidth: 520)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: page.width)
-                .offset(y: page.minY + 18)
+                .offset(x: page.minX, y: page.minY > 96 ? page.minY - 76 : page.minY + 18)
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .id(m.title + (m.detail ?? ""))
                 .allowsHitTesting(false)

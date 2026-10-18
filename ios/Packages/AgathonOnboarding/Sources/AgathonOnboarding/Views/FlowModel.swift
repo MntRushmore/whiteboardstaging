@@ -36,6 +36,8 @@ final class FlowModel {
     // what is on screen (lags `state.step` by the way out)
     private(set) var shown: OnboardingStep
     private(set) var speaker: SpeakerMode = .hidden
+    /// Reduce Motion: the speaker fades out and in instead of travelling
+    private(set) var speakerOpacity: Double = 1
     private(set) var pose: TheShapes.Pose = .hello
     private(set) var bubbleLead: String?
     private(set) var bubbleText = ""
@@ -54,6 +56,8 @@ final class FlowModel {
     /// the practice set's seed, once per flow, so the board shown is the board handed over
     let boardSeed = Int.random(in: 1...99_999)
     var madeKid: MadeKid?
+    /// the first board's live writer, kept for as long as it writes
+    var liveWriter: TutorWriter?
     private var transition: Task<Void, Never>?
     private var started = false
 
@@ -124,9 +128,21 @@ final class FlowModel {
             let pose = Self.pose(step)
             let moved = mode != self.speaker
             if moved || pose != self.pose {
-                withAnimation(self.reduceMotion ? .easeInOut(duration: 0.18) : OnboardingMotion.dock) {
-                    self.speaker = mode
-                    self.pose = pose
+                if self.reduceMotion && moved && self.speaker != .hidden && mode != .hidden {
+                    withAnimation(.easeOut(duration: 0.12)) { self.speakerOpacity = 0 }
+                    try? await Task.sleep(for: .milliseconds(130))
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) {
+                        self.speaker = mode
+                        self.pose = pose
+                    }
+                    withAnimation(.easeIn(duration: 0.18)) { self.speakerOpacity = 1 }
+                } else {
+                    withAnimation(self.reduceMotion ? .easeInOut(duration: 0.18) : OnboardingMotion.dock) {
+                        self.speaker = mode
+                        self.pose = pose
+                    }
                 }
                 if moved, mode != .hidden {
                     try? await Task.sleep(for: .milliseconds(self.reduceMotion ? 60 : (entering ? 380 : 300)))
@@ -224,7 +240,8 @@ final class FlowModel {
         case .account: return (nil, c.accountTitle)
         case .trial:
             if let days = offer?.trialDays, days > 0 { return (nil, c.trialTitle(days: days)) }
-            return (nil, offer.map { _ in "Agathon Unlimited." } ?? "Agathon Unlimited.")
+            // no introductory offer for this Apple ID (or the App Store not reached yet)
+            return (nil, "Agathon Unlimited.")
         case .pin: return (nil, c.pinTitle)
         case .kidProfile: return (nil, c.pictureTitle)
         case .signIn: return (nil, c.welcomeBack)

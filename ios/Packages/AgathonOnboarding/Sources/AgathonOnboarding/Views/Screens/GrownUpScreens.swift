@@ -451,7 +451,16 @@ struct TrialTimeline: View {
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(nodes.enumerated()), id: \.offset) { i, n in
                     VStack(alignment: i == 0 ? .leading : (i == nodes.count - 1 ? .trailing : .center), spacing: 4) {
-                        SkillPathNode(n.0, size: 40).background(Circle().fill(DS.Color.surface).padding(2))
+                        Group {
+                            if n.0 == .later {
+                                // the plan's day: a chalk-deep dot on the line (the trail's "later")
+                                Circle().fill(DS.Palette.line.mixed(with: DS.Palette.ink, amount: 0.18).color)
+                                    .frame(width: 20, height: 20)
+                                    .frame(width: 50, height: 50)
+                            } else {
+                                SkillPathNode(n.0, size: 40)
+                            }
+                        }
                         Text(n.1).dsFont(.button, size: 16)
                         Text(n.2).dsFont(.caption, size: 14).foregroundStyle(DS.Color.inkSecondary)
                     }

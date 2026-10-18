@@ -169,6 +169,7 @@ struct FlowStage: View {
 
         ZStack(alignment: .topLeading) {
             TheShapes(model.pose)
+                .opacity(model.speakerOpacity)
                 .accessibilityHidden(true)
                 .frame(width: width, height: height)
                 .offset(x: origin.x, y: origin.y)

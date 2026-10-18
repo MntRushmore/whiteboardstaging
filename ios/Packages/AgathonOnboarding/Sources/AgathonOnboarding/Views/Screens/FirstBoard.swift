@@ -114,7 +114,6 @@ struct FirstBoardScreen: View {
     let model: FlowModel
     let layout: StageLayout
     @State private var controller: BoardController?
-    @State private var writer: TutorWriter?
     @State private var live: String?
     @State private var shapes = true
 
@@ -142,9 +141,9 @@ struct FirstBoardScreen: View {
                 if let controller {
                     BoardCanvas(controller: controller, insets: CameraConstraints(top: 8, left: 8, bottom: 8, right: 8, maxZoom: 4), appearance: .blocks) { canvas in
                         BlocksBoardLook.apply(to: canvas)
-                        if writer == nil {
+                        if model.liveWriter == nil {
                             let w = TutorWriter(controller: controller, canvas: canvas)
-                            writer = w
+                            model.liveWriter = w
                             writeLive(w)
                         }
                     }
@@ -186,7 +185,7 @@ struct FirstBoardScreen: View {
                                                              kidName: model.answers.name, welcome: model.copy.welcome)
         // what the tutor wrote live is in the controller's document: save that, and hand it over
         let doc = controller?.store.document ?? handoff.document
-        writer?.cancel()
+        model.liveWriter?.cancel()
         Task {
             if let id = handoff.boardId { _ = await model.backend.saveBoard(id: id, document: doc) }
             model.state.finish()

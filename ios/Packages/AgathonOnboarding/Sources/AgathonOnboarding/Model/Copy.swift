@@ -19,7 +19,6 @@ public struct OnboardingCopy: Sendable {
 
     /// "Sam", or what stands in for the kid when there is no name.
     var them: String { name ?? "your kid" }
-    var They: String { name ?? "They" }
 
     // MARK: hello
 
