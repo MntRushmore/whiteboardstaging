@@ -27,6 +27,12 @@ final class HomeModel {
     private(set) var creating = false
     var toast: Toast?
 
+    // Today's practice and the path
+    private(set) var summary: LearningSummary?
+    private(set) var daily: [DailyRow] = []
+    private(set) var learningLoaded = false
+    private(set) var startingPractice = false
+
     @ObservationIgnored private var thumbnails: [String: UIImage] = [:]
 
     // MARK: who is signed in
@@ -51,6 +57,79 @@ final class HomeModel {
     var avatarColor: RGB {
         guard let me = family?.meMember else { return DS.Palette.tomato }
         return AvatarColor.color(for: me, in: family)
+    }
+
+    // MARK: learning
+
+    /// The grade the path follows: the profile's, else the family's word for this kid.
+    var grade: Int? { profile?.grade ?? family?.meMember?.grade }
+
+    /// A grown-up with kids practises through the kids' profiles: no Today card for them.
+    var showsPractice: Bool { family?.role != .parent }
+
+    var path: PathView? { grade.flatMap { GradePath.paths[$0] == nil ? nil : PathView(grade: $0, summary: summary) } }
+
+    var today: String { LocalDay.of(Date()) }
+
+    var todayRow: DailyRow? { daily.first { $0.day == today } }
+
+    var streak: DailyStreak { DailyStreak.compute(daily, today: today) }
+
+    /// Today's practice rows (60 days, for the streak) and the learning summary (the path's levels).
+    func loadLearning(_ backend: AgathonBackend) async {
+        let learning = LearningRepository(client: backend.supabase)
+        let since = LocalDay.adding(-60, to: today)
+        async let rows = attempt { try await learning.dailyPractice(since: since) }
+        if case let .success(list) = await rows { daily = list }
+        if let made = try? await LearningLoader.summary(backend: backend, grade: grade, course: profile?.course) {
+            summary = made
+        }
+        learningLoaded = true
+    }
+
+    /// Today's practice: today's board when there is one, else a new board for it (titled as the
+    /// web titles it) with the day recorded. The problems ride along for the board to show.
+    func startPractice(_ backend: AgathonBackend) async -> OpenBoard? {
+        guard !startingPractice else { return nil }
+        startingPractice = true
+        defer { startingPractice = false }
+        let day = today
+        let problems = await PracticePlanner.daily(day: day, userId: backend.auth.userId ?? "", path: path, summary: summary)
+        let set = PracticeSet(kind: .daily(day: day), title: "Today's practice", problems: problems)
+        if let id = todayRow?.boardId, let board = boards.first(where: { $0.id == id }) {
+            return OpenBoard(board: board, practice: set)
+        }
+        do {
+            let board = try await backend.boards.create(title: "Today's practice · \(LocalDay.weekdayName(day))")
+            boards.insert(board, at: 0)
+            let learning = LearningRepository(client: backend.supabase)
+            if let row = try? await learning.saveDailyPractice(day: day, boardId: board.id, goal: DailyRow.defaultGoal) {
+                daily.removeAll { $0.day == day }
+                daily.insert(row, at: 0)
+            }
+            return OpenBoard(board: board, practice: set)
+        } catch {
+            toast = Toast(kind: .lookAgain, title: "Today's practice didn't open.", message: "Try again in a moment.")
+            await backend.errors.reportUserError(kind: "live.daily", code: "start_failed", message: "Today's practice didn't open",
+                                                 path: "/", error: error)
+            return nil
+        }
+    }
+
+    /// A topic's problems on a new board named for it.
+    func startTopic(_ skill: String, backend: AgathonBackend) async -> OpenBoard? {
+        let name = GradePath.name(skill, summary: summary)
+        do {
+            let board = try await backend.boards.create(title: name)
+            boards.insert(board, at: 0)
+            let problems = await PracticePlanner.topic(skill, seed: PracticePlanner.seed("\(board.id)|\(skill)"))
+            return OpenBoard(board: board, practice: PracticeSet(kind: .topic(skill: skill), title: name, problems: problems))
+        } catch {
+            toast = Toast(kind: .lookAgain, title: "That topic didn't open.", message: "Try again in a moment.")
+            await backend.errors.reportUserError(kind: "live.topics", code: "start_failed", message: "That topic didn't open",
+                                                 path: "/", error: error)
+            return nil
+        }
     }
 
     // MARK: boards
@@ -102,6 +181,7 @@ final class HomeModel {
         if case let .success(summary) = await inkResult { ink = summary }
         if case let .success(state) = await familyResult { family = state }
         if case let .success(row) = await profileResult { profile = row }
+        if showsPractice { await loadLearning(backend) }
     }
 
     /// Makes a new board and returns it (Home then opens it), or nil with a toast.
