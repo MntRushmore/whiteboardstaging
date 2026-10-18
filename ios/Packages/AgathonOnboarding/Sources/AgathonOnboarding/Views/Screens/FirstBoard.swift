@@ -1,6 +1,7 @@
 import AgathonBoard
 import AgathonBrain
 import AgathonDesign
+import AgathonSync
 import SwiftUI
 
 /// The kid's first board (docs/ONBOARDING.md, `firstBoard`), made on the iPad:
@@ -13,8 +14,9 @@ enum FirstBoardMaker {
     static let handSize = 72.0
 
     /// The document, and the first practice problem left for the tutor to write live on screen 1.
-    static func make(answers a: OnboardingAnswers, seed: Int) async -> (document: BoardDocument, liveProblem: String?) {
-        let store = BoardStore(document: .blank())
+    /// `boardId`: the row it goes into, so the first screen's id is the one the board session uses.
+    static func make(answers a: OnboardingAnswers, seed: Int, boardId: String? = nil) async -> (document: BoardDocument, liveProblem: String?) {
+        let store = BoardStore(document: boardId.map(BoardSession.blankDocument(boardId:)) ?? .blank())
         guard let first = store.screenIDs.first else { return (.blank(), nil) }
         var bottom = 140.0
 
@@ -110,6 +112,7 @@ struct FirstBoardScreen: View {
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 PillButton(c.letsGo, icon: .forward, kind: .sunny, size: .large) { finish() }
+                    .accessibilityIdentifier("onboarding.firstBoard.go")
             }
             .frame(height: 76)
             .reveal(0)
@@ -158,9 +161,13 @@ struct FirstBoardScreen: View {
     private func finish() {
         let handoff = model.firstBoard ?? FirstBoardHandoff(boardId: nil, document: controller?.store.document ?? .blank(),
                                                              kidName: model.answers.name, welcome: model.copy.welcome)
-        // what the tutor wrote live is in the controller's document: hand that over
+        // what the tutor wrote live is in the controller's document: save that, and hand it over
         let doc = controller?.store.document ?? handoff.document
-        model.state.finish()
-        model.onFinish(.firstBoard(FirstBoardHandoff(boardId: handoff.boardId, document: doc, kidName: handoff.kidName, welcome: handoff.welcome)))
+        writer?.cancel()
+        Task {
+            if let id = handoff.boardId { _ = await model.backend.saveBoard(id: id, document: doc) }
+            model.state.finish()
+            model.onFinish(.firstBoard(FirstBoardHandoff(boardId: handoff.boardId, document: doc, kidName: handoff.kidName, welcome: handoff.welcome)))
+        }
     }
 }

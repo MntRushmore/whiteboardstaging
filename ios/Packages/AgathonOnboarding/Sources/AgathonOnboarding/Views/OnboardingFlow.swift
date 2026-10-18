@@ -102,7 +102,6 @@ struct FlowStage: View {
                 }
             }
         }
-        .ignoresSafeArea(.keyboard)
         .onAppear {
             model.reduceMotion = reduceMotion
             model.start()

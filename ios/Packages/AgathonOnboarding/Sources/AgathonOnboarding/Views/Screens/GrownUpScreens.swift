@@ -99,76 +99,92 @@ struct AccountScreen: View {
     var body: some View {
         let c = model.copy
         let ready = email.contains("@") && password.count >= 8 && agreed && !busy
-        VStack(alignment: .leading, spacing: 14) {
-            Text(c.accountLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary).reveal(0)
-            HStack(alignment: .top, spacing: 28) {
-                VStack(alignment: .leading, spacing: 12) {
-                    GrownUpField(title: c.email, text: $email, kind: .email).reveal(1)
-                    GrownUpField(title: c.password, text: $password, kind: .newPassword).reveal(2)
-                    if let error {
-                        HStack(spacing: 12) {
-                            Text(error).dsFont(.callout).foregroundStyle(DS.Color.ink)
-                            if emailTaken {
-                                Button(c.signInInstead) { model.openSignIn(from: .account) }
-                                    .buttonStyle(.pill(.primary))
-                            }
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(Capsule().fill(DS.Color.tryAgain))
-                    }
-                }
-                .frame(maxWidth: 440)
+        VStack(spacing: 0) {
+            Color.clear.frame(height: layout.contentTop)
+            ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Toggle(isOn: $agreed) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(c.consent).dsFont(.callout, size: 15).foregroundStyle(DS.Color.ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                            HStack(spacing: 14) {
-                                Button(c.terms) { safari = Legal.terms(model) }
-                                Button(c.privacy) { safari = Legal.privacy(model) }
+                    Text(c.accountLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary).reveal(0)
+                    let columns = layout.landscape && !layout.compact
+                    let form = Group {
+                        VStack(alignment: .leading, spacing: 12) {
+                            GrownUpField(title: c.email, text: $email, kind: .email)
+                                .accessibilityIdentifier("onboarding.account.email")
+                                .reveal(1)
+                            GrownUpField(title: c.password, text: $password, kind: .newPassword)
+                                .submitLabel(.go)
+                                .onSubmit { if ready { save() } }
+                                .accessibilityIdentifier("onboarding.account.password")
+                                .reveal(2)
+                            if let error {
+                                HStack(spacing: 12) {
+                                    Text(error).dsFont(.callout).foregroundStyle(DS.Color.ink)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    if emailTaken {
+                                        Button(c.signInInstead) { model.openSignIn(from: .account) }
+                                            .buttonStyle(.pill(.primary))
+                                    }
+                                }
+                                .padding(.horizontal, 16).padding(.vertical, 8)
+                                .background(Capsule().fill(DS.Color.tryAgain))
                             }
-                            .dsFont(.button, size: 15)
-                            .foregroundStyle(DS.Color.tutorInk)
                         }
+                        .frame(maxWidth: 440)
+                        VStack(alignment: .leading, spacing: 14) {
+                            Toggle(isOn: $agreed) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(c.consent).dsFont(.callout, size: 15).foregroundStyle(DS.Color.ink)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    HStack(spacing: 14) {
+                                        Button(c.terms) { safari = Legal.terms(model) }
+                                        Button(c.privacy) { safari = Legal.privacy(model) }
+                                    }
+                                    .dsFont(.button, size: 15)
+                                    .foregroundStyle(DS.Color.tutorInk)
+                                }
+                            }
+                            .toggleStyle(CheckToggle())
+                            .accessibilityIdentifier("onboarding.account.consent")
+                            .reveal(3)
+                            Menu {
+                                ForEach(OnboardingCatalog.shared.heardFrom) { o in
+                                    Button(o.label) { heardFrom = o.id }
+                                }
+                            } label: {
+                                HStack {
+                                    Text(OnboardingCatalog.shared.heardFrom.first { $0.id == heardFrom }?.label ?? c.heardFromPrompt)
+                                        .dsFont(.callout)
+                                    Spacer()
+                                    DSIcon(.forward, size: 16).rotationEffect(.degrees(90))
+                                }
+                                .foregroundStyle(DS.Color.ink)
+                                .padding(.horizontal, 22)
+                                .frame(height: 56)
+                                .background(Capsule().fill(DS.Color.surface))
+                            }
+                            .reveal(4)
+                        }
+                        .frame(maxWidth: 440)
                     }
-                    .toggleStyle(CheckToggle())
-                    .reveal(3)
-                    Menu {
-                        ForEach(OnboardingCatalog.shared.heardFrom) { o in
-                            Button(o.label) { heardFrom = o.id }
-                        }
-                    } label: {
-                        HStack {
-                            Text(OnboardingCatalog.shared.heardFrom.first { $0.id == heardFrom }?.label ?? c.heardFromPrompt)
-                                .dsFont(.callout)
-                            Spacer()
-                            DSIcon(.forward, size: 16).rotationEffect(.degrees(90))
-                        }
-                        .foregroundStyle(DS.Color.ink)
-                        .padding(.horizontal, 22)
-                        .frame(height: 56)
-                        .background(Capsule().fill(DS.Color.surface))
+                    if columns {
+                        HStack(alignment: .top, spacing: 28) { form }
+                    } else {
+                        VStack(alignment: .leading, spacing: 18) { form }
                     }
-                    .reveal(4)
+                    HStack(spacing: 12) {
+                        PillButton(busy ? "Saving…" : c.accountSave, icon: .forward, kind: .sunny, size: .large) { save() }
+                            .accessibilityIdentifier("onboarding.account.save")
+                            .disabled(!ready)
+                        Button(c.haveAccount) { model.openSignIn(from: .account) }
+                            .buttonStyle(.pill(.quiet))
+                    }
+                    .padding(.top, 8)
+                    .reveal(5)
                 }
-                .frame(maxWidth: 420)
+                .padding(.horizontal, layout.margin)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-        }
-        .padding(.horizontal, layout.margin)
-        .padding(.top, layout.contentTop)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: layout.size.height, alignment: .top)
-        .overlay(alignment: .bottom) {
-            HStack {
-                Button(c.haveAccount) { model.openSignIn(from: .account) }
-                    .buttonStyle(.pill(.quiet))
-                Spacer()
-                PillButton(busy ? "Saving…" : c.accountSave, icon: .forward, kind: .sunny, size: .large) { save() }
-                    .disabled(!ready)
-            }
-            .padding(.horizontal, layout.margin)
-            .padding(.bottom, layout.bottomInset + 12)
-            .reveal(5)
+            .scrollDismissesKeyboard(.interactively)
         }
         .sheet(item: $safari) { url in SafariView(url: url).ignoresSafeArea() }
     }
@@ -357,8 +373,10 @@ struct TrialScreen: View {
                     Spacer()
                     Button(c.notNow) { decline() }
                         .buttonStyle(.pill(.quiet, size: .large))
+                        .accessibilityIdentifier("onboarding.trial.notNow")
                     PillButton(busy ? "One moment…" : (days > 0 ? c.startTrial : c.subscribe(offer?.displayPrice ?? "")),
                                icon: .play, kind: .sunny, size: .large) { start() }
+                        .accessibilityIdentifier("onboarding.trial.start")
                         .disabled(busy || offer == nil)
                 }
             }
@@ -538,6 +556,7 @@ struct HandOverScreen: View {
                 .reveal(1)
                 .accessibilityAddTraits(.isHeader)
             PillButton(c.kidHasIt, icon: .play, kind: .sunny, size: .large) { model.go(.kidProfile) }
+                .accessibilityIdentifier("onboarding.handOver.go")
                 .padding(.top, 36)
                 .reveal(2)
             Spacer(minLength: 0)
@@ -571,6 +590,7 @@ struct KidProfileScreen: View {
                             .dsAnimation(DS.Motion.pop, value: picked)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("onboarding.picture.\(p.rawValue)")
                     .accessibilityLabel(p.name)
                     .accessibilityAddTraits(picked == p ? .isSelected : [])
                     .reveal(1 + i)
@@ -594,6 +614,7 @@ struct KidProfileScreen: View {
         .frame(height: layout.size.height, alignment: .top)
         .overlay(alignment: .bottomTrailing) {
             PillButton(c.thatsMe, icon: .forward, kind: .sunny, size: .large) { make() }
+                .accessibilityIdentifier("onboarding.picture.done")
                 .disabled(picked == nil || busy)
                 .padding(.trailing, layout.margin)
                 .padding(.bottom, layout.bottomInset + 12)
@@ -648,8 +669,9 @@ extension FlowModel {
         try? await backend.saveKid(choice: a.choice)
         let title = a.name.map { "\($0)’s first board" } ?? "My first board"
         let boardId = try? await backend.createBoard(title: title)
-        let made = await FirstBoardMaker.make(answers: a, seed: boardSeed)
+        let made = await FirstBoardMaker.make(answers: a, seed: boardSeed, boardId: boardId)
         firstBoardMade = made
+        if let boardId { _ = await backend.saveBoard(id: boardId, document: made.document) }
         firstBoard = FirstBoardHandoff(boardId: boardId, document: made.document, kidName: a.name, welcome: copy.welcome)
         if let t = a.tries.first(where: { $0.checked }) ?? a.tries.first, let p = OnboardingCatalog.shared.problem(t.problemId) {
             let skill = p.skill ?? Plan.firstSkill(a) ?? "add_within_10"
@@ -674,27 +696,34 @@ struct SignInScreen: View {
 
     var body: some View {
         let c = model.copy
-        VStack(alignment: .leading, spacing: 14) {
-            Text(c.welcomeBackLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary).reveal(0)
-            GrownUpField(title: c.email, text: $email, kind: .email).frame(maxWidth: 440).reveal(1)
-            GrownUpField(title: c.password, text: $password, kind: .password).frame(maxWidth: 440).reveal(2)
-            Button(c.forgotPassword) { reset() }.buttonStyle(.pill(.quiet)).reveal(3)
-            if let note {
-                Text(note).dsFont(.callout).foregroundStyle(DS.Color.ink)
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(Capsule().fill(DS.Color.tryAgain))
+        VStack(spacing: 0) {
+            Color.clear.frame(height: layout.contentTop)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(c.welcomeBackLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary).reveal(0)
+                    GrownUpField(title: c.email, text: $email, kind: .email).frame(maxWidth: 440).reveal(1)
+                    GrownUpField(title: c.password, text: $password, kind: .password).frame(maxWidth: 440)
+                        .submitLabel(.go)
+                        .onSubmit { signIn() }
+                        .reveal(2)
+                    if let note {
+                        Text(note).dsFont(.callout).foregroundStyle(DS.Color.ink)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                            .background(Capsule().fill(DS.Color.tryAgain))
+                    }
+                    HStack(spacing: 12) {
+                        PillButton(busy ? "Signing in…" : c.signIn, icon: .forward, kind: .sunny, size: .large) { signIn() }
+                            .disabled(busy || !email.contains("@") || password.isEmpty)
+                        Button(c.forgotPassword) { reset() }.buttonStyle(.pill(.quiet))
+                    }
+                    .padding(.top, 8)
+                    .reveal(3)
+                }
+                .padding(.horizontal, layout.margin)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-        }
-        .padding(.horizontal, layout.margin)
-        .padding(.top, layout.contentTop)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: layout.size.height, alignment: .top)
-        .overlay(alignment: .bottomTrailing) {
-            PillButton(busy ? "Signing in…" : c.signIn, icon: .forward, kind: .sunny, size: .large) { signIn() }
-                .disabled(busy || !email.contains("@") || password.isEmpty)
-                .padding(.trailing, layout.margin)
-                .padding(.bottom, layout.bottomInset + 12)
-                .reveal(4)
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 

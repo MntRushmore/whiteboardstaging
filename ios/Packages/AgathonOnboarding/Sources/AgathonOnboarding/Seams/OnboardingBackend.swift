@@ -1,4 +1,6 @@
+import AgathonBoard
 import AgathonKit
+import AgathonSync
 import Foundation
 import Supabase
 
@@ -41,6 +43,9 @@ public protocol OnboardingBackend: AnyObject {
     func saveKid(choice: LevelChoice?) async throws
     /// As the kid: a new board row; its id.
     func createBoard(title: String) async throws -> String
+    /// As the kid: the first board's document saved into its row (AgathonSync's write). False when it
+    /// could not be (the app's board then saves it on open).
+    func saveBoard(id: String, document: BoardDocument) async -> Bool
     /// As the kid: the try as the first learning attempt (`learning_attempts`).
     func recordAttempt(_ attempt: FirstAttempt) async
 }
@@ -157,6 +162,13 @@ public final class LiveOnboardingBackend: OnboardingBackend {
 
     public func createBoard(title: String) async throws -> String {
         try await backend.boards.create(title: title).id
+    }
+
+    public func saveBoard(id: String, document: BoardDocument) async -> Bool {
+        guard let doc = try? document.encoded() else { return false }
+        let remote = PostgrestBoardRemote(connection: SupabaseConnection.signedIn(backend))
+        if case .ok = await remote.persist(boardId: id, write: BoardWrite(doc: doc), expectedVersion: nil) { return true }
+        return false
     }
 
     public func recordAttempt(_ a: FirstAttempt) async {

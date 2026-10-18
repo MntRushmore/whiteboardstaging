@@ -74,6 +74,7 @@ struct HelloScreen: View {
             .overlay(alignment: .topTrailing) { TickBadge(diameter: 44, drawn: on).padding(18) }
         }
         .buttonStyle(ChoiceCardStyle(chosen: false, base: fill))
+        .accessibilityIdentifier("onboarding.who.\(role.rawValue)")
         .accessibilityLabel("\(small) \(big).")
         .accessibilityHint(hint)
         .accessibilityAddTraits(on ? .isSelected : [])
@@ -117,12 +118,18 @@ struct NameScreen: View {
                 .foregroundStyle(DS.Color.inkSecondary)
                 .reveal(0)
 
-            NameField(placeholder: c.namePlaceholder, text: $text, focused: $focused) { submit() }
-                .frame(maxWidth: 560)
-                .offset(y: reply == nil ? 0 : -24)
-                .dsAnimation(DS.Motion.snap, value: reply)
-                .reveal(1)
-                .disabled(reply != nil)
+            HStack(spacing: 16) {
+                NameField(placeholder: c.namePlaceholder, text: $text, focused: $focused) { submit() }
+                    .frame(maxWidth: 520)
+                    .disabled(reply != nil)
+                PillButton(c.continueTitle, icon: .forward, kind: .sunny, size: .large) { submit() }
+                    .accessibilityIdentifier("onboarding.name.continue")
+                    .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || reply != nil)
+                    .opacity(reply == nil ? 1 : 0)
+            }
+            .offset(y: reply == nil ? 0 : -24)
+            .dsAnimation(DS.Motion.snap, value: reply)
+            .reveal(1)
 
             if invalid {
                 Text(c.nameInvalid)
@@ -146,13 +153,6 @@ struct NameScreen: View {
         .padding(.horizontal, layout.margin)
         .padding(.top, layout.contentTop)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottomTrailing) {
-            PillButton(c.continueTitle, icon: .forward, kind: .sunny, size: .large) { submit() }
-                .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || reply != nil)
-                .padding(.trailing, layout.margin)
-                .padding(.bottom, layout.bottomInset + 12)
-                .reveal(2)
-        }
         .frame(height: layout.size.height, alignment: .top)
         .onAppear {
             text = model.answers.name ?? ""
@@ -223,6 +223,7 @@ struct NameField: View {
             .overlay { if focused.wrappedValue { Capsule().strokeBorder(DS.Color.focus, lineWidth: DS.Stroke.focus) } }
             .onChange(of: text) { _, now in if now.count > 24 { text = String(now.prefix(24)) } }
             .accessibilityLabel(placeholder)
+            .accessibilityIdentifier("onboarding.name.field")
     }
 }
 
@@ -280,6 +281,7 @@ struct GradeScreen: View {
             .overlay(alignment: .topTrailing) { TickBadge(diameter: 34, drawn: on).padding(10) }
         }
         .buttonStyle(ChoiceCardStyle(chosen: on, base: .paper, radius: DS.Radius.tile))
+        .accessibilityIdentifier("onboarding.grade.\(g.id)")
         .accessibilityLabel(g.label)
         .accessibilityAddTraits(on ? .isSelected : [])
     }
@@ -431,6 +433,7 @@ struct TrickyScreen: View {
         .frame(height: layout.size.height, alignment: .top)
         .overlay(alignment: .bottomTrailing) {
             PillButton(c.continueTitle, icon: .forward, kind: .sunny, size: .large) { model.finishTricky() }
+                .accessibilityIdentifier("onboarding.tricky.continue")
                 .disabled(picked.isEmpty)
                 .padding(.trailing, layout.margin)
                 .padding(.bottom, layout.bottomInset + 12)
@@ -470,6 +473,7 @@ struct TrickyScreen: View {
             .frame(width: width, alignment: .leading)
         }
         .buttonStyle(ChoiceCardStyle(chosen: on, base: .paper))
+        .accessibilityIdentifier("onboarding.skill.\(skill)")
         .animation(DS.Motion.pop, value: order)
         .accessibilityLabel(w.name)
         .accessibilityHint(w.blurb)

@@ -19,11 +19,12 @@ let package = Package(
         .package(path: "../AgathonKit"),
         .package(path: "../AgathonBoard"),
         .package(path: "../AgathonBrain"),
+        .package(path: "../AgathonSync"),
     ],
     targets: [
         .target(
             name: "AgathonOnboarding",
-            dependencies: ["AgathonDesign", "AgathonKit", "AgathonBoard", "AgathonBrain"],
+            dependencies: ["AgathonDesign", "AgathonKit", "AgathonBoard", "AgathonBrain", "AgathonSync"],
             path: "Sources/AgathonOnboarding",
             resources: [.copy("Resources/onboarding-catalog.json")]
         ),

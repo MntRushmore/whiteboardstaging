@@ -38,6 +38,7 @@ struct HandToKidScreen: View {
                 Button(c.tryItFirst) { model.go(.tryIt) }
                     .buttonStyle(.pill(.quiet, size: .large))
                 PillButton(c.kidHasIt, icon: .play, kind: .primary, size: .large) { model.go(.tryIt) }
+                    .accessibilityIdentifier("onboarding.handToKid.go")
             }
             .padding(.top, 36)
             .reveal(4)
@@ -87,6 +88,7 @@ struct TryItScreen: View {
                 RoundButton(.speaker, fill: .paper, diameter: 52, label: c.readAloud) { readProblem() }
                 Button(c.skipForNow) { model.skipTry() }
                     .buttonStyle(.pill(.quiet))
+                    .accessibilityIdentifier("onboarding.try.skip")
             }
             .animation(DS.Motion.fade, value: board?.phase)
             .frame(height: 60)
@@ -247,10 +249,12 @@ struct TryItScreen: View {
                     PillButton(c.oneMore, kind: .secondaryOnPaper, size: .large) { model.oneMore(board) }
                 }
                 PillButton(c.next, icon: .forward, kind: .sunny, size: .large) { model.finishTry() }
+                    .accessibilityIdentifier("onboarding.try.next")
             }
             .transition(.scale(scale: 0.9).combined(with: .opacity))
         case .cantCheck:
             PillButton(c.next, icon: .forward, kind: .sunny, size: .large) { model.finishTry() }
+                .accessibilityIdentifier("onboarding.try.next")
         default:
             HelpMeButton(c.helpMe) { Task { await board.help() } }
                 .disabled(board.phase != .waiting)

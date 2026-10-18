@@ -93,6 +93,7 @@ struct PlanScreen: View {
         .frame(height: layout.size.height, alignment: .top)
         .overlay(alignment: .bottomTrailing) {
             PillButton(c.save, icon: .forward, kind: .sunny, size: .large) { model.advance() }
+                .accessibilityIdentifier("onboarding.plan.save")
                 .padding(.trailing, layout.margin)
                 .padding(.bottom, layout.bottomInset + 12)
                 .reveal(4)
@@ -217,8 +218,10 @@ struct HandBackScreen: View {
                 if kidAlone {
                     Button(c.noGrownUp) { model.go(.waiting) }
                         .buttonStyle(QuietOnInk())
+                        .accessibilityIdentifier("onboarding.handBack.noGrownUp")
                 }
                 PillButton(c.imGrownUp, icon: .lock, kind: .sunny, size: .large) { model.go(.gate) }
+                    .accessibilityIdentifier("onboarding.handBack.grownUp")
             }
             .padding(.top, 36)
             .reveal(3)
@@ -254,6 +257,7 @@ struct WaitingScreen: View {
             Text(c.waitingLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary).reveal(0)
             HStack(spacing: 16) {
                 PillButton(c.imGrownUp, icon: .lock, kind: .primary, size: .large) { model.go(.gate) }
+                    .accessibilityIdentifier("onboarding.waiting.grownUp")
                 if model.state.triesLeft > 0 {
                     PillButton(c.tryAnother, icon: .pen, kind: .secondary, size: .large) { model.go(.tryIt) }
                 }
