@@ -7,6 +7,8 @@ import SwiftUI
 struct DockButton<Glyph: View>: View {
     let title: String
     var isOn = false
+    /// its panel is open above the dock (a lighter circle, not the sunny of the tool in hand)
+    var isOpen = false
     var accessibilityHint: String?
     let action: () -> Void
     @ViewBuilder let glyph: () -> Glyph
@@ -18,7 +20,7 @@ struct DockButton<Glyph: View>: View {
             VStack(spacing: 4) {
                 glyph()
                     .frame(width: DockLayout.Size.circle, height: DockLayout.Size.circle)
-                    .modifier(Circleish(isOn: isOn))
+                    .modifier(Circleish(isOn: isOn, isOpen: isOpen))
                 Text(title)
                     .font(DS.Font.fixed(.button, size: 12))
                     .foregroundStyle(!isEnabled ? DS.Color.onInkDisabled : isOn ? DS.Color.sunny : DS.Color.onInkSecondary)
@@ -36,12 +38,16 @@ struct DockButton<Glyph: View>: View {
 
     private struct Circleish: ViewModifier {
         let isOn: Bool
+        let isOpen: Bool
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.dockPressed) private var pressed
 
         func body(content: Content) -> some View {
-            let fill: DS.Fill = isOn ? .sunny : DS.Fill(background: DS.Palette.ink, foreground: DS.Palette.white,
-                                                         pressed: DS.Palette.ink.mixed(with: DS.Palette.white, amount: 0.14))
+            let fill: DS.Fill = isOn ? .sunny
+                : isOpen ? DS.Fill(background: DS.ColorTokens.onInkFaint.light, foreground: DS.Palette.white,
+                                   pressed: DS.Palette.ink.mixed(with: DS.Palette.white, amount: 0.24))
+                : DS.Fill(background: DS.Palette.ink, foreground: DS.Palette.white,
+                          pressed: DS.Palette.ink.mixed(with: DS.Palette.white, amount: 0.14))
             content
                 .foregroundStyle(isEnabled ? fill.foreground.color : DS.Color.onInkDisabled)
                 .background(Circle().fill(pressed ? fill.pressed.color : fill.background.color))
@@ -112,6 +118,7 @@ struct BoardDock: View {
         .background(Capsule().fill(DS.Color.ink))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(DockCopy.dock)
+        .sensoryFeedback(.selection, trigger: controller.tool)
     }
 
     private func use(_ tool: BoardTool) {
@@ -132,10 +139,10 @@ struct BoardDock: View {
             BoardIconView(icon: .ds(.eraser))
         }
         if !layout.shapesInMore {
-            DockButton(title: DockCopy.shapes, isOn: shapesOn || panel == .shapes, action: { toggle(.shapes) }) {
+            DockButton(title: DockCopy.shapes, isOn: shapesOn, isOpen: panel == .shapes, action: { toggle(.shapes) }) {
                 BoardIconView(icon: shapesOn ? controller.shapeKind.icon : .ds(.shapes))
             }
-            DockButton(title: DockCopy.picture, isOn: panel == .picture, action: { toggle(.picture) }) {
+            DockButton(title: DockCopy.picture, isOpen: panel == .picture, action: { toggle(.picture) }) {
                 BoardIconView(icon: .ds(.picture))
             }
         }
@@ -151,7 +158,7 @@ struct BoardDock: View {
         .disabled(!controller.canUndo)
         if layout.redoInMore {
             // the tool in hand may be in there (a shape): More shows as on then
-            DockButton(title: DockCopy.more, isOn: panel == .more || panel == .shapes || shapesOn, action: { toggle(.more) }) {
+            DockButton(title: DockCopy.more, isOn: shapesOn, isOpen: panel == .more || panel == .shapes || panel == .picture, action: { toggle(.more) }) {
                 BoardIconView(icon: .ds(.more))
             }
         } else {
@@ -167,7 +174,7 @@ struct BoardDock: View {
 
     @ViewBuilder private var colors: some View {
         if layout.colorsInButton {
-            DockButton(title: DockCopy.color, isOn: panel == .colors, action: { toggle(.colors) }) {
+            DockButton(title: DockCopy.color, isOpen: panel == .colors, action: { toggle(.colors) }) {
                 Circle().fill(controller.color.pen?.color ?? DS.Color.onInk)
                     .frame(width: 26, height: 26)
                     .overlay(Circle().strokeBorder(DS.Palette.ink.mixed(with: DS.Palette.white, amount: 0.45).color, lineWidth: controller.color == .black ? 2 : 0))
@@ -195,6 +202,7 @@ struct BoardDock: View {
             }) {
                 BoardIconView(icon: .newPage)
             }
+            .frame(minWidth: DockLayout.Size.newPage)
             .disabled(!controller.strip.canAdd)
             .accessibilityHint(controller.strip.canAdd ? "" : DockCopy.full)
         }

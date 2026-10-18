@@ -69,7 +69,7 @@ public struct DockLayout: Equatable, Sendable {
     /// The dock's measures, in points (the view draws with the same numbers).
     public enum Size {
         /// a tool's column: its circle and its word
-        public static let tool: CGFloat = 60
+        public static let tool: CGFloat = 58
         public static let circle: CGFloat = 52
         public static let height: CGFloat = 84
         public static let swatch: CGFloat = 56
@@ -77,7 +77,8 @@ public struct DockLayout: Equatable, Sendable {
         public static let arrow: CGFloat = 52
         public static let pageLabel: CGFloat = 48
         public static let newPage: CGFloat = 76
-        public static let padding: CGFloat = 10
+        /// either end of the dock: the capsule's round end needs room past the last word
+        public static let padding: CGFloat = 16
         /// between the dock and Help me
         public static let helpGap: CGFloat = 14
     }

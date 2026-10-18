@@ -52,7 +52,8 @@ public enum BoardFixtures {
         records.append(.math(MathRecord(id: "math:hl", screen: s1.id, order: next(), author: .kid, role: .note, latex: "\\text{area} = 12 \\times 3", x: 1070, y: 500, w: 0, h: 0, fontSize: 32)))
 
         // 2. a PDF page, as the picker puts it: fitted, locked, kept from the tutor
-        if let page = worksheetPDF().page(at: 0) {
+        let worksheet = worksheetPDF() // kept alive while its page draws
+        if let page = worksheet.page(at: 0) {
             let rect = fit(PictureImport.pageSize(page), in: s2.rect)
             if let img = PictureImport.render(page, width: Int(rect.w * 2.4)), let png = try? PictureImport.encodePNG(img) {
                 let url = URL(string: "memory://board-assets/fixture/worksheet-p1.png")!
@@ -134,7 +135,10 @@ extension PictureImport {
                 l.lineWidth = 2
                 l.stroke()
             }
-            let attrs: [NSAttributedString.Key: Any] = [.font: UIFont(name: "Noteworthy-Bold", size: 44) ?? UIFont.systemFont(ofSize: 44), .foregroundColor: UIColor(white: 0.15, alpha: 1)]
+            // the system's rounded face (a named font can send a test host looking for it for minutes)
+            let base = UIFont.systemFont(ofSize: 44, weight: .medium)
+            let font = base.fontDescriptor.withDesign(.rounded).map { UIFont(descriptor: $0, size: 44) } ?? base
+            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor(white: 0.15, alpha: 1)]
             ("24 + 18 = 42" as NSString).draw(at: CGPoint(x: 220, y: 150), withAttributes: attrs)
             ("3/4 + 1/8 = ?" as NSString).draw(at: CGPoint(x: 220, y: 270), withAttributes: attrs)
             UIColor(red: 0.95, green: 0.55, blue: 0.2, alpha: 1).setFill()

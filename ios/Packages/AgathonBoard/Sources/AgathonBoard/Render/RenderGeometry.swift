@@ -583,7 +583,7 @@ public enum RenderGeometry {
     /// - note: a typed line, in ink.
     public static func mathLook(_ m: MathRecord) -> MathLook {
         switch m.role {
-        case .readback: return MathLook(fontSize: m.fontSize * 0.72, color: nil, chip: true, padX: m.fontSize * 0.36, padY: m.fontSize * 0.2)
+        case .readback: return MathLook(fontSize: m.fontSize * 0.85, color: nil, chip: true, padX: m.fontSize * 0.4, padY: m.fontSize * 0.22)
         case .answer: return MathLook(fontSize: m.fontSize, color: .tutor, chip: false, padX: m.fontSize * 0.25, padY: m.fontSize * 0.2)
         case .note: return MathLook(fontSize: m.fontSize, color: m.author == .tutor ? .tutor : .black, chip: false, padX: m.fontSize * 0.25, padY: m.fontSize * 0.2)
         }

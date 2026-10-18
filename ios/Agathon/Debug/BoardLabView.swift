@@ -1,7 +1,9 @@
 #if DEBUG
 import AgathonBoard
 import AgathonBoardUI
+import AgathonDesign
 import SwiftUI
+import UIKit
 
 /// Board Lab: the engine on its own, for the board lane's measurements (plain UI; the real board's
 /// design comes from the brand lane). Reach it with the launch argument `-boardLab`.
@@ -20,7 +22,10 @@ import SwiftUI
 ///   -boardLabEditor YES      show the board in the Blocks editor (AgathonBoardUI) instead of the Lab's strip
 ///   -boardLabSelect <ids>    select these records (comma-separated, or `all`) with the Select tool
 ///   -boardLabPanel <shapes|picture|more|colors>   open a dock panel (screenshots)
+///   -boardLabHelp YES        fill the Live lane's slots with stand-ins (Help me, a status pill)
 ///   -boardLabWidth <pt>      the editor in a narrower column (a split view)
+///   -boardLabLandscape YES   ask for landscape (screenshots)
+///   -boardLabFrame 1376x1032 the editor laid out at another screen size, scaled to fit (a landscape shot)
 struct BoardLabView: View {
     @StateObject private var lab = BoardLabModel()
     /// open straight in the Blocks editor, on the objects board when no fixture is named
@@ -48,6 +53,11 @@ struct BoardLabView: View {
             }
         }
         .task {
+            if UserDefaults.standard.bool(forKey: "boardLabLandscape"),
+               let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                // screenshots: the iPad on its side, without touching the Simulator
+                scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeLeft)) { _ in }
+            }
             if startInEditor { lab.editor = true }
             await lab.start(defaultFixture: startInEditor ? "objects" : nil)
         }
@@ -56,9 +66,26 @@ struct BoardLabView: View {
     /// The board in the Blocks editor (the Lab's back button returns to the plain Lab).
     @ViewBuilder private var editor: some View {
         let width = Double(UserDefaults.standard.string(forKey: "boardLabWidth") ?? "")
-        let view = BoardEditorView(controller: lab.controller, title: lab.title, onBack: { lab.editor = false },
-                                   onCanvas: { lab.attach($0) }, initialPanel: DockPanel(rawValue: UserDefaults.standard.string(forKey: "boardLabPanel") ?? ""))
-        if let width {
+        let panel = DockPanel(rawValue: UserDefaults.standard.string(forKey: "boardLabPanel") ?? "")
+        // -boardLabHelp YES: the Live lane's slots filled with stand-ins (Help me, a status pill)
+        let view: AnyView = UserDefaults.standard.bool(forKey: "boardLabHelp")
+            ? AnyView(BoardEditorView(controller: lab.controller, title: lab.title, onBack: { lab.editor = false },
+                                      onCanvas: { lab.attach($0) }, initialPanel: panel,
+                                      topTrailing: { StatusPill("Checking…") }, helpButton: { HelpMeButton {} }, overlay: { _ in EmptyView() }))
+            : AnyView(BoardEditorView(controller: lab.controller, title: lab.title, onBack: { lab.editor = false },
+                                      onCanvas: { lab.attach($0) }, initialPanel: panel))
+        let frame = (UserDefaults.standard.string(forKey: "boardLabFrame") ?? "").split(separator: "x").compactMap { Double($0) }
+        if frame.count == 2 {
+            // another iPad's screen (landscape on a portrait simulator), scaled to fit: screenshots
+            GeometryReader { geo in
+                let k = min(geo.size.width / frame[0], geo.size.height / frame[1])
+                view.frame(width: frame[0], height: frame[1])
+                    .scaleEffect(k)
+                    .frame(width: geo.size.width, height: geo.size.height)
+            }
+            .background(Color.black)
+            .ignoresSafeArea()
+        } else if let width {
             HStack(spacing: 0) {
                 view.frame(width: width)
                 Color.black.opacity(0.85).ignoresSafeArea()

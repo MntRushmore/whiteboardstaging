@@ -8,7 +8,11 @@ public enum ScreenThumbnail {
     /// Renders `records` (a screen's drawables, bottom to top) on `screen` at `width` pixels wide.
     public static func render(_ records: [BoardRecord], screen: Box, width: Int, images: BoardImageCache = .shared) -> CGImage? {
         let scale = CGFloat(width) / CGFloat(max(1, screen.w))
-        guard let ctx = TileRasterizer.makeContext(rect: screen, scale: scale) else { return nil }
+        let height = max(1, Int((Double(width) * screen.h / max(1, screen.w)).rounded()))
+        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        TileRasterizer.preparePageSpace(ctx, rect: screen, scale: scale, pixelHeight: height)
         ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
         ctx.fill(screen.cgRect)
         let index = SceneIndex.build(records, images: images)

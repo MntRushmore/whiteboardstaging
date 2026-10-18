@@ -59,7 +59,14 @@ public struct SwiftMathTypesetter: MathTypesetter {
             // SwiftMath draws y-up with CoreText; the board is y-down
             ctx.scaleBy(x: 1, y: -1)
             ctx.textMatrix = .identity
+            ctx.setFillColor(color)
+            ctx.setStrokeColor(color)
+            // SwiftMath strokes fraction bars and the radical's rule with UIBezierPath, and sets glyph
+            // colours with UIColor.setFill: both draw into UIKit's current context (per thread), so
+            // the tile's context must be it
+            UIGraphicsPushContext(ctx)
             d.display.draw(ctx)
+            UIGraphicsPopContext()
             ctx.restoreGState()
         }
     }
