@@ -42,6 +42,9 @@ public final class BoardSession: ObservableObject {
     @Published public private(set) var restored: BackupRestore.Report?
     /// how long opening took, and its parts (the QA numbers)
     @Published public private(set) var openTimings: [String: Double] = [:]
+    /// False when the server cannot hold the app's board yet (no `doc` column: the migration is not
+    /// applied there): the board opens and can be drawn on, edits stay on this device ("Not saved yet").
+    @Published public private(set) var canSave = true
 
     public let boardId: String
     public let controller: BoardController
@@ -89,7 +92,8 @@ public final class BoardSession: ObservableObject {
                 return
             }
             let t1 = Date()
-            let loaded = try await load(row.body)
+            canSave = row.docColumn
+            let loaded = try await load(row.body, uploadPictures: row.docColumn)
             let t2 = Date()
             source = loaded.source
             conversion = loaded.report
@@ -99,9 +103,12 @@ public final class BoardSession: ObservableObject {
                 remote: remote, scheduler: scheduler,
                 build: { [weak self] in await self?.buildUpdate() ?? .refused(SaveCopy.saveFailed) },
                 fetchRemote: { [weak self] in try await self?.fetchRemoteRecords() },
-                backup: backup, isOnline: { [weak self] in self?.networkOnline ?? true })
+                backup: backup, isOnline: { [weak self] in self?.networkOnline ?? true }, localOnly: !row.docColumn)
             self.queue = queue
-            queueWatch = queue.$state.sink { [weak self] in self?.sync = $0 }
+            queueWatch = queue.$state.sink { [weak self] state in
+                self?.sync = state
+                if state.status == .localOnly { self?.canSave = false }
+            }
             sync = queue.state
             restoreBackup(loadedVersion: row.version)
             watchNetwork()
@@ -124,7 +131,7 @@ public final class BoardSession: ObservableObject {
     }
 
     /// A row's board as a document, off the main thread.
-    func load(_ body: RemoteBoard.Body) async throws -> Loaded {
+    func load(_ body: RemoteBoard.Body, uploadPictures: Bool = true) async throws -> Loaded {
         switch body {
         case .doc(let bytes):
             let doc = try await Task.detached(priority: .userInitiated) { try BoardDocument.decode(bytes) }.value
@@ -132,8 +139,9 @@ public final class BoardSession: ObservableObject {
         case .tldraw(let bytes):
             let boardId = self.boardId
             let assets = self.assets
+            // (a board that cannot be saved here keeps its inline pictures inline: nothing is written)
             let result = try await Task.detached(priority: .userInitiated) {
-                try await TldrawImporter.importSnapshot(bytes, boardId: boardId, assets: assets)
+                uploadPictures ? try await TldrawImporter.importSnapshot(bytes, boardId: boardId, assets: assets) : try TldrawImporter.importSnapshot(bytes)
             }.value
             return Loaded(document: result.document, persisted: result.document.records, source: .converted, report: result.report, currentScreen: result.currentScreen)
         case .empty:
@@ -151,7 +159,7 @@ public final class BoardSession: ObservableObject {
     /// The server's board now, as records (for the merge after a conflict).
     func fetchRemoteRecords() async throws -> (records: [RecordID: BoardRecord], version: Int)? {
         guard let row = try await remote.fetch(boardId: boardId) else { return nil }
-        return (try await load(row.body).persisted, row.version)
+        return (try await load(row.body, uploadPictures: row.docColumn).persisted, row.version)
     }
 
     private func restoreBackup(loadedVersion: Int) {

@@ -41,6 +41,8 @@ actor FakeRemote: BoardRemote {
     var hangNext = false
     var writes: [(expected: Int?, body: Data)] = []
     var fetches = 0
+    /// false: a database before the doc migration (production today)
+    var docColumn = true
 
     init(version: Int = 1, doc: Data? = nil, docVersion: Int? = nil, data: Data? = nil) {
         self.version = version
@@ -52,9 +54,9 @@ actor FakeRemote: BoardRemote {
     func fetch(boardId: String) async throws -> RemoteBoard? {
         fetches += 1
         if gone { return nil }
-        if let doc, let docVersion, docVersion >= version { return RemoteBoard(version: version, body: .doc(doc)) }
-        if let data { return RemoteBoard(version: version, body: .tldraw(data)) }
-        return RemoteBoard(version: version, body: .empty)
+        if docColumn, let doc, let docVersion, docVersion >= version { return RemoteBoard(version: version, body: .doc(doc)) }
+        if let data { return RemoteBoard(version: version, body: .tldraw(data), docColumn: docColumn) }
+        return RemoteBoard(version: version, body: .empty, docColumn: docColumn)
     }
 
     func persist(boardId: String, write: BoardWrite, expectedVersion: Int?) async -> PersistResult {
@@ -65,6 +67,7 @@ actor FakeRemote: BoardRemote {
             return .failed(.timeout, message: nil)
         }
         if !scripted.isEmpty { return scripted.removeFirst() }
+        if !docColumn { return .failed(.unsupported, message: nil) }
         if gone { return .failed(.gone, message: nil) }
         if let expectedVersion, expectedVersion != version { return .conflict }
         version += 1
@@ -82,6 +85,7 @@ actor FakeRemote: BoardRemote {
     func script(_ results: [PersistResult]) { scripted = results }
     func hang() { hangNext = true }
     func setGone() { gone = true }
+    func setDocColumn(_ on: Bool) { docColumn = on }
     /// another device saves this document
     func otherDeviceSaves(_ document: BoardDocument) throws {
         version += 1

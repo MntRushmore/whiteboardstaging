@@ -21,6 +21,9 @@ public enum PersistFailure: String, Sendable, Equatable {
     case gone
     /// anything else (retried)
     case other
+    /// the database cannot hold the app's board (no `doc` column: the 20261017000000_agathon_doc
+    /// migration is not applied there yet): never retried; edits stay on this device
+    case unsupported
 }
 
 /// What the app writes: the document's JSON bytes, the thumbnail, the time.
@@ -85,10 +88,14 @@ public struct RemoteBoard: Sendable {
 
     public var version: Int
     public var body: Body
+    /// The database has the app's `doc` column. False on a database before the migration
+    /// (production until the owner applies it): the board opens from `data`, and nothing is written.
+    public var docColumn: Bool
 
-    public init(version: Int, body: Body) {
+    public init(version: Int, body: Body, docColumn: Bool = true) {
         self.version = version
         self.body = body
+        self.docColumn = docColumn
     }
 }
 
@@ -116,9 +123,9 @@ public struct PostgrestBoardRemote: BoardRemote {
             "GET", Self.table, query: [.init(name: "id", value: "eq.\(boardId)"), .init(name: "select", value: "version,doc_version,doc")],
             headers: ["Accept": "application/vnd.pgrst.object+json"])
         if response.statusCode == 406 { return nil } // PGRST116: no row
-        if response.statusCode == 400, PostgrestError(data)?.code == "42703" {
-            // a database before the doc columns: the tldraw board is the board
-            return try await fetchData(boardId)
+        if response.statusCode == 400, Self.isMissingColumn(PostgrestError(data)) {
+            // a database before the doc columns: the tldraw board is the board, and it cannot be saved
+            return try await fetchData(boardId, docColumn: false)
         }
         try Self.check(data, response)
         let fields = try TopLevelJSON.fields(of: data)
@@ -129,7 +136,13 @@ public struct PostgrestBoardRemote: BoardRemote {
         return try await fetchData(boardId)
     }
 
-    func fetchData(_ boardId: String) async throws -> RemoteBoard? {
+    /// Postgres's undefined column (42703, a select) or PostgREST's unknown column (PGRST204, a write).
+    static func isMissingColumn(_ e: PostgrestError?) -> Bool {
+        guard let e else { return false }
+        return e.code == "42703" || e.code == "PGRST204"
+    }
+
+    func fetchData(_ boardId: String, docColumn: Bool = true) async throws -> RemoteBoard? {
         let (data, response) = try await connection.send(
             "GET", Self.table, query: [.init(name: "id", value: "eq.\(boardId)"), .init(name: "select", value: "version,data")],
             headers: ["Accept": "application/vnd.pgrst.object+json"])
@@ -138,9 +151,9 @@ public struct PostgrestBoardRemote: BoardRemote {
         let fields = try TopLevelJSON.fields(of: data)
         guard let version = fields.int("version") else { throw RemoteError.unreadable("no version") }
         guard let raw = fields.raw("data"), !TopLevelJSON.isNull(raw), !TopLevelJSON.isEmptyObject(raw) else {
-            return RemoteBoard(version: version, body: .empty)
+            return RemoteBoard(version: version, body: .empty, docColumn: docColumn)
         }
-        return RemoteBoard(version: version, body: .tldraw(raw))
+        return RemoteBoard(version: version, body: .tldraw(raw), docColumn: docColumn)
     }
 
     public func persist(boardId: String, write: BoardWrite, expectedVersion: Int?) async -> PersistResult {
@@ -208,6 +221,7 @@ public struct PostgrestBoardRemote: BoardRemote {
         let message = e?.message ?? String(decoding: body.prefix(200), as: UTF8.self)
         if code == "57014" || message.localizedCaseInsensitiveContains("statement timeout") { return .failed(.timeout, message: nil) }
         if code == "23514" { return .failed(.tooLarge, message: nil) }
+        if isMissingColumn(e) { return .failed(.unsupported, message: nil) }
         if code.hasPrefix("PGRST0") || status == 502 || status == 503 || status == 504 { return .failed(.offline, message: nil) }
         return .failed(.other, message: code.isEmpty ? message : "\(message) (code: \(code))")
     }

@@ -18,6 +18,9 @@ public struct SyncState: Equatable, Sendable {
         case error
         /// the board cannot be saved as it is (too big)
         case refused
+        /// this server cannot hold the app's board yet: edits are kept on this device (backed up)
+        /// and saved once it can (the next open after the migration)
+        case localOnly
     }
 
     public var status: Status = .saved
@@ -51,6 +54,7 @@ public enum SaveCopy {
     public static let boardNearlyFull = "This board is almost full. Start a new board soon."
     public static let restored = "We put back work that wasn't saved yet."
     public static let staleRestore = "Some work from this iPad was older than the board and wasn't put back."
+    public static let notSavedYet = "Not saved yet. Your work is kept on this iPad."
 }
 
 /// What the queue's `build` made: the write, and the records it holds (for the merge and the backup).
@@ -123,6 +127,10 @@ public final class BoardSaveQueue: ObservableObject {
     private(set) var persisted: [RecordID: BoardRecord]
     private var subscription: StoreSubscription?
 
+    /// Saving is off: this server cannot hold the app's board (no `doc` column yet). Edits are
+    /// backed up on the device and never written; the board shows "Not saved yet".
+    public private(set) var localOnly: Bool
+
     /// Writes so far (the QA numbers); and the last write's size.
     public private(set) var writes = 0
     public private(set) var lastWriteBytes = 0
@@ -132,8 +140,9 @@ public final class BoardSaveQueue: ObservableObject {
         remote: any BoardRemote, scheduler: SaveScheduler,
         build: @escaping @MainActor () async -> BuiltUpdate,
         fetchRemote: @escaping @MainActor () async throws -> (records: [RecordID: BoardRecord], version: Int)?,
-        backup: BoardBackupStore?, isOnline: @escaping @MainActor () -> Bool = { true }
+        backup: BoardBackupStore?, isOnline: @escaping @MainActor () -> Bool = { true }, localOnly: Bool = false
     ) {
+        self.localOnly = localOnly
         self.boardId = boardId
         self.store = store
         self.remote = remote
@@ -170,6 +179,10 @@ public final class BoardSaveQueue: ObservableObject {
         guard !disposed else { return }
         dirty = true
         scheduleBackup()
+        if localOnly {
+            patch { $0.status = .localOnly; $0.message = SaveCopy.notSavedYet; $0.pending = true }
+            return
+        }
         if halted {
             patch { $0.pending = true }
             return
@@ -315,7 +328,7 @@ public final class BoardSaveQueue: ObservableObject {
         retryTimer?.cancel()
         retryTimer = nil
         saveBurstAt = nil
-        if disposed { return state }
+        if disposed || localOnly { return state }
         if !online() {
             let attempt = state.attempt + 1
             patch { $0.status = .offline; $0.message = SaveCopy.offline; $0.pending = hasPending; $0.attempt = attempt }
@@ -442,6 +455,12 @@ public final class BoardSaveQueue: ObservableObject {
                     halted = true
                     fail(token) { $0.status = .error; $0.message = message ?? SaveCopy.boardGone }
                     return state
+                case .unsupported:
+                    // the server cannot hold the board: keep it here, never retry
+                    localOnly = true
+                    fail(token) { $0.status = .localOnly; $0.message = SaveCopy.notSavedYet }
+                    writeBackupNow()
+                    return state
                 case .offline, .timeout, .other:
                     // the write may have landed without our hearing so
                     serverKnown = false
@@ -468,6 +487,10 @@ public final class BoardSaveQueue: ObservableObject {
         debounceTimer?.cancel()
         debounceTimer = nil
         saveBurstAt = nil
+        if localOnly {
+            writeBackupNow()
+            return state
+        }
         if let inFlight { _ = await inFlight.value }
         if !disposed, !halted, hasPending { return await run().value }
         return state
@@ -476,6 +499,8 @@ public final class BoardSaveQueue: ObservableObject {
     /// The kid (or the Retry button) asks again: the backoff starts over.
     @discardableResult
     public func retry() async -> SyncState {
+        // nothing to try against a server that cannot hold the board
+        if localOnly { return state }
         retryTimer?.cancel()
         retryTimer = nil
         halted = false
@@ -487,6 +512,7 @@ public final class BoardSaveQueue: ObservableObject {
     public func setOnline(_ isOnline: Bool) {
         guard !disposed else { return }
         onlineHint = isOnline
+        if localOnly { return }
         if isOnline {
             if hasPending && inFlight == nil && !halted {
                 retryTimer?.cancel()
