@@ -153,8 +153,10 @@ extension LiveLoop {
             return
         }
         let auto = autoFor(st)
-        let marked = auto || d.capped ? d.badge : LivePolicy.badge(settings.mode, st.analysis)
-        let ring = marked == "warn" || (marked != "ok" && marked != "solved" && st.isModelFlagged)
+        var marked = auto || d.capped ? d.badge : LivePolicy.badge(settings.mode, st.analysis)
+        // a line the loop cannot place for sure is never ringed: a right answer is never marked wrong
+        if marked == "warn" && unsureOfProblem(st) { marked = "none" }
+        let ring = marked == "warn" || (marked != "ok" && marked != "solved" && st.isModelFlagged && !unsureOfProblem(st))
         let tick = marked == "ok" || marked == "solved"
         let why = ring || tick ? nil : questionNow(st)
         syncMark(st, ring ? .circle : tick ? .check : why != nil ? .question : nil, why)
@@ -244,7 +246,10 @@ extension LiveLoop {
         let job = UUID().uuidString
         var meta: Meta = [LiveMeta.lineId: .string(id), LiveMeta.mark: .string(want), LiveMeta.job: .string(job)]
         if kind == .question { meta[LiveMeta.markWhy] = .string(why ?? "unread") }
-        let line = TutorLine(strokes: LiveMarks.strokes(kind, line: st.bounds, lineId: id))
+        // a ring beside one of the tutor's problems keeps off its ink
+        let besideHead = head(for: st.column).map(\.rect).flatMap { Self.besideProblem(st.bounds, $0) ? $0 : nil }
+        let markBox = kind == .circle ? LiveMarks.ringBox(st.bounds, clearOf: besideHead) : st.bounds
+        let line = TutorLine(strokes: LiveMarks.strokes(kind, line: markBox, lineId: id))
         var penRef: TutorPen?
         penRef = board.write([line], meta: meta) { [weak self] in
             guard let self else { return }

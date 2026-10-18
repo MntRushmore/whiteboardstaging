@@ -38,6 +38,19 @@ public enum LiveMarks {
         return BrainRect(x: cx - rx, y: cy - ry, w: rx * 2, h: ry * 2)
     }
 
+    /// The box to draw a ring round `line` with so that the ring keeps off `left` (a problem of the
+    /// tutor's the line is an answer beside): the ring's right edge stays, its left edge moves to just
+    /// past the problem. `line` itself when nothing is in the way.
+    public static func ringBox(_ line: BrainRect, clearOf left: BrainRect?) -> BrainRect {
+        guard let left else { return line }
+        let ring = ringRect(line)
+        let edge = left.maxX + 4
+        guard ring.x < edge, ring.maxX > edge else { return line }
+        let rx = (ring.maxX - edge) / 2
+        let w = max(0, 2 * (rx - TutorMarks.ringPadX / 2) / 2.0.squareRoot())
+        return BrainRect(x: edge + rx - w / 2, y: line.y, w: w, h: line.h)
+    }
+
     /// The page box a mark of this kind takes beside `line`.
     public static func markRect(_ kind: Kind, _ line: BrainRect) -> BrainRect {
         switch kind {
