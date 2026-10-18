@@ -1028,13 +1028,31 @@ in-app purchase; Stripe subscribers keep their plan. Schema and rules:
 
 ### Trying it locally
 
-`APPLE_ENVIRONMENT=Xcode npm run dev -- -p 3401` (plus the usual local env); run the app from Xcode
-(the scheme's StoreKit configuration is Agathon.storekit) with AGATHON_API_URL / SUPABASE_URL /
-SUPABASE_ANON_KEY ticked; Labs > Billing Lab. Renew, expire, refund in Xcode's Debug > StoreKit >
-Manage Transactions. Tests: `npx vitest run src/lib/server/apple src/lib/billing/__tests__/applePlan.test.ts`,
-`RUN_DB_TESTS=1 npx vitest run src/lib/server/apple/__tests__/apple.integration.test.ts
-src/lib/billing/__tests__/appleSubscriptions.integration.test.ts`, `swift test` in
-`ios/Packages/AgathonStore`.
+1. Server: `.env.local` with the local stack's keys and `APPLE_ENVIRONMENT=Xcode`, then
+   `npx next dev -p 3401` (never with production keys).
+2. **StoreKit purchases (Xcode only).** Open `ios/Agathon.xcodeproj`, tick AGATHON_API_URL
+   (`http://127.0.0.1:3401`), SUPABASE_URL and SUPABASE_ANON_KEY in the scheme, Run on a simulator
+   (the scheme's StoreKit configuration is `Agathon.storekit`: $24.99 a month, 7 days free), sign in
+   as a grown-up, Labs > Billing Lab > Open the plan: pass the gate, Start your free week, Subscribe.
+   The Lab shows the server's answer (status trialing, provider apple) and its log. Then Debug >
+   StoreKit > Manage Transactions: turn auto-renew off, expire, refund or renew; each reaches the
+   server through the app's listeners (`Transaction.updates`, `Product.SubscriptionInfo.Status.updates`).
+   `AgathonTests/StoreKitFlowTests` automates exactly that from Xcode (set AGATHON_STOREKIT=1 and
+   AGATHON_INTEGRATION=1 in the test action). **`xcodebuild` cannot run it:** the command line does not
+   sync a StoreKit configuration to the simulator and SKTestSession answers SKInternalErrorDomain 3
+   (Xcode 26.6, 2026-10-18), so Xcode's Run (or Product > Test) is required for real StoreKit purchases.
+3. **From the command line** (no StoreKit; the app's server client, the route, the database):
+   `TEST_RUNNER_AGATHON_INTEGRATION=1 TEST_RUNNER_AGATHON_API_URL=http://127.0.0.1:3401
+   TEST_RUNNER_SUPABASE_URL=http://127.0.0.1:54321 TEST_RUNNER_SUPABASE_ANON_KEY=<anon>
+   xcodebuild test … -only-testing:AgathonTests/ServerFlowTests` posts StoreKit-shaped Xcode payloads
+   through every state (trial, another account refused, a kid covered, auto-renew off, a late payload,
+   expiry, resubscribe, refund, deletion). `TEST_RUNNER_AGATHON_SHOTS=1 … -only-testing:AgathonTests/BillingScreenshotTests`
+   rewrites `docs/qa-screenshots/ipad-billing-*.png`.
+4. Server tests: `npx vitest run src/lib/server/apple src/lib/billing/__tests__/applePlan.test.ts`;
+   with the local stack, `RUN_DB_TESTS=1 npx vitest run src/lib/server/apple/__tests__/apple.integration.test.ts
+   src/lib/billing/__tests__/appleSubscriptions.integration.test.ts`; `swift test` in `ios/Packages/AgathonStore`.
+5. Optional pinning: Xcode's StoreKit test certificate (open Agathon.storekit in Xcode, Editor > Save
+   Public Certificate) as `APPLE_XCODE_CERT`; then the dev server checks the Xcode payloads' signature.
 
 ### Owner checklist (App Store Connect), before launch
 
