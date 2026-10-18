@@ -135,9 +135,12 @@ describe("allow-lists", () => {
     // and limited per visitor (and the check's reads per day), nothing stored.
     // start/step: /start's steps come before the account; it only records an anonymous count.
     // start/ink: static JSON built at build time (STATIC_ROUTES); public example problems only.
+    // app/attest/*: App Attest for the iPad app before its account; Apple's chain is the proof.
     expect([...PUBLIC_ROUTES].sort()).toEqual([
       "src/app/api/admin/gc/route.ts",
       "src/app/api/admin/health/route.ts",
+      "src/app/api/app/attest/challenge/route.ts",
+      "src/app/api/app/attest/register/route.ts",
       "src/app/api/billing/webhook/route.ts",
       "src/app/api/client-errors/route.ts",
       "src/app/api/config/status/route.ts",
@@ -178,6 +181,25 @@ describe("allow-lists", () => {
     expect(/\.safeParse\s*\(/.test(src)).toBe(true);
     expect(/req\.json\s*\(/.test(src), "read through the size cap, never req.json()").toBe(false);
     expect(/identifyUser|getUser|Authorization/i.test(src), "no session: the journey is anonymous").toBe(false);
+  });
+
+  it("the iPad app's path: the headers read before the body, the assertion checked on the capped body, before the schema", () => {
+    // The real invariants behind the app path (behaviour: src/lib/server/appAttest/__tests__/routes.app.test.ts).
+    for (const file of ["src/app/api/try/check/route.ts", "src/app/api/try/help/route.ts", "src/app/api/start/step/route.ts"]) {
+      const src = sources.get(file) ?? "";
+      expect(src.indexOf("appClaimOf("), file).toBeGreaterThan(-1);
+      expect(src.indexOf("appClaimOf("), file).toBeLessThan(src.indexOf("isSameOrigin("));
+      expect(src.indexOf("verifyAppClaim("), file).toBeGreaterThan(src.indexOf("readCapped("));
+      expect(src.indexOf("verifyAppClaim("), file).toBeLessThan(src.indexOf(".safeParse("));
+    }
+    // the attest routes: the challenge reads no body; registration is capped, zod-checked, verified
+    const challenge = sources.get("src/app/api/app/attest/challenge/route.ts") ?? "";
+    expect(/req\.(json|text|formData|arrayBuffer)\s*\(|readCapped\s*\(/.test(challenge)).toBe(false);
+    const register = sources.get("src/app/api/app/attest/register/route.ts") ?? "";
+    expect(register.indexOf("checkRateLimit(")).toBeLessThan(register.indexOf("readCapped("));
+    expect(register.indexOf("readCapped(")).toBeLessThan(register.indexOf(".safeParse("));
+    expect(register.indexOf(".safeParse(")).toBeLessThan(register.indexOf("registerKey("));
+    expect(/req\.json\s*\(/.test(register)).toBe(false);
   });
 
   it("client errors only log: body capped, zod-validated, a token only names the user", () => {
