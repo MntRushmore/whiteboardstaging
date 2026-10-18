@@ -331,10 +331,8 @@ function sizeFor(width: number, base: Record<Size, number>, add: number, mult: n
 
 /** Plain text as tldraw rich text (tldraw's own `toRichText`). */
 export function toRichText(text: string): Json {
-  return {
-    type: "doc",
-    content: text.split("\n").map((line) => (line ? { type: "paragraph", content: [{ type: "text", text: line }] } : { type: "paragraph" })),
-  };
+  const paragraph = (line: string): Json => (line ? { type: "paragraph", content: [{ type: "text", text: line }] } : { type: "paragraph" });
+  return { type: "doc", content: text.split("\n").map(paragraph) };
 }
 
 /** Rich text as plain text (paragraphs, list items and hard breaks on their own lines). */

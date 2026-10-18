@@ -176,12 +176,18 @@ export function consoleTables(): Tables {
 const time = (v: unknown) => (typeof v === "string" ? Date.parse(v) : NaN);
 const utcDay = (t: number) => new Date(Math.floor(t / DAY) * DAY).toISOString().slice(0, 10);
 
-/** admin_board_rows: whiteboards without data, plus its size and the board's attempts. */
+/**
+ * admin_board_rows: whiteboards without data or the iPad's doc, plus their size, the board's attempts,
+ * and which column is the board (20261017000000_agathon_doc.sql).
+ */
 export function boardRowsView(tables: Tables): Row[] {
-  return tables.whiteboards.map(({ data, ...w }) => ({
+  return tables.whiteboards.map(({ data, doc, ...w }) => ({
     ...w,
-    size_bytes: JSON.stringify(data ?? {}).length,
+    size_bytes: JSON.stringify(data ?? {}).length + (doc === null || doc === undefined ? 0 : JSON.stringify(doc).length),
     attempts: (tables.learning_attempts ?? []).filter((a) => a.board_id === w.id).length,
+    doc_version: w.doc_version ?? null,
+    doc_schema: w.doc_schema ?? null,
+    doc_current: doc !== null && doc !== undefined && w.doc_version === w.version,
   }));
 }
 

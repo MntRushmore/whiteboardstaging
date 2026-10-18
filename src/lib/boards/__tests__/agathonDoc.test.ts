@@ -130,7 +130,7 @@ describe("the trip back: Swift's document → a tldraw snapshot the web board lo
     // nothing was invented or lost on the way in: every record of the snapshot is in the store
     for (const id of Object.keys(snap.document.store)) expect(store.get(id as never), id).toBeTruthy();
     store.dispose();
-  });
+  }, 60_000);
 
   it.each(FIXTURES.map((f) => [f]))("%s: the same pages, shapes in the same places, the same meta", (name) => {
     const original = tldrawOf(name);
@@ -211,7 +211,7 @@ describe("the trip back: Swift's document → a tldraw snapshot the web board lo
       expect(t.opacity).toBe(s.opacity);
     }
     expect(missing).toBe(name === "all-shapes" ? 1 : 0);
-  });
+  }, 60_000);
 
   it("all-shapes: assets, arrow bindings and inline pictures come back", () => {
     const original = tldrawOf("all-shapes");

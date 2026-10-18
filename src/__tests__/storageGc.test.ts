@@ -3,6 +3,8 @@
  * the runGc orchestration over a fake client, the CLI flag parser, and the
  * /api/admin/gc handler with faked env + runner. No network.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.hoisted(() => {
@@ -29,6 +31,7 @@ import {
   assetSrcsOf,
   chunk,
   createGcClient,
+  docAssetSrcsOf,
   formatGcSummary,
   objectPathFromRef,
   planGc,
@@ -186,6 +189,26 @@ describe("reference helpers", () => {
     expect(assetSrcsOf({ store: { "shape:1": { typeName: "shape", props: { src: "nope" } }, "asset:e": { typeName: "asset", props: { src: "" } } } })).toEqual([]);
   });
 
+  it("docAssetSrcsOf reads every picture of an iPad board document (image records and assets kept whole)", () => {
+    const fixture = (name: string) => JSON.parse(readFileSync(join(__dirname, `../lib/boards/__fixtures__/agathon/${name}.agathon.json`), "utf8")) as unknown;
+    const srcs = docAssetSrcsOf(fixture("all-shapes"));
+    // six image records with a picture (the embed's is empty), and the unused asset kept whole
+    expect(srcs).toHaveLength(7);
+    expect(srcs).toEqual(
+      expect.arrayContaining([
+        "https://example.com/agathon-fixtures/worksheet.jpg",
+        "https://example.com/agathon-fixtures/lesson.mp4",
+        "https://example.com/agathon-fixtures/overlay-suggest.png",
+        expect.stringMatching(/^data:image\/png;base64,/),
+      ]),
+    );
+    expect(srcs).not.toContain("");
+    // a board of ink and maths only
+    expect(docAssetSrcsOf(fixture("kid-algebra"))).toEqual([]);
+    expect(docAssetSrcsOf(null)).toEqual([]);
+    expect(docAssetSrcsOf({ format: "agathon.board", schema: 1, records: { a: null, b: { type: "image" }, c: { type: "tldraw.record", record: { typeName: "binding", props: { src: "x" } } } } })).toEqual([]);
+  });
+
   it("chunk splits into batches and rejects bad sizes", () => {
     expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
     expect(chunk([], 3)).toEqual([]);
@@ -312,6 +335,20 @@ describe("runGc", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("keeps an object that only an iPad board document references", async () => {
+    const onlyInDoc = `${UID}/${BOARD}/ipad-photo.jpg`;
+    const doc = { format: "agathon.board", schema: 1, records: { "image:p": { id: "image:p", type: "image", screen: "screen:1", order: "a1", x: 0, y: 0, w: 10, h: 10, asset: { src: publicUrl(onlyInDoc) } } } };
+    const state = baseState();
+    state.objects.push(obj(BOARD_ASSETS_BUCKET, onlyInDoc, 48));
+    const fake = fakeClient({ ...state, srcs: [...state.srcs, ...docAssetSrcsOf(doc)] });
+    const summary = await runGc(fake.client, { now: NOW, apply: true });
+    expect(summary.items.map((o) => o.name)).not.toContain(onlyInDoc);
+    expect(fake.state.objects.map((o) => o.name)).toContain(onlyInDoc);
+    // without the doc's reference it would have gone
+    const without = fakeClient(state);
+    expect((await runGc(without.client, { now: NOW })).items.map((o) => o.name)).toContain(onlyInDoc);
+  });
+
   it("propagates reference-loading errors instead of planning against a partial set", async () => {
     const fake = fakeClient(baseState());
     fake.client.listBoardAssetSrcs = async () => {
@@ -403,6 +440,34 @@ describe("createGcClient", () => {
 
     expect(await client.listBoardAssetSrcs()).toEqual([publicUrl("u/b/x.png")]);
     expect(await client.listTrainingRefs()).toEqual(["u/s/before.png", "u/s/after_full.png"]);
+  });
+
+  it("listBoardAssetSrcs reads the iPad documents too (rows with a doc only), and skips them on a database without the column", async () => {
+    const docOf = (src: string) => ({ format: "agathon.board", schema: 1, records: { "image:a": { id: "image:a", type: "image", asset: { src } } } });
+    const { fetchImpl, calls } = fakeFetch((url) => {
+      if (!url.pathname.endsWith("/rest/v1/whiteboards")) return { status: 500, body: { message: "boom" } };
+      if (url.searchParams.get("select") === "id,doc") return { status: 200, body: [{ id: "b3", doc: docOf(publicUrl("u/b/ipad.png")) }] };
+      return { status: 200, body: [{ id: "b1", data: snapshot([publicUrl("u/b/x.png")]) }] };
+    });
+    const client = createGcClient({ url: ORIGIN, serviceKey: "svc", fetchImpl });
+    expect(await client.listBoardAssetSrcs()).toEqual([publicUrl("u/b/x.png"), publicUrl("u/b/ipad.png")]);
+    const docRead = calls.find((c) => c.url.searchParams.get("select") === "id,doc")!;
+    expect(docRead.url.searchParams.get("doc")).toBe("not.is.null");
+
+    // before 20261017000000_agathon_doc.sql: the data pass alone, said once, never a failed GC
+    const lines: string[] = [];
+    const old = fakeFetch((url) =>
+      url.searchParams.get("select") === "id,doc"
+        ? { status: 400, body: { code: "42703", message: "column whiteboards.doc does not exist" } }
+        : { status: 200, body: [{ id: "b1", data: snapshot([publicUrl("u/b/x.png")]) }] },
+    );
+    const before = createGcClient({ url: ORIGIN, serviceKey: "svc", fetchImpl: old.fetchImpl, log: (l) => lines.push(l) });
+    expect(await before.listBoardAssetSrcs()).toEqual([publicUrl("u/b/x.png")]);
+    expect(lines).toEqual([expect.stringContaining("whiteboards.doc does not exist")]);
+
+    // any other failure of the doc pass still stops the GC (never plan against a partial set)
+    const broken = fakeFetch((url) => (url.searchParams.get("select") === "id,doc" ? { status: 500, body: { message: "boom" } } : { status: 200, body: [] }));
+    await expect(createGcClient({ url: ORIGIN, serviceKey: "svc", fetchImpl: broken.fetchImpl }).listBoardAssetSrcs()).rejects.toThrow(/list whiteboards failed \(500\)/);
   });
 
   it("deleteObjects sends DELETE /object/<bucket> with prefixes and surfaces HTTP errors from listings", async () => {

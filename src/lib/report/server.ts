@@ -11,9 +11,11 @@
  * `reportDeps` is the routes' seam (like familyDeps): tests replace `store` with a fake.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { loadBoardSnapshot } from "@/lib/boards/agathonDoc";
 import type { FamilyLinks } from "@/lib/family/members";
 import { UNNAMED } from "@/lib/family/members";
 import { LEARNING_LIMITS } from "@/lib/learning/contracts";
+import { logger } from "@/lib/logger";
 import { serviceClient } from "@/lib/server/billing";
 import { mayWatch, reportScope, type Caller } from "./access";
 import { buildWeeklyReport, type ChildInput, type ReportAttemptRow, type ReportDailyRow } from "./build";
@@ -26,6 +28,8 @@ const DAY_MS = 86_400_000;
 const PAGE = 1000;
 /** Today's practice rows read per person, newest first: more than a year of days, for the streak. */
 const DAILY_READ = 400;
+
+const log = logger.child({ module: "report" });
 
 /** One profile as the report reads it. */
 export interface ReportProfile {
@@ -43,7 +47,10 @@ export interface ReplayBoard {
   ownerId: string;
   title: string;
   updatedAt: string;
-  /** whiteboards.data as stored (the replay reads it with loadBoard) */
+  /**
+   * The board's tldraw snapshot (the replay reads it with loadBoard): whiteboards.data as stored, or,
+   * for a board the iPad app keeps, its `doc` turned back into tldraw (`loadBoardSnapshot`).
+   */
   snapshot: unknown;
 }
 
@@ -148,11 +155,17 @@ export function reportStoreOver(svc: SupabaseClient): ReportStore {
     },
 
     async board(id) {
-      const { data, error } = await svc.from("whiteboards").select("id, user_id, title, data, updated_at, deleted_at").eq("id", id).maybeSingle();
+      // `*`, not a list: the iPad's `doc` columns (20261017000000_agathon_doc.sql) when the database
+      // has them, and no error when it does not yet (the web can deploy before the migration)
+      const { data, error } = await svc.from("whiteboards").select("*").eq("id", id).maybeSingle();
       if (error) fail("whiteboards read failed", error);
       const row = data as Record<string, unknown> | null;
       if (!row || row.deleted_at) return null;
-      return { id: String(row.id), ownerId: String(row.user_id), title: str(row.title) ?? "", updatedAt: String(row.updated_at), snapshot: row.data };
+      // an iPad doc that cannot be read (a newer app's) falls back to the board as it was before the iPad
+      const snapshot = loadBoardSnapshot(row, {
+        onError: (err) => log.warn({ boardId: id, error: err instanceof Error ? err.message : String(err) }, "replay: the iPad board's doc could not be read; its tldraw data instead"),
+      });
+      return { id: String(row.id), ownerId: String(row.user_id), title: str(row.title) ?? "", updatedAt: String(row.updated_at), snapshot };
     },
 
     async setOptOut(userId, optedOut) {

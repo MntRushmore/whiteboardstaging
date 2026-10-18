@@ -498,10 +498,13 @@ export const AdminUserDetailSchema = z.object({
 export type AdminUserDetail = z.infer<typeof AdminUserDetailSchema>;
 
 /**
- * GET ADMIN_ROUTES.board(id): one board for the viewer and the replay. `snapshot` is
- * whiteboards.data as stored (a tldraw store snapshot `{document:{store,schema}, session}`, or an
- * older bare store snapshot). With ?since=<version> and the board unchanged, the answer is
- * `{ unchanged: true, version }` and nothing else (the viewer's "follow live" poll).
+ * GET ADMIN_ROUTES.board(id): one board for the viewer and the replay. `snapshot` is the board's
+ * tldraw snapshot: whiteboards.data as stored (a tldraw store snapshot `{document:{store,schema},
+ * session}`, or an older bare store snapshot), or, for a board the iPad app keeps, its `doc` turned
+ * back into tldraw (`{document:{store,schema}}`, src/lib/boards/agathonDoc.ts); `snapshotSource` says
+ * which (absent from a server before the iPad app: "data"). With ?since=<version> and the board
+ * unchanged, the answer is `{ unchanged: true, version }` and nothing else (the viewer's "follow
+ * live" poll).
  * Each read that returns a snapshot writes admin_audit (action 'board.view'), but a follow-live poll
  * (`since` given) only when the admin has no row for the board in the last 10 minutes: a follow
  * session is one logged look (src/lib/server/adminConsole/audit.ts, REPEAT_LOOK_MS).
@@ -510,6 +513,8 @@ export const AdminBoardDocSchema = z.object({
   generatedAt: z.string(),
   board: AdminBoardRowSchema,
   snapshot: z.unknown(),
+  /** which column `snapshot` came from: the iPad app's document ("doc") or the tldraw data ("data") */
+  snapshotSource: z.enum(["doc", "data"]).optional(),
   events: z.array(AdminEventSchema),
   attempts: z.array(AdminAttemptSchema),
   /** whiteboard_snapshots kept for it (the operator's undo), newest first; not their data */
