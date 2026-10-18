@@ -56,53 +56,59 @@ struct BuildingScreen: View {
 struct PlanScreen: View {
     let model: FlowModel
     let layout: StageLayout
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let c = model.copy
         let plan = Plan.shown(model.answers)
         let solved = model.answers.tried?.solved == true
         let tried = model.answers.tried != nil
-        let wide = layout.landscape && !layout.compact
+        // the accessibility sizes: one card under another, each as tall as its words
+        let stacked = typeSize.isAccessibilitySize
+        let wide = layout.landscape && !layout.compact && !stacked
         let gap: CGFloat = 18
-        let cols: CGFloat = wide ? 3 : 2
+        let cols: CGFloat = stacked ? 1 : (wide ? 3 : 2)
         let cardW = (layout.columnWidth - gap * (cols - 1)) / cols
-        let cardH: CGFloat = wide ? min(300, layout.size.height - layout.contentTop - 150 - layout.bottomInset) : 280
+        let fitH = layout.size.height - layout.contentTop - 160 - layout.bottomInset
+        let cardH: CGFloat? = stacked ? nil : (wide ? max(250, min(300, fitH)) : 280)
 
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(spacing: 12) {
+        DockedScreen(layout: layout, spacing: 20) {
+            FlowStack(spacing: 12, lineSpacing: 8) {
                 Text(c.planLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if tried {
                     Tag(c.tried(solved: solved), style: .paper).transition(.opacity)
                 }
             }
             .reveal(0)
 
-            let cards = Group {
-                today(c, solved: solved).frame(width: cardW, height: cardH).reveal(1)
-                path(c, plan: plan).frame(width: cardW, height: cardH).reveal(2)
-                if wide { board(c, solved: solved).frame(width: cardW, height: cardH).reveal(3) }
+            if stacked {
+                today(c, solved: solved).frame(width: cardW).reveal(1)
+                path(c, plan: plan).frame(width: cardW).reveal(2)
+                board(c, solved: solved).frame(width: cardW).reveal(3)
+            } else {
+                HStack(alignment: .top, spacing: gap) {
+                    today(c, solved: solved).frame(width: cardW, height: cardH).reveal(1)
+                    path(c, plan: plan).frame(width: cardW, height: cardH).reveal(2)
+                    if wide { board(c, solved: solved).frame(width: cardW, height: cardH).reveal(3) }
+                }
+                if !wide {
+                    board(c, solved: solved).frame(width: layout.columnWidth, height: 220).reveal(3)
+                }
             }
-            HStack(alignment: .top, spacing: gap) { cards }
-            if !wide {
-                board(c, solved: solved).frame(width: layout.columnWidth, height: 220).reveal(3)
+        } bottom: {
+            HStack {
+                Spacer()
+                PillButton(c.save, icon: .forward, kind: .sunny, size: .large) { model.advance() }
+                    .accessibilityIdentifier("onboarding.plan.save")
+                    .reveal(4)
             }
-        }
-        .padding(.horizontal, layout.margin)
-        .padding(.top, layout.contentTop)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: layout.size.height, alignment: .top)
-        .overlay(alignment: .bottomTrailing) {
-            PillButton(c.save, icon: .forward, kind: .sunny, size: .large) { model.advance() }
-                .accessibilityIdentifier("onboarding.plan.save")
-                .padding(.trailing, layout.margin)
-                .padding(.bottom, layout.bottomInset + 12)
-                .reveal(4)
         }
     }
 
     private func today(_ c: OnboardingCopy, solved: Bool) -> some View {
         Card(.cobalt, radius: DS.Radius.cardLarge, deco: true, fillsHeight: true) {
-            Text(c.todayLabel).dsFont(.label).foregroundStyle(DS.Color.onInk)
+            Text(c.todayLabel).dsFont(.label).foregroundStyle(DS.Color.onInk).fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("\(Plan.todayProblems)").dsFont(.display, size: 72)
                 Text("problems").dsFont(.headline, size: 26)
@@ -110,7 +116,7 @@ struct PlanScreen: View {
             .foregroundStyle(DS.Color.onInk)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            Text("About 10 minutes").dsFont(.body, size: 18).foregroundStyle(DS.Color.onInk)
+            Text("About 10 minutes").dsFont(.body, size: 18).foregroundStyle(DS.Color.onInk).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             StarRow(earned: solved ? 1 : 0, total: Plan.todayProblems, size: 34, onCobalt: true)
         }
@@ -140,11 +146,11 @@ struct PlanScreen: View {
                             }
                             .frame(width: 42, height: 42)
                             VStack(alignment: .leading, spacing: 0) {
-                                Text(s.name).dsFont(.heading, size: 19).lineLimit(2).minimumScaleFactor(0.85)
+                                Text(s.name).dsFont(.heading, size: 19).fixedSize(horizontal: false, vertical: true)
                                 Text(words[min(i, 2)]).dsFont(.caption, size: 14)
                             }
                         }
-                        .frame(height: 64, alignment: .center)
+                        .frame(minHeight: 64, alignment: .center)
                     }
                 }
             }
@@ -287,9 +293,10 @@ struct WaitingScreen: View {
 
     var body: some View {
         let c = model.copy
-        VStack(alignment: .leading, spacing: 24) {
-            Text(c.waitingLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary).reveal(0)
-            HStack(spacing: 16) {
+        DockedScreen(layout: layout, spacing: 24) {
+            Text(c.waitingLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true).reveal(0)
+            FlowStack(spacing: 16, lineSpacing: 12) {
                 PillButton(c.imGrownUp, icon: .lock, kind: .primary, size: .large) { model.go(.gate) }
                     .accessibilityIdentifier("onboarding.waiting.grownUp")
                 if model.state.triesLeft > 0 {
@@ -298,8 +305,5 @@ struct WaitingScreen: View {
             }
             .reveal(1)
         }
-        .padding(.horizontal, layout.margin)
-        .padding(.top, layout.contentTop)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

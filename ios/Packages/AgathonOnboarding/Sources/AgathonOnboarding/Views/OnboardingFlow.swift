@@ -74,7 +74,7 @@ struct FlowStage: View {
 
     var body: some View {
         GeometryReader { geo in
-            let layout = StageLayout(size: geo.size, safe: geo.safeAreaInsets, compact: sizeClass == .compact)
+            let layout = StageLayout(size: geo.size, safe: geo.safeAreaInsets, compact: sizeClass == .compact, bubbleHeight: model.bubbleHeight)
             ZStack(alignment: .topLeading) {
                 ground.ignoresSafeArea()
                     .animation(.easeInOut(duration: 0.22), value: model.shown)
@@ -186,6 +186,18 @@ struct FlowStage: View {
             }
         }
         .animation(reduceMotion ? nil : DS.Motion.pop, value: bubbleShown)
+        .background(alignment: .topLeading) {
+            // the docked bubble with its whole question, measured (never seen) so the screen's
+            // content starts under it however many lines it takes
+            CappedWidth(max: layout.dockBubbleMax) {
+                SpeechBubble(lead: model.bubbleLead, text: model.bubbleText, shown: Int.max / 2, tail: .leading)
+            }
+            .hidden()
+            .accessibilityHidden(true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in
+                if mode == .dock, abs(h - model.bubbleHeight) > 0.5 { model.bubbleHeight = h }
+            }
+        }
         .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
         .allowsHitTesting(false)
     }
@@ -258,6 +270,7 @@ struct StageLayout {
     let size: CGSize
     let safe: EdgeInsets
     let compact: Bool
+    var bubbleHeight: CGFloat = 0
 
     var landscape: Bool { size.width > size.height }
     var margin: CGFloat { compact ? 24 : DS.Space.xxl }
@@ -271,7 +284,13 @@ struct StageLayout {
     var dockOrigin: CGPoint { CGPoint(x: margin, y: barBottom + 14) }
     var dockBubbleMax: CGFloat { size.width - margin * 2 - dockSpeakerWidth - 24 }
     /// where a docked screen's own content starts (under the speaker and its bubble)
-    var contentTop: CGFloat { dockOrigin.y + dockSpeakerWidth / TheShapes.aspectRatio + 26 }
+    var contentTop: CGFloat {
+        let h = dockSpeakerWidth / TheShapes.aspectRatio
+        let speakerBottom = dockOrigin.y + h
+        // the bubble's tail is level with the speaker's middle (BubblePlacement)
+        let bubbleBottom = dockOrigin.y + h / 2 - min(bubbleHeight / 2, 34) + bubbleHeight
+        return max(speakerBottom, bubbleBottom) + 22
+    }
     var bottomInset: CGFloat { max(safe.bottom, 16) }
     /// The keyboard is up in landscape (or the window is short): screens drop their ledes.
     var tight: Bool { size.height < 480 }

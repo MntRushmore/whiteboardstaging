@@ -308,14 +308,18 @@ struct TrialScreen: View {
     @State private var busy = false
     @State private var note: String?
     @State private var safari: URL?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let c = model.copy
         let offer = model.offer
         let days = offer?.trialDays ?? 0
-        VStack(alignment: .leading, spacing: 18) {
-            Text(c.trialLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary).reveal(0)
-            HStack(alignment: .top, spacing: 36) {
+        let side = !typeSize.isAccessibilitySize && layout.landscape && !layout.compact
+        let columns = side ? AnyLayout(HStackLayout(alignment: .top, spacing: 36)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 18))
+        DockedScreen(layout: layout) {
+            Text(c.trialLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true).reveal(0)
+            columns {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(Array(c.trialRows.enumerated()), id: \.offset) { i, row in
                         HStack(spacing: 14) {
@@ -338,7 +342,7 @@ struct TrialScreen: View {
                         .tint(DS.Color.ink)
                     }
                     .padding(22)
-                    .frame(maxWidth: 440)
+                    .frame(maxWidth: side ? 440 : 640)
                     .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Color.surface))
                     .reveal(6)
                 }
@@ -348,19 +352,19 @@ struct TrialScreen: View {
                     .padding(.horizontal, 16).padding(.vertical, 8)
                     .background(Capsule().fill(DS.Color.tryAgain))
             }
-        }
-        .padding(.horizontal, layout.margin)
-        .padding(.top, layout.contentTop)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: layout.size.height, alignment: .top)
-        .overlay(alignment: .bottom) {
+            if let offer {
+                // the price, every word of it, in the grown-up's part only
+                Text(days > 0 ? c.trialPrice(days: days, price: offer.displayPrice) : c.subscribePrice(offer.displayPrice))
+                    .dsFont(.caption)
+                    .foregroundStyle(DS.Color.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .reveal(7)
+            }
+        } bottom: {
+            let big = typeSize.isAccessibilitySize
+            let row = big ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 10)) : AnyLayout(HStackLayout(spacing: 12))
             VStack(alignment: .trailing, spacing: 10) {
-                if let offer {
-                    Text(days > 0 ? c.trialPrice(days: days, price: offer.displayPrice) : c.subscribePrice(offer.displayPrice))
-                        .dsFont(.caption)
-                        .foregroundStyle(DS.Color.inkSecondary)
-                }
-                HStack(spacing: 12) {
+                row {
                     HStack(spacing: 4) {
                         Button(c.restore) { restore() }
                         Text("·")
@@ -370,7 +374,7 @@ struct TrialScreen: View {
                     }
                     .dsFont(.caption, size: 15)
                     .foregroundStyle(DS.Color.inkSecondary)
-                    Spacer()
+                    if !big { Spacer(minLength: 8) }
                     Button(c.notNow) { decline() }
                         .buttonStyle(.pill(.quiet, size: .large))
                         .accessibilityIdentifier("onboarding.trial.notNow")
@@ -380,8 +384,7 @@ struct TrialScreen: View {
                         .disabled(busy || offer == nil)
                 }
             }
-            .padding(.horizontal, layout.margin)
-            .padding(.bottom, layout.bottomInset + 12)
+            .frame(maxWidth: .infinity, alignment: .trailing)
             .reveal(7)
         }
         .sheet(item: $safari) { url in SafariView(url: url).ignoresSafeArea() }
@@ -439,6 +442,7 @@ struct TrialScreen: View {
 struct TrialTimeline: View {
     let days: Int
     let copy: OnboardingCopy
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let nodes: [(SkillPathNode.State, String, String)] = [
@@ -446,6 +450,38 @@ struct TrialTimeline: View {
             (.now, copy.trialReminder(day: max(1, days - 2)).0, copy.trialReminder(day: max(1, days - 2)).1),
             (.later, copy.trialEnd(day: days).0, copy.planStarts),
         ]
+        if typeSize.isAccessibilitySize {
+            // the accessibility sizes: the same three days, down the card
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(Array(nodes.enumerated()), id: \.offset) { _, n in
+                    HStack(alignment: .center, spacing: 14) {
+                        node(n.0)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(n.1).dsFont(.button, size: 16)
+                            Text(n.2).dsFont(.caption, size: 14).foregroundStyle(DS.Color.inkSecondary)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .foregroundStyle(DS.Color.ink)
+            .accessibilityElement(children: .combine)
+        } else {
+            across(nodes)
+        }
+    }
+
+    @ViewBuilder private func node(_ state: SkillPathNode.State) -> some View {
+        if state == .later {
+            Circle().fill(DS.Palette.line.mixed(with: DS.Palette.ink, amount: 0.18).color)
+                .frame(width: 20, height: 20)
+                .frame(width: 50, height: 50)
+        } else {
+            SkillPathNode(state, size: 40)
+        }
+    }
+
+    private func across(_ nodes: [(SkillPathNode.State, String, String)]) -> some View {
         ZStack(alignment: .topLeading) {
             Capsule().fill(DS.Color.ink).frame(height: 5).padding(.horizontal, 22).offset(y: 23)
             HStack(alignment: .top, spacing: 0) {
@@ -515,14 +551,12 @@ struct PinScreen: View {
         let pad = PinPad(entry: $entry, keyFill: .paper) { pin in submit(pin) }
             .disabled(busy)
             .reveal(2)
-        Group {
+        DockedScreen(layout: layout) {
             if side {
                 HStack(alignment: .top, spacing: 72) {
                     words.padding(.top, 8)
                     pad
                 }
-                .padding(.horizontal, layout.margin)
-                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 VStack(spacing: 18) {
                     words
@@ -531,8 +565,6 @@ struct PinScreen: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.top, layout.contentTop)
-        .frame(height: layout.size.height, alignment: .top)
     }
 
     private func submit(_ pin: String) {
@@ -614,9 +646,10 @@ struct KidProfileScreen: View {
     var body: some View {
         let c = model.copy
         let name = model.answers.name ?? "Me"
-        VStack(alignment: .leading, spacing: 26) {
-            Text(c.pictureLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary).reveal(0)
-            HStack(spacing: 22) {
+        DockedScreen(layout: layout, spacing: 26) {
+            Text(c.pictureLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true).reveal(0)
+            FlowStack(spacing: 22, lineSpacing: 22) {
                 ForEach(Array(KidPicture.allCases.enumerated()), id: \.element) { i, p in
                     Button {
                         picked = p
@@ -645,18 +678,14 @@ struct KidProfileScreen: View {
                     Text(c.making).dsFont(.callout).foregroundStyle(DS.Color.ink)
                 }
             }
-        }
-        .padding(.horizontal, layout.margin)
-        .padding(.top, layout.contentTop)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: layout.size.height, alignment: .top)
-        .overlay(alignment: .bottomTrailing) {
-            PillButton(c.thatsMe, icon: .forward, kind: .sunny, size: .large) { make() }
-                .accessibilityIdentifier("onboarding.picture.done")
-                .disabled(picked == nil || busy)
-                .padding(.trailing, layout.margin)
-                .padding(.bottom, layout.bottomInset + 12)
-                .reveal(7)
+        } bottom: {
+            HStack {
+                Spacer()
+                PillButton(c.thatsMe, icon: .forward, kind: .sunny, size: .large) { make() }
+                    .accessibilityIdentifier("onboarding.picture.done")
+                    .disabled(picked == nil || busy)
+                    .reveal(7)
+            }
         }
     }
 
@@ -812,9 +841,10 @@ struct AddToFamilyScreen: View {
 
     var body: some View {
         let c = model.copy
-        VStack(alignment: .leading, spacing: 24) {
-            Text(c.addLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary).reveal(0)
-            HStack(spacing: 16) {
+        DockedScreen(layout: layout, spacing: 24) {
+            Text(c.addLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true).reveal(0)
+            FlowStack(spacing: 16, lineSpacing: 12) {
                 Button(c.notNow) {
                     model.state.finish()
                     model.onFinish(.signedIn)
@@ -826,9 +856,6 @@ struct AddToFamilyScreen: View {
             }
             .reveal(1)
         }
-        .padding(.horizontal, layout.margin)
-        .padding(.top, layout.contentTop)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .task { hasPin = (try? await model.backend.family().hasPin) ?? false }
     }
 }

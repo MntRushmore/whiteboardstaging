@@ -248,6 +248,47 @@ struct TopBar: View {
     }
 }
 
+/// A docked screen: its content under the speaker and its bubble, scrolling only when it doesn't
+/// fit (the accessibility text sizes, a short window), and its bottom bar below it, never over it.
+struct DockedScreen<Content: View, Bottom: View>: View {
+    let layout: StageLayout
+    var spacing: CGFloat = 18
+    @ViewBuilder let content: Content
+    @ViewBuilder let bottom: Bottom
+
+    init(layout: StageLayout, spacing: CGFloat = 18, @ViewBuilder content: () -> Content, @ViewBuilder bottom: () -> Bottom) {
+        self.layout = layout
+        self.spacing = spacing
+        self.content = content()
+        self.bottom = bottom()
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: layout.contentTop - 8)
+            ScrollView {
+                VStack(alignment: .leading, spacing: spacing) { content }
+                    .padding(.horizontal, layout.margin)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollIndicators(.hidden)
+            bottom
+                .padding(.horizontal, layout.margin)
+                .padding(.top, 8)
+                .padding(.bottom, layout.bottomInset + 12)
+        }
+        .frame(width: layout.size.width, height: layout.size.height, alignment: .top)
+    }
+}
+
+extension DockedScreen where Bottom == EmptyView {
+    init(layout: StageLayout, spacing: CGFloat = 18, @ViewBuilder content: () -> Content) {
+        self.init(layout: layout, spacing: spacing, content: content, bottom: { EmptyView() })
+    }
+}
+
 /// A quiet pill whose words may wrap (the accessibility sizes): no fill until pressed.
 struct QuietWrapping: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {

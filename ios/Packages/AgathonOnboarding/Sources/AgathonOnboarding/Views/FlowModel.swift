@@ -47,6 +47,8 @@ final class FlowModel {
     private var subSpeech: String?
 
     var reduceMotion = false
+    /// the docked bubble's height with its whole question, so a screen's content starts under it
+    var bubbleHeight: CGFloat = 0
     /// the trial's offer, fetched when the account screen opens so the trial's title is ready
     var offer: TrialOffer?
     var offerFailed = false

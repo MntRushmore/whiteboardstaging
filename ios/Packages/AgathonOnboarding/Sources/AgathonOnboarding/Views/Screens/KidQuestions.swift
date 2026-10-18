@@ -122,10 +122,12 @@ struct NameScreen: View {
     @State private var reply: String?
     @State private var writing = false
     @FocusState private var focused: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let c = model.copy
-        VStack(alignment: .leading, spacing: 18) {
+        let row = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 16))
+        DockedScreen(layout: layout) {
             if !layout.tight {
                 Text(c.nameLede)
                     .dsFont(.body)
@@ -134,7 +136,7 @@ struct NameScreen: View {
                     .reveal(0)
             }
 
-            HStack(spacing: 16) {
+            row {
                 NameField(placeholder: c.namePlaceholder, text: $text, focused: $focused) { submit() }
                     .frame(maxWidth: 520)
                     .disabled(reply != nil)
@@ -166,10 +168,6 @@ struct NameScreen: View {
             .frame(height: 96, alignment: .topLeading)
             .offset(x: 8, y: -16)
         }
-        .padding(.horizontal, layout.margin)
-        .padding(.top, layout.contentTop)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: layout.size.height, alignment: .top)
         .onAppear {
             text = model.answers.name ?? ""
         }
@@ -440,19 +438,21 @@ struct TrickyScreen: View {
     let model: FlowModel
     let layout: StageLayout
     static let exampleSize = 30.0
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let c = model.copy
         let options = Plan.focusOptions(model.answers.choice)
         let picked = model.answers.focus
         let full = picked.count >= OnboardingCatalog.shared.maxFocus
-        let cols = layout.landscape && !layout.compact ? 3 : 2
+        let cols = typeSize.isAccessibilitySize ? 1 : (layout.landscape && !layout.compact ? 3 : 2)
         let gap: CGFloat = 16
         let cardW = (layout.columnWidth - gap * CGFloat(cols - 1)) / CGFloat(cols)
 
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
+        DockedScreen(layout: layout) {
+            FlowStack(spacing: 12, lineSpacing: 8) {
                 Text(c.trickyLede).dsFont(.body).foregroundStyle(DS.Color.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if !picked.isEmpty {
                     Tag(full ? c.trickyFull : c.picked(picked.count), style: full ? .sunny : .paper)
                         .transition(.opacity)
@@ -477,22 +477,20 @@ struct TrickyScreen: View {
                     DSIcon(.forward, size: 20)
                 }
                 .padding(.horizontal, 26)
-                .frame(width: min(440, layout.columnWidth), height: 68)
+                .padding(.vertical, 10)
+                .frame(width: min(typeSize.isAccessibilitySize ? 640 : 440, layout.columnWidth))
+                .frame(minHeight: 68)
             }
             .buttonStyle(ChoiceCardStyle(chosen: false, base: .paper, radius: 34))
             .reveal(1 + options.count)
-        }
-        .padding(.horizontal, layout.margin)
-        .padding(.top, layout.contentTop)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: layout.size.height, alignment: .top)
-        .overlay(alignment: .bottomTrailing) {
-            PillButton(c.continueTitle, icon: .forward, kind: .sunny, size: .large) { model.finishTricky() }
-                .accessibilityIdentifier("onboarding.tricky.continue")
-                .disabled(picked.isEmpty)
-                .padding(.trailing, layout.margin)
-                .padding(.bottom, layout.bottomInset + 12)
-                .reveal(2 + options.count)
+        } bottom: {
+            HStack {
+                Spacer()
+                PillButton(c.continueTitle, icon: .forward, kind: .sunny, size: .large) { model.finishTricky() }
+                    .accessibilityIdentifier("onboarding.tricky.continue")
+                    .disabled(picked.isEmpty)
+                    .reveal(2 + options.count)
+            }
         }
     }
 
@@ -503,6 +501,7 @@ struct TrickyScreen: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     Text(w.name).dsFont(.heading, size: 21).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
                     if let order {
                         Text("\(order + 1)")
