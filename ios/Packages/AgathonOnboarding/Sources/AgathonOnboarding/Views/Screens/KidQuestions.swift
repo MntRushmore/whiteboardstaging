@@ -113,10 +113,13 @@ struct NameScreen: View {
     var body: some View {
         let c = model.copy
         VStack(alignment: .leading, spacing: 18) {
-            Text(c.nameLede)
-                .dsFont(.body)
-                .foregroundStyle(DS.Color.inkSecondary)
-                .reveal(0)
+            if !layout.tight {
+                Text(c.nameLede)
+                    .dsFont(.body)
+                    .foregroundStyle(DS.Color.inkSecondary)
+                    .opacity(reply == nil ? 1 : 0)
+                    .reveal(0)
+            }
 
             HStack(spacing: 16) {
                 NameField(placeholder: c.namePlaceholder, text: $text, focused: $focused) { submit() }
@@ -157,7 +160,8 @@ struct NameScreen: View {
         .onAppear {
             text = model.answers.name ?? ""
         }
-        .onChange(of: model.revealed) { _, now in if now, reply == nil { focused = true } }
+        // no auto-focus: the on-screen keyboard would cover half the screen in landscape, and a
+        // Pencil writes straight into the field (Scribble) without it
         .onChange(of: text) { _, _ in if invalid { withAnimation(DS.Motion.fade) { invalid = false } } }
     }
 

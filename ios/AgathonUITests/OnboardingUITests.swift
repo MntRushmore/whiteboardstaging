@@ -104,9 +104,13 @@ final class OnboardingUITests: XCTestCase {
         sleep(1)
         snap("try-ticked")
         next.tap()
-        sleep(1)
+        sleep(2)
         snap("building")
-        tap("onboarding.plan.save", wait: 20)
+        let save = app.descendants(matching: .any).matching(identifier: "onboarding.plan.save").firstMatch
+        XCTAssertTrue(save.waitForExistence(timeout: 20))
+        sleep(2)
+        snap("plan")
+        tap("onboarding.plan.save")
         sleep(1)
         snap("hand-back")
         tap("onboarding.handBack.grownUp")
@@ -115,6 +119,9 @@ final class OnboardingUITests: XCTestCase {
         key("1985")
         try account()
         tap("onboarding.trial.start", wait: 30)
+        // the reminder's one notification ask, at the tap on Start
+        let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow"]
+        if allow.waitForExistence(timeout: 6) { allow.tap() }
         try pinAndProfile()
     }
 

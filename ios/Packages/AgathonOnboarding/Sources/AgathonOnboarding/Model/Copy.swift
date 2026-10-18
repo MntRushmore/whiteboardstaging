@@ -186,6 +186,8 @@ public struct OnboardingCopy: Sendable {
     public var trialToday: (String, String) { ("Today", "\(name ?? "Your kid") starts") }
     public func trialReminder(day: Int) -> (String, String) { ("Day \(day)", "We remind you") }
     public func trialEnd(day: Int) -> (String, String) { ("Day \(day)", "Your plan starts. Cancel before then and you pay nothing.") }
+    public let planStarts = "Your plan starts"
+    public let cancelBefore = "Cancel before then and you pay nothing."
     public func remindMe(daysBefore: Int) -> String { "Remind me \(daysBefore) days before it ends" }
     public func trialPrice(days: Int, price: String) -> String {
         "Free for \(days) days, then \(price) a month. It renews until you cancel in Settings."

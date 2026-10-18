@@ -241,7 +241,10 @@ final class FlowModel {
 
     // MARK: - the trail and the bar
 
-    var trail: (count: Int, at: Int)? { FlowRules.trail(for: shown, state.answers, hasPlan: state.hasPlan) }
+    /// The trail appears with the first answer, as the speaker docks (Aristotle's bar does the same).
+    var trail: (count: Int, at: Int)? {
+        shown == .hello ? nil : FlowRules.trail(for: shown, state.answers, hasPlan: state.hasPlan)
+    }
 
     var trailLabel: String {
         guard let t = trail else { return "" }

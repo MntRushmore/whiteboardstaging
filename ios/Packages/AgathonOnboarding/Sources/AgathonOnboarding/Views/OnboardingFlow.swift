@@ -169,15 +169,16 @@ struct FlowStage: View {
 
         ZStack(alignment: .topLeading) {
             TheShapes(model.pose)
+                .accessibilityHidden(true)
                 .frame(width: width, height: height)
                 .offset(x: origin.x, y: origin.y)
                 .opacity(mode == .hidden ? 0 : 1)
                 .scaleEffect(mode == .hidden ? 0.8 : 1, anchor: .topLeading)
 
             if bubbleShown {
-                SpeechBubble(lead: model.bubbleLead, text: model.bubbleText, shown: model.typed, tail: centre ? .bottom : .leading)
-                    .frame(maxWidth: centre ? layout.centreBubbleMax : layout.dockBubbleMax, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                CappedWidth(max: centre ? layout.centreBubbleMax : layout.dockBubbleMax) {
+                    SpeechBubble(lead: model.bubbleLead, text: model.bubbleText, shown: model.typed, tail: centre ? .bottom : .leading)
+                }
                     .modifier(BubblePlacement(centre: centre, speakerOrigin: origin, speakerSize: CGSize(width: width, height: height), layout: layout))
                     .transition(.asymmetric(insertion: .scale(scale: 0.85, anchor: centre ? .bottom : .leading).combined(with: .opacity),
                                             removal: .opacity))
@@ -212,6 +213,21 @@ struct FlowStage: View {
         case .signIn: SignInScreen(model: model, layout: layout)
         case .addToFamily: AddToFamilyScreen(model: model, layout: layout)
         }
+    }
+}
+
+/// Proposes at most `max` points of width and takes the size its content wants, so a short
+/// question's bubble hugs its words (and centres on the speaker) while a long one wraps at `max`.
+struct CappedWidth: Layout {
+    let max: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let w = Swift.min(proposal.width ?? max, max)
+        return subviews.first?.sizeThatFits(ProposedViewSize(width: w, height: nil)) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
     }
 }
 
@@ -250,12 +266,14 @@ struct StageLayout {
     var columnWidth: CGFloat { min(960, size.width - margin * 2) }
     var columnX: CGFloat { (size.width - columnWidth) / 2 }
 
-    var dockSpeakerWidth: CGFloat { compact ? 76 : 100 }
+    var dockSpeakerWidth: CGFloat { compact ? 84 : 120 }
     var dockOrigin: CGPoint { CGPoint(x: margin, y: barBottom + 14) }
     var dockBubbleMax: CGFloat { size.width - margin * 2 - dockSpeakerWidth - 24 }
     /// where a docked screen's own content starts (under the speaker and its bubble)
     var contentTop: CGFloat { dockOrigin.y + dockSpeakerWidth / TheShapes.aspectRatio + 26 }
     var bottomInset: CGFloat { max(safe.bottom, 16) }
+    /// The keyboard is up in landscape (or the window is short): screens drop their ledes.
+    var tight: Bool { size.height < 480 }
 
     var centreSpeakerWidth: CGFloat { compact ? 140 : (landscape && size.height < 800 ? 150 : 180) }
     var centreBubbleMax: CGFloat { min(620, size.width - margin * 2) }

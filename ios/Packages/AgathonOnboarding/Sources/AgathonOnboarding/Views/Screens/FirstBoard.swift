@@ -118,7 +118,7 @@ struct FirstBoardScreen: View {
             .reveal(0)
             ZStack {
                 if let controller {
-                    BoardCanvas(controller: controller, insets: CameraConstraints(top: 8, left: 8, bottom: 8, right: 8, maxZoom: 4)) { canvas in
+                    BoardCanvas(controller: controller, insets: CameraConstraints(top: 8, left: 8, bottom: 8, right: 8, maxZoom: 4), appearance: .blocks) { canvas in
                         BlocksBoardLook.apply(to: canvas)
                         if writer == nil {
                             let w = TutorWriter(controller: controller, canvas: canvas)

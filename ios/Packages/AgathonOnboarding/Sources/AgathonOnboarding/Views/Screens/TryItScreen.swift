@@ -96,7 +96,7 @@ struct TryItScreen: View {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     if let board {
-                        BoardCanvas(controller: board.controller, insets: insets) { canvas in
+                        BoardCanvas(controller: board.controller, insets: insets, appearance: .blocks) { canvas in
                             board.attach(canvas)
                         }
                         .accessibilityLabel(problemWords(board))
@@ -190,7 +190,7 @@ struct TryItScreen: View {
 
         // the message, top centre of the page
         if let m = board.message {
-            Banner(m.kind, m.title, message: m.detail)
+            Banner(m.kind, m.title, message: m.detail, surface: .ink)
                 .frame(maxWidth: 520)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: page.width)

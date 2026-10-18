@@ -328,17 +328,17 @@ struct TrialScreen: View {
                 }
                 .frame(maxWidth: 470, alignment: .leading)
                 if days > 0 {
-                    VStack(alignment: .leading, spacing: 0) {
-                        timelineRow(node: .done, title: c.trialToday.0, line: c.trialToday.1, last: false)
-                        timelineRow(node: .now, title: c.trialReminder(day: max(1, days - 2)).0, line: c.trialReminder(day: days - 2).1, last: false)
-                        timelineRow(node: .later, title: c.trialEnd(day: days).0, line: c.trialEnd(day: days).1, last: true)
-                        Toggle(c.remindMe(daysBefore: 2), isOn: $remind)
-                            .dsFont(.callout)
-                            .tint(DS.Color.ink)
-                            .padding(.top, 12)
+                    VStack(alignment: .leading, spacing: 16) {
+                        TrialTimeline(days: days, copy: c)
+                        Text(c.cancelBefore).dsFont(.caption, size: 15).foregroundStyle(DS.Color.inkSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Toggle(isOn: $remind) {
+                            Text(c.remindMe(daysBefore: 2)).dsFont(.callout).foregroundStyle(DS.Color.ink)
+                        }
+                        .tint(DS.Color.ink)
                     }
                     .padding(22)
-                    .frame(maxWidth: 380)
+                    .frame(maxWidth: 440)
                     .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Color.surface))
                     .reveal(6)
                 }
@@ -391,23 +391,6 @@ struct TrialScreen: View {
         }
     }
 
-    private func timelineRow(node: SkillPathNode.State, title: String, line: String, last: Bool) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            ZStack(alignment: .top) {
-                if !last { Rectangle().fill(DS.Color.ink).frame(width: 4).padding(.top, 22) }
-                SkillPathNode(node, size: 30)
-            }
-            .frame(width: 38)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).dsFont(.button, size: 17)
-                Text(line).dsFont(.caption, size: 15).foregroundStyle(DS.Color.inkSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.bottom, last ? 0 : 14)
-        }
-        .foregroundStyle(DS.Color.ink)
-    }
-
     private func start() {
         busy = true
         note = nil
@@ -449,6 +432,35 @@ struct TrialScreen: View {
                 note = model.copy.restoreNothing
             }
         }
+    }
+}
+
+/// Today · Day 5 · Day 7 in the trail's style: a done dot, the reminder's ring, the plan's dot.
+struct TrialTimeline: View {
+    let days: Int
+    let copy: OnboardingCopy
+
+    var body: some View {
+        let nodes: [(SkillPathNode.State, String, String)] = [
+            (.done, copy.trialToday.0, copy.trialToday.1),
+            (.now, copy.trialReminder(day: max(1, days - 2)).0, copy.trialReminder(day: max(1, days - 2)).1),
+            (.later, copy.trialEnd(day: days).0, copy.planStarts),
+        ]
+        ZStack(alignment: .topLeading) {
+            Capsule().fill(DS.Color.ink).frame(height: 5).padding(.horizontal, 22).offset(y: 23)
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(nodes.enumerated()), id: \.offset) { i, n in
+                    VStack(alignment: i == 0 ? .leading : (i == nodes.count - 1 ? .trailing : .center), spacing: 4) {
+                        SkillPathNode(n.0, size: 40).background(Circle().fill(DS.Color.surface).padding(2))
+                        Text(n.1).dsFont(.button, size: 16)
+                        Text(n.2).dsFont(.caption, size: 14).foregroundStyle(DS.Color.inkSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: i == 0 ? .leading : (i == nodes.count - 1 ? .trailing : .center))
+                }
+            }
+        }
+        .foregroundStyle(DS.Color.ink)
+        .accessibilityElement(children: .combine)
     }
 }
 
