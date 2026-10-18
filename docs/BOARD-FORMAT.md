@@ -290,7 +290,11 @@ A point in page space is `(x, y) + rotate(point, rotation)`.
 Records store a **token**, never a hex value, so the brand lane can retune the palette without
 touching saved boards.
 
-**The kid's palette:** `black`, `red`, `green`, `violet` (the web's `KID_COLORS`).
+**The kid's palette:** the Blocks pens `black`, `red`, `orange`, `green`, `pink` (`InkColor.kidPalette`,
+`DS.KidPen.all`; tools lane, 2026-10-17). `pink` is a new token in schema 1 (nothing had shipped
+yet). The web's fourth colour, `violet` (`KID_COLORS`), stays a valid token for old boards but is
+no longer a pen: Blocks has no blue or purple pen. The pens and `tutor` render in the Blocks values
+(`tutor` is cobalt #2D5BFF); the other tokens keep tldraw's values.
 
 **The tutor:** `tutor` (tldraw `blue`, #4465e9). The rule is that **the kid's colours are never the
 tutor's**:

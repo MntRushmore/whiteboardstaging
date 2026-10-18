@@ -202,7 +202,7 @@ struct RenderComparisonTests {
         }
         write(ours, to: out)
         // and everything on the screen, for eyes
-        let all = result.document.drawables(on: screen.id).compactMap(RenderGeometry.item(for:))
+        let all = result.document.drawables(on: screen.id).compactMap { RenderGeometry.item(for: $0) }
         if let full = TileRasterizer.render(all, rect: screen.rect, scale: 1)?.makeImage() {
             write(full, to: dir.appendingPathComponent("ours-full-\(reference)"))
         }

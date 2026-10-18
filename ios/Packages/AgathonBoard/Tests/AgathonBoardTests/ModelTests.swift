@@ -68,7 +68,9 @@ struct RecordIDTests {
 struct ColorRuleTests {
     @Test func kidPaletteNeverHasTheTutorsColour() {
         #expect(!InkColor.kidPalette.contains(.tutor))
-        #expect(InkColor.kidPalette == [.black, .red, .green, .violet])
+        // the Blocks pens (DS.KidPen.all): no blue or purple, so nothing the kid writes reads as the tutor's
+        #expect(InkColor.kidPalette == [.black, .red, .orange, .green, .pink])
+        #expect(!InkColor.kidPalette.contains(.violet) && !InkColor.kidPalette.contains(.blue))
     }
 
     @Test func kidStrokeInTutorColourIsCorrected() {
@@ -89,7 +91,10 @@ struct ColorRuleTests {
         let c = BoardController(defaults: UserDefaults(suiteName: "test.colour.\(UUID())")!)
         c.color = .tutor
         #expect(c.color == .black)
+        c.color = .pink
+        #expect(c.color == .pink)
+        // an old board's violet stays drawable, but it is not a pen any more
         c.color = .violet
-        #expect(c.color == .violet)
+        #expect(c.color == .black)
     }
 }

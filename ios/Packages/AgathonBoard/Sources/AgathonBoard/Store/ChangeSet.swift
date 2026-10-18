@@ -81,14 +81,25 @@ public struct ChangeSet: Sendable {
         }
     }
 
+    /// Whether the change touches `id`.
+    @inline(__always) public func contains(_ id: RecordID) -> Bool {
+        added[id] != nil || updated[id] != nil || removed[id] != nil
+    }
+
     /// This change followed by `next`, as one change.
     public func squashed(with next: ChangeSet) -> ChangeSet {
         var out = self
-        for id in next.ids {
-            let start = ids.contains(id) ? before(id) : next.before(id)
-            out.set(id, before: start, after: next.after(id))
-        }
+        out.squash(with: next)
         return out
+    }
+
+    /// Folds `next` into this change, in place: O(size of `next`), so a long eraser drag that grows
+    /// one undo step stroke by stroke never copies the step.
+    public mutating func squash(with next: ChangeSet) {
+        for id in next.ids {
+            let start = contains(id) ? before(id) : next.before(id)
+            set(id, before: start, after: next.after(id))
+        }
     }
 
     /// The change that undoes this one.

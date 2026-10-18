@@ -12,6 +12,8 @@ final class InkGestureRecognizer: UIGestureRecognizer {
     var onEnded: ((UITouch, UIEvent) -> Void)?
     /// the stroke was cancelled (the system took the touch, or a second finger came: a pinch)
     var onCancelled: (() -> Void)?
+    /// a Pencil's late values arrived (force and tilt sent after the touch, over Bluetooth)
+    var onEstimatedUpdate: ((Set<UITouch>) -> Void)?
 
     private(set) weak var tracked: UITouch?
 
@@ -57,6 +59,10 @@ final class InkGestureRecognizer: UIGestureRecognizer {
         onCancelled?()
         self.tracked = nil
         state = .cancelled
+    }
+
+    override func touchesEstimatedPropertiesUpdated(_ touches: Set<UITouch>) {
+        onEstimatedUpdate?(touches)
     }
 
     override func reset() {
