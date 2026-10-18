@@ -66,6 +66,10 @@ public struct BoardNotice: Equatable, Sendable, Identifiable {
     public enum Kind: String, Sendable { case pictureFailed, boardFull, pdfFailed }
     public let id = UUID()
     public var kind: Kind
+
+    public init(kind: Kind) {
+        self.kind = kind
+    }
 }
 
 /// The board as the app uses it: the store, the current screen, the tool in hand, the input rules
