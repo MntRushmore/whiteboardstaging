@@ -248,6 +248,20 @@ struct TopBar: View {
     }
 }
 
+/// A quiet pill whose words may wrap (the accessibility sizes): no fill until pressed.
+struct QuietWrapping: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .dsFont(.button)
+            .foregroundStyle(DS.Color.ink)
+            .padding(.horizontal, 26)
+            .padding(.vertical, 10)
+            .frame(minHeight: DS.Size.button)
+            .background(Capsule().fill(configuration.isPressed ? DS.Fill.chalk.pressed.color : .clear))
+            .contentShape(Capsule())
+    }
+}
+
 // MARK: - Cards
 
 /// A big choice: a flat card that fills ink when chosen, with the tutor's tick in its corner.

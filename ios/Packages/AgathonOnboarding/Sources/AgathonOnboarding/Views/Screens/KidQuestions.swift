@@ -11,15 +11,19 @@ struct HelloScreen: View {
     let model: FlowModel
     let layout: StageLayout
     @State private var chosen: OnboardingRole?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let c = model.copy.hello
         let w = layout.centreSpeakerWidth
         let top = layout.centreSpeakerOrigin(width: w, step: .hello).y + w / TheShapes.aspectRatio + (layout.landscape ? 28 : 40)
-        let stack = layout.compact || layout.size.width < 700
-        let cardW: CGFloat = stack ? min(420, layout.columnWidth) : min(340, (layout.columnWidth - 20) / 2)
-        let cardH: CGFloat = stack ? 150 : max(196, min(240, layout.size.height - top - layout.bottomInset - 110))
+        // at the accessibility sizes the cards stack and the screen scrolls: words wrap, never cut
+        let big = typeSize.isAccessibilitySize
+        let stack = big || layout.compact || layout.size.width < 700
+        let cardW: CGFloat = stack ? min(big ? 560 : 420, layout.columnWidth) : min(340, (layout.columnWidth - 20) / 2)
+        let cardH: CGFloat? = big ? nil : (stack ? 150 : max(196, min(240, layout.size.height - top - layout.bottomInset - 110)))
 
+        ScrollView {
         VStack(spacing: layout.landscape ? 22 : 30) {
             Text(c.lede)
                 .dsFont(.body)
@@ -39,16 +43,22 @@ struct HelloScreen: View {
                 HStack(spacing: 20) { cards }
             }
 
-            Button(c.signIn) { model.openSignIn(from: .hello) }
-                .buttonStyle(.pill(.quiet))
-                .reveal(3)
+            Button { model.openSignIn(from: .hello) } label: {
+                Text(c.signIn).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(QuietWrapping())
+            .reveal(3)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, top)
+        .padding(.bottom, 24)
+        }
+        .scrollDisabled(!big)
+        .scrollIndicators(.hidden)
     }
 
     private func whoCard(_ role: OnboardingRole, kind: WhoKind, small: String, big: String, hint: String,
-                         width: CGFloat, height: CGFloat) -> some View {
+                         width: CGFloat, height: CGFloat?) -> some View {
         let fill: DS.Fill = kind == .ink ? .ink : .sunny
         let on = chosen == role
         return Button {
@@ -58,18 +68,21 @@ struct HelloScreen: View {
         } label: {
             ZStack(alignment: .topLeading) {
                 CardDeco(color: (kind == .ink ? DS.Palette.ink.mixed(with: DS.Palette.white, amount: 0.07)
-                                 : DS.Palette.sunny.mixed(with: DS.Palette.tomato, amount: 0.14)).color, size: height * 0.95)
-                    .offset(x: width - height * 0.62, y: height * 0.42)
+                                 : DS.Palette.sunny.mixed(with: DS.Palette.tomato, amount: 0.14)).color, size: (height ?? 200) * 0.95)
+                    .offset(x: width - (height ?? 200) * 0.62, y: (height ?? 200) * 0.42)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(small).dsFont(.heading, size: 21)
                     Text(big).dsFont(.display, size: 58).padding(.top, -4)
+                        .lineLimit(1).minimumScaleFactor(0.55)
                     Spacer(minLength: 8)
                     Text(hint).dsFont(.body, size: 18).opacity(0.86)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(26)
             }
             .frame(width: width, height: height, alignment: .topLeading)
+            .frame(minHeight: height == nil ? 150 : nil)
             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(alignment: .topTrailing) { TickBadge(diameter: 44, drawn: on).padding(18) }
         }
@@ -238,19 +251,55 @@ struct GradeScreen: View {
     let layout: StageLayout
     @State private var chosen: LevelChoice?
     @State private var courses = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let c = model.copy
-        VStack(alignment: .leading, spacing: 22) {
-            Text(courses ? c.courseLede : c.gradeLede)
-                .dsFont(.body)
-                .foregroundStyle(DS.Color.inkSecondary)
-                .reveal(0)
-            if courses { courseList } else { gradeGrid }
+        VStack(spacing: 0) {
+            Color.clear.frame(height: layout.contentTop)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Text(courses ? c.courseLede : c.gradeLede)
+                        .dsFont(.body)
+                        .foregroundStyle(DS.Color.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .reveal(0)
+                    if courses { courseList } else if typeSize.isAccessibilitySize { gradeList } else { gradeGrid }
+                }
+                .padding(.horizontal, layout.margin)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollDisabled(!typeSize.isAccessibilitySize)
+            .scrollIndicators(.hidden)
         }
-        .padding(.horizontal, layout.margin)
-        .padding(.top, layout.contentTop)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The accessibility sizes: two columns of whole names ("3rd grade"), then high school.
+    private var gradeList: some View {
+        let cat = OnboardingCatalog.shared
+        return VStack(alignment: .leading, spacing: 12) {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                ForEach(Array(cat.grades.enumerated()), id: \.element.id) { i, g in
+                    let on = chosen == .grade(g.id)
+                    Button { choose(.grade(g.id)) } label: {
+                        HStack {
+                            Text(g.label).dsFont(.button).multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 4)
+                            TickBadge(diameter: 30, drawn: on)
+                        }
+                        .padding(18)
+                        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                    }
+                    .buttonStyle(ChoiceCardStyle(chosen: on, base: .paper, radius: DS.Radius.tile))
+                    .accessibilityIdentifier("onboarding.grade.\(g.id)")
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                    .reveal(1 + i)
+                }
+            }
+            highSchoolPill(width: layout.columnWidth).reveal(10)
+        }
     }
 
     private var gradeGrid: some View {
@@ -314,7 +363,9 @@ struct GradeScreen: View {
                 DSIcon(.forward, size: 20)
             }
             .padding(.horizontal, 26)
-            .frame(width: width, height: 72)
+            .padding(.vertical, 10)
+            .frame(width: width)
+            .frame(minHeight: 72)
         }
         .buttonStyle(ChoiceCardStyle(chosen: false, base: .paper, radius: 36))
         .accessibilityHint(model.copy.highSchoolHint)
