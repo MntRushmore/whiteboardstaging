@@ -36,6 +36,10 @@ packages:
   # AgathonBoard and AgathonDesign; it brings the vendored SwiftMath (Packages/SwiftMath).
   AgathonBoardUI:
     path: Packages/AgathonBoardUI
+  # Ask (docs/IPAD-NATIVE.md, Phase 3; docs/ASK-V2.md): the chat panel, streaming, the screen's
+  # picture, the tutor's board actions (the brain's desk), hold-to-talk and read aloud.
+  AgathonAsk:
+    path: Packages/AgathonAsk
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -59,6 +63,7 @@ targets:
       - package: AgathonLive
       - package: AgathonSync
       - package: AgathonBoardUI
+      - package: AgathonAsk
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon
@@ -93,8 +98,8 @@ targets:
           NSAllowsLocalNetworking: true
         # Ask's hold-to-talk mic and Lecture mode.
         NSMicrophoneUsageDescription: Agathon listens while you hold the mic to ask a question out loud, and during Lecture mode.
-        # Lecture mode's on-device transcription (the browser speech engine runs on Apple's).
-        NSSpeechRecognitionUsageDescription: Agathon turns what the teacher says into notes on your board during Lecture mode.
+        # Ask's mic when its speech service is resting (on-device recognition), and Lecture mode.
+        NSSpeechRecognitionUsageDescription: Agathon turns what you say into words when you talk to Ask, and what the teacher says into notes during Lecture mode.
         # The picture button's "Take Photo" (a file input accepting images offers the camera).
         NSCameraUsageDescription: Take a photo of a worksheet or a drawing to put it on your board.
         # "Save Video" / "Save Image" from the share sheet after saving a replay or a picture.
