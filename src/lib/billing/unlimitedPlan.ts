@@ -68,6 +68,11 @@ export const PLAN_COPY = {
   deleteBlockedTitle: `Cancel ${UNLIMITED_PLAN.name} first`,
   deleteBlockedBody:
     "Deleting your account doesn't cancel your plan, so cancel it first. Once it's set to cancel, you won't be charged again and you can delete your account here.",
+  /** A plan bought in the iPad app (provider apple): Apple bills it, so it is managed there. */
+  appleManage: "Billed through Apple from the Agathon iPad app. To change or cancel it, open Settings on your iPad, tap your name, then Subscriptions.",
+  /** Delete account with an Apple plan that will charge again: allowed, but cancel it in Settings first. */
+  appleDeleteNote:
+    "Your plan is billed through Apple, and deleting your account doesn't cancel it. Cancel it first in Settings on your iPad (tap your name, then Subscriptions), or Apple keeps charging.",
   /** A second plan's free trial (repeat_trial): no free help, said before the reader wonders why. */
   repeatTrial: "The free trial is for a first plan only, so help uses ink until then. Cancel before that day and you won't be charged.",
   /** The ink card's note for a subscriber: the balance is not being spent. */

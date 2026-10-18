@@ -121,10 +121,12 @@ describe("route discovery", () => {
 });
 
 describe("allow-lists", () => {
-  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the crons, client errors, health, the unsubscribe link, the try board, the start step and its static ink", () => {
+  it("PUBLIC_ROUTES is exactly config/status, the billing webhooks (Stripe's, Apple's), the crons, client errors, health, the unsubscribe link, the try board, the start step and its static ink", () => {
     // config/status: reports which provider keys exist as booleans (never values,
     // prefixes or lengths) so the setup screen can render before sign-in.
     // billing/webhook: the provider has no user JWT; the Stripe-Signature HMAC is the auth.
+    // billing/apple/notifications: Apple has no user JWT; the payload's JWS, chained to Apple's root
+    // and checked by Apple's library, is the auth (behaviour: src/lib/server/apple/__tests__).
     // admin/gc, cron/trial-reminders: Vercel cron has no user JWT; the shared CRON_SECRET bearer
     // token is the auth.
     // admin/health: pg_cron has no user JWT either (CRON_SECRET); otherwise requireAdmin
@@ -138,6 +140,7 @@ describe("allow-lists", () => {
     expect([...PUBLIC_ROUTES].sort()).toEqual([
       "src/app/api/admin/gc/route.ts",
       "src/app/api/admin/health/route.ts",
+      "src/app/api/billing/apple/notifications/route.ts",
       "src/app/api/billing/webhook/route.ts",
       "src/app/api/client-errors/route.ts",
       "src/app/api/config/status/route.ts",

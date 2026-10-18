@@ -14,6 +14,9 @@
  *
  * Who it goes to: the person who pays, at the email Stripe has for the checkout (`payer_email` on
  * the row, 20261003040000_go_live_gaps.sql), else the account's address (src/lib/email/payer.ts).
+ * A plan bought in the iPad app (provider 'apple') has no payer email: it goes to the account, which is
+ * always the family's grown-up (apply_apple_subscription links a plan to plan_owner_of, never a kid),
+ * and says Apple charges it and how to cancel in the iPad's Settings, with Apple's page linked.
  *
  * What the family did (2026-10-09): when the account or its kids practiced during the trial, the
  * reminder also says what (problems solved, skills, Today's practice; `reminderProgress`), so the
@@ -37,7 +40,8 @@ import { sendOnce, type EmailLogKey } from "@/lib/email/log";
 import { billingRecipient } from "@/lib/email/payer";
 import type { SendEmailInput, SendEmailResult } from "@/lib/email/resend";
 import type { EmailDeps, EmailEnv } from "@/lib/email/server";
-import { trialReminderEmail, type LearnerProgress } from "@/lib/email/templates";
+import { formatApplePrice, trialReminderEmail, type LearnerProgress } from "@/lib/email/templates";
+import { APPLE_MANAGE_SUBSCRIPTIONS_URL } from "@/lib/billing/apple";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -74,6 +78,11 @@ export const SUBSCRIPTIONS = {
     cancelAtPeriodEnd: "cancel_at_period_end", // boolean
     cancelAt: "cancel_at", // timestamptz, nullable
     payerEmail: "payer_email", // text, nullable: the checkout's email (20261003040000_go_live_gaps.sql)
+    // 'stripe' | 'apple' (20261017200000_apple_subscriptions.sql): an Apple plan is charged and
+    // cancelled through Apple, so its emails say so and link Apple's page, never Stripe's
+    provider: "provider",
+    applePrice: "apple_price_milliunits", // bigint, nullable: Apple's next charge, milliunits of apple_currency
+    appleCurrency: "apple_currency", // text, nullable: ISO 4217
   },
   trialingStatus: "trialing",
 } as const;
@@ -87,7 +96,16 @@ export type TrialRow = {
   cancelAt: string | null;
   /** Where the plan's emails go (the payer), when the checkout gave one. */
   payerEmail: string | null;
+  /** `apple` for a plan bought in the iPad app; `stripe` (or null, before the Apple migration) otherwise. */
+  provider?: string | null;
+  /** Apple's next charge, as the buyer will see it ("$24.99"), when Apple has said. */
+  applePrice?: string | null;
 };
+
+/** Where the plan's emails send the grown-up to manage or cancel: Apple's page for an Apple plan, else the portal (or the account page). */
+export function manageUrlFor(row: Pick<TrialRow, "provider">, env: Pick<EmailEnv, "manageUrl">): string {
+  return row.provider === "apple" ? APPLE_MANAGE_SUBSCRIPTIONS_URL : env.manageUrl;
+}
 
 export type ReminderWindow = { from: Date; to: Date };
 
@@ -142,7 +160,16 @@ export function toTrialRow(raw: Record<string, unknown>): TrialRow | null {
     cancelAtPeriodEnd: raw[c.cancelAtPeriodEnd] === true,
     cancelAt: asString(raw[c.cancelAt]),
     payerEmail: asString(raw[c.payerEmail]),
+    ...appleFields(raw),
   };
+}
+
+/** An Apple row's provider and next price (absent on a Stripe row, so its shape is unchanged). */
+function appleFields(raw: Record<string, unknown>): Pick<TrialRow, "provider" | "applePrice"> {
+  const c = SUBSCRIPTIONS.columns;
+  if (raw[c.provider] !== "apple") return {};
+  const price = raw[c.applePrice];
+  return { provider: "apple", applePrice: formatApplePrice(typeof price === "number" ? price : Number(price ?? NaN), asString(raw[c.appleCurrency])) };
 }
 
 /**
@@ -256,12 +283,14 @@ export async function runTrialReminders(deps: EmailDeps, env: EmailEnv, opts: Tr
       continue;
     }
 
+    const apple = row.provider === "apple";
     if (attempts > 0) await deps.sleep(SEND_SPACING_MS);
-    else if (!env.manageIsPortal) log.warn("NEXT_PUBLIC_BILLING_PORTAL_URL is not set: the reminder's cancel link opens the account page");
+    else if (!env.manageIsPortal && !apple) log.warn("NEXT_PUBLIC_BILLING_PORTAL_URL is not set: the reminder's cancel link opens the account page");
     attempts++;
     const rendered = trialReminderEmail({
       trialEnd: new Date(row.trialEnd!),
-      manageUrl: env.manageUrl,
+      manageUrl: manageUrlFor(row, env),
+      ...(apple ? { apple: { price: row.applePrice ?? null } } : {}),
       siteUrl: env.siteUrl,
       planName: UNLIMITED_PLAN.name,
       monthlyUsd: UNLIMITED_PLAN.monthlyUsd,

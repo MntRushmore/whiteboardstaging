@@ -512,6 +512,18 @@ export interface SubscriptionRow {
   cancel_at_period_end: boolean | null;
   cancel_at: string | null;
   created_at: string;
+  /** 'stripe' | 'apple' (20261017200000_apple_subscriptions.sql); absent before that migration */
+  provider?: string | null;
+  /** false for an Apple Sandbox or Xcode subscription (App Review, TestFlight, local testing) */
+  livemode?: boolean | null;
+}
+
+/**
+ * Revenue rows: not an Apple subscription bought in the Sandbox (App Review and TestFlight buy there,
+ * against the production server, and get the plan, but nobody paid) or in Xcode's local testing.
+ */
+export function isRevenueRow(s: Pick<SubscriptionRow, "provider" | "livemode">): boolean {
+  return !(s.provider === "apple" && s.livemode === false);
 }
 
 /** How far ahead the money lists charges. */
@@ -526,7 +538,7 @@ const ENDED = new Set(["canceled", "incomplete_expired"]);
  * not revenue). Pure, so the tests can hold it to Stripe's statuses.
  */
 export function moneyOverview(subs: readonly SubscriptionRow[], adminIds: ReadonlySet<string>, now: number, priceUsd = UNLIMITED_PLAN.monthlyUsd): AdminOverview["money"] {
-  const mine = subs.filter((s) => !(s.user_id && adminIds.has(s.user_id)));
+  const mine = subs.filter((s) => !(s.user_id && adminIds.has(s.user_id)) && isRevenueRow(s));
   const cancelling = (s: SubscriptionRow) => s.cancel_at_period_end === true || s.cancel_at !== null;
   const paying = mine.filter((s) => s.status !== null && PAYING.has(s.status));
   const trialing = mine.filter((s) => s.status === "trialing");
@@ -554,7 +566,14 @@ export function moneyOverview(subs: readonly SubscriptionRow[], adminIds: Readon
     trialsConverted: over.filter((s) => s.status !== null && PAYING.has(s.status)).length,
     started7d: mine.filter((s) => time(s.created_at) >= now - 7 * DAY_MS).length,
     upcoming,
+    ...appleShare(paying, trialing),
   };
+}
+
+/** How many of the paying and trialing plans Apple bills (the iPad app); absent when none. */
+function appleShare(paying: readonly SubscriptionRow[], trialing: readonly SubscriptionRow[]): { apple?: { paying: number; trialing: number } } {
+  const apple = { paying: paying.filter((s) => s.provider === "apple").length, trialing: trialing.filter((s) => s.provider === "apple").length };
+  return apple.paying || apple.trialing ? { apple } : {};
 }
 
 /** Distinct accounts (admins left out) that ever started a trial, and that pay now. */
@@ -596,7 +615,7 @@ export async function buildAdminOverview(deps: OverviewDeps): Promise<AdminOverv
     rest.rows<BugRow>({ table: "bug_reports", params: { select: "created_at,user_email,message,url:diagnostics->>url", order: "created_at.desc", limit: String(BUG_REPORTS) } }),
     rest.paged<SubscriptionRow>({
       table: "unlimited_subscriptions",
-      params: { select: "user_id,status,trial_end,current_period_end,cancel_at_period_end,cancel_at,created_at", order: "created_at.desc" },
+      params: { select: "user_id,status,trial_end,current_period_end,cancel_at_period_end,cancel_at,created_at,provider,livemode", order: "created_at.desc" },
     }),
     rest.rows<{ user_id: string }>({ table: "admins", params: { select: "user_id" } }),
     rest.count({ table: "profiles", params: { select: "user_id", onboarded_at: "not.is.null" } }),

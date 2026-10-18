@@ -23,7 +23,7 @@ import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader"
 import { describeError } from "@/lib/errorMessage";
 import { ACCOUNT_COPY, DELETE_CONFIRM_WORD, deleteConfirmed } from "@/lib/billing/accountState";
 import { deleteOwnAccount, isPlanStillActiveError } from "@/lib/billing/deleteAccount";
-import { billingPortalUrl, mustCancelBeforeDeleting } from "@/lib/billing/unlimited";
+import { appleCancelFirst, billingPortalUrl, mustCancelBeforeDeleting } from "@/lib/billing/unlimited";
 import { PLAN_COPY } from "@/lib/billing/unlimitedPlan";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { removeKidsImages } from "@/lib/family/client";
@@ -162,6 +162,11 @@ export function DangerZone({ email }: { email: string }) {
                 <span className="font-mono font-semibold">{DELETE_CONFIRM_WORD}</span> to confirm.
               </DialogDescription>
             </DialogHeader>
+            {appleCancelFirst(plan.state) && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="delete-apple-note">
+                {PLAN_COPY.appleDeleteNote}
+              </p>
+            )}
             <div className="py-2">
               <Label htmlFor="delete-confirm" className="mb-2 block">
                 Confirmation

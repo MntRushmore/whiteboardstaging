@@ -39,6 +39,18 @@ public struct InkSummary: Sendable, Equatable, Decodable {
         case balance, granted, purchased, refunded, used, starter, purchases, unlimited
     }
 
+    /// For previews and tests.
+    public init(balance: Double, unlimited: UnlimitedPlan? = nil) {
+        self.balance = balance
+        granted = balance
+        purchased = 0
+        refunded = 0
+        used = 0
+        starter = 0
+        purchases = 0
+        self.unlimited = unlimited
+    }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         balance = try c.decode(FlexibleNumber.self, forKey: .balance).value
@@ -69,12 +81,22 @@ public struct UnlimitedPlan: Sendable, Equatable, Decodable {
     public let trialEnd: Date?
     public let currentPeriodEnd: Date?
     public let cancelAtPeriodEnd: Bool?
+    /// The caller's own checkout reference (`profiles.checkout_ref`, readable only by them): what an
+    /// Apple purchase carries as `appAccountToken`, never the user id (20261003040000_go_live_gaps.sql).
+    public let checkoutRef: UUID?
+    /// Where the plan is billed: `stripe` (the web) or `apple` (this app), nil without a plan or on a
+    /// database before 20261017200000_apple_subscriptions.sql.
+    public let provider: String?
+    /// A free trial on a second plan, which grants no free help (has_unlimited's first-plan rule).
+    public let repeatTrial: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case status, unlimited
+        case status, unlimited, provider
         case trialEnd = "trial_end"
         case currentPeriodEnd = "current_period_end"
         case cancelAtPeriodEnd = "cancel_at_period_end"
+        case checkoutRef = "checkout_ref"
+        case repeatTrial = "repeat_trial"
     }
 
     public init(from decoder: Decoder) throws {
@@ -84,6 +106,22 @@ public struct UnlimitedPlan: Sendable, Equatable, Decodable {
         trialEnd = (try? c.decodeIfPresent(String.self, forKey: .trialEnd))?.flatMap(PostgresDate.parse)
         currentPeriodEnd = (try? c.decodeIfPresent(String.self, forKey: .currentPeriodEnd))?.flatMap(PostgresDate.parse)
         cancelAtPeriodEnd = try? c.decodeIfPresent(Bool.self, forKey: .cancelAtPeriodEnd)
+        checkoutRef = (try? c.decodeIfPresent(String.self, forKey: .checkoutRef))?.flatMap { UUID(uuidString: $0) }
+        provider = try? c.decodeIfPresent(String.self, forKey: .provider)
+        repeatTrial = try? c.decodeIfPresent(Bool.self, forKey: .repeatTrial)
+    }
+
+    /// For previews and tests.
+    public init(status: String?, unlimited: Bool?, trialEnd: Date? = nil, currentPeriodEnd: Date? = nil, cancelAtPeriodEnd: Bool? = nil,
+                checkoutRef: UUID? = nil, provider: String? = nil, repeatTrial: Bool? = nil) {
+        self.status = status
+        self.unlimited = unlimited
+        self.trialEnd = trialEnd
+        self.currentPeriodEnd = currentPeriodEnd
+        self.cancelAtPeriodEnd = cancelAtPeriodEnd
+        self.checkoutRef = checkoutRef
+        self.provider = provider
+        self.repeatTrial = repeatTrial
     }
 }
 

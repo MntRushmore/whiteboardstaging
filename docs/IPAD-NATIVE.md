@@ -41,6 +41,7 @@ ios/
     AgathonBoard/             the whiteboard engine: document model, Pencil input, renderer, tools, undo
     AgathonBrain/             the shared TypeScript board logic, bundled and run in JavaScriptCore
     AgathonDesign/            the new brand's design system (after the owner picks a direction)
+    AgathonStore/             Agathon Unlimited through StoreKit 2 (product, purchase, listener, restore, gate)
 ```
 
 ### The board: AgathonBoard (our own engine)
@@ -123,6 +124,11 @@ Rewriting the maths engine in Swift is the biggest risk in the project, so we do
 - **Accounts:** account deletion must not be blocked by an Apple subscription; tell the grown-up to
   cancel it in Settings instead.
 - **Kids:** never see prices; a parental gate guards the grown-up areas.
+- **Built (billing lane, 2026-10-17):** `supabase/migrations/20261017200000_apple_subscriptions.sql`,
+  `src/app/api/billing/apple/{transaction,notifications}`, `ios/Packages/AgathonStore`,
+  `ios/Agathon/Billing` (gate, plan screen, out of ink), Labs > Billing Lab, `ios/Agathon/Agathon.storekit`
+  (the scheme's StoreKit configuration). How it works, testing it, and the owner's App Store Connect
+  checklist: docs/RUNBOOK-billing.md section 16.
 
 ## Phases
 

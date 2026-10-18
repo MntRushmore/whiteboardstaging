@@ -278,7 +278,7 @@ describe("trialsStartedSince (the nudges' one query)", () => {
     expect(await trialsStartedSince(admin, since)).toEqual([trial({ payerEmail: null, trialEnd: inHours(100) })]);
     expect(calls).toEqual([
       ["from", "unlimited_subscriptions"],
-      ["select", "stripe_subscription_id,user_id,status,trial_end,cancel_at_period_end,cancel_at,payer_email,created_at"],
+      ["select", "stripe_subscription_id,user_id,status,trial_end,cancel_at_period_end,cancel_at,payer_email,provider,apple_price_milliunits,apple_currency,created_at"],
       ["eq", "status", "trialing"],
       ["not", "user_id", "is", null],
       ["gte", "created_at", since.toISOString()],

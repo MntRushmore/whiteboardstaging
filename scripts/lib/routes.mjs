@@ -26,6 +26,9 @@ export const PUBLIC_ROUTES = Object.freeze([
   "src/app/api/config/status/route.ts",
   // Billing provider webhook: no user JWT exists; the Stripe-Signature HMAC is the auth.
   "src/app/api/billing/webhook/route.ts",
+  // App Store Server Notifications V2: Apple has no user JWT; the payload's JWS, chained to Apple's
+  // root (Apple's library: OCSP, bundle id, environment, app Apple ID), is the auth.
+  "src/app/api/billing/apple/notifications/route.ts",
   // Storage GC cron: no user JWT exists; the shared CRON_SECRET bearer token is the auth.
   "src/app/api/admin/gc/route.ts",
   // Health checks: pg_cron has no user JWT, so the CRON_SECRET bearer (from Supabase Vault) is the
@@ -67,6 +70,7 @@ export const STATIC_ROUTES = Object.freeze(["src/app/api/start/ink/route.ts"]);
 export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/config/status/route.ts": "booleans-only setup status",
   "src/app/api/billing/webhook/route.ts": "signature-verified provider webhook",
+  "src/app/api/billing/apple/notifications/route.ts": "signature-verified provider webhook (App Store Server Notifications V2: a JWS chained to Apple's root)",
   "src/app/api/admin/gc/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
   "src/app/api/admin/health/route.ts": "pg_cron health checks; requires Authorization: Bearer CRON_SECRET or an admin's token (requireAdmin)",
   "src/app/api/client-errors/route.ts": "browser error reports, sent signed out too; per-IP limit, 16 KB body cap, zod; logs only",
@@ -290,6 +294,28 @@ export const API_ROUTES = Object.freeze([
     // Without a valid Stripe-Signature it answers 400; without the secrets, 503.
     withoutTokenStatus: [400, 503],
     purpose: "Stripe-compatible billing webhook: ink pack purchases and refunds via the service role (other apps' events on the shared account are ignored)",
+    status: "active",
+  },
+  {
+    path: "/api/billing/apple/transaction",
+    file: "src/app/api/billing/apple/transaction/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "appleTransaction",
+    body: "zod",
+    purpose: "The iPad app hands over a StoreKit 2 transaction: verified with Apple's library, recorded as the caller's family's Agathon Unlimited (apply_apple_subscription, service role)",
+    status: "active",
+  },
+  {
+    path: "/api/billing/apple/notifications",
+    file: "src/app/api/billing/apple/notifications/route.ts",
+    methods: ["POST"],
+    auth: "public",
+    limit: "ip:appleNotifications",
+    body: "zod",
+    // Without Apple's setup it answers 503 before reading the body; with it, the probe's empty body is 400.
+    withoutTokenStatus: [400, 503],
+    purpose: "App Store Server Notifications V2: Agathon Unlimited bought in the iPad app (renewals, failed charges, expiry, refunds), verified with Apple's library",
     status: "active",
   },
   {

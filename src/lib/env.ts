@@ -70,6 +70,12 @@ const envSchema = z.object({
   // Agathon Unlimited: its Payment Link and the customer portal's login page (src/lib/billing/unlimited.ts).
   NEXT_PUBLIC_UNLIMITED_LINK: optionalString,
   NEXT_PUBLIC_BILLING_PORTAL_URL: optionalString,
+  // Agathon Unlimited through Apple in-app purchase, the iPad app (src/lib/server/apple/config.ts).
+  // Unset APPLE_ENVIRONMENT: the two /api/billing/apple routes answer 503.
+  APPLE_ENVIRONMENT: optionalString,
+  APPLE_BUNDLE_ID: optionalString,
+  APPLE_APP_APPLE_ID: optionalString,
+  APPLE_XCODE_CERT: optionalString,
 
   // Rate limiting: 'db' (default; shared counters via rate_limit_hit RPC) or 'memory' (per instance).
   RATE_LIMIT_BACKEND: optionalString,
