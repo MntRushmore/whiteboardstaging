@@ -464,18 +464,12 @@ final class TryBoard {
     }
 }
 
-/// The board in Blocks: the chalk ground around the page, the page flat (no shadow) with 18 pt
-/// corners. AgathonBoard keeps its own look private for now; this reaches into its layers, defensively,
-/// until the board lane exposes a style.
+/// The board in Blocks: the chalk ground around the page, the page flat with 18 pt corners
+/// (AgathonBoard's `CanvasAppearance.blocks`), and a layer of the onboarding's own under the ink.
 enum BlocksBoardLook {
     @MainActor
     static func apply(to canvas: BoardCanvasView) {
-        canvas.backgroundColor = UIColor(red: 0xF1 / 255.0, green: 0xF2 / 255.0, blue: 0xF6 / 255.0, alpha: 1)
-        guard let content = canvas.layer.sublayers?.first, let paper = content.sublayers?.first,
-              paper.shadowOpacity > 0 else { return }
-        paper.shadowOpacity = 0
-        paper.cornerRadius = 26
-        paper.masksToBounds = false
+        canvas.appearance = .blocks
     }
 
     /// Puts `layer` in page space between the paper and the ink.
