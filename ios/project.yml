@@ -25,6 +25,9 @@ packages:
   # mark and the shapes. Local, so edits to it build with the app.
   AgathonDesign:
     path: Packages/AgathonDesign
+  # Agathon Unlimited through Apple in-app purchase (StoreKit 2; docs/IPAD-NATIVE.md "Money").
+  AgathonStore:
+    path: Packages/AgathonStore
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -45,6 +48,7 @@ targets:
       - package: AgathonKit
       - package: AgathonBoard
       - package: AgathonDesign
+      - package: AgathonStore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon
@@ -86,6 +90,10 @@ targets:
         # "Save Video" / "Save Image" from the share sheet after saving a replay or a picture.
         NSPhotoLibraryAddUsageDescription: Agathon saves your board replays and pictures to your photo library.
     scheme:
+      # Xcode's local StoreKit testing: the plan, its price and the 7-day free trial without App Store
+      # Connect (Debug > StoreKit > Manage Transactions to renew, expire or refund). Payloads it signs are
+      # not Apple's: the server takes them only with APPLE_ENVIRONMENT=Xcode on a dev server.
+      storeKitConfiguration: Agathon/Agathon.storekit
       testTargets:
         - AgathonTests
         - package: AgathonKit/AgathonKitTests
