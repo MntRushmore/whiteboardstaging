@@ -13,14 +13,22 @@ struct HomeView: View {
 
     @State private var model = HomeModel()
     @State private var query = ""
-    @State private var openBoard: BoardSummary?
+    @State private var openBoard: OpenBoard?
     @State private var renaming: BoardSummary?
     @State private var deleting: BoardSummary?
     @State private var sheet: HomeSheet?
+    @State private var area: AreaRequest?
+    /// The content column's width: Today and the path sit side by side when there's room.
+    @State private var contentWidth: CGFloat = 0
 
     enum HomeSheet: String, Identifiable {
-        case switcher, grownUpPin, grownUps
+        case switcher, grownUpPin, topics
         var id: String { rawValue }
+    }
+
+    struct AreaRequest: Identifiable {
+        let page: AccountArea.Page
+        var id: String { page.rawValue }
     }
 
     var body: some View {
@@ -32,10 +40,15 @@ struct HomeView: View {
                         .padding(.top, DS.Space.m)
                     hello
                         .padding(.top, DS.Space.xl)
+                    if model.showsPractice {
+                        practiceRow
+                            .padding(.top, DS.Space.xl)
+                    }
                     boardsSection
                         .padding(.top, DS.Space.xxl)
                 }
                 .padding(.horizontal, ScreenMargin.horizontal(sizeClass))
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 - 2 * ScreenMargin.horizontal(sizeClass) }
                 .padding(.bottom, DS.Space.xxxl)
                 .frame(maxWidth: 1400)
                 .frame(maxWidth: .infinity)
@@ -56,9 +69,15 @@ struct HomeView: View {
             }
         }
         .dsAnimation(DS.Motion.snap, value: model.toast)
-        .task { await model.load(backend) }
-        .fullScreenCover(item: $openBoard, onDismiss: { Task { await model.refreshQuietly(backend) } }) { board in
-            opening.makeView(board)
+        .task {
+            await model.load(backend)
+            if HomeFlow.openGrownUpsNext {
+                HomeFlow.openGrownUpsNext = false
+                area = AreaRequest(page: .account)
+            }
+        }
+        .fullScreenCover(item: $openBoard, onDismiss: { Task { await model.refreshQuietly(backend) } }) { request in
+            opening.makeView(request)
                 .environment(backend)
                 #if DEBUG
                 .labsButton()
@@ -73,12 +92,25 @@ struct HomeView: View {
         .sheet(item: $sheet) { which in
             switch which {
             case .switcher:
-                ProfileSwitcherSheet(initial: model.family).environment(backend)
+                ProfileSwitcherSheet(initial: model.family, openMine: {
+                    area = AreaRequest(page: .progress)
+                }).environment(backend)
             case .grownUpPin:
                 ProfileSwitcherSheet(initial: model.family, start: .grownUp).environment(backend)
-            case .grownUps:
-                GrownUpsSheet(family: model.family, switchProfile: { sheet = .switcher }).environment(backend)
+            case .topics:
+                TopicPickerSheet(grade: model.grade, summary: model.summary) { skill in
+                    Task { if let request = await model.startTopic(skill, backend: backend) { openBoard = request } }
+                }
             }
+        }
+        .fullScreenCover(item: $area, onDismiss: { Task { await model.load(backend) } }) { request in
+            AccountArea(start: request.page, isKid: model.isKid, family: model.family) { skill in
+                Task { if let board = await model.startTopic(skill, backend: backend) { openBoard = board } }
+            }
+            .environment(backend)
+            #if DEBUG
+            .labsButton()
+            #endif
         }
     }
 
@@ -122,7 +154,7 @@ struct HomeView: View {
 
     private func grownUpsChip(showsWord: Bool) -> some View {
         Button {
-            sheet = model.isKid ? .grownUpPin : .grownUps
+            if model.isKid { sheet = .grownUpPin } else { area = AreaRequest(page: .account) }
         } label: {
             HStack(spacing: 8) {
                 DSIcon(.lock, size: 18)
@@ -150,11 +182,17 @@ struct HomeView: View {
             HStack(alignment: .lastTextBaseline, spacing: DS.Space.l) {
                 greeting
                 Spacer(minLength: DS.Space.l)
-                newBoardButton
+                HStack(spacing: DS.Space.s) {
+                    topicButton
+                    newBoardButton
+                }
             }
             VStack(alignment: .leading, spacing: DS.Space.l) {
                 greeting
-                newBoardButton
+                HStack(spacing: DS.Space.s) {
+                    topicButton
+                    newBoardButton
+                }
             }
         }
     }
@@ -169,10 +207,44 @@ struct HomeView: View {
             .accessibilityIdentifier("home.greeting")
     }
 
+    private var topicButton: some View {
+        PillButton("Pick a topic", icon: .book, kind: .secondary) { sheet = .topics }
+            .fixedSize()
+            .accessibilityIdentifier("home.topics")
+    }
+
+    // MARK: Today's practice and the path
+
+    @ViewBuilder private var practiceRow: some View {
+        if contentWidth >= 940 {
+            HStack(alignment: .top, spacing: DS.Space.l) {
+                today.frame(width: (contentWidth - DS.Space.l) * 0.56)
+                path
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            VStack(spacing: DS.Space.l) {
+                today
+                path
+            }
+        }
+    }
+
+    private var today: some View {
+        TodayCard(row: model.todayRow, streak: model.streak, busy: model.startingPractice) {
+            Task { if let request = await model.startPractice(backend) { openBoard = request } }
+        }
+    }
+
+    private var path: some View {
+        PathCard(path: model.path, isKid: model.isKid, open: { area = AreaRequest(page: .progress) },
+                 pickGrade: { area = AreaRequest(page: .account) })
+    }
+
     private var newBoardButton: some View {
         PillButton(model.creating ? "Making…" : "New board", icon: .plus, kind: .primary) {
             Task {
-                if let board = await model.create(backend) { openBoard = board }
+                if let board = await model.create(backend) { openBoard = OpenBoard(board: board) }
             }
         }
         .disabled(model.creating)
@@ -253,7 +325,7 @@ struct HomeView: View {
             EmptyState(.shapes(.hello), title: "No boards yet",
                        message: "Tap New board, write your math by hand, and the tutor checks each step.",
                        actionTitle: "New board", actionIcon: .plus) {
-                Task { if let board = await model.create(backend) { openBoard = board } }
+                Task { if let board = await model.create(backend) { openBoard = OpenBoard(board: board) } }
             }
             .frame(maxWidth: .infinity)
             .accessibilityIdentifier("boards.empty")
@@ -266,7 +338,7 @@ struct HomeView: View {
             LazyVGrid(columns: columns, alignment: .leading, spacing: DS.Space.l) {
                 ForEach(visibleBoards) { board in
                     BoardTile(board: board, thumbnail: model.thumbnail(for: board),
-                              open: { openBoard = board },
+                              open: { openBoard = OpenBoard(board: board) },
                               rename: { renaming = board },
                               delete: { deleting = board })
                 }
@@ -278,4 +350,11 @@ struct HomeView: View {
 #Preview {
     HomeView()
         .environment(AgathonBackend.preview())
+}
+
+/// What Home does next time it appears (a kid typed the grown-up's PIN to reach the grown-ups'
+/// places: the grown-up's Home opens them straight away).
+@MainActor
+enum HomeFlow {
+    static var openGrownUpsNext = false
 }

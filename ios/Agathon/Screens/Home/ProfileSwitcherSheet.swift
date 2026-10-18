@@ -15,6 +15,8 @@ struct ProfileSwitcherSheet: View {
 
     let initial: FamilyState?
     var start: Start = .pick
+    /// Opens this profile's own places (Progress, account, bug reports).
+    var openMine: (() -> Void)?
 
     @Environment(AgathonBackend.self) private var backend
     @Environment(\.dismiss) private var dismiss
@@ -74,6 +76,21 @@ struct ProfileSwitcherSheet: View {
         if let signOutProblem {
             Banner(.lookAgain, signOutProblem)
         }
+        if let openMine {
+            Button {
+                dismiss()
+                openMine()
+            } label: {
+                HStack(spacing: DS.Space.xs) {
+                    DSIcon(.chart, size: 18)
+                    Text("My progress")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.pill(.secondaryOnPaper))
+            .disabled(busy)
+            .accessibilityIdentifier("switcher.mine")
+        }
         Button(action: signOut) {
             HStack(spacing: DS.Space.xs) {
                 DSIcon(.signOut, size: 18)
@@ -121,7 +138,8 @@ struct ProfileSwitcherSheet: View {
             .contentShape(RoundedRectangle(cornerRadius: DS.Radius.tile, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(busy || isMe)
+        .disabled(busy)
+        .allowsHitTesting(!isMe)
         .accessibilityLabel(isMe ? "\(member.displayName), you" : member.needsPin ? "\(member.displayName), grown-up, needs the PIN" : member.displayName)
         .accessibilityIdentifier("switcher.member.\(member.displayName)")
     }
@@ -215,7 +233,9 @@ struct ProfileSwitcherSheet: View {
             defer { busy = false }
             do {
                 try await backend.family.switchProfile(to: member.userId, pin: pin)
-                // The session changed: RootView makes Home again as the new profile.
+                // The session changed: RootView makes Home again as the new profile. A kid who
+                // came for the grown-ups' places gets them straight away.
+                if start == .grownUp { HomeFlow.openGrownUpsNext = true }
                 dismiss()
             } catch {
                 let message = FamilyCopy.switchMessage(error)

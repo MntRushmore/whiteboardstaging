@@ -79,15 +79,28 @@ struct ScreenMargin {
     }
 }
 
-/// A colour for a family member's avatar, by their place in the family: the grown-up is ink, kids
-/// take the brand's warm colours in turn. Never cobalt (that is the tutor's).
+/// A family member's avatar colour. Avatars are initials on a colour for now (docs/ONBOARDING.md,
+/// "Avatar art"): each picture id the server keeps (`FamilyAvatar`) has a Blocks colour, so a kid
+/// looks the same on every device. The grown-up is ink. Never cobalt (that is the tutor's).
 enum AvatarColor {
-    static let kids: [RGB] = [DS.Palette.tomato, DS.Palette.sunny, DS.Palette.green, DS.Palette.orange, DS.Palette.pink]
+    /// The pictures a grown-up picks from for a kid, one per colour.
+    static let choices: [(id: String, name: String, rgb: RGB)] = [
+        ("fox", "Tomato", DS.Palette.tomato), ("tiger", "Orange", DS.Palette.orange), ("owl", "Sunny", DS.Palette.sunny),
+        ("frog", "Green", DS.Palette.green), ("unicorn", "Pink", DS.Palette.pink),
+    ]
+
+    static let byAvatar: [String: RGB] = [
+        "fox": DS.Palette.tomato, "cat": DS.Palette.tomato, "tiger": DS.Palette.orange, "dog": DS.Palette.orange,
+        "penguin": DS.Palette.orange, "owl": DS.Palette.sunny, "lion": DS.Palette.sunny, "frog": DS.Palette.green,
+        "koala": DS.Palette.green, "panda": DS.Palette.green, "unicorn": DS.Palette.pink, "rabbit": DS.Palette.pink,
+    ]
+
+    static func color(avatar: String?) -> RGB {
+        avatar.flatMap { byAvatar[$0] } ?? DS.Palette.tomato
+    }
 
     static func color(for member: FamilyMember, in family: FamilyState?) -> RGB {
         if member.isParent { return DS.Palette.ink }
-        let kids = family?.members.filter { !$0.isParent } ?? []
-        let index = kids.firstIndex(where: { $0.userId == member.userId }) ?? 0
-        return Self.kids[index % Self.kids.count]
+        return color(avatar: member.avatar)
     }
 }

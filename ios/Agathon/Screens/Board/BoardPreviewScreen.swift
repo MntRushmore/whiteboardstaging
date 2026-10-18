@@ -12,7 +12,8 @@ import SwiftUI
 /// `data` belongs to the web. What the kid writes here stays on the iPad until the board closes;
 /// the banner says so, and leaving with new ink asks first.
 struct BoardPreviewScreen: View {
-    let board: BoardSummary
+    let request: OpenBoard
+    private var board: BoardSummary { request.board }
 
     @Environment(AgathonBackend.self) private var backend
     @Environment(\.dismiss) private var dismiss
@@ -27,7 +28,7 @@ struct BoardPreviewScreen: View {
             case .failed(let failure):
                 failed(failure)
             case .ready(let controller):
-                BoardPreviewCanvas(board: board, controller: controller, report: model.report, close: close)
+                BoardPreviewCanvas(board: board, practice: request.practice, controller: controller, report: model.report, close: close)
             }
             if !model.phase.isReady {
                 VStack {
@@ -204,6 +205,7 @@ enum BoardPreviewCanvasPens {
 
 private struct BoardPreviewCanvas: View {
     let board: BoardSummary
+    let practice: PracticeSet?
     @ObservedObject var controller: BoardController
     let report: TldrawImporter.Report?
     let close: () -> Void
@@ -227,6 +229,13 @@ private struct BoardPreviewCanvas: View {
 
                 VStack(spacing: 0) {
                     topBar
+                    if let practice {
+                        HStack {
+                            Spacer(minLength: 0)
+                            PracticeCard(practice: practice)
+                        }
+                        .padding(.top, DS.Space.s)
+                    }
                     Spacer(minLength: 0)
                     dockRow
                 }
@@ -367,5 +376,73 @@ private struct LeaveBoardSheet: View {
             }
         }
         .blocksSheet()
+    }
+}
+
+/// A practice set over the board, until the editor writes the problems on it: the problems in a
+/// cobalt card (the tutor's colour: these are the tutor's), folding away to a small pill.
+private struct PracticeCard: View {
+    let practice: PracticeSet
+    @State private var open = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            if open {
+                VStack(alignment: .leading, spacing: DS.Space.s) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(practice.title).dsFont(.label).foregroundStyle(DS.Color.onInk)
+                        Spacer(minLength: DS.Space.s)
+                        Button {
+                            withDSAnimation(reduceMotion: reduceMotion) { open = false }
+                        } label: {
+                            DSIcon(.close, size: 16).foregroundStyle(DS.Color.onInk)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Hide the problems")
+                    }
+                    ForEach(practice.problems) { problem in
+                        HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
+                            Text("\(problem.id + 1)")
+                                .font(DS.Font.fixed(.numeral, size: 16))
+                                .foregroundStyle(DS.Color.sunny)
+                                .frame(width: 20, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 2) {
+                                ForEach(Array(problem.lines.enumerated()), id: \.offset) { _, line in
+                                    MathLabel(line, size: 20, color: DS.Color.onInk)
+                                }
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                    Text("Write your answers on the board.")
+                        .dsFont(.caption)
+                        .foregroundStyle(DS.Color.onInk)
+                }
+                .padding(.leading, DS.Space.l)
+                .padding(.trailing, DS.Space.xs)
+                .padding(.vertical, DS.Space.m)
+                .frame(width: 300, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Color.tutorInk))
+                .accessibilityIdentifier("board.practice")
+            } else {
+                Button {
+                    withDSAnimation(reduceMotion: reduceMotion) { open = true }
+                } label: {
+                    HStack(spacing: 8) {
+                        DSIcon(.book, size: 18)
+                        Text("\(practice.problems.count) problems").dsFont(.button, size: 16)
+                    }
+                    .foregroundStyle(DS.Color.onInk)
+                    .padding(.horizontal, 18)
+                    .frame(minHeight: DS.Size.minTarget)
+                    .background(Capsule().fill(DS.Color.tutorInk))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Show the \(practice.problems.count) problems")
+            }
+        }
     }
 }

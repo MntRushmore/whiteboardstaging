@@ -124,7 +124,30 @@ final class ScreensUITests: XCTestCase {
         kidButton.tap()
         wait(app.staticTexts["home.greeting"], "Hi \(kid).")
         homeLoaded(app)
+        Thread.sleep(forTimeInterval: 2)
         snap("home-kid")
+
+        // The path opens Progress.
+        let path = app.descendants(matching: .any).matching(identifier: "home.path").firstMatch
+        if path.waitForExistence(timeout: 10), path.isHittable {
+            path.tap()
+            wait(app.descendants(matching: .any).matching(identifier: "progress.page").firstMatch)
+            Thread.sleep(forTimeInterval: 2)
+            snap("progress")
+            app.buttons["area.close"].firstMatch.tap()
+            homeLoaded(app)
+        }
+
+        // Today's practice opens a board with the day's problems.
+        let start = app.buttons["home.startPractice"]
+        if start.waitForExistence(timeout: 10) {
+            start.tap()
+            wait(app.descendants(matching: .any).matching(identifier: "board.canvas").firstMatch, timeout: 30)
+            Thread.sleep(forTimeInterval: 1.5)
+            snap("board-practice")
+            app.buttons["board.back"].firstMatch.tap()
+            homeLoaded(app)
+        }
 
         app.buttons["home.grownUps"].tap()
         wait(app.buttons["1"])
@@ -133,6 +156,23 @@ final class ScreensUITests: XCTestCase {
         wait(app.staticTexts["switcher.error"], "isn't right")
         snap("pin-look-again")
         for digit in pin { app.buttons[String(digit)].tap() }
+
+        // The grown-up's places open straight away.
+        wait(app.buttons["area.account"], timeout: 30)
+        Thread.sleep(forTimeInterval: 2)
+        snap("account")
+        app.buttons["area.family"].tap()
+        wait(app.descendants(matching: .any).matching(identifier: "family.kid.\(kid)").firstMatch)
+        snap("family")
+        app.buttons["area.report"].tap()
+        wait(app.descendants(matching: .any).matching(identifier: "report.page").firstMatch)
+        Thread.sleep(forTimeInterval: 2)
+        snap("report")
+        app.buttons["area.bugs"].tap()
+        wait(app.descendants(matching: .any).matching(identifier: "bugs.page").firstMatch)
+        Thread.sleep(forTimeInterval: 1.5)
+        snap("bugs")
+        app.buttons["area.close"].firstMatch.tap()
         wait(app.staticTexts["home.greeting"])
         homeLoaded(app)
         XCTAssertFalse(app.staticTexts["home.greeting"].label.contains(kid))
@@ -156,13 +196,35 @@ final class ScreensUITests: XCTestCase {
         signOut(app)
     }
 
+    /// The kid's Home at a big accessibility text size, in portrait: nothing cut, nothing overlapping.
+    func testBigTextKidHomeInPortrait() {
+        let parent = env["AGATHON_QA_PARENT_EMAIL"] ?? "ipad-kit-parent@example.com"
+        let kid = env["AGATHON_QA_KID"] ?? "Maya"
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        signOutIfSignedIn(app)
+        snap("sign-in-big-text")
+        signIn(app, email: parent, password: env["AGATHON_QA_PARENT_PASSWORD"] ?? "password123")
+        homeLoaded(app)
+        app.buttons["boards.switchProfile"].tap()
+        let kidButton = app.buttons["switcher.member.\(kid)"]
+        wait(kidButton)
+        kidButton.tap()
+        wait(app.staticTexts["home.greeting"], "Hi \(kid).")
+        homeLoaded(app)
+        Thread.sleep(forTimeInterval: 2)
+        snap("home-kid-big-text")
+        signOut(app)
+    }
+
     // MARK: helpers
 
-    private func launch() -> XCUIApplication {
+    private func launch(extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY"] {
             app.launchEnvironment[key] = env[key]
         }
+        app.launchArguments += extra
         app.launch()
         return app
     }
