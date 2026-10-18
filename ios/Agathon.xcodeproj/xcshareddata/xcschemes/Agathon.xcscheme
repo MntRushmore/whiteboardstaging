@@ -105,6 +105,39 @@
                ReferencedContainer = "container:Packages/AgathonBoardUI">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AgathonLiveTests"
+               BuildableName = "AgathonLiveTests"
+               BlueprintName = "AgathonLiveTests"
+               ReferencedContainer = "container:Packages/AgathonLive">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AgathonDesignTests"
+               BuildableName = "AgathonDesignTests"
+               BlueprintName = "AgathonDesignTests"
+               ReferencedContainer = "container:Packages/AgathonDesign">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AgathonBrainTests"
+               BuildableName = "AgathonBrainTests"
+               BlueprintName = "AgathonBrainTests"
+               ReferencedContainer = "container:Packages/AgathonBrain">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

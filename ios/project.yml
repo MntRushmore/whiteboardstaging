@@ -109,6 +109,10 @@ targets:
         - package: AgathonBoard/AgathonBoardTests
         - package: AgathonSync/AgathonSyncTests
         - package: AgathonBoardUI/AgathonBoardUITests
+        - package: AgathonLive/AgathonLiveTests
+        - package: AgathonDesign/AgathonDesignTests
+        # Runs the brain's benchmarks only with BRAIN_BENCH=1; parity tests always.
+        - package: AgathonBrain/AgathonBrainTests
       gatherCoverageData: false
       environmentVariables:
         # Tick in Product > Scheme > Edit Scheme > Run > Arguments to call a local `npm run dev`.
