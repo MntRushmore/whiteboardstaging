@@ -36,7 +36,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Agathon saves your board replays and pictures to your photo library.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Agathon turns what the teacher says into notes on your board during Lecture mode.</string>
+	<string>Agathon turns what you say into words when you talk to Ask, and what the teacher says into notes during Lecture mode.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
