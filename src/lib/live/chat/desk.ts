@@ -211,6 +211,20 @@ export class ChatDesk {
     return this.running > 0;
   }
 
+  /**
+   * A screen the tutor started for its work carries the problems of the screen it came from
+   * (`picture().from`). The web's desk lives as long as the board and remembers them itself; the
+   * iPad's planner (`src/lib/brain/chat.ts`) makes a desk per reply, so the app hands them back.
+   */
+  carry(pageId: string, from: ChatScreenFrom): void {
+    this.carried.set(pageId, from);
+  }
+
+  /** What a screen the tutor started carries (`carry`), if anything. */
+  carriedFrom(pageId: string): ChatScreenFrom | undefined {
+    return this.carried.get(pageId);
+  }
+
   // ---------------------------------------------------------------- the screen, for the request
 
   /** What is on this screen, as maths: the student's lines, the tutor's lines, the problems. */

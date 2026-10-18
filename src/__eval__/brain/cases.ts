@@ -302,7 +302,47 @@ function boundaryCases(): BrainCase[] {
   ];
 }
 
+/**
+ * Ask (Phase 3): the read-aloud chunking of replies as they stream (sentences, their words with the
+ * maths said, phrases, the reply's cap) and the screen's picture for a request. A plan of board
+ * actions (`chatPlan`) settles between two calls, so it is checked in the Swift tests instead.
+ */
+function askCases(): BrainCase[] {
+  const out: BrainCase[] = [];
+  const replies = [
+    "Great question! A half is $\\frac{1}{2}$ of a pizza. Then we add 3.5 more",
+    "**Step 1.** Take 3 from both sides: $2x + 3 - 3 = 11 - 3$.\n\n- So $2x = 8$.\n- Then $x = 4$!",
+    "It costs $5. Then $x^2 = 9$, so $x = \\pm 3$. e.g. try 2.",
+    "$$\\frac{3}{4} + \\frac{1}{8} = \\frac{7}{8}$$\nThat's it. <board>{\"actions\":[]}</board>",
+  ];
+  replies.forEach((text, i) => {
+    out.push({ name: `speechTake/${i}/streaming`, method: "speechTake", args: { text, from: 0, final: false } });
+    out.push({ name: `speechTake/${i}/final`, method: "speechTake", args: { text, from: 0, final: true } });
+  });
+  out.push({ name: "speechSplit/long", method: "speechSplit", args: { words: "one, two, three, four, five, six, seven, eight, nine, ten, eleven, twelve ".repeat(6), max: 120 } });
+  out.push({ name: "speechFit/cut", method: "speechFit", args: { words: "This is a sentence. And this is a second one that goes on a while longer.", left: 45 } });
+  out.push({ name: "speechFit/none", method: "speechFit", args: { words: "Too long to fit in so little.", left: 10 } });
+  out.push({ name: "spoken/hint", method: "spoken", args: { text: "What is $\\frac{3}{4} + \\frac{1}{8}$? Try $x^{2} = 9$." } });
+  const cell = { x: 0, y: 0, w: 800, h: 450 };
+  out.push({
+    name: "chatPicture/problems-and-lines",
+    method: "chatPicture",
+    args: {
+      pageId: "screen:a",
+      studentLines: ["2x + 3 = 11", "2x = 8"],
+      shapes: [
+        { id: "p1", type: "draw", meta: { live: true, source: "ai", chatProblem: { n: 1, lines: ["2x + 3 = 11"], cell } }, bounds: { x: 30, y: 30, w: 100, h: 40 } },
+        { id: "g", type: "draw", meta: { live: true, source: "ai", chatBlock: "graph", handLine: "y = x" }, bounds: { x: 900, y: 30, w: 100, h: 40 } },
+        { id: "l", type: "draw", meta: { live: true, source: "ai", chatBlock: "lines", handLine: "a^{2} + b^{2} = c^{2}" }, bounds: { x: 900, y: 500, w: 100, h: 40 } },
+        { id: "k", type: "draw", meta: {}, bounds: { x: 60, y: 120, w: 80, h: 40 } },
+      ],
+    },
+  });
+  out.push({ name: "chatPicture/carried", method: "chatPicture", args: { pageId: "screen:b", shapes: [], carried: { "screen:b": { screen: 1, problems: ["2x = 8"], numbers: [3] } } } });
+  return out;
+}
+
 /** Every parity case, in a fixed order. */
 export function parityCases(): BrainCase[] {
-  return [...boundaryCases(), ...analyzeCases(), ...solveCases(), ...engineCases(), ...inkCases(), ...handCases(), ...policyCases(), ...learningCases()];
+  return [...boundaryCases(), ...analyzeCases(), ...solveCases(), ...engineCases(), ...inkCases(), ...handCases(), ...policyCases(), ...learningCases(), ...askCases()];
 }

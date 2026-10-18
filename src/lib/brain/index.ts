@@ -16,9 +16,11 @@
  * escapes into the host as a JavaScript exception. `API_VERSION` changes whenever a method's
  * arguments or result change shape; the Swift wrappers check it on load.
  *
- * Not here yet (Phase 2/3, see docs/IPAD-NATIVE.md): the loop's stateful bits that read the editor
- * (`withoutStrays`, `withProblemColumns`, a column's `filled`/`together`), the chat and Ask action
- * planners (`src/lib/live/chat`), figures and proofs.
+ * Ask (Phase 3): the board chat's desk as a pure planner (`chat.ts`: `chatPlan` then `chatResult`,
+ * `chatPicture`) and the read-aloud chunking (`speech.ts`).
+ *
+ * Not here yet (see docs/IPAD-NATIVE.md): the loop's stateful bits that read the editor
+ * (`withoutStrays`, `withProblemColumns`, a column's `filled`/`together`).
  */
 import { all, create, version as mathjsVersion } from "mathjs";
 import type { TLShapeId } from "tldraw";
@@ -46,6 +48,8 @@ import type { Grade } from "@/lib/learning/grades";
 import type { ComplexRootsSetting } from "@/lib/live/engine/complexSetting";
 import { sha1Hex } from "./sha1";
 import { decode, encode, encodePlain } from "./json";
+import { chatPicture, startChatPlan, takeChatPlan, type ChatPlanArgs, type ChatScreenArgs } from "./chat";
+import { speechFit, speechSplit, speechTake, spoken } from "./speech";
 
 /** Bumped whenever a method's arguments or result change shape. */
 export const API_VERSION = 0;
@@ -476,6 +480,31 @@ export function sketchGraph(args: GraphArgs) {
   return { intent, plan: sketch.plan, box: sketch.box, window: sketch.window };
 }
 
+// ------------------------------------------------------------------ Ask
+
+/**
+ * Plans a reply's board actions (`chat.ts`): starts the web's desk on a copy of the screen and
+ * answers a ticket; `chatResult` with it on the next call has the operations and the report (the
+ * run settles between the two calls: every promise of its host is already settled).
+ */
+export function chatPlan(args: ChatPlanArgs): { ticket: number } {
+  need(Array.isArray(args.actions) && Array.isArray(args.shapes), "actions and shapes are arrays");
+  need(args.screen && typeof args.screen.w === "number", "screen is a rect");
+  need(typeof args.pageId === "string", "pageId is a string");
+  return startChatPlan(args, engine);
+}
+
+export function chatResult(args: { ticket: number }) {
+  need(typeof args.ticket === "number", "ticket is a number");
+  return takeChatPlan(args.ticket);
+}
+
+/** The current screen as maths, for an ask's `screen` (`ChatDesk.picture`). */
+export function chatPictureOf(args: ChatScreenArgs) {
+  need(Array.isArray(args.shapes) && typeof args.pageId === "string", "shapes is an array and pageId a string");
+  return chatPicture(args, engine);
+}
+
 /**
  * A tight integer loop, for the host to tell an interpreter from a JIT: JavaScriptCore without a
  * JIT runs it ~20–50x slower than with one.
@@ -518,6 +547,13 @@ export const METHODS: Readonly<Record<string, Method>> = {
   classify: { run: classify },
   progressSummary: { run: progressSummary },
   sketchGraph: { run: sketchGraph },
+  chatPlan: { run: chatPlan },
+  chatResult: { run: chatResult },
+  chatPicture: { run: chatPictureOf },
+  speechTake: { run: speechTake },
+  speechSplit: { run: speechSplit },
+  speechFit: { run: speechFit },
+  spoken: { run: spoken },
   jitProbe: { run: jitProbe },
 };
 
