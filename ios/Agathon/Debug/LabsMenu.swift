@@ -35,7 +35,7 @@ private struct LabsButton: ViewModifier {
 }
 
 private enum Lab: String, CaseIterable, Identifiable {
-    case board, brain, design
+    case board, brain, design, live
 
     var id: String { rawValue }
 
@@ -44,6 +44,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .board: return "Board Lab (draw with the Pencil)"
         case .brain: return "Brain Lab (maths engine timings)"
         case .design: return "Design Gallery (the Blocks look)"
+        case .live: return "Live Lab (the tutor on the board)"
         }
     }
 
@@ -52,6 +53,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .board: return "pencil.tip"
         case .brain: return "function"
         case .design: return "paintpalette"
+        case .live: return "checkmark.bubble"
         }
     }
 }
@@ -66,6 +68,7 @@ private struct LabScreen: View {
             case .board: BoardLabView()
             case .brain: BrainLabView()
             case .design: DesignGallery()
+            case .live: LiveLabView()
             }
             Button(action: close) {
                 Label("Close", systemImage: "xmark")

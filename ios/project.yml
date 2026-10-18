@@ -25,6 +25,9 @@ packages:
   # mark and the shapes. Local, so edits to it build with the app.
   AgathonDesign:
     path: Packages/AgathonDesign
+  # The tutor on the board (docs/IPAD-NATIVE.md, Phase 2): the Live loop and its SwiftUI pieces.
+  AgathonLive:
+    path: Packages/AgathonLive
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -45,6 +48,7 @@ targets:
       - package: AgathonKit
       - package: AgathonBoard
       - package: AgathonDesign
+      - package: AgathonLive
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon
