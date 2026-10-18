@@ -101,7 +101,8 @@ final class AskLabUITests: XCTestCase {
 
     private func snap(_ name: String) {
         let png = XCUIScreen.main.screenshot().pngRepresentation
-        let url = URL(fileURLWithPath: shots).appendingPathComponent("\(name).png")
+        // ASK_LAB_SHOT_SUFFIX: another run of the same shots (`-large-type`)
+        let url = URL(fileURLWithPath: shots).appendingPathComponent("\(name)\(env["ASK_LAB_SHOT_SUFFIX"] ?? "").png")
         do {
             try png.write(to: url)
         } catch {

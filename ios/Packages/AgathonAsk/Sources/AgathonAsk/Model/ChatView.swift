@@ -14,6 +14,7 @@ public enum AskCopy {
     public static func screen(_ n: Int) -> String { "Screen \(n)" }
     public static func screenHint(_ n: Int) -> String { "This chat is for screen \(n)" }
     public static let placeholder = "Ask me anything…"
+    public static let placeholderShort = "Ask me…"
     public static let send = "Send"
     public static let stop = "Stop"
     public static let stopped = "Stopped."

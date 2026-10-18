@@ -13,6 +13,7 @@ public struct AskPanel: View {
 
     @State private var draft = ""
     @FocusState private var typing: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     public init(session: AskSession, speech: AskSpeech, mic: AskMic, onClose: (() -> Void)? = nil) {
         self.session = session
@@ -148,7 +149,8 @@ public struct AskPanel: View {
                 .accessibilityIdentifier("ask.mic.status")
             }
             HStack(alignment: .bottom, spacing: DS.Space.xs) {
-                TextField(AskCopy.placeholder, text: $draft, axis: .vertical)
+                // at the largest text sizes the box is narrow: a shorter prompt that still fits
+                TextField(typeSize.isAccessibilitySize ? AskCopy.placeholderShort : AskCopy.placeholder, text: $draft, axis: .vertical)
                     .font(.ds(.callout))
                     .lineLimit(1...5)
                     .focused($typing)
