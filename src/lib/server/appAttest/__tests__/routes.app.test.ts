@@ -338,7 +338,8 @@ describe.each(ROUTES)("the guard on POST /api/$name", (route) => {
 
   it("refuses incomplete headers before the body: a key alone or an assertion alone (attest_required), ones that do not decode (attest_invalid)", async () => {
     const device = registered();
-    for (const headers of [{ "x-agathon-app-key": device.keyId }, { "x-agathon-app-assertion": "AAAA" }]) {
+    const halves: Array<Record<string, string>> = [{ "x-agathon-app-key": device.keyId }, { "x-agathon-app-assertion": "AAAA" }];
+    for (const headers of halves) {
       const res = await route.call(req(route.path, route.body, headers));
       expect(res.status).toBe(403);
       expect(await json(res)).toEqual({ error: "invalid_request", reason: "attest_required" });

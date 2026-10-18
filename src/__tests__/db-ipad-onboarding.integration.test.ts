@@ -205,7 +205,7 @@ suite(title, () => {
       const saved = await rpc(parent.client, "save_onboarding", { p_complete: true, p_heard_from: "friend" });
       expect(saved.status, JSON.stringify(saved.body)).toBe(200);
       expect(saved.body).toMatchObject({ course: null, grade: null, heard_from: "friend" });
-      expect(saved.body.onboarded_at).toBeTruthy();
+      expect((saved.body as { onboarded_at: string | null }).onboarded_at).toBeTruthy();
       const welcome = await welcomeRoute(userReq("/api/email/welcome", parent));
       expect(welcome.status).toBe(503);
       expect(await welcome.json()).toMatchObject({ error: "feature_unavailable" });
@@ -222,8 +222,8 @@ suite(title, () => {
       }
       const after = rows(await service.rest("GET", "start_steps", { query: { journey_id: `eq.${journey}`, select: "event,user_id" } }));
       expect(after).toHaveLength(8);
-      expect(after.every((r: { user_id: string }) => r.user_id === parent.userId)).toBe(true);
-      expect(after.map((r: { event: string }) => r.event).sort()).toEqual(
+      expect(after.every((r) => r.user_id === parent.userId)).toBe(true);
+      expect(after.map((r) => String(r.event)).sort()).toEqual(
         ["start_account", "start_first_board", "start_handoff_kid", "start_kid_added", "start_pin_set", "start_trial_declined", "start_trial_shown", "start_try_checked"].sort(),
       );
       await service.rest("DELETE", "start_steps", { query: { journey_id: `eq.${journey}` } });
