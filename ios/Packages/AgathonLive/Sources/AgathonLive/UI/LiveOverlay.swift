@@ -73,7 +73,7 @@ public struct LiveOverlay: View {
     private func readback(_ r: Readback) -> some View {
         let at = point(r.anchor.x, r.anchor.maxY)
         return Text(MathText.plain(r.latex))
-            .dsFont(.callout, size: 15)
+            .dsFont(.callout, size: 17)
             .foregroundStyle(DS.Color.inkSecondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -97,8 +97,10 @@ public struct LiveOverlay: View {
     @ViewBuilder
     private func hintCard(_ h: HintCard) -> some View {
         let size = geometry.viewSize
-        let below = point(h.anchor.x, h.anchor.maxY)
-        let above = point(h.anchor.x, h.anchor.y)
+        // clear of the ring a ringed line wears (the widest thing round a line)
+        let ring = LiveMarks.ringRect(h.anchor)
+        let below = point(h.anchor.x, ring.maxY)
+        let above = point(h.anchor.x, ring.y)
         let width = min(380, max(260, size.width - 32))
         let x = min(max(16, below.x - 12), size.width - width - 16)
         let roomBelow = size.height - below.y > 260
@@ -237,11 +239,16 @@ struct CheerBubble: View {
                 .frame(minHeight: 48)
                 .background(Capsule().fill(DS.Color.sunny))
             case .miss:
-                Text(cheer.text).dsFont(.button, size: 17)
-                    .foregroundStyle(DS.Color.ink)
-                    .padding(.horizontal, 18)
-                    .frame(minHeight: 44)
-                    .background(Capsule().fill(DS.Color.surface))
+                // "Look again": a nudge in the sunny of Help me, on chalk so it shows on the white page
+                HStack(spacing: 8) {
+                    Circle().fill(DS.Color.tryAgain).frame(width: 28, height: 28)
+                        .overlay(DSIcon(.lookAgain, size: 14).foregroundStyle(DS.Color.ink))
+                    Text(cheer.text).dsFont(.button, size: 17).foregroundStyle(DS.Color.ink)
+                }
+                .padding(.leading, 8)
+                .padding(.trailing, 18)
+                .frame(minHeight: 44)
+                .background(Capsule().fill(DS.Color.surfaceSunken))
             }
         }
         .fixedSize()

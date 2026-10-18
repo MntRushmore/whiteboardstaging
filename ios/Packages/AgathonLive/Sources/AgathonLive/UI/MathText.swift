@@ -50,6 +50,18 @@ public enum MathText {
             s = out
         }
         s = s.replacingOccurrences(of: "[{}]", with: "", options: .regularExpression)
+        // spaced as a kid writes it: `2 x+3=11` → `2x + 3 = 11` (a minus after a relation or an
+        // opening bracket is a sign, and keeps to its number)
+        let words = s.replacingOccurrences(of: #"\b(?:sin|cos|tan|log|ln)\b"#, with: "", options: .regularExpression)
+            .range(of: "[A-Za-z]{2,}", options: .regularExpression) != nil
+        if words {
+            // prose (a hint's words): its own spacing
+            return s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        }
+        s = s.replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "([=<>≤≥≠≈+×÷·→])", with: " $1 ", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"(?<=[0-9A-Za-zπ)²³ⁿ])-"#, with: " - ", options: .regularExpression)
+        s = s.replacingOccurrences(of: ",", with: ", ")
         s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
         return s.trimmingCharacters(in: .whitespaces)
     }

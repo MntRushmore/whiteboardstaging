@@ -10,7 +10,8 @@ extension View {
 }
 
 private struct LabsButton: ViewModifier {
-    @State private var open: Lab?
+    /// `-liveLab` opens the Live Lab straight away (screenshots and recordings on the simulator).
+    @State private var open: Lab? = ProcessInfo.processInfo.arguments.contains("-liveLab") ? .live : nil
 
     func body(content: Content) -> some View {
         content

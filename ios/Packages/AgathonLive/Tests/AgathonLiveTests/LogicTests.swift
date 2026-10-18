@@ -98,6 +98,11 @@ struct LogicTests {
         #expect(MathText.plain("\\sqrt{16} = 4") == "√16 = 4")
         #expect(MathText.plain("\\text{Look again at } x = 5") == "Look again at x = 5")
         #expect(MathText.plain("x_{1} = 2") == "x₁ = 2")
+        // Mathpix's spacing, as a kid writes it
+        #expect(MathText.plain("2 x+3=11") == "2x + 3 = 11")
+        #expect(MathText.plain("x=-4") == "x = -4")
+        #expect(MathText.plain("3x-5=10") == "3x - 5 = 10")
+        #expect(MathText.plain("Check the division on the right side of line 3.") == "Check the division on the right side of line 3.")
     }
 
     @Test func theSecondReaderIsAskedOnASignalOnly() {
