@@ -122,6 +122,21 @@ struct HelpTests {
         #expect(!h.board.tutorStrokes(withMeta: "solvedLatex", "5x + 2 = 17").isEmpty)
     }
 
+    @Test func aReadThatLandsAfterThePauseIsStillFinishedInSolve() async throws {
+        let h = Harness(mode: .answer)
+        await h.start()
+        h.services.holdReadsNow()
+        h.idleTimeout = .milliseconds(100)
+        await h.write("5x + 2 = 17", at: Vec2(200, 120))
+        await h.pass(700)
+        await h.pass(2_600)
+        #expect(h.board.tutorStrokes(withMeta: "solvedLatex").isEmpty, "nothing read yet")
+        h.idleTimeout = .seconds(20)
+        h.services.releaseReads()
+        await h.pass(100)
+        #expect(!h.board.tutorStrokes(withMeta: "solvedLatex", "5x + 2 = 17").isEmpty, "the slow read is finished at once")
+    }
+
     @Test func theModelsStepsAreCheckedThenWrittenAsOneBlock() async throws {
         let h = Harness(mode: .answer, auto: false)
         await h.start()

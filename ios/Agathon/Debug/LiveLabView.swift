@@ -240,6 +240,19 @@ final class LiveLabModel: ObservableObject {
             await play(["2x + 3 = 11", "2x = 8", "x = 5"])
             await wait(5)
             await settle()
+        case "right":
+            // a right chain, ticked line by line, the last one solving it (the big burst), then
+            // Solve finishing a sum the kid ended with = (after their =, once they stop)
+            await play(["3x - 5 = 10", "3x = 15", "x = 5"])
+            await wait(4)
+            await settle()
+            log("marks: \(marks())")
+            loop.settings.mode = .answer
+            nextY = 140
+            x = 860
+            await play(["36 + 2 ="])
+            await wait(6)
+            await settle()
         case "solve":
             loop.settings.mode = .answer
             await play(["5x + 2 = 17"])

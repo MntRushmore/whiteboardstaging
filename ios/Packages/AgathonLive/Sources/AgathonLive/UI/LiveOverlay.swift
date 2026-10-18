@@ -273,7 +273,7 @@ public struct NowYouTryCard: View {
     }
 
     public var body: some View {
-        Card(.cobalt, radius: DS.Radius.cardLarge, padding: DS.Space.l, deco: true) {
+        Card(.cobalt, radius: DS.Radius.cardLarge, padding: DS.Space.l) {
             Text(LiveCopy.NowYouTry.title).dsFont(.label).foregroundStyle(DS.Color.onInk)
             Text(offer.problem.map(MathText.plain).joined(separator: "\n"))
                 .dsFont(.tutorHand, size: 34)

@@ -21,6 +21,8 @@ extension LiveLoop {
 
     /// Writes a plan's lines in the tutor's hand (without taking the solution pen).
     func writeBlock(_ plan: HandPlan, meta: Meta, onDone: (() -> Void)? = nil) -> TutorPen {
+        // the tutor writing for a line is its answer: the line's readback makes way
+        if let lineId = meta[LiveMeta.lineId]?.stringValue { readbacks.removeAll { $0.id == lineId } }
         var penRef: TutorPen?
         let pen = board.write(Self.tutorLines(plan), meta: meta) { [weak self] in
             guard let self else { return }

@@ -427,7 +427,12 @@ extension LiveLoop {
         persistLine(id)
         await analyze(column: st.column)
         showReadback(id)
-        if settled, let st = lines[id] { autoChecks(column: st.column) }
+        // a read that lands after the kid stopped (a slow network) is due at once: Auto's check of
+        // its column, and in Solve its finish (the settle already ran without it)
+        if settled, let st = lines[id] {
+            autoChecks(column: st.column)
+            autoSolve()
+        }
     }
 
     /// "The tutor saw it": the line's readback shows for a moment.
