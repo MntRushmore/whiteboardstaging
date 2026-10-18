@@ -63,6 +63,7 @@ final class TryBoard {
     private var work: [String] = []
     private var lastInk = Date.distantPast
     private var penLiftAt: Date?
+    private var scriptIndex = 0
     private var generation = 0
     private var waitTask: Task<Void, Never>?
     private var nudgeTask: Task<Void, Never>?
@@ -172,6 +173,7 @@ final class TryBoard {
             self.placeZone(problemBox: problemBox)
             self.phase = .waiting
             self.scheduleNudge()
+            self.runScript()
         }
     }
 
@@ -355,6 +357,21 @@ final class TryBoard {
         }
         typedAnswer = nil
         onRecord(record)
+        if phase == .waiting, result.verdict != .unjudged { runScript(after: .milliseconds(2600)) }
+    }
+
+    /// Debug: the next scripted answer (`-onboardingAutowrite`), a beat after the kid's turn opens.
+    func runScript(after delay: Duration = .milliseconds(1400)) {
+        #if DEBUG
+        guard let script = Self.autowriteScript, scriptIndex < script.count else { return }
+        let item = script[scriptIndex]
+        scriptIndex += 1
+        Task {
+            try? await Task.sleep(for: delay)
+            guard phase == .waiting else { return }
+            await autowrite(autowriteText(item))
+        }
+        #endif
     }
 
     private func writeHint(_ hint: String, under box: Box) {
@@ -415,6 +432,7 @@ final class TryBoard {
         writer?.cancel()
         queue = []
         controller.store.remove(controller.store.drawableIDs(on: screenID), origin: .system)
+        scriptIndex = 0
         begin()
     }
 
@@ -468,3 +486,52 @@ enum BlocksBoardLook {
         content.insertSublayer(layer, at: 1)
     }
 }
+
+#if DEBUG
+// MARK: - Autowrite (Debug: the simulator has no Pencil)
+
+/// `-onboardingAutowrite right` (or `wrong,right`, `messy`…) writes answers into the zone through the
+/// canvas's own touch path, in a kid's black ink drawn from the hand engine's glyphs, so the QA
+/// videos and UI tests run the real read and check. One item per attempt, in order.
+extension TryBoard {
+    static var autowriteScript: [String]? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-onboardingAutowrite"), i + 1 < args.count else { return nil }
+        return args[i + 1].split(separator: ",").map(String.init)
+    }
+
+    /// What a kid would write for `item` under this problem.
+    func autowriteText(_ item: String) -> String {
+        let right = Self.plainAnswer(problem.firstStep)
+        switch item {
+        case "wrong":
+            if let n = Int(right) { return String(n + 1) }
+            return right + "1"
+        case "right": return right
+        default: return item
+        }
+    }
+
+    static func plainAnswer(_ latex: String) -> String {
+        var s = latex
+        while let r = s.range(of: #"\\frac\{([^{}]*)\}\{([^{}]*)\}"#, options: .regularExpression) {
+            let parts = String(s[r]).dropFirst(6).split(separator: "}", maxSplits: 1).map { $0.replacingOccurrences(of: "{", with: "") }
+            s.replaceSubrange(r, with: parts.count == 2 ? "\(parts[0])/\(parts[1])" : "")
+        }
+        return s.replacingOccurrences(of: "\\times", with: "x").replacingOccurrences(of: "\\", with: "")
+    }
+
+    func autowrite(_ text: String) async {
+        guard let canvas, let ink = await HandInkMaker.shared.words(text, size: min(110, zone.h * 0.48), seed: 31) else { return }
+        let origin = Vec2(zone.x + 34, zone.y + (zone.h - ink.size.height) / 2)
+        for stroke in ink.strokes {
+            let pts = stroke.points.map { canvas.camera.toView(Vec2(origin.x + $0.x, origin.y + $0.y)) }
+            let duration = max(0.12, min(0.6, stroke.length / 700))
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                canvas.simulateStroke(pts, duration: duration, pencil: false) { done.resume() }
+            }
+            try? await Task.sleep(for: .milliseconds(90))
+        }
+    }
+}
+#endif
