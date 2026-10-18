@@ -94,25 +94,32 @@ struct SpeechBubble: View {
     }
 }
 
-/// A rounded rectangle with a small rounded tail on one edge (pointing at the speaker).
+/// A rounded rectangle with a tail on one edge, pointing at the speaker: a soft triangle 24 pt wide
+/// and 13 pt deep, one flat colour with the bubble (no border, no shadow).
 struct BubbleShape: Shape {
     let tail: Edge
+    static let tailWidth: CGFloat = 24
+    static let tailDepth: CGFloat = 13
 
     func path(in r: CGRect) -> Path {
         var p = Path(roundedRect: r, cornerRadius: DS.Radius.bubble, style: .continuous)
-        let t: CGFloat = 12
+        let w = Self.tailWidth / 2
+        let d = Self.tailDepth
         var tri = Path()
         switch tail {
         case .leading:
-            let y = min(r.midY, r.minY + 44)
-            tri.move(to: CGPoint(x: r.minX + 1, y: y - t))
-            tri.addQuadCurve(to: CGPoint(x: r.minX - t + 2, y: y + 2), control: CGPoint(x: r.minX - 2, y: y - 2))
-            tri.addQuadCurve(to: CGPoint(x: r.minX + 1, y: y + t * 0.9), control: CGPoint(x: r.minX - 2, y: y + t * 0.6))
+            // level with the speaker's middle: a docked bubble is one or two lines, its first line there
+            let y = min(r.midY, r.minY + 34)
+            tri.move(to: CGPoint(x: r.minX + 2, y: y - w))
+            tri.addLine(to: CGPoint(x: r.minX - d + 3, y: y - 1.5))
+            tri.addQuadCurve(to: CGPoint(x: r.minX - d + 3, y: y + 1.5), control: CGPoint(x: r.minX - d, y: y))
+            tri.addLine(to: CGPoint(x: r.minX + 2, y: y + w))
         case .bottom:
             let x = r.midX
-            tri.move(to: CGPoint(x: x - t, y: r.maxY - 1))
-            tri.addQuadCurve(to: CGPoint(x: x, y: r.maxY + t - 1), control: CGPoint(x: x - 2, y: r.maxY + 2))
-            tri.addQuadCurve(to: CGPoint(x: x + t, y: r.maxY - 1), control: CGPoint(x: x + 2, y: r.maxY + 2))
+            tri.move(to: CGPoint(x: x - w, y: r.maxY - 2))
+            tri.addLine(to: CGPoint(x: x - 1.5, y: r.maxY + d - 3))
+            tri.addQuadCurve(to: CGPoint(x: x + 1.5, y: r.maxY + d - 3), control: CGPoint(x: x, y: r.maxY + d))
+            tri.addLine(to: CGPoint(x: x + w, y: r.maxY - 2))
         default:
             break
         }

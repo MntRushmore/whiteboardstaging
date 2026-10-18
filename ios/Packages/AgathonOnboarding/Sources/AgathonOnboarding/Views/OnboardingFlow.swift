@@ -229,7 +229,7 @@ private struct BubblePlacement: ViewModifier {
                 .alignmentGuide(.leading) { d in d.width / 2 - (speakerOrigin.x + speakerSize.width / 2) }
         } else {
             content
-                .alignmentGuide(.top) { d in min(d.height, 120) / 2 - (speakerOrigin.y + speakerSize.height / 2) }
+                .alignmentGuide(.top) { d in min(d.height / 2, 34) - (speakerOrigin.y + speakerSize.height / 2) }
                 .alignmentGuide(.leading) { _ in -(speakerOrigin.x + speakerSize.width + 20) }
         }
     }
@@ -267,7 +267,8 @@ struct StageLayout {
         let y: CGFloat
         switch step {
         case .building: y = size.height * 0.36 - h / 2
-        default: y = max(barBottom + 150, size.height * (landscape ? 0.31 : 0.30)) - h / 2
+        // hello: the bubble, the speaker and the cards as one group about the middle (a little high)
+        default: y = max(barBottom + 150, size.height * (landscape ? 0.31 : 0.36)) - h / 2
         }
         return CGPoint(x: (size.width - width) / 2, y: y)
     }
