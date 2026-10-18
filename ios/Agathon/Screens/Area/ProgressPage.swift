@@ -23,11 +23,13 @@ struct ProgressPage: View {
                                message: "Write some math on a board. Every problem you work on shows up here.")
                         .frame(maxWidth: .infinity)
                         .accessibilityIdentifier("progress.empty")
+                    skills(summary)
+                } else {
+                    thisWeek(summary)
+                    chart(summary)
+                    skills(summary)
+                    recent(summary)
                 }
-                thisWeek(summary)
-                chart(summary)
-                skills(summary)
-                recent(summary)
             }
         }
         .task { await load() }

@@ -61,7 +61,11 @@ struct MathLabel: View {
         for op in ["=", "+", "×", "÷", "<", ">", "≤", "≥"] {
             s = s.replacingOccurrences(of: op, with: " \(op) ")
         }
-        return s.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
+        s = s.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
+        // A minus between two terms gets room either side; every hyphen is a real minus sign.
+        let binary = try! NSRegularExpression(pattern: #"(?<=[0-9A-Za-z)²³⁴⁵⁶⁷⁸⁹⁰¹ⁿˣ])\s*-\s*(?=[0-9A-Za-z(√])"#)
+        s = binary.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: " − ")
+        return s.replacingOccurrences(of: "-", with: "−")
     }
 
     /// What VoiceOver says: the plain text with the signs in words.

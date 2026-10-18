@@ -196,13 +196,35 @@ final class ScreensUITests: XCTestCase {
         signOut(app)
     }
 
+    /// The kid's Home at a big accessibility text size, in portrait: nothing cut, nothing overlapping.
+    func testBigTextKidHomeInPortrait() {
+        let parent = env["AGATHON_QA_PARENT_EMAIL"] ?? "ipad-kit-parent@example.com"
+        let kid = env["AGATHON_QA_KID"] ?? "Maya"
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch(extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        signOutIfSignedIn(app)
+        snap("sign-in-big-text")
+        signIn(app, email: parent, password: env["AGATHON_QA_PARENT_PASSWORD"] ?? "password123")
+        homeLoaded(app)
+        app.buttons["boards.switchProfile"].tap()
+        let kidButton = app.buttons["switcher.member.\(kid)"]
+        wait(kidButton)
+        kidButton.tap()
+        wait(app.staticTexts["home.greeting"], "Hi \(kid).")
+        homeLoaded(app)
+        Thread.sleep(forTimeInterval: 2)
+        snap("home-kid-big-text")
+        signOut(app)
+    }
+
     // MARK: helpers
 
-    private func launch() -> XCUIApplication {
+    private func launch(extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY"] {
             app.launchEnvironment[key] = env[key]
         }
+        app.launchArguments += extra
         app.launch()
         return app
     }

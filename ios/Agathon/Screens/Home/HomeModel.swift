@@ -42,7 +42,10 @@ final class HomeModel {
 
     /// The name on the profile chip.
     func displayName(email: String?) -> String {
-        if let name = family?.meMember?.displayName.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
+        // A solo account is the student's own (the family's "Grown-up" label is only a default).
+        if family?.role != .solo, let name = family?.meMember?.displayName.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return name
+        }
         if let name = profile?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
         if let email, let local = email.split(separator: "@").first, !local.isEmpty { return String(local) }
         return "You"
@@ -50,12 +53,14 @@ final class HomeModel {
 
     /// "Hi Maya." uses the first name; nil when there's none worth using ("Hi there.").
     func greetingName(email: String?) -> String? {
-        if let me = family?.meMember { return HomeFormat.greetingName(me.isParent ? profile?.displayName ?? me.displayName : me.displayName) }
+        if let me = family?.meMember, family?.role != .solo {
+            return HomeFormat.greetingName(me.isParent ? profile?.displayName ?? me.displayName : me.displayName)
+        }
         return HomeFormat.greetingName(profile?.displayName)
     }
 
     var avatarColor: RGB {
-        guard let me = family?.meMember else { return DS.Palette.tomato }
+        guard family?.role != .solo, let me = family?.meMember else { return DS.Palette.tomato }
         return AvatarColor.color(for: me, in: family)
     }
 
@@ -233,6 +238,13 @@ final class HomeModel {
             return "The board is still here. Try again in a moment."
         }
     }
+
+    #if DEBUG
+    func setForTesting(family: FamilyState?, profile: Profile? = nil) {
+        self.family = family
+        self.profile = profile
+    }
+    #endif
 
     /// The row as it is now, after the board screen closed (its name or thumbnail may have changed).
     func refreshQuietly(_ backend: AgathonBackend) async {

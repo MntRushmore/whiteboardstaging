@@ -180,6 +180,8 @@ struct MathLabelTests {
         #expect(MathLabel.plain(#"x^{2}+y^2"#) == "x² + y²")
         #expect(MathLabel.plain(#"\left(2x+3\right)\leq 11"#) == "(2x + 3) ≤ 11")
         #expect(MathLabel.plain(#"\sqrt{49}"#) == "√49")
+        #expect(MathLabel.plain("458 - 190") == "458 − 190")
+        #expect(MathLabel.plain("x-3=-5") == "x − 3 = −5")
         #expect(MathLabel.spoken(#"6\times7"#).contains("times"))
     }
 }
@@ -205,5 +207,16 @@ struct PracticePlannerTests {
         let problems = await PracticePlanner.topic("times_tables", seed: 7, count: 3)
         #expect(problems.count == 3)
         #expect(problems.allSatisfy { !$0.lines.isEmpty })
+    }
+}
+
+@MainActor
+struct HomeNameTests {
+    @Test func aSoloStudentIsNeverCalledGrownUp() throws {
+        let solo = try JSONDecoder().decode(FamilyState.self, from: Data(#"{"role":"solo","me":"u1","parentId":"u1","hasPin":false,"members":[{"userId":"u1","displayName":"Grown-up","avatar":null,"grade":null,"isParent":true,"stats":null}]}"#.utf8))
+        let model = HomeModel()
+        model.setForTesting(family: solo)
+        #expect(model.displayName(email: "sam@example.com") == "sam")
+        #expect(model.greetingName(email: "sam@example.com") == nil)
     }
 }

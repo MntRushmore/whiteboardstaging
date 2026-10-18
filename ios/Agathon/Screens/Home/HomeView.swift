@@ -18,6 +18,8 @@ struct HomeView: View {
     @State private var deleting: BoardSummary?
     @State private var sheet: HomeSheet?
     @State private var area: AreaRequest?
+    /// The content column's width: Today and the path sit side by side when there's room.
+    @State private var contentWidth: CGFloat = 0
 
     enum HomeSheet: String, Identifiable {
         case switcher, grownUpPin, topics
@@ -46,6 +48,7 @@ struct HomeView: View {
                         .padding(.top, DS.Space.xxl)
                 }
                 .padding(.horizontal, ScreenMargin.horizontal(sizeClass))
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 - 2 * ScreenMargin.horizontal(sizeClass) }
                 .padding(.bottom, DS.Space.xxxl)
                 .frame(maxWidth: 1400)
                 .frame(maxWidth: .infinity)
@@ -212,13 +215,14 @@ struct HomeView: View {
 
     // MARK: Today's practice and the path
 
-    private var practiceRow: some View {
-        ViewThatFits(in: .horizontal) {
+    @ViewBuilder private var practiceRow: some View {
+        if contentWidth >= 940 {
             HStack(alignment: .top, spacing: DS.Space.l) {
-                today.frame(minWidth: 560)
-                path.frame(minWidth: 380)
+                today.frame(width: (contentWidth - DS.Space.l) * 0.56)
+                path
             }
             .fixedSize(horizontal: false, vertical: true)
+        } else {
             VStack(spacing: DS.Space.l) {
                 today
                 path

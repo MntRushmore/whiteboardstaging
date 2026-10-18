@@ -138,7 +138,8 @@ struct ProfileSwitcherSheet: View {
             .contentShape(RoundedRectangle(cornerRadius: DS.Radius.tile, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(busy || isMe)
+        .disabled(busy)
+        .allowsHitTesting(!isMe)
         .accessibilityLabel(isMe ? "\(member.displayName), you" : member.needsPin ? "\(member.displayName), grown-up, needs the PIN" : member.displayName)
         .accessibilityIdentifier("switcher.member.\(member.displayName)")
     }
