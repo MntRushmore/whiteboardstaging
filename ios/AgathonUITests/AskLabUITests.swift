@@ -20,20 +20,26 @@ final class AskLabUITests: XCTestCase {
     func testDockedLandscapeWithAStreamedAnswerAndADrawing() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = openLab(ask: "How do I add 1/2 and 1/4?|3 more like these")
-        XCTAssertTrue(app.buttons["ask.speaker"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["Read answers out loud"].waitForExistence(timeout: 20))
         // mid-stream, then the answer done and the tutor's drawing written, then a problem set
-        Thread.sleep(forTimeInterval: 4.6)
+        Thread.sleep(forTimeInterval: 3.8)
         snap("ipad-ask-2-streaming-landscape")
-        Thread.sleep(forTimeInterval: 10)
+        // the first ask's words and drawing done, before the next one goes
+        Thread.sleep(forTimeInterval: 2)
+        waitUntilWritten(app, timeout: 25)
+        Thread.sleep(forTimeInterval: 1)
         snap("ipad-ask-3-fraction-answer-and-drawing")
-        Thread.sleep(forTimeInterval: 16)
+        // the next ask goes 5 s after (the Lab's pause), on a screen with work: a new screen
+        Thread.sleep(forTimeInterval: 8)
+        waitUntilWritten(app, timeout: 40)
+        Thread.sleep(forTimeInterval: 1)
         snap("ipad-ask-4-problems-new-screen")
     }
 
     func testHelloDockedAndSheetPortrait() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         var app = openLab(ask: nil)
-        XCTAssertTrue(app.buttons["ask.speaker"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["Read answers out loud"].waitForExistence(timeout: 20))
         Thread.sleep(forTimeInterval: 1.5)
         snap("ipad-ask-1-hello-docked-landscape")
         XCUIDevice.shared.orientation = .portrait
@@ -42,13 +48,37 @@ final class AskLabUITests: XCTestCase {
         app.terminate()
         // a streamed answer in the sheet, held upright
         app = openLab(ask: "Show me 4 × 6 as an array")
-        XCTAssertTrue(app.buttons["ask.speaker"].waitForExistence(timeout: 20))
-        Thread.sleep(forTimeInterval: 13)
+        XCTAssertTrue(app.buttons["Read answers out loud"].waitForExistence(timeout: 20))
+        Thread.sleep(forTimeInterval: 4)
+        waitUntilWritten(app, timeout: 30)
+        Thread.sleep(forTimeInterval: 1)
         snap("ipad-ask-6-sheet-portrait-answer")
         XCUIDevice.shared.orientation = .landscapeLeft
     }
 
+    /// The real tutor on the local stack (ASK_LAB_LIVE=1): one ask, streamed, and its drawing.
+    func testLiveAskLandscape() throws {
+        try XCTSkipUnless(env["ASK_LAB_LIVE"] == "1", "the live tutor only when asked: each run costs a real ask")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = openLab(ask: "What is 1/2 + 1/4? Show me with fraction bars on my board.")
+        XCTAssertTrue(app.buttons["Read answers out loud"].waitForExistence(timeout: 30))
+        Thread.sleep(forTimeInterval: 6)
+        snap("ipad-ask-7-live-streaming")
+        // the answer done and the drawing written (at most a minute)
+        waitUntilWritten(app, timeout: 60)
+        Thread.sleep(forTimeInterval: 1)
+        snap("ipad-ask-8-live-answer-and-drawing")
+    }
+
     // MARK: helpers
+
+    /// Until no message is thinking, streaming or being written on the board.
+    private func waitUntilWritten(_ app: XCUIApplication, timeout: TimeInterval) {
+        let end = Date().addingTimeInterval(timeout)
+        let busy = ["thinking", "streaming", "writing"].map { app.descendants(matching: .any).matching(identifier: "ask.message.tutor.\($0)") }
+        Thread.sleep(forTimeInterval: 1)
+        while Date() < end, busy.contains(where: { $0.count > 0 }) { Thread.sleep(forTimeInterval: 0.5) }
+    }
 
     private func openLab(ask: String?) -> XCUIApplication {
         let app = XCUIApplication()

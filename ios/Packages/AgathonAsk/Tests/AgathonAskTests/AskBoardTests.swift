@@ -21,7 +21,7 @@ struct AskBoardTests {
 
     func inside(_ s: StrokeRecord, _ r: AgathonBrain.Rect) -> Bool {
         guard let b = AskBoardDriver.strokeBounds(s) else { return false }
-        return b.x >= r.x - 1 && b.y >= r.y - 1 && b.x + b.w <= r.x + r.w + 1 && b.y + b.h <= r.y + r.h + 1
+        return b.x >= r.x - 3 && b.y >= r.y - 3 && b.x + b.w <= r.x + r.w + 3 && b.y + b.h <= r.y + r.h + 3
     }
 
     @Test func writeProblemsNumberedInTheirCellsInTheTutorsHand() async {
@@ -167,6 +167,30 @@ struct AskBoardTests {
         #expect(report.outcomes.last?.note == AskBoardDriver.movedNote)
         let written = Set(board.store.drawables(on: start).compactMap { $0.meta["handLine"]?.stringValue })
         #expect(written == ["x = 1"])
+    }
+
+    @Test func aFigureAndATwoColumnProofDrawnByTheBrainsDrawer() async {
+        let board = MemoryBoard()
+        let d = driver(board)
+        let figure = await d.run([action(#"{"type":"draw_figure","figure":{"points":{"A":{"x":0,"y":0},"B":{"x":4,"y":0},"C":{"x":0,"y":3}},"segments":[{"from":"A","to":"B","label":"4"},{"from":"A","to":"C","label":"3"},{"from":"B","to":"C","label":"x"}],"angles":[{"at":"A","from":"B","to":"C","right":true}]}}"#)]) { _ in }
+        #expect(figure.outcomes == [AskActionOutcome(type: "draw_figure", ok: true)])
+        #expect(board.tutorStrokes.contains { $0.meta["chatBlock"] == "figure" })
+        let proofBoard = MemoryBoard()
+        let proof = await driver(proofBoard).run([action(#"{"type":"write_proof","figure":{"points":{"A":{"x":0,"y":0},"B":{"x":5,"y":4},"C":{"x":10,"y":0},"D":{"x":5,"y":-8},"E":{"x":5,"y":0}},"segments":[{"from":"A","to":"B","ticks":1},{"from":"C","to":"B","ticks":1},{"from":"A","to":"D","ticks":2},{"from":"C","to":"D","ticks":2},{"from":"A","to":"C"},{"from":"B","to":"D"}]},"given":["\\overline{AB} \\cong \\overline{CB}","\\overline{AD} \\cong \\overline{CD}"],"prove":"\\overline{AE} \\cong \\overline{CE}","worked":true}"#)]) { _ in }
+        #expect(proof.outcomes.first?.ok == true, "\(proof.outcomes)")
+        #expect(proofBoard.tutorStrokes.count > 40)
+    }
+
+    @Test func aPenThatWritesLaterIsHeldUntilItsBlockIsOnThePage() async {
+        let board = SlowPenBoard()
+        let d = AskBoardDriver(board: board, brain: TestBrain.shared)
+        var done = false
+        Task { @MainActor in
+            _ = await d.run([action(#"{"type":"write_lines","lines":["x = 4"]}"#)]) { _ in }
+            done = true
+        }
+        #expect(await eventually(10) { done })
+        #expect(board.inner.tutorStrokes.count > 0)
     }
 
     @Test func screenIdsAsTheServerNamesThem() {

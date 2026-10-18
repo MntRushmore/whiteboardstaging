@@ -195,3 +195,41 @@ extension Box {
 enum TestBrain {
     static let shared = Brain()
 }
+
+/// A board whose pen writes a moment later and only while something holds it (the canvas board's
+/// `TutorWriter` drives itself through a weak reference): a pen let go never finishes.
+@MainActor
+final class SlowPenBoard: LiveBoard {
+    let inner = MemoryBoard()
+    var store: BoardStore { inner.store }
+    var currentScreenID: RecordID { inner.currentScreenID }
+    var screenRect: BrainRect { inner.screenRect }
+    var fitZoom: Double? = 0.74
+    var selection: [RecordID] = []
+    var isPenDown = false
+    var reduceMotion = false
+    var onPen: ((Bool) -> Void)?
+    var onScreenChange: ((RecordID) -> Void)?
+
+    final class Pen: TutorPen {
+        var isWriting = true
+        let wallMs: Double = 30
+        func cancel() { isWriting = false }
+    }
+
+    func write(_ lines: [TutorLine], meta: Meta, onDone: @escaping @MainActor () -> Void) -> TutorPen {
+        let pen = Pen()
+        let store = inner.store
+        let screen = inner.currentScreenID
+        Task { @MainActor [weak pen] in
+            try? await Task.sleep(for: .milliseconds(30))
+            guard let pen else { return }
+            InstantPen(store: store, screen: screen).write(lines, meta: meta)
+            pen.isWriting = false
+            onDone()
+        }
+        return pen
+    }
+
+    func addScreen() -> RecordID? { inner.addScreen() }
+}

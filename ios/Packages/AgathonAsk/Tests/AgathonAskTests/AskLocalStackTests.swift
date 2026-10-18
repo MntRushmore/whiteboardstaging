@@ -30,7 +30,6 @@ struct AskLocalStackTests {
         backend.auth.start()
         try await backend.auth.signIn(email: Self.env["AGATHON_TEST_EMAIL"] ?? "qa-student@example.com", password: Self.env["AGATHON_TEST_PASSWORD"] ?? "password123")
         let made = try await backend.boards.create(title: "iOS Ask integration \(Int(Date().timeIntervalSince1970))")
-        defer { Task { _ = try? await backend.boards.delete(id: made.id) } }
 
         let board = MemoryBoard()
         board.kidLine(y: 140)
@@ -48,6 +47,9 @@ struct AskLocalStackTests {
         session.appeared()
         session.send("Write 2 problems like 2x + 3 = 11 on my board, and tell me what 1/2 + 1/4 is.")
         #expect(await eventually(90) { !session.busy })
+        // problems on a screen with work go on a new one: the exchange went with them, and the panel too
+        let now = driver.screenRef
+        #expect(session.screen == now)
         let reply = try #require(session.messages.last)
         #expect(reply.role == .tutor)
         #expect(reply.state == .done, "\(reply.text)")
@@ -56,9 +58,17 @@ struct AskLocalStackTests {
         print("ASK reply: \(reply.text) notes=\(reply.notes) strokes=\(board.tutorStrokes.count)")
         #expect(board.tutorStrokes.contains { $0.meta["chatProblem"] != nil }, "the problems were written")
 
-        // the saved chat, read back as a fresh view would
-        let saved = await transport.history(boardId: made.id, screen: ref.historyScreen)
+        // the saved chat, read back as a fresh view would: on the screen the tutor started, once moved
+        var saved = await transport.history(boardId: made.id, screen: now.historyScreen)
+        for _ in 0..<20 where saved.history?.turns.isEmpty != false {
+            try? await Task.sleep(for: .milliseconds(250))
+            saved = await transport.history(boardId: made.id, screen: now.historyScreen)
+        }
         #expect(saved.history?.turns.map(\.role) == [.user, .tutor])
+        if now.id != ref.id {
+            let first = await transport.history(boardId: made.id, screen: ref.historyScreen)
+            #expect(first.history?.turns.isEmpty == true)
+        }
 
         // one phrase said by Ask's voice (or the route says to use the device's: no key or no plan)
         do {
@@ -74,6 +84,7 @@ struct AskLocalStackTests {
         print("ASK transcribe: \(heard)")
         #expect([AskMicLogic.Outcome.nothing, .fallback].contains(heard) || { if case .text = heard { return true } else { return false } }())
 
+        _ = try? await backend.boards.delete(id: made.id)
         try await backend.auth.signOut(scope: .local)
     }
 

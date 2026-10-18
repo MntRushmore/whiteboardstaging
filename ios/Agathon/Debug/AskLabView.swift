@@ -42,7 +42,7 @@ struct AskLabView: View {
                             Divider()
                             ForEach(AskLabModel.prompts, id: \.self) { p in Button(p) { lab.ask(p) } }
                         } label: {
-                            DSIcon(.more, size: 22).foregroundStyle(DS.Color.ink)
+                            DSIcon(.bug, size: 22).foregroundStyle(DS.Color.ink)
                                 .frame(width: DS.Size.round, height: DS.Size.round)
                                 .background(Circle().fill(DS.Color.surface))
                         }
@@ -58,6 +58,9 @@ struct AskLabView: View {
             )
         }
         .ignoresSafeArea(.keyboard)
+        // room under the Lab for its Close button (LabsMenu), clear of the composer's Send
+        .padding(.bottom, 56)
+        .background(DS.Color.ground.ignoresSafeArea())
     }
 }
 
@@ -115,7 +118,8 @@ final class AskLabModel: ObservableObject {
             for words in asks {
                 try? await Task.sleep(for: .milliseconds(900))
                 while parts?.session.busy == true { try? await Task.sleep(for: .milliseconds(200)) }
-                try? await Task.sleep(for: .milliseconds(1500))
+                // a moment to look at the last answer and its drawing before the next ask
+                try? await Task.sleep(for: .seconds(5))
                 open = true
                 ask(words)
                 try? await Task.sleep(for: .milliseconds(600))

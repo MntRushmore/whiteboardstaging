@@ -69,7 +69,6 @@ struct RichBubble: View {
         .padding(.horizontal, DS.Space.m)
         .padding(.vertical, 14)
         .background(BubbleShape(from: .tutor).fill(DS.Color.tutorInk))
-        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Tutor: \(RichText.plainText(blocks, readable: true))")
     }
@@ -118,7 +117,8 @@ struct RichBubble: View {
             case .br:
                 return acc + Text("\n")
             case .math(let latex, _):
-                if let r = MathImage.render(latex, size: size * 1.12, color: .white) {
+                // a fraction in a line of text is set small (text style): bigger, so a 7-year-old reads its digits
+                if let r = MathImage.render(latex, size: size * (latex.contains("frac") ? 1.5 : 1.15), color: .white) {
                     return acc + Text(Image(uiImage: r.image)).baselineOffset(-r.descent)
                 }
                 return acc + Text(RichText.mathAsText(latex)).italic()
@@ -128,7 +128,7 @@ struct RichBubble: View {
 
     @ViewBuilder
     private func display(_ latex: String) -> some View {
-        if let r = MathImage.render(latex, size: size * 1.35, color: .white) {
+        if let r = MathImage.render(latex, size: size * 1.8, color: .white) {
             Image(uiImage: r.image)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, DS.Space.xxs)
@@ -203,11 +203,13 @@ struct AskMessageView: View {
             if message.state == .thinking {
                 ThinkingBubble()
             } else {
-                HStack(alignment: .bottom, spacing: DS.Space.xs) {
+                // the speaker sits right after the words it reads, not across the panel from them
+                HStack(alignment: .bottom, spacing: DS.Space.xxs) {
                     RichBubble(text: message.text, streaming: message.state == .streaming)
                     if let onReplay, message.state == .done, !message.text.isEmpty, message.error == nil {
                         ReplayButton(action: onReplay)
                     }
+                    Spacer(minLength: 0)
                 }
             }
             if message.state == .writing {
@@ -229,7 +231,8 @@ struct AskMessageView: View {
             }
         }
         .padding(.trailing, DS.Space.l)
-        .accessibilityIdentifier("ask.message.tutor")
+        // the message's state in its id (`ask.message.tutor.writing`): UI tests wait on it
+        .accessibilityIdentifier("ask.message.tutor.\(message.state?.rawValue ?? "done")")
     }
 }
 

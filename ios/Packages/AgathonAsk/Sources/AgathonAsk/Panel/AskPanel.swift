@@ -23,7 +23,10 @@ public struct AskPanel: View {
 
     public var body: some View {
         VStack(spacing: 0) {
+            // the header on the conversation's own column, so the title sits over the words
             header
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, DS.Space.l)
                 .padding(.top, DS.Space.l)
                 .padding(.bottom, DS.Space.s)
@@ -94,7 +97,7 @@ public struct AskPanel: View {
                 .padding(.vertical, DS.Space.s)
             }
             .scrollDismissesKeyboard(.interactively)
-            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(session.messages.isEmpty ? .top : .bottom)
             // a new question and the words under it: the question stays at the top, so a long
             // answer is read from its start and never jumps to its last lines
             .onChange(of: lastQuestion) { _, id in
@@ -115,6 +118,7 @@ public struct AskPanel: View {
             VStack(alignment: .leading, spacing: DS.Space.m) {
                 RichBubble(text: hello.greeting, streaming: false)
                     .padding(.trailing, DS.Space.l)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("ask.hello")
                 FlowStack(spacing: DS.Space.xs, lineSpacing: DS.Space.xs) {
                     ForEach(hello.chips, id: \.self) { chip in
@@ -308,17 +312,23 @@ public struct AskParts {
 }
 
 /// The board and Ask together (`chatSheet.ts`): docked on the right when the iPad is held sideways
-/// (and wide enough), a bottom sheet held upright — docked there it would leave the 16:9 board a
-/// postcard. The sheet rests at 46 % and pulls up to 88 %; the board above it stays live. Without
-/// Ask's parts yet (the board's canvas not up), the board alone, in the same place.
+/// (and wide enough), a sheet across the bottom held upright — docked there it would leave the 16:9
+/// board a postcard. The sheet rests at 46 % of the height and pulls up to 88 % (the board above it
+/// keeps at least 320 pt: its bar and some of the board); the board stays live above it, as on the
+/// web, where the sheet is part of the page rather than over it. One layout for both, so turning
+/// the iPad never rebuilds the board. Without Ask's parts yet (the canvas not up), the board alone.
 public struct AskPanelContainer<Board: View>: View {
     @Binding var isOpen: Bool
     let ask: AskParts?
     let board: Board
     @State private var tall = false
+    @GestureState private var drag: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The docked panel's width (the web's 360 px, grown for 17 pt type and 56 pt targets).
     public static var dockedWidth: CGFloat { 420 }
+    /// The board above a sheet pulled up tall keeps at least this much (`CHAT_SHEET_MIN_BOARD_PX`).
+    public static var minBoardHeight: CGFloat { 320 }
 
     public init(isOpen: Binding<Bool>, ask: AskParts?, @ViewBuilder board: () -> Board) {
         _isOpen = isOpen
@@ -331,35 +341,69 @@ public struct AskPanelContainer<Board: View>: View {
         size.width > size.height && size.width >= 960
     }
 
+    /// The sheet's height in `height` of space: resting, or pulled up tall.
+    public static func sheetHeight(_ height: CGFloat, tall: Bool) -> CGFloat {
+        let rest = height * 0.46
+        return tall ? max(rest, min(height * 0.88, height - minBoardHeight)) : rest
+    }
+
     public var body: some View {
         GeometryReader { geo in
             let docked = Self.docks(geo.size)
-            HStack(spacing: 0) {
+            let layout = docked ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+            layout {
                 board
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if docked && isOpen, let ask {
-                    AskPanel(session: ask.session, speech: ask.speech, mic: ask.mic) { isOpen = false }
-                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-                        .padding(.vertical, DS.Space.m)
-                        .padding(.trailing, DS.Space.m)
-                        .frame(width: Self.dockedWidth + DS.Space.m)
-                        .transition(.move(edge: .trailing))
+                if isOpen, let ask {
+                    let panel = AskPanel(session: ask.session, speech: ask.speech, mic: ask.mic) { isOpen = false }
+                    if docked {
+                        panel
+                            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                            .padding(.vertical, DS.Space.m)
+                            .padding(.trailing, DS.Space.m)
+                            .frame(width: Self.dockedWidth + DS.Space.m)
+                            .transition(.move(edge: .trailing))
+                    } else {
+                        let h = Self.sheetHeight(geo.size.height + geo.safeAreaInsets.bottom, tall: tall)
+                        VStack(spacing: 0) {
+                            grabber
+                            panel
+                            // the home indicator's strip, in the sheet's colour
+                            DS.Color.surface.frame(height: geo.safeAreaInsets.bottom)
+                        }
+                        .background(DS.Color.surface)
+                        .clipShape(UnevenRoundedRectangle(topLeadingRadius: DS.Radius.card, topTrailingRadius: DS.Radius.card, style: .continuous))
+                        .frame(height: max(260, h - drag))
+                        .transition(.move(edge: .bottom))
+                        .ignoresSafeArea(.container, edges: .bottom)
+                    }
                 }
             }
             .background(DS.Color.ground)
             .dsAnimation(DS.Motion.snap, value: isOpen)
-            .sheet(isPresented: Binding(get: { isOpen && !docked && ask != nil }, set: { if !$0 { isOpen = false } })) {
-                if let ask {
-                    AskPanel(session: ask.session, speech: ask.speech, mic: ask.mic) { isOpen = false }
-                        .presentationDetents([.fraction(0.46), .fraction(0.88)], selection: Binding(
-                            get: { tall ? .fraction(0.88) : .fraction(0.46) },
-                            set: { tall = $0 == .fraction(0.88) }))
-                        .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.46)))
-                        .presentationCornerRadius(DS.Radius.card)
-                        .presentationDragIndicator(.visible)
-                        .presentationBackground(DS.Color.surface)
-                }
-            }
+            .dsAnimation(DS.Motion.snap, value: tall)
         }
+    }
+
+    /// The sheet's handle: tap or drag it to make the chat bigger or smaller.
+    private var grabber: some View {
+        Capsule().fill(DS.Color.divider)
+            .frame(width: 44, height: 5)
+            .frame(maxWidth: .infinity)
+            .frame(height: 22)
+            .contentShape(Rectangle())
+            .onTapGesture { tall.toggle() }
+            .gesture(
+                DragGesture(minimumDistance: 6)
+                    .updating($drag) { value, state, _ in state = value.translation.height }
+                    .onEnded { value in
+                        if value.translation.height < -40 { tall = true } else if value.translation.height > 40 { tall = false }
+                    }
+            )
+            .accessibilityElement()
+            .accessibilityLabel(tall ? AskCopy.shrink : AskCopy.grow)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { tall.toggle() }
+            .accessibilityIdentifier("ask.grabber")
     }
 }

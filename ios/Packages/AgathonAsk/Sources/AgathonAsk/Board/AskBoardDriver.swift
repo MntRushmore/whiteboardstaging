@@ -61,6 +61,8 @@ public final class AskBoardDriver: AskBoardContext {
     public private(set) var carried: [RecordID: AskScreenFrom] = [:]
     private var screenWatch: AnyCancellable?
     private var running = false
+    /// the pens writing a block now (held: a pen let go stops)
+    private var pens: [TutorPen] = []
 
     /// `screenChanges`: the board's current screen as it changes (the canvas board's controller);
     /// without it the session is told by `screenChanged()`.
@@ -124,8 +126,12 @@ public final class AskBoardDriver: AskBoardContext {
         }
     }
 
+    /// A stroke's page bounds with its ink's width, as the web's shape bounds are (a drawing kept
+    /// 18 px clear of the kid's line is kept clear of its ink, not of its centre line).
     static func strokeBounds(_ s: StrokeRecord) -> AgathonBrain.Rect? {
-        pointsBox(s.points.map { s.pagePoint($0) })
+        guard let b = pointsBox(s.points.map { s.pagePoint($0) }) else { return nil }
+        let r = s.width / 2
+        return AgathonBrain.Rect(x: b.x - r, y: b.y - r, w: b.w + 2 * r, h: b.h + 2 * r)
     }
 
     static func pointsBox(_ pts: [Vec2]) -> AgathonBrain.Rect? {
@@ -222,7 +228,9 @@ public final class AskBoardDriver: AskBoardContext {
                 pages[page] = id
                 expected = id
                 if let from = plan.carried[page] { carried[id] = from }
+                // the exchange goes with the screen first (the tutor started it), then the panel follows
                 onTutorScreen(Self.screenRef(id, in: board.store))
+                screenChanged()
             case .clearTutor:
                 clearTutor()
             case .problemsChanged:
@@ -303,13 +311,19 @@ public final class AskBoardDriver: AskBoardContext {
         let lines = Self.tutorLines(plan)
         await withCheckedContinuation { (k: CheckedContinuation<Void, Never>) in
             var resumed = false
-            _ = board.write(lines, meta: Self.chatMeta(meta)) {
+            // the pen is kept until its block is on the page: a pen let go stops writing (the
+            // canvas board's `TutorWriter` drives itself through a weak reference)
+            var pen: TutorPen?
+            pen = board.write(lines, meta: Self.chatMeta(meta)) {
+                pen = nil
                 if !resumed {
                     resumed = true
                     k.resume()
                 }
             }
+            if let pen { pens.append(pen) }
         }
+        pens.removeAll { !$0.isWriting }
     }
 
     func typeset(_ latex: String, rect r: AgathonBrain.Rect, meta: Meta) {
