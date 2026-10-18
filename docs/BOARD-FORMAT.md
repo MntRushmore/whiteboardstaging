@@ -365,9 +365,63 @@ updated (before and after) and removed. Within one change set a record appears a
 or nil once the log no longer reaches back (send the whole document instead). It is the hook for
 live sync later: phone as pen, a parent watching.
 
-**Phase 1** builds the autosave on these pieces, with the web's guarantees: a version-checked
-write, a record-level merge on conflict, a device backup of unsaved records, and waiting for the
-pen to lift.
+**Phase 1** builds the autosave on these pieces (`ios/Packages/AgathonSync`, below).
+
+## Where a board is kept, and how it is saved (AgathonSync, 2026-10-17)
+
+**The row.** `whiteboards.doc` (jsonb) holds this document, beside the tldraw `data`
+(supabase/migrations/20261017000000_agathon_doc.sql). The trigger keeps `doc_schema` (the
+document's `schema`) and `doc_version` (the row `version` it was written at). The doc **is the
+board** when `doc is not null and doc_version = version`: any later `data` write bumps `version`
+past it. Once a row has a doc, the database refuses a write that changes `data` alone
+(`board_edited_on_ipad`), so the web never overwrites an iPad board. History keeps the doc a write
+replaced (`whiteboard_snapshots.doc`), with the same 10-minute / pre-drop rule and retention as
+`data`; the first doc of a board replaces nothing and is not kept.
+
+**Opening** (`BoardSession.open`):
+
+| the row | the board on screen | written |
+|---|---|---|
+| a current doc | the doc | on the first edit |
+| no doc (an old web board) | `data` converted (`TldrawImporter`), its inline pictures uploaded | on the first edit: the whole converted document. Until then nothing is written and `data` is never touched |
+| `data` is `{}` (a new board) | one screen, id `screen:<board id>` (the same on every open) | on the first edit |
+| a doc of a newer schema | refused: "update the app" | never |
+| a database without the doc columns (production before the migration) | `data` converted, inline pictures kept inline | **never**: the queue is local-only, the indicator says "Not saved yet", edits are backed up on the device and saved on the first open after the migration |
+
+Then the device backup, if any, is put back record by record (below).
+
+**Saving** (`BoardSaveQueue`, a port of the web's `src/lib/sync/saveQueue.ts`):
+
+- 2 s after the last edit, never more than 10 s into a burst; the build waits up to 2 s for the
+  pen to lift (twice: before encoding, before the thumbnail).
+- The write is the whole document plus the thumbnail: `PATCH whiteboards?id=eq.<id>&version=eq.<v>`
+  with `{doc, preview, updated_at}`, the document's bytes spliced in as they are. A write with no
+  answer after 30 s + 1 ms per 20 bytes is cancelled and retried.
+- No row matched: if the board still exists it is a **conflict**: fetch the row (the doc, or `data`
+  converted), merge record by record (`RecordMerge`, the web's `mergeDocumentRecords`: this device's
+  dirty records win, the other device's adds and changes come in, its removals go out), write again;
+  after 3 rounds, "reload". Gone: stop.
+- Offline, timeout, any other failure: the dirty sets go back; retry after 2, 5, 15, 60, 60… s.
+  Too large (the 8 MB check, or above 4 MB here): refused until the board shrinks. The column
+  missing (PGRST204): local-only.
+- Nothing to save (every dirty record is as the server has it): no write.
+- **The backup:** the unsaved records, as a file per board in Application Support
+  (`AgathonBoardBackups/<user id>/<board id>.json`), written 0.5 s after an edit (2 s at most into a
+  burst) and at once when the app leaves the screen; cleared when a save lands. Each record carries
+  the server's copy at the backup's base (`base`) and what an unanswered write sent (`sent`), so a
+  restore keeps a record the server changed since (counted as stale) and restores the rest.
+- Leaving the screen saves at once (a background task); closing the board saves and stops.
+
+**The thumbnail.** The current screen, the typeset maths left out when there is ink beside it, on
+white, as `data:image/jpeg;base64,…` within `whiteboards.preview`'s 20,000 characters: 640, 480,
+then 320 px wide at quality 0.7 then 0.5 (iOS cannot encode WebP), starting at the rung that fitted
+last time (from the top again every minute). An empty board clears it; an empty current screen
+keeps the stored one.
+
+**Pictures** (`SupabaseBoardAssetStore`, the `BoardAssetStore` protocol): the public `board-assets`
+bucket at `<user id>/<board id>/<sha-256 of the bytes>.<ext>` (the same picture is one object; an
+upload that finds it there is a success) and a `board_assets` row for the GC; read back through a
+disk cache (`Caches/AgathonBoardAssets`), `data:` URLs decoded in place.
 
 ## Changing the schema
 
@@ -398,26 +452,67 @@ this format, against about 2 in tldraw's.
 **Per stroke**, about 230 bytes are record fields (id, screen, order, author, colour, width, origin,
 start). The rest is points.
 
-## Converting a tldraw board (first cut, `TldrawImporter`)
+## Converting a tldraw board (`TldrawImporter`, complete since 2026-10-17)
 
 It accepts both stored forms: `{document: {store, schema}, session}`, and a bare `{store, schema}`.
-The original is never changed.
+The original is never changed: it stays in `whiteboards.data`, and the app writes only `doc`. Converting
+the same board twice gives the same document, byte for byte (`ConverterTests`, `TldrawImportTests`).
+
+**What every converted record keeps.** Its tldraw `meta`, whole (the tutor's keys: `live`, `source`,
+`lineId`, `createdAt`, `mark`, `markWhy`, `handBlock`, `handLine`, `handPart`, `graphFor`, `figure`,
+`chatModel`, `proofTable`, `proofRows`, `chatProblem`, `chatBlock`, …), except a stroke's `t` / `t1`,
+which become its `start` and point times. Besides:
+
+| meta key | when |
+|---|---|
+| `opacity` | the shape's opacity was below 1 |
+| `locked` | the shape was locked (never a retired AI overlay: the web unlocks those) |
+| `parent` | the shape was inside a group or a frame (its id); the record is flattened to the page |
+| `dash` | tldraw's `dash` was not `draw` |
+| `label` | a geo shape's, an arrow's or a note's text, or a frame's name (plain text) |
+| `rotation` | a `math` or `graph` record that was rotated (they have no rotation field) |
+| `tldraw` | `{type, props, asset?, assetId?}`: what the board does not model yet (a label's rich text, an arrow's bend and heads, a crop, a text's font…), so the trip back to tldraw loses nothing |
 
 | tldraw | Agathon |
 |---|---|
 | `page` (by `index`) | `screen`: `rect` from `meta.screen`; a page without one gets the screen the web grows around its content (`screenForContent`: pad 40, keep 16:9, measured by stroke centre lines as tldraw measures them) |
 | `draw` | `stroke`. Points of every segment in order; a `straight` segment is interpolated as tldraw draws it. `isPen` → `real`. `size` and `scale` → `width`. `meta.t` / `t1` → `start` plus point times spread by length. The tutor's `createdAt` → `start`. `meta.live` → `author: tutor`, and tldraw `blue` → `tutor` only then |
 | `highlight` | `stroke` with `meta.highlight` (drawn at 35 %) |
-| shapes inside a `group` or `frame` | flattened, with the parent's position and rotation applied; the frame's own box is dropped |
-| `geo` rectangle / ellipse | `shape`; other `geo` kinds become `rect`, with `meta.geo` keeping the original |
-| `line`, `arrow` | `shape` (arrow bindings are not kept) |
-| `image` + its `asset` | `image` with `asset.src` |
-| `math` | `math`: `echo` → `readback`, `ai` → `answer`, `student` → `note`, and `size` → `fontSize` |
+| `geo` rectangle, ellipse | `shape` `rect`, `ellipse`; `w`, `h` (+ `growY`); `width` = STROKE_SIZES[size] × scale |
+| `geo` oval, cloud | `shape` `ellipse`, `meta.geo` |
+| `geo` x-box, check-box | `shape` `rect`, `meta.geo` |
+| `geo` triangle, diamond, pentagon, hexagon, octagon, star, rhombus, rhombus-2, trapezoid, arrow-right / left / up / down, heart | `shape` `line`: a closed outline (tldraw 4.2's own geometry, the heart's curves sampled) through the box `w` × `h`; `meta.geo` |
+| `line` | `shape` `line` through its handles (in index order); a cubic spline in `meta.spline` |
+| `arrow` | `shape` `arrow`, start to end; a bent arrow's arc sampled (17 points); its heads, kind, label in `meta.tldraw` |
+| arrow `binding`s | the end where tldraw draws it (the target's anchor, or its centre when not precise, clipped to its outline unless exact), and `meta.attach.start` / `.end`: `{to: <record id>, anchor: {x, y}, precise?, exact?, binding: <binding id>, snap?}` |
+| `note` | `shape` `rect` (200 × scale, grown by `growY`), `fill: semi` in the note's colour; `meta.note`, its text in `meta.label` |
+| `frame` | its own box: `shape` `rect`, `width` 1, `meta.frame`, its name in `meta.label`; its children flattened, above it |
+| `group` | flattened (its children carry the group's position and rotation, and `meta.parent`) |
+| `text` | `math`, role `note`, author as the shape's: `latex` is the text in LaTeX text mode (`\text{…}` a line, joined by `\\`), the plain text in `meta.text`; `fontSize` = FONT_SIZES[size] × scale, `w` = w × scale, `h` from its lines |
+| `image` + its `asset` | `image` with `asset.src` (an inline `data:` picture is uploaded through the `BoardAssetStore`, see below) |
+| the retired pipeline's AI overlays (`meta.aiOverlay`) | a suggest / answer overlay nobody accepted is left out, as the web drops it on load; the others are ordinary images (unlocked) |
+| `video` + asset | `image` placeholder: the video's URL in `asset.src`, `meta.video` |
+| `embed` | `image` placeholder with no picture (`asset.src` ""), the URL in `meta.link` |
+| `bookmark` + asset | `image` placeholder showing its preview picture, `meta.link`, `meta.title` |
+| `math` | `math`: `echo` → `readback`, `ai` → `answer`, `student` → `note`, and `size` → `fontSize`; `status`, `resultLatex`, `note`, `tone`, `anchorIds` in `meta.tldraw.props` |
 | an `echo` math's `anchorIds`, `lineId`, `status` | a `line` over those strokes, its verdict the echo's status |
 | tutor strokes with `meta.mark` (`check:` / `circle:` / `question:`) | a `mark` over those strokes, aimed at `line:<lineId>`, `why` from `meta.markWhy` |
-| `graph` | `graph` |
+| `graph` | `graph`; the web's hex colours (GRAPH_COLORS) become palette tokens, the hex kept in `meta.fnColors` by function id |
+| any other shape type | kept whole: an `UnknownRecord` `tldraw:<key>`, type `tldraw.shape`, `{screen, x, y, rotation, shape}` |
+| any other record (a binding that is not an arrow's, an asset nothing uses, a custom record) | kept whole: `tldraw:<id>`, type `tldraw.record`, `{record}` (an unused inline asset is left in the original) |
+| the `document` record and the snapshot's `schema` | the document's `meta.convertedFrom` (`{format: "tldraw", schema, document}`) |
 | fills | tldraw's `semi` → `paper`, `solid` → `semi`, `fill` → `solid` (tldraw's names mean other things) |
-| z-order | tldraw's index order, groups inline, re-keyed with fresh fractional keys |
+| z-order | tldraw's index order, groups and frames inline, re-keyed with fresh fractional keys |
+
+**Inline pictures.** Boards saved before the web's asset store hold pictures as `data:` URLs.
+`TldrawImporter.importSnapshot(_:boardId:assets:)` uploads each (once per picture) through the board's
+`BoardAssetStore` and points the record at its URL; one that fails stays inline (`failedUploads`) and the
+autosave tries again before every write, so nothing is lost.
+
+**The trip back.** `src/lib/boards/agathonDoc.ts` turns a document back into a tldraw snapshot in memory
+(never written): the web's read-only view of an iPad board, the replay, the weekly report and the admin
+viewer read boards through `loadBoardSnapshot(row)`. It uses the record's fields first and `meta.tldraw`
+for the rest; strokes get `meta.t` / `t1` back from `start` and their last point's time.
 
 **Checked against tldraw's own renderer.** The reference PNGs come from
 `ios/Packages/AgathonBoard/Tools/fixtures/tldraw-reference.mjs`, which uses tldraw's own `svgInk`
@@ -429,21 +524,14 @@ The original is never changed.
 
 These are the `RenderComparisonTests`. See `docs/qa-screenshots/ipad-board-vs-tldraw.png`.
 
-**Left for Phase 1 (the full converter):**
+**Fixtures** (all synthetic, `Tools/fixtures/make-fixtures.mjs`): kid-algebra, legacy-noscreen,
+legacy-small, synthetic-2000 and **all-shapes** (every shape kind above, bound / bent / elbow arrows,
+inline and cropped pictures, the AI overlays, video, embed, bookmark, the tutor's meta keys, a page from
+before screens). Their conversions are committed as Agathon JSON in `src/lib/boards/__fixtures__/agathon/`
+for the TypeScript reader (`AgathonFixtureExportTests`; regenerate with `WRITE_AGATHON_FIXTURES=1`).
 
-- **Not converted yet** (counted in the report): `text`, `note`, `embed`, `bookmark`, `video`, arrow
-  bindings, and a `frame`'s own box.
-- **Converted but not drawn faithfully yet:**
-  - dashed and dotted `dash` (kept in `meta.dash`, drawn solid);
-  - tldraw's highlighter colours and its double pass;
-  - `geo` shapes other than rectangle and ellipse;
-  - a `geo` shape's label (`richText`);
-  - the `rng(id)` width bump tldraw gives a one-point mouse stroke;
-  - tldraw dropping a pen stroke's leading points under z 0.025.
-- **Other old-board leftovers:**
-  - the AI overlays of the removed image pipeline (`meta.aiOverlay`);
-  - `data:` URL assets (reported, not offloaded);
-  - a `math` shape's `resultLatex` and `note`;
-  - `problem` records from the Live loop's state, which is not in the snapshot.
-- **The trip back:** writing an Agathon board back to tldraw, if the web must keep editing a board
-  the iPad has touched.
+**Drawn faithfully later (the board lane's renderer):** dashed and dotted `dash` (kept), tldraw's
+highlighter colours and double pass, a label's text on a shape, a note's text, a cubic line's curve, a
+crop, a video's frame, the `rng(id)` width bump of a one-point mouse stroke, and tldraw dropping a pen
+stroke's leading points under z 0.025. `problem` records from the Live loop's state are not in a
+snapshot, so there are none to convert.

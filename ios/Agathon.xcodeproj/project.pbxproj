@@ -11,6 +11,7 @@
 		569333189A76680A35C74B67 /* AgathonBoard in Frameworks */ = {isa = PBXBuildFile; productRef = 473BF604BAF84ABCD8CE679D /* AgathonBoard */; };
 		6CC073C52FF8D7A3F808FEFA /* AgathonBrain in Frameworks */ = {isa = PBXBuildFile; productRef = 065FF0609EBF448976CCA0A0 /* AgathonBrain */; };
 		F28EF159DB2854E0678843BB /* AgathonDesign in Frameworks */ = {isa = PBXBuildFile; productRef = B99AD4C37DA95662CA301E92 /* AgathonDesign */; };
+		FD94A2F724915696EB7C975A /* AgathonSync in Frameworks */ = {isa = PBXBuildFile; productRef = 5E858D0444B89A09E5EB5B60 /* AgathonSync */; };
 		FED5ADC4A7F6590D178DDFA3 /* AgathonLive in Frameworks */ = {isa = PBXBuildFile; productRef = E48185E5D2DBCE33B0703C64 /* AgathonLive */; };
 /* End PBXBuildFile section */
 
@@ -33,6 +34,7 @@
 
 /* Begin PBXFileReference section */
 		20DA749408029D9321D33673 /* AgathonUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AgathonUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2F12BF8AD1DEF01F2D9518BA /* AgathonSync */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonSync; path = Packages/AgathonSync; sourceTree = SOURCE_ROOT; };
 		4D33C03C523F7A51E528AB79 /* AgathonBoard */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonBoard; path = Packages/AgathonBoard; sourceTree = SOURCE_ROOT; };
 		52F39C285070ACC0A0DDBD65 /* AgathonKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonKit; path = Packages/AgathonKit; sourceTree = SOURCE_ROOT; };
 		5E5AA883F66340B900CB6ACA /* AgathonBrain */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonBrain; path = Packages/AgathonBrain; sourceTree = SOURCE_ROOT; };
@@ -82,6 +84,7 @@
 				569333189A76680A35C74B67 /* AgathonBoard in Frameworks */,
 				F28EF159DB2854E0678843BB /* AgathonDesign in Frameworks */,
 				FED5ADC4A7F6590D178DDFA3 /* AgathonLive in Frameworks */,
+				FD94A2F724915696EB7C975A /* AgathonSync in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -96,6 +99,7 @@
 				B01D1E6F2042A25FBFFD6CCE /* AgathonDesign */,
 				52F39C285070ACC0A0DDBD65 /* AgathonKit */,
 				DE349BD35DF38F4B559CC448 /* AgathonLive */,
+				2F12BF8AD1DEF01F2D9518BA /* AgathonSync */,
 			);
 			path = Packages;
 			sourceTree = "<group>";
@@ -190,6 +194,7 @@
 				473BF604BAF84ABCD8CE679D /* AgathonBoard */,
 				B99AD4C37DA95662CA301E92 /* AgathonDesign */,
 				E48185E5D2DBCE33B0703C64 /* AgathonLive */,
+				5E858D0444B89A09E5EB5B60 /* AgathonSync */,
 			);
 			productName = Agathon;
 			productReference = 73B45906A59F544D6AB84716 /* Agathon.app */;
@@ -234,6 +239,7 @@
 				48317AF34E3FBADC02B7CFC5 /* XCLocalSwiftPackageReference "Packages/AgathonDesign" */,
 				F912F11CC2BAD2680486BC66 /* XCLocalSwiftPackageReference "Packages/AgathonKit" */,
 				9106872B2EA9CF9CC1B4BFD8 /* XCLocalSwiftPackageReference "Packages/AgathonLive" */,
+				540592564D62EA46FEC0F6C4 /* XCLocalSwiftPackageReference "Packages/AgathonSync" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 91050FF09E3453A6A60CF333 /* Products */;
@@ -596,6 +602,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/AgathonBoard;
 		};
+		540592564D62EA46FEC0F6C4 /* XCLocalSwiftPackageReference "Packages/AgathonSync" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonSync;
+		};
 		9106872B2EA9CF9CC1B4BFD8 /* XCLocalSwiftPackageReference "Packages/AgathonLive" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/AgathonLive;
@@ -622,6 +632,10 @@
 		473BF604BAF84ABCD8CE679D /* AgathonBoard */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AgathonBoard;
+		};
+		5E858D0444B89A09E5EB5B60 /* AgathonSync */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonSync;
 		};
 		B99AD4C37DA95662CA301E92 /* AgathonDesign */ = {
 			isa = XCSwiftPackageProductDependency;

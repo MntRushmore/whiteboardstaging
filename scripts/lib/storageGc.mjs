@@ -19,7 +19,8 @@
  * upload whose registry insert / autosave has not landed yet is never collected)
  * AND nothing references it:
  *   board-assets   not in board_assets.object_path and not the src of any asset
- *                  record inside whiteboards.data (URL suffix '/board-assets/<path>')
+ *                  record inside whiteboards.data (URL suffix '/board-assets/<path>'), nor of
+ *                  any picture in the iPad app's board document, whiteboards.doc (docAssetSrcsOf)
  *   training-data  not in training_samples.before_url / after_full_url (stored as
  *                  object paths; full URLs are accepted too)
  */
@@ -133,6 +134,44 @@ export function assetSrcsOf(snapshot) {
     if (typeof src === "string" && src.length > 0) out.push(src);
   }
   return out;
+}
+
+/**
+ * Every picture src in an iPad board document (whiteboards.doc, "agathon.board";
+ * docs/BOARD-FORMAT.md): each `image` record's `asset.src`, and each asset kept whole from the
+ * tldraw original (`tldraw.record` whose `record.typeName` is "asset") `record.props.src`.
+ * Non-empty strings only (data: URLs included; callers filter). Tolerates garbage.
+ * @param {unknown} doc
+ * @returns {string[]}
+ */
+export function docAssetSrcsOf(doc) {
+  if (!doc || typeof doc !== "object") return [];
+  const records = /** @type {any} */ (doc).records;
+  if (!records || typeof records !== "object") return [];
+  /** @type {string[]} */
+  const out = [];
+  for (const r of Object.values(records)) {
+    if (!r || typeof r !== "object") continue;
+    let src;
+    if (r.type === "image") src = r.asset && typeof r.asset === "object" ? r.asset.src : undefined;
+    else if (r.type === "tldraw.record" && r.record && typeof r.record === "object" && r.record.typeName === "asset") {
+      src = r.record.props && typeof r.record.props === "object" ? r.record.props.src : undefined;
+    }
+    if (typeof src === "string" && src.length > 0) out.push(src);
+  }
+  return out;
+}
+
+/**
+ * PostgREST's answer to a read naming a column the database lacks (Postgres 42703, or a PGRST
+ * error naming it): here, the iPad's `doc` before 20261017000000_agathon_doc.sql is applied.
+ * @param {unknown} body
+ */
+export function isMissingDocColumn(body) {
+  if (!body || typeof body !== "object") return false;
+  const { code, message } = /** @type {{ code?: unknown, message?: unknown }} */ (body);
+  if (code === "42703") return true;
+  return typeof code === "string" && code.startsWith("PGRST") && typeof message === "string" && /\bdoc(_version|_schema)?\b/.test(message);
 }
 
 /**
@@ -252,7 +291,7 @@ async function toResult(res) {
 /**
  * Service-role PostgREST + Storage client. Refuses to be built without a key: every
  * call reads or deletes across all users' folders and bypasses RLS.
- * @param {{ url: string, serviceKey: string, fetchImpl?: typeof fetch, pageSize?: number }} cfg
+ * @param {{ url: string, serviceKey: string, fetchImpl?: typeof fetch, pageSize?: number, log?: (line: string) => void }} cfg
  * @returns {GcClient}
  */
 export function createGcClient(cfg) {
@@ -265,18 +304,19 @@ export function createGcClient(cfg) {
 
   /** @param {HttpResult} r @param {string} what */
   const ensureOk = (r, what) => {
-    if (r.status < 200 || r.status >= 300) throw new Error(`${what} failed (${r.status}): ${JSON.stringify(r.body)}`);
+    if (r.status < 200 || r.status >= 300) throw Object.assign(new Error(`${what} failed (${r.status}): ${JSON.stringify(r.body)}`), { result: r });
   };
 
   /**
    * @param {string} table
    * @param {string} select
    * @param {(row: any) => void} onRow
+   * @param {Record<string, string>} [filters] PostgREST filters, e.g. { doc: "not.is.null" }
    */
-  async function eachRow(table, select, onRow) {
+  async function eachRow(table, select, onRow, filters = {}) {
     let offset = 0;
     for (;;) {
-      const qs = new URLSearchParams({ select, order: "id.asc", limit: String(rowsPageSize), offset: String(offset) });
+      const qs = new URLSearchParams({ select, ...filters, order: "id.asc", limit: String(rowsPageSize), offset: String(offset) });
       const res = await fetchImpl(`${base}/rest/v1/${table}?${qs}`, { headers: headers({ Accept: "application/json" }) });
       const r = await toResult(res);
       ensureOk(r, `list ${table}`);
@@ -339,7 +379,15 @@ export function createGcClient(cfg) {
     async listBoardAssetSrcs() {
       /** @type {string[]} */
       const out = [];
+      // the tldraw data (an iPad board's frozen original still references its pictures)…
       await eachRow("whiteboards", "id,data", (row) => out.push(...assetSrcsOf(row?.data)));
+      // …and the iPad app's documents. A database without the column yet has none to protect.
+      try {
+        await eachRow("whiteboards", "id,doc", (row) => out.push(...docAssetSrcsOf(row?.doc)), { doc: "not.is.null" });
+      } catch (err) {
+        if (!isMissingDocColumn(/** @type {any} */ (err)?.result?.body)) throw err;
+        cfg.log?.("whiteboards.doc does not exist yet (20261017000000_agathon_doc.sql not applied): no iPad documents to read");
+      }
       return out;
     },
     async listTrainingRefs() {
@@ -409,7 +457,7 @@ export async function runGc(client, opts = {}) {
     buckets.includes(BOARD_ASSETS_BUCKET) ? client.listBoardAssetSrcs() : Promise.resolve([]),
     buckets.includes(TRAINING_DATA_BUCKET) ? client.listTrainingRefs() : Promise.resolve([]),
   ]);
-  log(`references: ${registeredPaths.length} board_assets row(s), ${referencedUrls.length} asset src(s) in whiteboards.data, ${trainingRefs.length} training url(s)`);
+  log(`references: ${registeredPaths.length} board_assets row(s), ${referencedUrls.length} asset src(s) in whiteboards.data and .doc, ${trainingRefs.length} training url(s)`);
 
   /** @type {GcSummary} */
   const summary = {

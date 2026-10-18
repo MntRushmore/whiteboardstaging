@@ -1,10 +1,14 @@
 /**
  * The console's boards (src/lib/server/adminConsole/boards.ts): the board list (pages, live, one
  * user's), and one board's document with its snapshot spliced in as PostgREST sent it (never parsed),
- * the look logged before anything is answered.
+ * or, for a board the iPad app keeps, its doc turned back into tldraw; the look logged before
+ * anything is answered.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ADMIN_LIMITS, AdminBoardDocSchema, AdminBoardListSchema } from "@/lib/admin/contracts";
+import { agathonDocToTldraw, parseAgathonDoc } from "@/lib/boards/agathonDoc";
 import { buildBoardList, openBoardDoc, type BoardDocResult } from "@/lib/server/adminConsole/boards";
 import { resetConsoleCaches } from "@/lib/server/adminConsole/rest";
 import { ADMIN, B1, B2, B3, consoleFake, consoleTables, deps, iso, MAYA, NOW, SAM, SNAPSHOT_B1 } from "./fixtures/consoleTables";
@@ -12,6 +16,15 @@ import type { Row } from "./fixtures/fakeSupabase";
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
+/** A board the iPad app wrote (src/lib/boards/__fixtures__/agathon). */
+const KID_DOC = JSON.parse(readFileSync(join(__dirname, "../../boards/__fixtures__/agathon/kid-algebra.agathon.json"), "utf8")) as Record<string, unknown>;
+
+/** B1 kept by the iPad app: its doc written at the row's version (12), the tldraw data frozen beside it. */
+function ipadTables(doc: unknown = KID_DOC, docVersion = 12) {
+  const tables = consoleTables();
+  Object.assign(tables.whiteboards.find((w) => w.id === B1) as Row, { doc, doc_version: docVersion, doc_schema: 1 });
+  return tables;
+}
 
 beforeEach(() => resetConsoleCaches());
 
@@ -106,10 +119,75 @@ describe("openBoardDoc", () => {
       { id: 7, at: iso(30 * MIN), version: 11, reason: "interval" },
     ]);
     expect(db.tables.admin_audit).toEqual([expect.objectContaining({ admin_id: ADMIN, action: "board.view", target_kind: "board", target_id: B1, meta: { version: 12, ownerId: MAYA } })]);
-    // the data is asked for as one object, never in the row read
-    const snap = db.calls.find((c) => c.table === "whiteboards")!;
-    expect(snap.params.get("select")).toBe("snapshot:data");
-    expect(snap.headers.get("accept")).toBe("application/vnd.pgrst.object+json");
+    // a web board: the data, as stored
+    expect(body.snapshotSource).toBe("data");
+    // the iPad's doc columns are read first (small: this board has none), then the data as one
+    // object, never in the row read
+    const reads = db.calls.filter((c) => c.table === "whiteboards");
+    expect(reads.map((c) => c.params.get("select"))).toEqual(["doc,version,doc_version", "snapshot:data"]);
+    for (const read of reads) expect(read.headers.get("accept")).toBe("application/vnd.pgrst.object+json");
+  });
+
+  describe("a board the iPad app keeps", () => {
+    it("its doc, turned back into tldraw, in the contract's shape; the data never read", async () => {
+      const db = consoleFake(ipadTables());
+      const doc = await openBoardDoc(deps(db), B1, { adminId: ADMIN });
+      const body = JSON.parse(await text(doc));
+      const parsed = AdminBoardDocSchema.safeParse(body);
+      expect(parsed.success, JSON.stringify(parsed.error?.issues ?? [])).toBe(true);
+      expect(body.snapshotSource).toBe("doc");
+      expect(body.snapshot).toEqual(agathonDocToTldraw(parseAgathonDoc(KID_DOC)));
+      expect(body.snapshot).not.toEqual(SNAPSHOT_B1);
+      // the rest of the document as for any board
+      expect(body.board).toMatchObject({ id: B1, version: 12 });
+      expect(body.attempts.map((a: { id: string }) => a.id)).toEqual(["a4", "a1", "a2"]);
+      expect(body.history).toHaveLength(2);
+      expect(doc).toMatchObject({ kind: "doc", version: 12 });
+      // logged before it was answered, like any look
+      expect(db.tables.admin_audit).toEqual([expect.objectContaining({ action: "board.view", target_id: B1, meta: { version: 12, ownerId: MAYA } })]);
+      expect(db.calls.filter((c) => c.table === "whiteboards").map((c) => c.params.get("select"))).toEqual(["doc,version,doc_version"]);
+    });
+
+    it("the look cannot be logged: nothing is answered", async () => {
+      await expect(openBoardDoc(deps(consoleFake(ipadTables(), { fail: { admin_audit: 500 } })), B1, { adminId: ADMIN })).rejects.toMatchObject({ name: "AuditError" });
+      await expect(openBoardDoc(deps(consoleFake(ipadTables(), { fail: { admin_audit: 500 } })), B1, { since: 11, adminId: ADMIN })).rejects.toMatchObject({ name: "AuditError" });
+    });
+
+    it("a doc that is not the board (data written since), or one this reader cannot read (a newer app's): the data", async () => {
+      for (const tables of [ipadTables(KID_DOC, 11), ipadTables({ ...KID_DOC, schema: 99 })]) {
+        const body = JSON.parse(await text(await openBoardDoc(deps(consoleFake(tables)), B1, { adminId: ADMIN })));
+        expect(body.snapshotSource).toBe("data");
+        expect(body.snapshot).toEqual(SNAPSHOT_B1);
+      }
+    });
+
+    it("a database without the doc columns yet (the web deployed first): the data, as before", async () => {
+      const db = consoleFake();
+      const f: typeof fetch = async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/rest/v1/whiteboards" && /\bdoc\b/.test(url.searchParams.get("select") ?? "")) {
+          return Response.json({ code: "42703", details: null, hint: null, message: "column whiteboards.doc does not exist" }, { status: 400 });
+        }
+        return db.fetch(input, init);
+      };
+      const body = JSON.parse(await text(await openBoardDoc({ ...deps(db), fetch: f }, B1, { adminId: ADMIN })));
+      expect(body.snapshotSource).toBe("data");
+      expect(body.snapshot).toEqual(SNAPSHOT_B1);
+      // …and PostgREST naming the column from its schema cache is the same answer
+      const g: typeof fetch = async (input, init) =>
+        /select=doc/.test(String(input)) ? Response.json({ code: "PGRST204", message: "Could not find the 'doc_version' column of 'whiteboards' in the schema cache" }, { status: 400 }) : db.fetch(input, init);
+      expect(JSON.parse(await text(await openBoardDoc({ ...deps(db), fetch: g }, B1, { adminId: ADMIN }))).snapshotSource).toBe("data");
+    });
+
+    it("deleted after its row was read: missing; another failure of the doc read names its table", async () => {
+      const db = consoleFake(ipadTables());
+      const gone: typeof fetch = async (input, init) =>
+        /select=doc/.test(String(input)) ? Response.json({ code: "PGRST116", message: "JSON object requested, multiple (or no) rows returned" }, { status: 406 }) : db.fetch(input, init);
+      expect(await openBoardDoc({ ...deps(db), fetch: gone }, B1, { adminId: ADMIN })).toEqual({ kind: "missing" });
+      const broken: typeof fetch = async (input, init) =>
+        /select=doc/.test(String(input)) ? Response.json({ code: "XX000", message: "the fake database fell over" }, { status: 500 }) : db.fetch(input, init);
+      await expect(openBoardDoc({ ...deps(db), fetch: broken }, B1, { adminId: ADMIN })).rejects.toMatchObject({ name: "ConsoleQueryError", what: "whiteboards" });
+    });
   });
 
   it("?since= the board's version: { unchanged } with nothing else read or logged", async () => {
