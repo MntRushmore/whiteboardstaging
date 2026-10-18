@@ -66,7 +66,7 @@ describe("adding a kid", () => {
     expect(store.created).toEqual([]);
   });
 
-  it("needs the grown-up's Unlimited (409 plan_required): no plan, no kid, and no add counted", async () => {
+  it("a second kid needs the grown-up's Unlimited (409 plan_required): no plan, no kid, and no add counted", async () => {
     store.noPlan.add(IDS.parent);
     const out = await addKid(store, user(IDS.parent), NEW_KID);
     expect(out).toMatchObject({ ok: false, status: 409, code: "invalid_request", reason: "plan_required", message: FAMILY_ERRORS.planRequired });
@@ -74,9 +74,41 @@ describe("adding a kid", () => {
     expect(FAMILY_ERRORS.planRequired).toBe("Start your free trial to add kids.");
     expect(store.created).toEqual([]);
     expect(store.kidAdds.size).toBe(0);
-    // a solo account with no plan hears about the plan before the PIN
+    // one kid is enough to need it
+    store.families.get(IDS.parent)!.kids = [IDS.kidA];
+    expect(await addKid(store, user(IDS.parent), NEW_KID)).toMatchObject({ ok: false, status: 409, reason: "plan_required" });
+  });
+
+  it('"Not now": a grown-up without the plan adds their FIRST kid (no plan read), then the second is plan_required', async () => {
     store.noPlan.add(IDS.solo);
-    expect(await addKid(store, user(IDS.solo), NEW_KID)).toMatchObject({ ok: false, reason: "plan_required" });
+    // the PIN still comes first
+    expect(await addKid(store, user(IDS.solo), NEW_KID)).toMatchObject({ ok: false, status: 409, reason: "pin_required" });
+    await setFamilyPin(store, user(IDS.solo), "2468");
+    const first = await addKid(store, user(IDS.solo), NEW_KID);
+    expect(first).toMatchObject({ ok: true, value: { displayName: "Cleo", isParent: false } });
+    expect(store.planReads).toBe(0);
+    expect(store.kidAdds.get(IDS.solo)).toBe(1);
+    expect(store.families.get(IDS.solo)?.kids).toHaveLength(1);
+    const second = await addKid(store, user(IDS.solo), { ...NEW_KID, displayName: "Dev" });
+    expect(second).toMatchObject({ ok: false, status: 409, code: "invalid_request", reason: "plan_required", message: FAMILY_ERRORS.planRequired });
+    expect(store.created).toHaveLength(1);
+    // the refused second add spent nothing of the day's budget
+    expect(store.kidAdds.get(IDS.solo)).toBe(1);
+    // the first kid removed, a new first kid is allowed again (it spends the same ink: no gain)
+    if (first.ok) await removeKid(store, user(IDS.solo), first.value.userId);
+    expect((await addKid(store, user(IDS.solo), { ...NEW_KID, displayName: "Eli" })).ok).toBe(true);
+  });
+
+  it("with the plan, every kid up to MAX_KIDS (the plan is read for each after the first)", async () => {
+    store.families.set(IDS.solo, { pinHash: store.families.get(IDS.parent)!.pinHash, kids: [] });
+    for (let i = 0; i < 3; i++) expect((await addKid(store, user(IDS.solo), { ...NEW_KID, displayName: `Kid ${i}` })).ok).toBe(true);
+    expect(store.planReads).toBe(2);
+  });
+
+  it("a kid is refused before anything else, plan or not (403 kid)", async () => {
+    store.noPlan.add(IDS.parent);
+    expect(await addKid(store, kidUser(IDS.kidA), NEW_KID)).toMatchObject({ ok: false, status: 403, reason: "kid" });
+    expect(store.planReads).toBe(0);
   });
 
   it(`allows ${KID_ADDS.limit} adds a day per family, however many are removed in between (429 kid_add_limit)`, async () => {

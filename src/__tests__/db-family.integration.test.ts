@@ -13,7 +13,8 @@
  *      - a kid account gets no starter ink, at sign-up or from the self-heal on its first call; an
  *        ordinary account still does
  *      - a kid never spends ink of their own, not even ink granted by hand: without the grown-up's
- *        Unlimited it is insufficient_credits with plan_required, and nothing is written
+ *        Unlimited the kid spends the GROWN-UP's ink (20261017210000_ipad_onboarding.sql; the
+ *        "Not now" rule in detail: db-not-now.integration.test.ts)
  *      - fair use is ONE allowance per family, counted on the grown-up's rows: a full family refuses
  *        every member, deleting a kid and adding another resets nothing, and refunding a kid's call
  *        gives the family its count back
@@ -151,26 +152,29 @@ suite(title, () => {
     const { parent, kids } = await family(1);
     const [kid] = kids;
     expect(rows(await service.rest("GET", "ink_grants", { query: { user_id: `eq.${kid.userId}`, select: "kind" } }))).toEqual([]);
-    // ink_summary runs the self-heal (ensure_ink_account), which must not grant it now either
-    expect(await balance(kid)).toMatchObject({ balance: 0, starter: 0 });
+    // ink_summary runs the self-heal (ensure_ink_account), which must not grant it now either (the
+    // summary itself shows the grown-up's ink to a kid without the plan: what the kid spends)
+    await balance(kid);
     await consume(kid, `db-family-${tag}-first`);
     expect(rows(await service.rest("GET", "ink_grants", { query: { user_id: `eq.${kid.userId}`, select: "kind" } }))).toEqual([]);
-    // the grown-up's own sign-up is unchanged
+    expect(rows(await service.rest("GET", "profiles", { query: { user_id: `eq.${kid.userId}`, select: "ink_balance" } }))).toEqual([{ ink_balance: 0 }]);
+    // the grown-up's own sign-up is unchanged (less the 3 ink the kid's call spent from it)
     const grownUp = await balance(parent);
     expect(grownUp.starter).toBeGreaterThan(0);
-    expect(grownUp.balance).toBe(grownUp.starter);
+    expect(grownUp.balance).toBe(grownUp.starter - 3);
   }, 60_000);
 
-  it("a kid never spends ink of their own, not even ink granted by hand, without the grown-up's plan", async () => {
-    const { kids } = await family(1);
+  it("a kid never spends ink of their own, not even ink granted by hand: without the grown-up's plan it is the grown-up's", async () => {
+    const { parent, kids } = await family(1);
     const [kid] = kids;
     const grant = await rpc(service, "grant_ink", { p_user_id: kid.userId, p_units: 50, p_reason: "db-family test" });
     expect(grant.status, JSON.stringify(grant.body)).toBe(200);
-    expect((await balance(kid)).balance).toBe(50);
-    const refused = await consume(kid, `db-family-${tag}-noplan`);
-    expect(refused).toEqual({ ok: false, remaining: 0, reason: "insufficient_credits", plan_required: true });
-    expect((await balance(kid)).balance).toBe(50);
+    const before = (await balance(parent)).balance;
+    const spent = await consume(kid, `db-family-${tag}-noplan`);
+    expect(spent).toEqual({ ok: true, remaining: before - 3, reason: null });
+    expect(rows(await service.rest("GET", "profiles", { query: { user_id: `eq.${kid.userId}`, select: "ink_balance" } }))).toEqual([{ ink_balance: 50 }]);
     expect(rows(await service.rest("GET", "usage_events", { query: { user_id: `eq.${kid.userId}`, select: "id" } }))).toEqual([]);
+    expect((await balance(parent)).balance).toBe(before - 3);
   }, 60_000);
 
   it("fair use is one allowance per family, on the grown-up's rows: full means full for everyone, and deleting a kid resets nothing", async () => {

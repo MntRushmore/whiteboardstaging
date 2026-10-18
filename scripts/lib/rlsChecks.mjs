@@ -2540,8 +2540,8 @@ export const FAMILY_FUNCTIONS = [
  * Users: nobody but the service role writes `families` or `family_members`, and nobody reads
  * `families` (the PIN's hash) at all. A family's grown-up P and kid K read their own family_members
  * row; anyone else (A) reads none. No user may call FAMILY_FUNCTIONS. With the service role (P and K
- * are made with `newUser`): a kid never spends ink of their own (refused, plan_required, while P has
- * no plan); the kid shares the grown-up's plan (ink_summary().unlimited, consume_credits() through
+ * are made with `newUser`): a kid never spends ink of their own (while P has no plan, K's call spends
+ * P's ink: 20261017210000_ipad_onboarding.sql); the kid shares the grown-up's plan (ink_summary().unlimited, consume_credits() through
  * the Unlimited path, counted on the GROWN-UP's fair-use rows: one allowance per family) while A does
  * not, the kid keeps their own checkout_ref; the PIN's budgets are per family (5 per 15 minutes, then
  * refused; a forgiven try comes back; the day's 10th try locks, a new PIN unlocks); adding kids has
@@ -2622,15 +2622,17 @@ export async function checkFamily({ anon, a, service, newUser }) {
     const refK = rows(kRef)[0]?.checkout_ref ?? null;
     const before = asObject((await rpc(k, "ink_summary")).body);
     out.push(result("family: K has no plan while P has none", before?.unlimited?.status === "none" && before?.unlimited?.unlimited === false, JSON.stringify(before?.unlimited ?? null).slice(0, 200)));
-    // K was made as an ordinary account (newUser), so K HAS ink: a kid still never spends it.
+    // K was made as an ordinary account (newUser), so K HAS ink: a kid still never spends it. Without
+    // the plan, K's call spends P's ink ("Not now" on the iPad's trial).
     const kidSpend = await rpc(k, "consume_credits", { p_route: "rls-verify-family", p_units: 1, p_request_id: `rls-verify-family-noplan-${tag}` });
     const kidSpent = asObject(kidSpend.body);
     const kidUsage = await service.rest("GET", "usage_events", { query: { user_id: `eq.${k.userId}`, select: "id" } });
+    const parentUsage = await service.rest("GET", "usage_events", { query: { request_id: `eq.rls-verify-family-noplan-${tag}`, select: "user_id" } });
     out.push(
       result(
-        "family: K cannot spend ink of their own while P has no plan (insufficient_credits, plan_required, nothing written)",
-        isOk(kidSpend) && kidSpent?.ok === false && kidSpent?.reason === "insufficient_credits" && kidSpent?.plan_required === true && affectedNoRows(kidUsage),
-        `${describe(kidSpend)} / ${describe(kidUsage)}`,
+        "family: K never spends ink of their own; while P has no plan K's call spends P's ink (the row is on P)",
+        isOk(kidSpend) && kidSpent?.ok === true && affectedNoRows(kidUsage) && rows(parentUsage).length === 1 && rows(parentUsage)[0]?.user_id === p.userId,
+        `${describe(kidSpend)} / ${describe(kidUsage)} / ${describe(parentUsage)}`,
       ),
     );
     const planned = await service.rest("POST", "unlimited_subscriptions", {
