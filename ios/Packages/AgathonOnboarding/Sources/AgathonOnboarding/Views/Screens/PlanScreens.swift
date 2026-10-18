@@ -177,7 +177,7 @@ struct PlanScreen: View {
                         HStack(spacing: 12) {
                             LoadedHand(source: .latex([TryBoard.written(p)]), size: 34)
                             if let kid = model.answers.tries.first(where: { $0.problemId == p.id }), !kid.strokes.isEmpty {
-                                KidInk(strokes: kid.strokes, height: 40)
+                                KidInk(strokes: kid.answerStrokes ?? kid.strokes, height: 40)
                             }
                             if solved {
                                 TickShape()

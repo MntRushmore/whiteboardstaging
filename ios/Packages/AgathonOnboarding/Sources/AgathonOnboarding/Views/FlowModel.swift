@@ -50,7 +50,7 @@ final class FlowModel {
     var offerFailed = false
     /// made by `kidProfile`, opened by `firstBoard`
     var firstBoard: FirstBoardHandoff?
-    var firstBoardMade: (document: BoardDocument, liveProblem: String?)?
+    var firstBoardMade: FirstBoardMaker.Made?
     /// the practice set's seed, once per flow, so the board shown is the board handed over
     let boardSeed = Int.random(in: 1...99_999)
     var madeKid: MadeKid?

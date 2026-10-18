@@ -15,22 +15,25 @@ enum FirstBoardMaker {
 
     /// The document, and the first practice problem left for the tutor to write live on screen 1.
     /// `boardId`: the row it goes into, so the first screen's id is the one the board session uses.
-    static func make(answers a: OnboardingAnswers, seed: Int, boardId: String? = nil) async -> (document: BoardDocument, liveProblem: String?) {
+    static func make(answers a: OnboardingAnswers, seed: Int, boardId: String? = nil) async -> Made {
         let store = BoardStore(document: boardId.map(BoardSession.blankDocument(boardId:)) ?? .blank())
-        guard let first = store.screenIDs.first else { return (.blank(), nil) }
+        guard let first = store.screenIDs.first else { return Made(document: .blank(), liveProblem: nil, liveY: 300) }
         var bottom = 140.0
 
         // the try, as it was
         if let t = a.tries.first(where: { $0.checked }) ?? a.tries.first, let p = OnboardingCatalog.shared.problem(t.problemId) {
             let latex = TryBoard.written(p)
-            if let plan = try? await Brain.shared.layoutHandwriting(HandwritingRequest(steps: [latex], size: handSize, seedKey: p.id)).plan {
+            // exactly as the try wrote it (same hand, same seed, same place), so the kid's strokes sit
+            // where they were written
+            if let plan = try? await Brain.shared.layoutHandwriting(HandwritingRequest(steps: [latex], size: TryBoard.handSize, seedKey: p.id)).plan {
                 let b = plan.bounds
-                let lines = TryBoard.tutorLines(plan, dx: 160 - b.x, dy: 120 - b.y)
+                let o = TryBoard.problemOrigin(width: b.w, beside: latex.hasSuffix("="))
+                let lines = TryBoard.tutorLines(plan, dx: o.x - b.x, dy: o.y - b.y)
                 put(lines, on: first, in: store, meta: ["problem": .bool(true)])
-                bottom = 120 + b.h
+                bottom = o.y + b.h
             }
             var inkBox: Box?
-            for pts in t.strokes where pts.count >= 2 {
+            for pts in (t.answerStrokes ?? t.strokes) where pts.count >= 2 {
                 guard let o = pts.first, o.count >= 2 else { continue }
                 let s = StrokeRecord(screen: first, order: store.nextOrder(on: first), author: .kid, color: .black, width: 6,
                                      pressure: .real, x: o[0], y: o[1],
@@ -41,15 +44,27 @@ enum FirstBoardMaker {
                     inkBox = inkBox.map { Box(x: min($0.x, r.x), y: min($0.y, r.y), w: max($0.maxX, r.x) - min($0.x, r.x), h: max($0.maxY, r.y) - min($0.y, r.y)) } ?? r
                 }
             }
-            if let box = inkBox, t.checked {
-                put([TutorLine(strokes: TutorMarks.strokes(.tick, line: box, seed: 11), latex: "\\checkmark")], on: first, in: store, meta: [:])
+            if let box = inkBox {
+                if t.checked {
+                    put([TutorLine(strokes: TutorMarks.strokes(.tick, line: box, seed: 11), latex: "\\checkmark")], on: first, in: store, meta: [:])
+                }
                 bottom = max(bottom, box.maxY)
             }
         }
 
-        // the practice problems
-        let skill = Plan.firstSkill(a) ?? "add_within_10"
-        let problems = (try? await Brain.shared.practice(skill: skill, count: Plan.firstBoardProblems, seed: seed)) ?? []
+        // the practice problems: the plan's first skill the practice set has problems for (as the web's
+        // finish.ts does), else the try's own starters at the kid's level
+        var problems: [[String]] = []
+        for skill in Plan.skills(a) {
+            if let p = try? await Brain.shared.practice(skill: skill, count: Plan.firstBoardProblems, seed: seed), !p.isEmpty {
+                problems = p
+                break
+            }
+        }
+        if problems.isEmpty {
+            let tried = Set(a.tries.map(\.problemId))
+            problems = Plan.tryProblems(a).filter { !tried.contains($0.id) }.prefix(Plan.firstBoardProblems).map { [TryBoard.written($0)] }
+        }
         var live: String?
         for (i, problem) in problems.enumerated() {
             let latex = problem.joined(separator: " ")
@@ -63,8 +78,15 @@ enum FirstBoardMaker {
                 put(TryBoard.tutorLines(plan, dx: 160 - plan.bounds.x, dy: 120 - plan.bounds.y), on: s.id, in: store, meta: ["problem": .bool(true)])
             }
         }
-        _ = bottom
-        return (store.document, live)
+        // the next problem goes under the try (or at the top when there was no try)
+        return Made(document: store.document, liveProblem: live, liveY: a.tries.isEmpty ? 260 : max(600, bottom + 150))
+    }
+
+    struct Made {
+        var document: BoardDocument
+        /// written live on screen 1 by the first board (then saved with it)
+        var liveProblem: String?
+        var liveY: Double
     }
 
     static func put(_ lines: [TutorLine], on screen: RecordID, in store: BoardStore, meta: Meta) {
@@ -153,8 +175,9 @@ struct FirstBoardScreen: View {
         Task {
             try? await Task.sleep(for: .milliseconds(700))
             guard let plan = try? await Brain.shared.layoutHandwriting(HandwritingRequest(steps: [live], size: FirstBoardMaker.handSize, seedKey: live)).plan else { return }
-            let y = 470.0
-            w.write(TryBoard.tutorLines(plan, dx: 160 - plan.bounds.x, dy: y - plan.bounds.y), meta: ["problem": .bool(true)])
+            let y = model.firstBoardMade?.liveY ?? 600
+            let x = (Box.screen.w - plan.bounds.w) / 2
+            w.write(TryBoard.tutorLines(plan, dx: x - plan.bounds.x, dy: y - plan.bounds.y), meta: ["problem": .bool(true)])
         }
     }
 

@@ -491,21 +491,38 @@ struct PinScreen: View {
 
     var body: some View {
         let c = model.copy
-        VStack(spacing: 18) {
+        let side = layout.landscape && !layout.compact
+        let words = VStack(alignment: side ? .leading : .center, spacing: 18) {
             Text(c.pinLede)
                 .dsFont(.body)
                 .foregroundStyle(DS.Color.inkSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 520)
+                .multilineTextAlignment(side ? .leading : .center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420, alignment: side ? .leading : .center)
                 .reveal(0)
             PinDots(count: entry.count, lookAgain: miss).reveal(1)
             Text(note ?? " ").dsFont(.callout).foregroundStyle(DS.Color.ink).frame(height: 22)
-            PinPad(entry: $entry, keyFill: .paper) { pin in submit(pin) }
-                .disabled(busy)
-                .reveal(2)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, layout.contentTop - (layout.landscape ? 10 : 0))
+        let pad = PinPad(entry: $entry, keyFill: .paper) { pin in submit(pin) }
+            .disabled(busy)
+            .reveal(2)
+        Group {
+            if side {
+                HStack(alignment: .top, spacing: 72) {
+                    words.padding(.top, 8)
+                    pad
+                }
+                .padding(.horizontal, layout.margin)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(spacing: 18) {
+                    words
+                    pad
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.top, layout.contentTop)
         .frame(height: layout.size.height, alignment: .top)
     }
 

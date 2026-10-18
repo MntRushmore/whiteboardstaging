@@ -163,10 +163,7 @@ final class TryBoard {
             return
         }
         let b = plan.bounds
-        let zoneW = answersBeside ? 400.0 : 620.0
-        let groupW = answersBeside ? b.w + 56 + zoneW : max(b.w, zoneW)
-        let originX = (Box.screen.w - groupW) / 2 + (answersBeside ? 0 : (groupW - b.w) / 2)
-        let originY = answersBeside ? 330.0 : 200.0
+        let (originX, originY) = Self.problemOrigin(width: b.w, beside: answersBeside)
         let lines = Self.tutorLines(plan, dx: originX - b.x, dy: originY - b.y)
         let problemBox = Box(x: originX, y: originY, w: b.w, h: b.h)
         write(lines) { [weak self] in
@@ -204,6 +201,15 @@ final class TryBoard {
         zoneLayer.path = path
         zoneLayer.opacity = path == nil ? 0 : 1
         CATransaction.commit()
+    }
+
+    /// Where the problem's ink starts on the page: the problem and its zone as one group, centred
+    /// (beside: the answer after the "="; under: algebra's steps). The first board puts the try back
+    /// in the same place, so the kid's own strokes land where they were written.
+    nonisolated static func problemOrigin(width w: Double, beside: Bool) -> (x: Double, y: Double) {
+        let zoneW = beside ? 400.0 : 620.0
+        let groupW = beside ? w + 56 + zoneW : max(w, zoneW)
+        return ((Box.screen.w - groupW) / 2 + (beside ? 0 : (groupW - w) / 2), beside ? 330.0 : 200.0)
     }
 
     nonisolated static func tutorLines(_ plan: HandPlan, dx: Double, dy: Double) -> [TutorLine] {
@@ -321,6 +327,9 @@ final class TryBoard {
         switch result.verdict {
         case .solved, .check:
             let solved = result.verdict == .solved
+            if !batch.isEmpty {
+                record.answerStrokes = batch.map { s in s.points.map { [s.x + Double($0.x), s.y + Double($0.y), Double($0.pressure)] } }
+            }
             write([TutorLine(strokes: TutorMarks.strokes(.tick, line: box, seed: seed), latex: "\\checkmark")])
             OnboardingSound.shared.play(.tick)
             UIAccessibility.post(notification: .announcement, argument: solved ? "You got it." : "Right. Keep going.")

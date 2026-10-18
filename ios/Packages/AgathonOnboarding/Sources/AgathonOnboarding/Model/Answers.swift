@@ -44,6 +44,8 @@ public struct TryRecord: Codable, Sendable, Equatable {
     public var latex: String?
     /// the kid's strokes, page coordinates: each point `[x, y, pressure]`
     public var strokes: [[[Double]]]
+    /// the strokes of the line the tutor ticked (what the first board carries over)
+    public var answerStrokes: [[[Double]]]?
     /// answered with "Type it instead"
     public var typed: Bool
     /// pen lift to the tick, ms
@@ -59,6 +61,7 @@ public struct TryRecord: Codable, Sendable, Equatable {
         verdict = nil
         latex = nil
         strokes = []
+        answerStrokes = nil
         typed = false
         ms = nil
         rings = 0
