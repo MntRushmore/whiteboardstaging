@@ -1,5 +1,6 @@
 #if DEBUG
 import AgathonDesign
+import AgathonKit
 import SwiftUI
 
 /// The onboarding in Labs (Debug builds): the real flow against whatever backend the app points at
@@ -7,23 +8,35 @@ import SwiftUI
 ///
 /// Launch arguments (also how the UI tests and the QA videos drive it):
 ///  - `-lab onboarding` opens it at launch (ios/Agathon/Debug/LabsMenu.swift);
-///  - `-onboardingFresh` starts over (forgets a kept flow);
+///  - `-onboardingFresh` starts over as a new iPad would (forgets a kept flow, signs this iPad out);
 ///  - `-onboardingTrial started|pending|cancelled` what the stand-in trial answers;
 ///  - `-onboardingMute` no sound.
 public struct OnboardingLab: View {
     let close: () -> Void
+    @Environment(AgathonBackend.self) private var backend
+    @State private var ready = false
     @MainActor private static var didReset = false
 
     public init(close: @escaping () -> Void) {
         self.close = close
-        if ProcessInfo.processInfo.arguments.contains("-onboardingFresh"), !Self.didReset {
-            Self.didReset = true
-            OnboardingState.reset()
-        }
     }
 
     public var body: some View {
-        OnboardingFlow(trial: StubTrialOffering(outcome: Self.trialOutcome)) { _ in close() }
+        Group {
+            if ready {
+                OnboardingFlow(trial: StubTrialOffering(outcome: Self.trialOutcome)) { _ in close() }
+            } else {
+                DS.Color.ground.ignoresSafeArea()
+            }
+        }
+        .task {
+            if ProcessInfo.processInfo.arguments.contains("-onboardingFresh"), !Self.didReset {
+                Self.didReset = true
+                OnboardingState.reset()
+                if backend.auth.phase == .signedIn { try? await backend.auth.signOut(scope: .local) }
+            }
+            ready = true
+        }
             .overlay(alignment: .top) {
                 Button(action: close) {
                     Label("Close lab", systemImage: "xmark")

@@ -103,7 +103,13 @@ struct PlanScreen: View {
     private func today(_ c: OnboardingCopy, solved: Bool) -> some View {
         Card(.cobalt, radius: DS.Radius.cardLarge, deco: true, fillsHeight: true) {
             Text(c.todayLabel).dsFont(.label).foregroundStyle(DS.Color.onInk)
-            Text("5 problems").dsFont(.display, size: 52).foregroundStyle(DS.Color.onInk)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("\(Plan.todayProblems)").dsFont(.display, size: 72)
+                Text("problems").dsFont(.headline, size: 26)
+            }
+            .foregroundStyle(DS.Color.onInk)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             Text("About 10 minutes").dsFont(.body, size: 18).foregroundStyle(DS.Color.onInk)
             Spacer(minLength: 8)
             StarRow(earned: solved ? 1 : 0, total: Plan.todayProblems, size: 34, onCobalt: true)
@@ -170,6 +176,9 @@ struct PlanScreen: View {
                     if let p = tryProblem {
                         HStack(spacing: 12) {
                             LoadedHand(source: .latex([TryBoard.written(p)]), size: 34)
+                            if let kid = model.answers.tries.first(where: { $0.problemId == p.id }), !kid.strokes.isEmpty {
+                                KidInk(strokes: kid.strokes, height: 40)
+                            }
                             if solved {
                                 TickShape()
                                     .stroke(DS.Color.tutorInk, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
@@ -186,6 +195,31 @@ struct PlanScreen: View {
         .foregroundStyle(DS.Color.ink)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(c.firstBoard)
+    }
+}
+
+/// The kid's own strokes, small (the plan's picture of the first board): black ink, as written.
+struct KidInk: View {
+    let strokes: [[[Double]]]
+    let height: CGFloat
+
+    var body: some View {
+        let pts = strokes.flatMap { $0 }.filter { $0.count >= 2 }
+        let minX = pts.map { $0[0] }.min() ?? 0, maxX = pts.map { $0[0] }.max() ?? 1
+        let minY = pts.map { $0[1] }.min() ?? 0, maxY = pts.map { $0[1] }.max() ?? 1
+        let scale = height / max(1, maxY - minY)
+        Canvas { gc, _ in
+            for s in strokes where s.count >= 2 {
+                var path = Path()
+                for (i, p) in s.enumerated() where p.count >= 2 {
+                    let q = CGPoint(x: (p[0] - minX) * scale + 2, y: (p[1] - minY) * scale + 2)
+                    if i == 0 { path.move(to: q) } else { path.addLine(to: q) }
+                }
+                gc.stroke(path, with: .color(DS.Color.ink), style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
+            }
+        }
+        .frame(width: (maxX - minX) * scale + 4, height: height + 4)
+        .accessibilityHidden(true)
     }
 }
 

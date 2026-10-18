@@ -52,6 +52,9 @@ final class OnboardingUITests: XCTestCase {
         let e = app.descendants(matching: .any).matching(identifier: id).firstMatch
         XCTAssertTrue(e.waitForExistence(timeout: wait), "no \(id)", file: file, line: line)
         waitUntilHittable(e, wait)
+        // a screen's answers rise in after its question is typed: an answer still fading in (opacity 0)
+        // takes no taps, as for a person
+        usleep(900_000)
         e.tap()
     }
 
