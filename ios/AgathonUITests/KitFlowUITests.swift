@@ -171,6 +171,8 @@ final class KitFlowUITests: XCTestCase {
         for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY"] {
             app.launchEnvironment[key] = env[key]
         }
+        // These flows drive the kit lane's plain debug screens (RootView keeps them behind this).
+        app.launchArguments += ["-debugScreens"]
         app.launch()
         return app
     }

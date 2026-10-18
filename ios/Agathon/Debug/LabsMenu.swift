@@ -11,7 +11,8 @@ extension View {
 }
 
 private struct LabsButton: ViewModifier {
-    @State private var open: Lab? = Lab.fromLaunch
+    /// `-liveLab` opens the Live Lab straight away (screenshots and recordings on the simulator); `-lab <name>` any lab.
+    @State private var open: Lab? = ProcessInfo.processInfo.arguments.contains("-liveLab") ? .live : Lab.fromLaunch
 
     func body(content: Content) -> some View {
         content
@@ -36,7 +37,7 @@ private struct LabsButton: ViewModifier {
 }
 
 private enum Lab: String, CaseIterable, Identifiable {
-    case board, brain, design, onboarding
+    case board, brain, design, live, debugScreens, onboarding
 
     var id: String { rawValue }
 
@@ -52,6 +53,8 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .board: return "Board Lab (draw with the Pencil)"
         case .brain: return "Brain Lab (maths engine timings)"
         case .design: return "Design Gallery (the Blocks look)"
+        case .live: return "Live Lab (the tutor on the board)"
+        case .debugScreens: return "Old debug screens (kit lane)"
         case .onboarding: return "Onboarding (the first run)"
         }
     }
@@ -61,6 +64,8 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .board: return "pencil.tip"
         case .brain: return "function"
         case .design: return "paintpalette"
+        case .live: return "checkmark.bubble"
+        case .debugScreens: return "ladybug"
         case .onboarding: return "hand.wave"
         }
     }
@@ -76,6 +81,8 @@ private struct LabScreen: View {
             case .board: BoardLabView()
             case .brain: BrainLabView()
             case .design: DesignGallery()
+            case .live: LiveLabView()
+            case .debugScreens: DebugScreens()
             case .onboarding: OnboardingLab(close: close)
             }
             if lab != .onboarding { Button(action: close) {

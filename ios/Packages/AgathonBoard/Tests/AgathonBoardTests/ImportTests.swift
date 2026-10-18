@@ -76,7 +76,7 @@ struct TldrawImportTests {
         #expect(abs(rect.w - 2330) <= 1 && abs(rect.h - 1311) <= 1)
         #expect(r.report.strokes == 9) // 8 draw + 1 highlight
         #expect(r.report.images == 1)
-        #expect(r.report.skipped["text"] == 1)
+        #expect(r.report.texts == 1 && r.report.skipped.isEmpty) // the text is a typed note now
         // group children land where the group puts them, rotated with it
         let strokes = r.document.strokes
         #expect(strokes.contains { abs($0.rotation - 0.4) < 1e-9 })
@@ -94,11 +94,11 @@ struct TldrawImportTests {
         #expect(r.report.strokes == 2224)
         #expect(r.report.maths == 224)
         let small = try load("legacy-small.tldraw.json")
-        #expect(small.report.strokes == 1 && small.report.shapes == 1 && small.report.skipped["text"] == 1)
+        #expect(small.report.strokes == 1 && small.report.shapes == 1 && small.report.texts == 1 && small.report.skipped.isEmpty)
     }
 
     @Test func convertedBoardsRoundTripAndConvertTheSameTwice() throws {
-        for name in ["kid-algebra.tldraw.json", "legacy-noscreen.tldraw.json", "synthetic-2000.tldraw.json"] {
+        for name in ["kid-algebra.tldraw.json", "legacy-noscreen.tldraw.json", "synthetic-2000.tldraw.json", "legacy-small.tldraw.json", "all-shapes.tldraw.json"] {
             let a = try load(name).document
             let b = try load(name).document
             #expect(a == b, "\(name) converts the same way twice")

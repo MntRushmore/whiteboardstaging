@@ -25,6 +25,13 @@ packages:
   # mark and the shapes. Local, so edits to it build with the app.
   AgathonDesign:
     path: Packages/AgathonDesign
+  # The tutor on the board (docs/IPAD-NATIVE.md, Phase 2): the Live loop and its SwiftUI pieces.
+  AgathonLive:
+    path: Packages/AgathonLive
+  # Saving boards (docs/IPAD-NATIVE.md, Phase 1): open / convert / autosave / backup / thumbnails /
+  # pictures in board-assets, on AgathonBoard + AgathonKit.
+  AgathonSync:
+    path: Packages/AgathonSync
   # The first run (docs/ONBOARDING.md): OnboardingFlow, its state, and the seams for the try's
   # checker, Apple's trial and the parental gate.
   AgathonOnboarding:
@@ -49,6 +56,8 @@ targets:
       - package: AgathonKit
       - package: AgathonBoard
       - package: AgathonDesign
+      - package: AgathonLive
+      - package: AgathonSync
       - package: AgathonOnboarding
     settings:
       base:
@@ -98,6 +107,7 @@ targets:
         # `xcodebuild test` passes with no backend. See AgathonUITests/KitFlowUITests.swift.
         - AgathonUITests
         - package: AgathonBoard/AgathonBoardTests
+        - package: AgathonSync/AgathonSyncTests
       gatherCoverageData: false
       environmentVariables:
         # Tick in Product > Scheme > Edit Scheme > Run > Arguments to call a local `npm run dev`.

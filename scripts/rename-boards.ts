@@ -16,6 +16,7 @@
  * "Edited just now". Applying that SQL to production is a separate, deliberate step.
  */
 import { writeFileSync } from "node:fs";
+import { loadBoardSnapshot } from "@/lib/boards/agathonDoc";
 import { buildTitleMessages } from "@/lib/server/prompts/title";
 import { cleanSmartTitle, replaceableTitles, titleContent } from "@/lib/boards/smartTitle";
 import { CHAT_PROBLEM_META } from "@/lib/live/chat/cells";
@@ -95,8 +96,9 @@ async function main(): Promise<void> {
   const plan: Array<{ id: string; from: string; to: string }> = [];
   const skipped = { named: 0, empty: 0, unnamed: 0 };
   for (const b of boards.slice(0, limit)) {
-    const [row] = await rest<Array<{ data: unknown }>>(`whiteboards?select=data&id=eq.${b.id}`);
-    const content = contentOf(row?.data);
+    // `*`: the iPad app's doc when the database has it (the board is its doc once the app keeps it)
+    const [row] = await rest<Array<Record<string, unknown>>>(`whiteboards?select=*&id=eq.${b.id}`);
+    const content = contentOf(loadBoardSnapshot(row, { onError: (err) => console.warn(`${b.id}: its iPad doc could not be read (${String(err)}); its tldraw data instead`) }));
     if (content.length === 0) {
       skipped.empty++;
       continue;

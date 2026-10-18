@@ -164,3 +164,26 @@ struct JSONValueTests {
         #expect(JSONValue.parse(Data(value.jsonString.utf8)) == value)
     }
 }
+
+/// `BoardsRepository.snapshot(id:)`: the `data` column of one row, as its own JSON bytes.
+struct BoardSnapshotTests {
+    @Test func theDocumentComesOutOfItsRow() throws {
+        let row = #"{"data":{"document":{"store":{"page:a":{"typeName":"page","id":"page:a"}}},"session":{"currentPageId":"page:a"}}}"#
+        let bytes = try BoardsRepository.documentBytes(fromRow: Data(row.utf8))
+        let object = try #require(try JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        #expect(object["document"] != nil)
+        #expect((object["session"] as? [String: Any])?["currentPageId"] as? String == "page:a")
+        #expect(object["data"] == nil, "the row's wrapper is gone")
+    }
+
+    @Test func anEmptyBoard() throws {
+        #expect(String(decoding: try BoardsRepository.documentBytes(fromRow: Data(#"{"data":{}}"#.utf8)), as: UTF8.self) == "{}")
+        #expect(String(decoding: try BoardsRepository.documentBytes(fromRow: Data(#"{"data":null}"#.utf8)), as: UTF8.self) == "null")
+        #expect(String(decoding: try BoardsRepository.documentBytes(fromRow: Data(#"{}"#.utf8)), as: UTF8.self) == "null")
+    }
+
+    @Test func notARow() {
+        #expect(throws: APIError.self) { try BoardsRepository.documentBytes(fromRow: Data("[1,2]".utf8)) }
+        #expect(throws: APIError.self) { try BoardsRepository.documentBytes(fromRow: Data("<html>".utf8)) }
+    }
+}

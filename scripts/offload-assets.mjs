@@ -33,7 +33,7 @@ export const MAX_VERSION_RETRIES = 3;
 export const DEFAULT_PAGE_SIZE = 20;
 
 /**
- * @typedef {{ id: string, user_id: string, version: number, data: unknown }} BoardRow
+ * @typedef {{ id: string, user_id: string, version: number, data: unknown, doc_version?: number | null }} BoardRow
  * @typedef {{ status: number, body: any }} HttpResult
  * @typedef {{
  *   baseUrl: string,
@@ -132,20 +132,37 @@ export function createAdminClient(cfg) {
     if (r.status < 200 || r.status >= 300) throw new Error(`${what} failed (${r.status}): ${JSON.stringify(r.body)}`);
   };
 
+  // `doc_version`: set on a board the iPad app keeps (20261017000000_agathon_doc.sql), whose tldraw
+  // data is read-only (the database refuses a write to it). A database before that migration has no
+  // such column: read without it.
+  let docColumn = true;
+  /** @param {Record<string, string>} query */
+  const readBoards = async (query, what) => {
+    if (docColumn) {
+      const r = await rest("GET", "whiteboards", { query: { select: "id,user_id,version,data,doc_version", ...query } });
+      const code = r.body && typeof r.body === "object" && !Array.isArray(r.body) ? /** @type {any} */ (r.body).code : null;
+      if (r.status === 400 && code === "42703") docColumn = false;
+      else {
+        ensureOk(r, what);
+        return Array.isArray(r.body) ? r.body : [];
+      }
+    }
+    const r = await rest("GET", "whiteboards", { query: { select: "id,user_id,version,data", ...query } });
+    ensureOk(r, what);
+    return Array.isArray(r.body) ? r.body : [];
+  };
+
   return {
     baseUrl: base,
     async listBoards({ offset, limit, boardId }) {
       /** @type {Record<string, string>} */
-      const query = { select: "id,user_id,version,data", order: "id.asc", limit: String(limit), offset: String(offset) };
+      const query = { order: "id.asc", limit: String(limit), offset: String(offset) };
       if (boardId) query.id = `eq.${boardId}`;
-      const r = await rest("GET", "whiteboards", { query });
-      ensureOk(r, "list whiteboards");
-      return Array.isArray(r.body) ? r.body : [];
+      return readBoards(query, "list whiteboards");
     },
     async getBoard(id) {
-      const r = await rest("GET", "whiteboards", { query: { select: "id,user_id,version,data", id: `eq.${id}` } });
-      ensureOk(r, `read whiteboard ${id}`);
-      return Array.isArray(r.body) && r.body[0] ? r.body[0] : null;
+      const rows = await readBoards({ id: `eq.${id}` }, `read whiteboard ${id}`);
+      return rows[0] ?? null;
     },
     async upload(path, bytes, contentType) {
       const res = await fetchImpl(`${base}/storage/v1/object/${BUCKET}/${path}`, {
@@ -223,6 +240,11 @@ export async function offloadBoard(client, initialRow, opts = {}) {
   let attempts = 0;
   for (;;) {
     attempts++;
+    // a board the iPad app keeps: its tldraw data is the frozen original, left as it is
+    if (row.doc_version !== undefined && row.doc_version !== null) {
+      log(`board ${row.id}: kept by the iPad app (doc_version ${row.doc_version}); skipped`);
+      return { id: row.id, user_id: row.user_id, attempts, assets: 0, bytesBefore: 0, bytesAfter: 0, status: "skipped" };
+    }
     const plan = planBoard(client, row);
     const base = { id: row.id, user_id: row.user_id, attempts, assets: plan.items.length, bytesBefore: plan.bytesBefore, bytesAfter: plan.bytesAfter };
     if (plan.problems.length) {

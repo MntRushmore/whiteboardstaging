@@ -40,6 +40,9 @@ struct LocalStackIntegrationTests {
         let listed = try await backend.boards.list()
         #expect(listed.count == before.count + 1)
         #expect(listed.first?.id == made.id, "newest first")
+        // A new board's document is the web's empty `{}` (read only: the app never writes `data`).
+        let document = try await backend.boards.snapshot(id: made.id)
+        #expect(String(decoding: document, as: UTF8.self) == "{}")
         let renamed = try await backend.boards.rename(id: made.id, to: "  Renamed by iOS  ")
         #expect(renamed.title == "Renamed by iOS")
         let deleted = try await backend.boards.delete(id: made.id)
