@@ -137,6 +137,10 @@ replay plays a stroke as fast as it was drawn.
 | `x`, `y`, `w`, `h`, `rotation` | number | rotation 0 | |
 | `asset` | `{src, mime?, w?, h?}` | | `src`: the `board-assets` public URL, never a `data:` URL in a saved board; `w, h`: the image's own pixels |
 
+A PDF page put on the board (the page picker) carries `meta`: `locked: true` (Select and the eraser
+leave it alone; it is the worksheet), `protected: true` (kept from the tutor), `kind: "pdf"`,
+`fileName` and `page` (1-based), as the web's PDF upload does. The eraser never takes a picture.
+
 ### `math`: typeset maths
 
 | field | type | default | notes |
