@@ -663,3 +663,11 @@ screens read with no name.
   - AX3 text;
   - Reduce Motion;
   - VoiceOver on the try.
+
+## Owner decisions (2026-10-17)
+
+- **Trial placement:** offered once, right after the grown-up makes the account (step 12), with
+  "Not now" and Restore. Not before the account; not deferred to the end of the free board.
+- **"Not now":** the kid still gets their own profile and the free board (5 problems), like the
+  web. This needs the server change described above: the first kid profile without a plan, and AI
+  calls for that kid covered on the free board.
