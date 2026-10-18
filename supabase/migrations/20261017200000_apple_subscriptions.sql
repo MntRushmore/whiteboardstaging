@@ -211,6 +211,20 @@ begin
   on conflict (stripe_subscription_id) do nothing;
   select * into v_row from public.unlimited_subscriptions where stripe_subscription_id = v_key for update;
 
+  -- Xcode's local StoreKit testing starts its transaction ids again when its transactions are deleted,
+  -- so a later local purchase can reuse an original id: with another token it is another purchase,
+  -- and the row starts over. Only ever for Xcode/LocalTesting rows (production refuses that setting).
+  if v_row.apple_environment in ('Xcode', 'LocalTesting') and p_environment in ('Xcode', 'LocalTesting')
+     and p_app_account_token is not null and v_row.apple_app_account_token is not null
+     and v_row.apple_app_account_token <> p_app_account_token then
+    update public.unlimited_subscriptions
+       set user_id = null, linked_at = null, apple_app_account_token = null, status = null, status_event_at = null,
+           trial_end = null, current_period_end = null, cancel_at_period_end = false, canceled_at = null,
+           ended_at = null, apple_latest_transaction_id = null, apple_price_milliunits = null, apple_currency = null
+     where id = v_row.id
+    returning * into v_row;
+  end if;
+
   -- A caller can only write a row that is, or becomes, their family's.
   if p_claim_user is not null and v_row.user_id is not null and v_row.user_id is distinct from v_link then
     return jsonb_build_object('applied', false, 'stale', false, 'refused', null, 'conflict', true,

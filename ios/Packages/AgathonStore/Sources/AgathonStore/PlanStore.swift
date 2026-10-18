@@ -56,6 +56,7 @@ public final class PlanStore {
     let server: any StoreServer
     let readPlan: @Sendable () async throws -> UnlimitedPlan?
     @ObservationIgnored private var listener: Task<Void, Never>?
+    @ObservationIgnored private var statusListener: Task<Void, Never>?
 
     public init(productID: String = StorePlan.productID, server: any StoreServer,
                 readPlan: @escaping @Sendable () async throws -> UnlimitedPlan?) {
@@ -73,7 +74,10 @@ public final class PlanStore {
     // MARK: launch
 
     /// Starts listening for transactions (renewals, refunds, Ask to Buy approvals, purchases made on
-    /// another device, and every unfinished one from before). Call once, at launch. Idempotent.
+    /// another device, and every unfinished one from before) and for changes of the subscription's
+    /// status that bring no new transaction (auto-renew turned off, an expiry, a billing retry), so
+    /// the server hears of each at once, not only through Apple's notification. Call once, at launch.
+    /// Idempotent.
     public func start() {
         guard listener == nil else { return }
         note("Listening for App Store transactions")
@@ -81,6 +85,12 @@ public final class PlanStore {
             for await result in Transaction.updates {
                 guard let self else { return }
                 _ = await self.deliver(result, source: "update")
+            }
+        }
+        statusListener = Task { [weak self] in
+            for await status in Product.SubscriptionInfo.Status.updates {
+                guard let self else { return }
+                await self.deliver(status: status)
             }
         }
     }
@@ -272,7 +282,30 @@ public final class PlanStore {
         return outcome
     }
 
+    /// A status change (no new transaction to finish): the latest transaction and its renewal info.
+    func deliver(status: Product.SubscriptionInfo.Status) async {
+        let transaction = status.transaction.unsafePayloadValue
+        guard transaction.productID == productID else { return }
+        let outcome = await server.record(transaction: status.transaction.jwsRepresentation,
+                                          renewalInfo: status.renewalInfo.jwsRepresentation)
+        lastRecord = outcome
+        note("[status \(Self.describe(status.state))] transaction \(transaction.id) -> \(Self.describe(outcome))")
+        await refreshPlan()
+        await refreshEntitlement()
+    }
+
     // MARK: words
+
+    static func describe(_ state: Product.SubscriptionInfo.RenewalState) -> String {
+        switch state {
+        case .subscribed: return "subscribed"
+        case .expired: return "expired"
+        case .inBillingRetryPeriod: return "billing retry"
+        case .inGracePeriod: return "grace period"
+        case .revoked: return "revoked"
+        default: return "\(state)"
+        }
+    }
 
     static func describe(_ outcome: RecordOutcome) -> String {
         switch outcome {

@@ -43,6 +43,9 @@ targets:
     sources:
       - path: Agathon
         type: syncedFolder
+        # The StoreKit test configuration is the scheme's (below), not an app resource.
+        excludes:
+          - Agathon.storekit
     dependencies:
       - package: AgathonBrain
       - package: AgathonKit

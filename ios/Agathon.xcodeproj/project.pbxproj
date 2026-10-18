@@ -42,6 +42,16 @@
 		B01D1E6F2042A25FBFFD6CCE /* AgathonDesign */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonDesign; path = Packages/AgathonDesign; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		20C886851984B5A29D8A6DD8 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Agathon.storekit,
+			);
+			target = C180FF0FD1320B8A4FFA1307 /* Agathon */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1C6AD33D2419FA9A7CDDF686 /* AgathonTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -54,6 +64,9 @@
 		};
 		382F2F759C8DC98399A3BF42 /* Agathon */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				20C886851984B5A29D8A6DD8 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+			);
 			explicitFileTypes = {
 			};
 			explicitFolders = (

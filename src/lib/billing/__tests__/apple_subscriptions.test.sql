@@ -166,9 +166,17 @@ begin
   v := pg_temp.ap_apply('2000000505', 'active', v_t0, gen_random_uuid(), p_period_end => v_t0 + interval '30 days');
   perform pg_temp.ap_expect('unlinked row recorded', (select user_id is null from public.unlimited_subscriptions where stripe_subscription_id = 'apple:2000000505'), true);
   perform pg_temp.ap_expect('unlinked row grants nothing', v ->> 'unlimited', 'false');
+  -- Xcode's local testing reuses ids after its transactions are deleted: another token there is a new purchase
+  v := pg_temp.ap_apply('0', 'trialing', v_t0, v_gref, v_g, p_period_end => v_t0 + interval '7 days', p_env => 'Xcode');
+  v := pg_temp.ap_apply('0', 'trialing', v_t0 - interval '1 day', (select checkout_ref from public.profiles where user_id = v_o), v_o, p_period_end => v_t0 + interval '6 days', p_env => 'Xcode');
+  perform pg_temp.ap_expect('a reused Xcode id with another token starts over', v ->> 'applied', 'true');
+  perform pg_temp.ap_expect('and is the new buyer''s', (select user_id from public.unlimited_subscriptions where stripe_subscription_id = 'apple:0'), v_o);
   -- Production rows are live
   v := pg_temp.ap_apply('2000000606', 'trialing', v_t0, null, v_o, p_period_end => v_t0 + interval '7 days', p_env => 'Production');
   perform pg_temp.ap_expect('a Production row is live', (select livemode from public.unlimited_subscriptions where stripe_subscription_id = 'apple:2000000606'), true);
+  -- never for Sandbox or Production rows: there an original id is one subscription for good
+  v := pg_temp.ap_apply('2000000606', 'trialing', v_t0, v_gref, v_g, p_period_end => v_t0 + interval '7 days', p_env => 'Production');
+  perform pg_temp.ap_expect('a Production row is not taken over', v ->> 'conflict', 'true');
 end;
 $$;
 
