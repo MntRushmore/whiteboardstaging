@@ -124,7 +124,30 @@ final class ScreensUITests: XCTestCase {
         kidButton.tap()
         wait(app.staticTexts["home.greeting"], "Hi \(kid).")
         homeLoaded(app)
+        Thread.sleep(forTimeInterval: 2)
         snap("home-kid")
+
+        // The path opens Progress.
+        let path = app.descendants(matching: .any).matching(identifier: "home.path").firstMatch
+        if path.waitForExistence(timeout: 10), path.isHittable {
+            path.tap()
+            wait(app.descendants(matching: .any).matching(identifier: "progress.page").firstMatch)
+            Thread.sleep(forTimeInterval: 2)
+            snap("progress")
+            app.buttons["area.close"].firstMatch.tap()
+            homeLoaded(app)
+        }
+
+        // Today's practice opens a board with the day's problems.
+        let start = app.buttons["home.startPractice"]
+        if start.waitForExistence(timeout: 10) {
+            start.tap()
+            wait(app.descendants(matching: .any).matching(identifier: "board.canvas").firstMatch, timeout: 30)
+            Thread.sleep(forTimeInterval: 1.5)
+            snap("board-practice")
+            app.buttons["board.back"].firstMatch.tap()
+            homeLoaded(app)
+        }
 
         app.buttons["home.grownUps"].tap()
         wait(app.buttons["1"])
@@ -133,6 +156,23 @@ final class ScreensUITests: XCTestCase {
         wait(app.staticTexts["switcher.error"], "isn't right")
         snap("pin-look-again")
         for digit in pin { app.buttons[String(digit)].tap() }
+
+        // The grown-up's places open straight away.
+        wait(app.buttons["area.account"], timeout: 30)
+        Thread.sleep(forTimeInterval: 2)
+        snap("account")
+        app.buttons["area.family"].tap()
+        wait(app.descendants(matching: .any).matching(identifier: "family.kid.\(kid)").firstMatch)
+        snap("family")
+        app.buttons["area.report"].tap()
+        wait(app.descendants(matching: .any).matching(identifier: "report.page").firstMatch)
+        Thread.sleep(forTimeInterval: 2)
+        snap("report")
+        app.buttons["area.bugs"].tap()
+        wait(app.descendants(matching: .any).matching(identifier: "bugs.page").firstMatch)
+        Thread.sleep(forTimeInterval: 1.5)
+        snap("bugs")
+        app.buttons["area.close"].firstMatch.tap()
         wait(app.staticTexts["home.greeting"])
         homeLoaded(app)
         XCTAssertFalse(app.staticTexts["home.greeting"].label.contains(kid))
