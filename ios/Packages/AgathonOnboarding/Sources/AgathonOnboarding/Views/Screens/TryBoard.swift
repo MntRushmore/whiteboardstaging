@@ -64,6 +64,7 @@ final class TryBoard {
     private var lastInk = Date.distantPast
     private var penLiftAt: Date?
     private var scriptIndex = 0
+    private var hintTask: Task<Void, Never>?
     private var generation = 0
     private var waitTask: Task<Void, Never>?
     private var nudgeTask: Task<Void, Never>?
@@ -312,6 +313,11 @@ final class TryBoard {
         record.strokes = kidStrokes.map { s in s.points.map { [s.x + Double($0.x), s.y + Double($0.y), Double($0.pressure)] } }
         let ms = lift.map { Int(Date().timeIntervalSince($0) * 1000) }
         let seed = UInt32(truncatingIfNeeded: box.x.bitPattern ^ box.y.bitPattern)
+        // the verdict comes first: a hint still being written is finished at once (whole lines,
+        // never half a word) and nothing older waits in front of the tick
+        hintTask?.cancel()
+        queue.removeAll()
+        writer?.cancel()
         switch result.verdict {
         case .solved, .check:
             let solved = result.verdict == .solved
@@ -375,10 +381,10 @@ final class TryBoard {
     }
 
     private func writeHint(_ hint: String, under box: Box) {
-        Task {
+        hintTask = Task {
             let x = box.x
             let y = box.maxY + 26
-            guard let ink = await HandInkMaker.shared.words(hint, size: Self.hintSize) else {
+            guard let ink = await HandInkMaker.shared.words(hint, size: Self.hintSize), !Task.isCancelled else {
                 nextZone(below: box.maxY + 20)
                 return
             }
