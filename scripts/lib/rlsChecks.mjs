@@ -681,6 +681,95 @@ export async function checkStorage({ a, b, anon }) {
   return out;
 }
 
+/**
+ * An Agathon board document (docs/BOARD-FORMAT.md): the envelope, with `n` throwaway records.
+ * @param {number} [n]
+ */
+export function agathonDoc(n = 1) {
+  /** @type {Record<string, unknown>} */
+  const records = { "screen:a": { id: "screen:a", type: "screen", order: "a0", rect: { x: 0, y: 0, w: 1600, h: 900 } } };
+  for (let i = 0; i < n; i++) {
+    const id = `stroke:${uuid()}`;
+    records[id] = { id, type: "stroke", screen: "screen:a", order: `a${i + 1}`, author: "kid", color: "black", width: 6, pressure: "real", x: i, y: i, points: "AQUDAACAADA//wQyAEAF", start: 1760000000000 + i };
+  }
+  return { format: "agathon.board", schema: 1, records };
+}
+
+/**
+ * The iPad app's document (20261017000000_agathon_doc.sql): `doc` lives in the board's own row, so
+ * the row's RLS covers it; a doc write bumps `version` and stamps `doc_version` / `doc_schema`
+ * (never what the client sends); once a board has a doc its tldraw `data` is read-only (the web
+ * never overwrites an iPad board); the doc's history follows the data's rule.
+ * @param {CheckContext} ctx
+ */
+export async function checkAgathonDoc({ a, b }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const board = await createBoard(a, "rls-verify agathon doc");
+  try {
+    const q = { id: `eq.${board.id}` };
+    const select = "version,doc_version,doc_schema";
+    const first = await a.rest("PATCH", "whiteboards", { query: { ...q, version: "eq.1" }, body: { doc: agathonDoc(1) }, prefer: "return=representation" });
+    const r1 = rows(first)[0];
+    out.push(result("agathon doc: A writes a doc (version-checked) -> version 2, doc_version 2, doc_schema 1", isOk(first) && r1?.version === 2 && r1?.doc_version === 2 && r1?.doc_schema === 1, describe(first)));
+
+    const forged = await a.rest("PATCH", "whiteboards", { query: q, body: { doc_version: 99, doc_schema: 7 }, prefer: "return=representation" });
+    const r2 = rows(forged)[0];
+    out.push(result("agathon doc: doc_version and doc_schema are the trigger's, not the client's", isOk(forged) && r2?.doc_version === 2 && r2?.doc_schema === 1 && r2?.version === 2, describe(forged)));
+
+    const web = await a.rest("PATCH", "whiteboards", { query: { ...q, version: "eq.2" }, body: { data: { web: true } }, prefer: "return=representation" });
+    const afterWeb = await a.rest("GET", "whiteboards", { query: { ...q, select: `${select},data` } });
+    out.push(
+      result(
+        "agathon doc: a data-only write to a board with a doc is refused (board_edited_on_ipad), nothing changes",
+        !isOk(web) && /board_edited_on_ipad/.test(describe(web)) && rows(afterWeb)[0]?.version === 2 && JSON.stringify(rows(afterWeb)[0]?.data) === "{}",
+        `${describe(web)} / ${describe(afterWeb)}`,
+      ),
+    );
+
+    const bad = await a.rest("PATCH", "whiteboards", { query: q, body: { doc: { format: "tldraw", records: {} } }, prefer: "return=representation" });
+    out.push(result("agathon doc: a doc that is not an agathon.board envelope is refused (23514)", bad.status === 400 && /23514/.test(describe(bad)), describe(bad)));
+
+    const bSel = await b.rest("GET", "whiteboards", { query: { ...q, select: "id,doc" } });
+    out.push(result("agathon doc: B cannot read A's doc", affectedNoRows(bSel), describe(bSel)));
+    const bUpd = await b.rest("PATCH", "whiteboards", { query: q, body: { doc: agathonDoc(1) }, prefer: "return=representation" });
+    out.push(result("agathon doc: B cannot write A's doc (0 rows)", deniedOrEmpty(bUpd), describe(bUpd)));
+
+    // History: the first doc replaced nothing; the next doc within 10 minutes keeps nothing; a doc
+    // that drops more than half of a big one keeps the one before it, doc only (data null).
+    const history = async () => {
+      const snaps = await a.rest("GET", "whiteboard_snapshots", { query: { whiteboard_id: `eq.${board.id}`, select: "version,reason,data,doc_schema", order: "version.asc" } });
+      return { snaps, list: rows(snaps) };
+    };
+    const big = await a.rest("PATCH", "whiteboards", { query: { ...q, version: "eq.2" }, body: { doc: agathonDoc(400) }, prefer: "return=representation" });
+    const h1 = await history();
+    out.push(
+      result(
+        "agathon doc: the next doc write keeps the doc it replaced (version 2) as history, doc only",
+        isOk(big) && rows(big)[0]?.version === 3 && h1.list.length === 1 && Number(h1.list[0].version) === 2 && h1.list[0].data === null && h1.list[0].doc_schema === 1,
+        `${describe(big)} / ${describe(h1.snaps)}`,
+      ),
+    );
+    const wipe = await a.rest("PATCH", "whiteboards", { query: { ...q, version: "eq.3" }, body: { doc: agathonDoc(0) }, prefer: "return=representation" });
+    const h2 = await history();
+    out.push(
+      result(
+        "agathon doc: a doc write that drops more than half the board keeps the doc before it ('pre_drop')",
+        isOk(wipe) && rows(wipe)[0]?.version === 4 && h2.list.map((r) => `${r.version}:${r.reason}`).join(",") === "2:interval,3:pre_drop",
+        `${describe(wipe)} / ${describe(h2.snaps)}`,
+      ),
+    );
+
+    const ins = await a.rest("POST", "whiteboards", { body: { title: "rls-verify doc insert", data: {}, doc: agathonDoc(1), doc_version: 42, user_id: a.userId }, prefer: "return=representation" });
+    const ri = rows(ins)[0];
+    out.push(result("agathon doc: a board inserted with a doc gets doc_version 1, doc_schema 1 (not the client's)", isOk(ins) && ri?.version === 1 && ri?.doc_version === 1 && ri?.doc_schema === 1, describe(ins)));
+    if (ri?.id) await deleteBoard(a, ri.id);
+  } finally {
+    await deleteBoard(a, board.id);
+  }
+  return out;
+}
+
 /** @param {CheckContext} ctx */
 export async function checkVersionTrigger({ a }) {
   /** @type {CheckResult[]} */
@@ -1927,6 +2016,7 @@ export const ALL_CHECKS = [
   { name: "board_assets are isolated", run: checkBoardAssets },
   { name: "storage bucket policies", run: checkStorage },
   { name: "version trigger, optimistic concurrency and history retention", run: checkVersionTrigger },
+  { name: "the iPad app's doc: same row and RLS, version and history, the web never overwrites it", run: checkAgathonDoc },
   { name: "accounts & billing tables (plans, profiles, ledgers, billing_events)", run: checkBillingTables },
   { name: "credits: consume_credits / credit_summary spend only the caller's balance", run: checkCreditsConsumption },
   { name: "refunds of failed calls: service role only (refund_ink_for), never by the user", run: checkRefunds },

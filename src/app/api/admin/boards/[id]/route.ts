@@ -25,7 +25,8 @@ const QuerySchema = z.object({
  * (`AdminBoardDoc`, src/lib/admin/contracts.ts; src/lib/server/adminConsole/boards.ts). With `since`
  * equal to the board's version, `{ unchanged: true, version }` and nothing else (the viewer's
  * follow-live poll: nothing read but the version, nothing logged). Otherwise the document, its
- * `snapshot` the stored whiteboards.data streamed as it is (never parsed here), once admin_audit has
+ * `snapshot` the stored whiteboards.data streamed as it is (never parsed here), or for a board the
+ * iPad app keeps its doc turned back into tldraw (`snapshotSource` says which), once admin_audit has
  * the look ('board.view'; a follow-live poll's new version is the same look, logged again only 10
  * minutes after the admin's last row for the board: `auditRepeatLook`).
  *

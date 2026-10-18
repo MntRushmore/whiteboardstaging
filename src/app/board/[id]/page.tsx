@@ -70,7 +70,7 @@ import { autoActs, useLiveSettings } from "@/lib/live/liveSettings";
 import { screenStripSlot } from "@/components/screens/ScreenStrip";
 import { liveDebugEnabled } from "@/lib/live/liveDebug";
 import { ScreenBackground, ScreenFrame } from "@/components/screens/ScreenFrame";
-import { applyScreenCamera } from "@/lib/screens/screens";
+import { applyScreenCamera, goToScreen } from "@/lib/screens/screens";
 import { useScreenCamera } from "@/lib/screens/useScreenCamera";
 import { LiveStatusPill } from "@/components/live/LiveStatusPill";
 import { SaveStatus } from "@/components/live/SaveStatus";
@@ -817,6 +817,81 @@ function BoardContent({ id, initialVersion, chat, free }: { id: string; initialV
 
 type BoardSnapshot = Partial<TLEditorSnapshot> | TLStoreSnapshot;
 
+/** A board last edited in the iPad app (whiteboards.doc, src/lib/boards/agathonDoc.ts): shown, never written. */
+const IPAD_BOARD_COPY = {
+  banner: "Last edited on the iPad app",
+  sub: "Open it on the iPad to keep working.",
+  previous: "Previous screen",
+  next: "Next screen",
+  back: "My boards",
+} as const;
+
+/** The tldraw slots of an iPad board: the screen and its frame, no tools, no panels. */
+const READ_ONLY_COMPONENTS = {
+  MenuPanel: null,
+  NavigationPanel: null,
+  SharePanel: null,
+  HelperButtons: null,
+  Toolbar: null,
+  StylePanel: null,
+  MainMenu: null,
+  PageMenu: null,
+  ActionsMenu: null,
+  QuickActions: null,
+  ZoomMenu: null,
+  Minimap: null,
+  Background: ScreenBackground,
+  OnTheCanvas: ScreenFrame,
+  ErrorFallback: BoardCrashed,
+} as const;
+
+/**
+ * The web's view of an iPad board: read-only (tldraw's `isReadonly`, set in onMount), the screens
+ * one at a time with a pager, and a banner. Nothing here writes: no save queue, no auto-title, no
+ * Live, no pictures uploaded or removed (the page passes no asset store). The iPad app keeps the
+ * board in `doc`; the web never overwrites it (the database refuses a `data` write to it as well).
+ */
+function ReadOnlyBoard() {
+  const editor = useEditor();
+  const router = useRouter();
+  useScreenCamera(editor);
+  const pages = useValue("ipad pages", () => editor.getPages().map((p) => p.id), [editor]);
+  const current = useValue("ipad page", () => editor.getCurrentPageId(), [editor]);
+  const index = pages.indexOf(current);
+  const pill = "pointer-events-auto rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-sm shadow-sm";
+  return (
+    <>
+      <div className="pointer-events-none absolute inset-x-0 top-3 z-[300] flex justify-center px-4" data-testid="ipad-board-banner">
+        <div className={`${pill} flex items-center gap-3`} role="status">
+          <span className="font-medium text-neutral-900">{IPAD_BOARD_COPY.banner}</span>
+          <span className="hidden text-neutral-500 sm:inline">{IPAD_BOARD_COPY.sub}</span>
+        </div>
+      </div>
+      <div className="pointer-events-none absolute left-3 top-3 z-[300]">
+        <button type="button" className={`${pill} flex items-center gap-1 text-neutral-900`} onClick={() => router.push("/")}>
+          <ArrowLeft01Icon size={16} strokeWidth={1.8} />
+          {IPAD_BOARD_COPY.back}
+        </button>
+      </div>
+      {pages.length > 1 && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-[300] flex justify-center" data-testid="ipad-board-pager">
+          <div className={`${pill} flex items-center gap-3 text-neutral-900`}>
+            <button type="button" aria-label={IPAD_BOARD_COPY.previous} disabled={index <= 0} className="px-2 disabled:opacity-30" onClick={() => goToScreen(editor, -1)}>
+              ‹
+            </button>
+            <span className="tabular-nums">
+              {index + 1} / {pages.length}
+            </span>
+            <button type="button" aria-label={IPAD_BOARD_COPY.next} disabled={index >= pages.length - 1} className="px-2 disabled:opacity-30" onClick={() => goToScreen(editor, 1)}>
+              ›
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /**
  * Restore the snapshot on a throwaway store with the same shape/binding utils as the real
  * editor. Returns the thrown error (never throws) so the page can refuse to mount <Tldraw>
@@ -851,6 +926,8 @@ export default function BoardPage() {
   const [initialData, setInitialData] = useState<BoardSnapshot | null>(null);
   // `whiteboards.version` at load time: the autosave's optimistic-concurrency baseline.
   const [initialVersion, setInitialVersion] = useState<number | null>(null);
+  // a board the iPad app saved last: shown read-only, never written (IPAD_BOARD_COPY)
+  const [readOnly, setReadOnly] = useState(false);
   // tldraw's own paste/drop/upload of images goes to Storage ('<uid>/<boardId>/<assetId>.<ext>')
   // instead of being embedded as a data URL in the snapshot.
   // `getAsset` lets the store derive object paths for assets restored from the snapshot
@@ -916,6 +993,7 @@ export default function BoardPage() {
   const retryLoad = useCallback(() => {
     setInitialData(null);
     setInitialVersion(null);
+    setReadOnly(false);
     setLoadState({ kind: "loading" });
     setLoadAttempt((n) => n + 1);
   }, []);
@@ -930,16 +1008,34 @@ export default function BoardPage() {
       let result: BoardLoadState;
       let snapshot: BoardSnapshot | null = null;
       let version: number | null = null;
+      let fromIpad = false;
       try {
         // maybeSingle: a missing (or another account's) board is a null row, not a 406 error.
+        // `*`: the iPad app's `doc` columns when the database has them (20261017000000_agathon_doc.sql),
+        // and still just `data` and `version` on one that does not yet.
         const { data, error } = await supabase
           .from('whiteboards')
-          .select('data, version')
+          .select('*')
           .eq('id', id)
           .maybeSingle();
 
         result = loadStateFor({ error, row: data });
-        if (result.kind === "ready" && data) {
+        if (result.kind === "ready" && data && data.doc != null) {
+          // A board the iPad app saved after the web last did: its document, turned back into tldraw
+          // to look at. The converter loads only for such a board (it stays out of the board's bundle).
+          const agathon = await import("@/lib/boards/agathonDoc");
+          if (agathon.docIsCurrent(data)) {
+            fromIpad = true;
+            try {
+              snapshot = agathon.agathonDocToTldraw(agathon.parseAgathonDoc(data.doc)) as unknown as BoardSnapshot;
+              const restoreError = snapshotRestoreError(snapshot);
+              if (restoreError) result = loadStateFor({ row: data, restoreError });
+            } catch (e) {
+              result = loadStateFor({ row: data, restoreError: e });
+            }
+          }
+        }
+        if (result.kind === "ready" && data && !fromIpad) {
           if (data.data && Object.keys(data.data).length > 0) {
             // `data` is a jsonb column holding a tldraw snapshot. Prove it restores before
             // the editor exists: a snapshot that throws must never leave an empty canvas.
@@ -963,6 +1059,7 @@ export default function BoardPage() {
       }
       setInitialData(snapshot);
       setInitialVersion(version);
+      setReadOnly(fromIpad);
       setLoadState({ kind: "ready", message: "" });
     }
     void loadBoard();
@@ -991,13 +1088,15 @@ export default function BoardPage() {
         shapeUtils={liveShapeUtils}
         tools={liveTools}
         overrides={boardOverrides}
-        // a board is for writing: the pen is in hand when it opens, not the selection arrow
-        initialState="draw"
+        // a board is for writing: the pen is in hand when it opens, not the selection arrow (an
+        // iPad board, read-only here: the hand)
+        initialState={readOnly ? "hand" : "draw"}
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         // no GitHub Gist: tldraw runs its script unsandboxed, in our origin (src/lib/boards/embeds.ts)
         embeds={BOARD_EMBEDS}
-        assets={assetStoreBundle?.store}
-        components={{
+        // read-only: no asset store, so nothing here can upload or remove an iPad board's pictures
+        assets={readOnly ? undefined : assetStoreBundle?.store}
+        components={readOnly ? READ_ONLY_COMPONENTS : {
           // each slot as the simple board has it: its kid dock carries the tools, colours and pages
           // (src/components/kidmode/slots.tsx)
           MenuPanel: null,
@@ -1014,6 +1113,21 @@ export default function BoardPage() {
           ErrorFallback: BoardCrashed,
         }}
         onMount={(editor) => {
+          if (readOnly) {
+            // the iPad's board, to look at: loaded, held on its screen, never stamped, tidied or saved
+            if (initialData) {
+              try {
+                loadSnapshot(editor.store, initialData);
+              } catch (e) {
+                logger.error({ id, error: e instanceof Error ? e.message : String(e) }, "Failed to load the iPad board");
+                setLoadState(loadStateFor({ row: initialData, restoreError: e }));
+                return;
+              }
+            }
+            editor.updateInstanceState({ isReadonly: true });
+            applyScreenCamera(editor);
+            return;
+          }
           assetStoreBundle?.attach(editor);
           // Pasted/dropped pictures: one whose upload fails is removed again, not saved broken.
           editor.registerExternalContentHandler("files", (c) => import("@/lib/assets/addImageFiles").then((m) => m.addImageFiles(editor, c)));
@@ -1082,7 +1196,11 @@ export default function BoardPage() {
           return stopStrokeTimes;
         }}
       >
-        <BoardContent id={id} initialVersion={initialVersion} chat={{ open: chatOpen, onOpenChange: setChatOpen, host: chatHost, tall: chatTall, onTallChange: setChatTall }} free={free} />
+        {readOnly ? (
+          <ReadOnlyBoard />
+        ) : (
+          <BoardContent id={id} initialVersion={initialVersion} chat={{ open: chatOpen, onOpenChange: setChatOpen, host: chatHost, tall: chatTall, onTallChange: setChatTall }} free={free} />
+        )}
       </Tldraw>
       </div>
       {/* the chat panel: docked on the right on a wide screen held sideways, a bottom sheet on a

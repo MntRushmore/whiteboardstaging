@@ -135,6 +135,16 @@ final class TileLayers {
 
     let root = CALayer()
     private(set) var screenRect = Box.screen
+    /// Items left out of the tiles: a selection lifted off the page while it is moved or resized.
+    var hidden: Set<RecordID> = []
+    /// Areas to redraw, gathered over one run-loop turn and redrawn together just before Core
+    /// Animation commits (`flushInvalidations`): an eraser crossing several strokes, or several
+    /// samples of one touch event, redraws each tile once.
+    private var pendingRects: [Box] = []
+    private var flushObserver: CFRunLoopObserver?
+    /// the last flush's time (ms) and the tiles it redrew, for the stats and the erase measurement
+    private(set) var lastFlushMs = 0.0
+    private(set) var lastFlushTiles = 0
     private(set) var base: Level?
     private(set) var detail: Level?
     /// The current screen's index, read when needed and never kept: a kept copy would make the
@@ -167,6 +177,7 @@ final class TileLayers {
     /// thread, and call `done` once every base tile is on screen.
     func reset(screen: Box, px: CGFloat, done: @escaping () -> Void) {
         screenRect = screen
+        pendingRects.removeAll()
         base?.root.removeFromSuperlayer()
         detail?.root.removeFromSuperlayer()
         detail = nil
@@ -209,6 +220,7 @@ final class TileLayers {
     private func render(_ tiles: [Tile], level: Level, done: (() -> Void)? = nil) {
         let generation = level.generation
         let index = self.index()
+        let hidden = self.hidden
         let kind = Self.kind
         let jobs = tiles.map { t -> Job in
             t.pending = true
@@ -223,9 +235,9 @@ final class TileLayers {
                 let base = buf.baseAddress!
                 DispatchQueue.concurrentPerform(iterations: buf.count) { i in
                     let job = (base + i).pointee
-                    let items = index.items(in: job.rect)
+                    let items = index.items(in: job.rect, hiding: hidden)
                     let bitmap = TileBitmap.make(kind, rect: job.rect, scale: job.px)
-                    bitmap?.draw { ctx in for item in items { item.draw(in: ctx) } }
+                    bitmap?.draw { ctx in TileRasterizer.draw(items, in: ctx) }
                     (base + i).pointee.bitmap = bitmap
                 }
             }
@@ -243,7 +255,7 @@ final class TileLayers {
                         t.pending = false
                         t.bitmap = job.bitmap
                         job.bitmap?.publish(to: t.layer)
-                        if t.stale { self.redraw(t, level: level, rect: t.rect) }
+                        if t.stale { self.redraw(t, level: level, rects: [t.rect]) }
                     }
                     CATransaction.commit()
                     done?()
@@ -252,19 +264,21 @@ final class TileLayers {
         }
     }
 
-    /// Redraws `rect` of a tile now (main thread), clipped to it.
-    private func redraw(_ t: Tile, level: Level, rect: Box) {
+    /// Redraws the `rects` of a tile now (main thread), clipped to them: one redraw and one publish
+    /// however many areas changed.
+    private func redraw(_ t: Tile, level: Level, rects: [Box]) {
         guard let bitmap = t.bitmap else {
             t.stale = true
             return
         }
-        let clip = rect.expanded(by: 1)
-        let items = index().items(in: clip)
+        let clips = rects.map { $0.expanded(by: 1) }
+        let items = clips.count == 1 ? index().items(in: clips[0], hiding: hidden) : index().items(in: clips, hiding: hidden)
         bitmap.draw { ctx in
             ctx.saveGState()
-            ctx.clip(to: clip.cgRect)
-            ctx.clear(clip.cgRect)
-            for item in items { item.draw(in: ctx) }
+            let cg = clips.map(\.cgRect)
+            ctx.clip(to: cg)
+            for r in cg { ctx.clear(r) }
+            TileRasterizer.draw(items, in: ctx)
             ctx.restoreGState()
         }
         bitmap.publish(to: t.layer)
@@ -301,19 +315,77 @@ final class TileLayers {
         lastPaintImageMs = imageMs
     }
 
-    /// Items removed, changed or put under others: redraw those areas.
+    /// Items removed, changed or put under others: those areas are redrawn before this run-loop turn's
+    /// Core Animation commit (so on screen in the same frame), each tile once.
     func invalidate(_ rects: [Box]) {
+        guard !rects.isEmpty else { return }
+        pendingRects += rects
+        scheduleFlush()
+    }
+
+    var hasPendingInvalidations: Bool { !pendingRects.isEmpty }
+
+    /// Redraws everything invalidated so far, now.
+    func flushInvalidations() {
+        guard !pendingRects.isEmpty else { return }
+        let started = CACurrentMediaTime()
+        let rects = pendingRects
+        pendingRects.removeAll(keepingCapacity: true)
+        var redrawn = 0
         for level in [base, detail].compactMap({ $0 }) {
+            var byTile: [Int64: (Tile, [Box])] = [:]
             for r in rects {
                 for t in tiles(of: level, in: r) {
-                    if t.pending {
-                        t.stale = true
-                    } else {
-                        redraw(t, level: level, rect: intersection(t.rect, r))
-                    }
+                    let part = intersection(t.rect, r)
+                    if byTile[t.key] == nil { byTile[t.key] = (t, [part]) } else { byTile[t.key]!.1.append(part) }
+                }
+            }
+            for (t, parts) in byTile.values {
+                if t.pending {
+                    t.stale = true
+                } else {
+                    redraw(t, level: level, rects: Self.merged(parts))
+                    redrawn += 1
                 }
             }
         }
+        lastFlushTiles = redrawn
+        lastFlushMs = (CACurrentMediaTime() - started) * 1000
+    }
+
+    /// Overlapping areas as one (an eraser's hits along a path overlap), fewer rects to clip to.
+    static func merged(_ rects: [Box]) -> [Box] {
+        var out: [Box] = []
+        for r in rects where r.w > 0 && r.h > 0 {
+            var cur = r
+            var i = 0
+            while i < out.count {
+                if out[i].intersects(cur) {
+                    cur = out[i].union(cur)
+                    out.remove(at: i)
+                    i = 0
+                } else {
+                    i += 1
+                }
+            }
+            out.append(cur)
+        }
+        return out
+    }
+
+    private func scheduleFlush() {
+        guard flushObserver == nil else { return }
+        // just before Core Animation's own commit observer (order 2,000,000): the redraw lands in the
+        // same transaction as whatever caused it
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.exit.rawValue, false, 1_999_000) { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.flushObserver = nil
+                self.flushInvalidations()
+            }
+        }
+        flushObserver = observer
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
     }
 
     private func intersection(_ a: Box, _ b: Box) -> Box {

@@ -46,6 +46,12 @@ export const MAX_PREVIEW_LENGTH = 20000;
 /** Postgres error codes the autosave special-cases. */
 export const PG_STATEMENT_TIMEOUT = "57014";
 export const PG_CHECK_VIOLATION = "23514";
+/**
+ * The database's refusal of a `data` write to a board the iPad app keeps (`whiteboards.doc`;
+ * supabase/migrations/20261017000000_agathon_doc.sql): raised with errcode P0001 and this message.
+ */
+export const PG_RAISE_EXCEPTION = "P0001";
+export const BOARD_EDITED_ON_IPAD = "board_edited_on_ipad";
 
 /** Student-facing strings owned by the autosave wiring (the pill's strings live in SaveStatus.tsx). */
 export const SAVE_COPY = {
@@ -54,7 +60,14 @@ export const SAVE_COPY = {
   staleBackup: "Some unsaved changes from this device were older than the board and weren't restored",
   /** the editor could not produce a serializable snapshot (not a size problem) */
   cannotPrepare: "Couldn't prepare this board to save — try reloading",
+  /** a tab open since before the board was changed in the iPad app: its saves are refused, so they stop */
+  editedOnIpad: "This board was changed on the iPad app. Reload to see it.",
 } as const;
+
+/** The database refused the write because the iPad app keeps this board now (`BOARD_EDITED_ON_IPAD`). */
+function isEditedOnIpad(error: PgErrorLike | null | undefined): boolean {
+  return !!error && error.code === PG_RAISE_EXCEPTION && error.message === BOARD_EDITED_ON_IPAD;
+}
 
 /**
  * The toast a finished restore shows, if any. Each has one id per board, so a second restore of
@@ -432,8 +445,12 @@ export interface PersistContext {
   exists: () => Promise<boolean>;
 }
 
-/** A PostgREST error (no rows) -> PersistResult. */
+/**
+ * A PostgREST error (no rows) -> PersistResult. The iPad refusal is the server's final answer
+ * (the board is the iPad app's now): `gone`, which stops the queue's retries, with words that say so.
+ */
 export function persistErrorResult(error: PgErrorLike, online: boolean): PersistResult {
+  if (isEditedOnIpad(error)) return { ok: false, kind: "gone", message: SAVE_COPY.editedOnIpad };
   if (!online || isNetworkFailure(error)) return { ok: false, kind: "offline" };
   const kind = classifySaveError(error);
   if (kind === "timeout") return { ok: false, kind: "timeout" };

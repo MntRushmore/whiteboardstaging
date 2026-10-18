@@ -39,14 +39,13 @@ public final class History {
 
     func record(_ change: ChangeSet) {
         redos.removeAll()
-        if var g = group {
-            if var e = g.entry {
-                e.changes = e.changes.squashed(with: change)
-                g.entry = e
+        if group != nil {
+            // in place: the group's step is never copied as it grows
+            if group!.entry != nil {
+                group!.entry!.changes.squash(with: change)
             } else {
-                g.entry = Entry(label: g.label, changes: change)
+                group!.entry = Entry(label: group!.label, changes: change)
             }
-            group = g
             return
         }
         push(Entry(label: "", changes: change))

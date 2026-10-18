@@ -2,7 +2,7 @@ import AgathonKit
 import SwiftUI
 
 /// The boards home, plain: the signed-in profile's boards (thumbnail, name, when it was edited),
-/// new / rename / delete, the ink, the profile switcher, sign out.
+/// new / rename / delete, the ink, the profile switcher, sign out. Tapping a board opens it.
 struct DebugBoardsView: View {
     @Environment(AgathonBackend.self) private var backend
 
@@ -54,7 +54,12 @@ struct DebugBoardsView: View {
                             .frame(maxWidth: .infinity)
                     }
                     ForEach(boards) { board in
-                        BoardRow(board: board)
+                        // the board itself (ios/Agathon/Board/BoardScreen.swift: AgathonSync + the canvas)
+                        NavigationLink {
+                            BoardScreen(board: board)
+                        } label: {
+                            BoardRow(board: board)
+                        }
                             .swipeActions(edge: .trailing) {
                                 Button("Delete", role: .destructive) { deleting = board }
                                 Button("Rename") {
