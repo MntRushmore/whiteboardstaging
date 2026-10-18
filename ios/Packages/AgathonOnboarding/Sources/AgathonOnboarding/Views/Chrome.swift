@@ -42,7 +42,9 @@ struct Reveal: ViewModifier {
         content
             .opacity(revealed ? 1 : 0)
             .offset(y: revealed || reduceMotion ? 0 : OnboardingMotion.rise)
-            .animation(reduceMotion ? .easeInOut(duration: 0.18) : DS.Motion.snap.delay(revealed ? Double(order) * OnboardingMotion.stagger : 0),
+            // in: the house snap, 40 ms apart; out: one quick 120 ms fade for everything, no stagger
+            .animation(reduceMotion ? .easeInOut(duration: 0.18)
+                       : (revealed ? DS.Motion.snap.delay(Double(order) * OnboardingMotion.stagger) : OnboardingMotion.out),
                        value: revealed)
     }
 }

@@ -74,7 +74,7 @@ final class TryBoard {
     var onRecord: (TryRecord) -> Void = { _ in }
     var onChecked: (_ solved: Bool, _ ms: Int?) -> Void = { _, _ in }
 
-    static let handSize = 84.0
+    static let handSize = 100.0
     static let hintSize = 40.0
     static let waitAfterLift: Duration = .milliseconds(650)
 

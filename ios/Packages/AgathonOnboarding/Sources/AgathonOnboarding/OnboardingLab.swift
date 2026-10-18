@@ -33,6 +33,8 @@ public struct OnboardingLab: View {
             if ProcessInfo.processInfo.arguments.contains("-onboardingFresh"), !Self.didReset {
                 Self.didReset = true
                 OnboardingState.reset()
+                // the stored session is still being read at launch: wait for it, then sign it out
+                for _ in 0..<100 where backend.auth.phase == .restoring { try? await Task.sleep(for: .milliseconds(50)) }
                 if backend.auth.phase == .signedIn { try? await backend.auth.signOut(scope: .local) }
             }
             ready = true
