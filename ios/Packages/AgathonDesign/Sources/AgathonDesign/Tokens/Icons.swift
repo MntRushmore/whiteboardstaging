@@ -8,6 +8,7 @@ extension DS {
         case pen, eraser, shapes, picture, undo, redo, back, forward, more, chat, mic, send, speaker
         case close, lock, plus, star, flame, play, home, path, chart, check, hand, palette
         case offline, retry, lookAgain, pause, person, book, delete, sparkle
+        case search, trash, signOut, notSaved, family, settings, bug, report
 
         public var id: String { rawValue }
 
@@ -46,6 +47,14 @@ extension DS {
             case .book: "book"
             case .delete: "delete.left"
             case .sparkle: "sparkle"
+            case .search: "magnifyingglass"
+            case .trash: "trash"
+            case .signOut: "rectangle.portrait.and.arrow.right"
+            case .notSaved: "icloud.slash"
+            case .family: "person.2"
+            case .settings: "gearshape"
+            case .bug: "ladybug"
+            case .report: "doc.text"
             }
         }
 
@@ -85,6 +94,14 @@ extension DS {
             case .book: "Sticker book"
             case .delete: "Delete"
             case .sparkle: "Sparkle"
+            case .search: "Search"
+            case .trash: "Delete"
+            case .signOut: "Sign out"
+            case .notSaved: "Not saved"
+            case .family: "Family"
+            case .settings: "Account"
+            case .bug: "Report a problem"
+            case .report: "Weekly report"
             }
         }
     }
