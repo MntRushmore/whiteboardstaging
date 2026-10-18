@@ -1,4 +1,5 @@
 #if DEBUG
+import AgathonOnboarding
 import SwiftUI
 
 /// A small "Labs" button over every screen of a Debug build, so the developer screens open on a
@@ -10,8 +11,8 @@ extension View {
 }
 
 private struct LabsButton: ViewModifier {
-    /// `-liveLab` opens the Live Lab straight away (screenshots and recordings on the simulator).
-    @State private var open: Lab? = ProcessInfo.processInfo.arguments.contains("-liveLab") ? .live : nil
+    /// `-liveLab` opens the Live Lab straight away (screenshots and recordings on the simulator); `-lab <name>` any lab.
+    @State private var open: Lab? = ProcessInfo.processInfo.arguments.contains("-liveLab") ? .live : Lab.fromLaunch
 
     func body(content: Content) -> some View {
         content
@@ -36,9 +37,16 @@ private struct LabsButton: ViewModifier {
 }
 
 private enum Lab: String, CaseIterable, Identifiable {
-    case board, editor, brain, design, live, ask, billing, debugScreens
+    case board, editor, brain, design, live, ask, billing, debugScreens, onboarding
 
     var id: String { rawValue }
+
+    /// `-lab <name>` opens that lab at launch (the onboarding's UI tests and QA videos use it).
+    static var fromLaunch: Lab? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-lab"), i + 1 < args.count else { return nil }
+        return Lab(rawValue: args[i + 1])
+    }
 
     var title: String {
         switch self {
@@ -50,6 +58,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .ask: return "Ask Lab (the chat beside the board)"
         case .debugScreens: return "Old debug screens (kit lane)"
         case .billing: return "Billing Lab (StoreKit test purchases)"
+        case .onboarding: return "Onboarding (the first run)"
         }
     }
 
@@ -63,6 +72,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .ask: return "bubble.left.and.text.bubble.right"
         case .debugScreens: return "ladybug"
         case .billing: return "creditcard"
+        case .onboarding: return "hand.wave"
         }
     }
 }
@@ -82,15 +92,16 @@ private struct LabScreen: View {
             case .ask: AskLabView()
             case .debugScreens: DebugScreens()
             case .billing: BillingLabView()
+            case .onboarding: OnboardingLab(close: close)
             }
-            Button(action: close) {
+            if lab != .onboarding { Button(action: close) {
                 Label("Close", systemImage: "xmark")
                     .font(.footnote.weight(.semibold))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(.thinMaterial, in: Capsule())
             }
-            .padding(16)
+            .padding(16) }
         }
     }
 }

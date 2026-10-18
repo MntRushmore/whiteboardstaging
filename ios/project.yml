@@ -43,6 +43,10 @@ packages:
   # picture, the tutor's board actions (the brain's desk), hold-to-talk and read aloud.
   AgathonAsk:
     path: Packages/AgathonAsk
+  # The first run (docs/ONBOARDING.md): OnboardingFlow, its state, and the seams for the try's
+  # checker, Apple's trial and the parental gate.
+  AgathonOnboarding:
+    path: Packages/AgathonOnboarding
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -71,6 +75,7 @@ targets:
       - package: AgathonBoardUI
       - package: AgathonStore
       - package: AgathonAsk
+      - package: AgathonOnboarding
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon
@@ -131,6 +136,7 @@ targets:
         - package: AgathonBrain/AgathonBrainTests
         - package: AgathonStore/AgathonStoreTests
         - package: AgathonAsk/AgathonAskTests
+        - package: AgathonOnboarding/AgathonOnboardingTests
       gatherCoverageData: false
       environmentVariables:
         # Tick in Product > Scheme > Edit Scheme > Run > Arguments to call a local `npm run dev`.

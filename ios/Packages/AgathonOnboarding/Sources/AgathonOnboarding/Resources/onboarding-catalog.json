@@ -1,0 +1,939 @@
+{
+  "version": 1,
+  "maxFocus": 3,
+  "maxKids": 6,
+  "grades": [
+    {
+      "id": 0,
+      "label": "Kindergarten",
+      "short": "K",
+      "path": [
+        "add_within_10",
+        "subtract_within_10"
+      ]
+    },
+    {
+      "id": 1,
+      "label": "1st grade",
+      "short": "1st",
+      "path": [
+        "add_within_20",
+        "subtract_within_20",
+        "add_tens"
+      ]
+    },
+    {
+      "id": 2,
+      "label": "2nd grade",
+      "short": "2nd",
+      "path": [
+        "add_within_100",
+        "subtract_within_100",
+        "add_subtract_within_1000"
+      ]
+    },
+    {
+      "id": 3,
+      "label": "3rd grade",
+      "short": "3rd",
+      "path": [
+        "add_subtract_within_1000",
+        "times_tables",
+        "division_facts",
+        "multiply_by_tens"
+      ]
+    },
+    {
+      "id": 4,
+      "label": "4th grade",
+      "short": "4th",
+      "path": [
+        "multi_digit_add_subtract",
+        "multiply_multi_digit",
+        "long_division",
+        "equivalent_fractions",
+        "add_fractions_like"
+      ]
+    },
+    {
+      "id": 5,
+      "label": "5th grade",
+      "short": "5th",
+      "path": [
+        "add_fractions_unlike",
+        "multiply_fractions",
+        "decimals_add_subtract",
+        "decimals_multiply",
+        "order_of_operations"
+      ]
+    },
+    {
+      "id": 6,
+      "label": "6th grade",
+      "short": "6th",
+      "path": [
+        "divide_fractions",
+        "percents",
+        "negative_numbers",
+        "powers_roots",
+        "one_step_equations",
+        "simplify_expressions"
+      ]
+    },
+    {
+      "id": 7,
+      "label": "7th grade",
+      "short": "7th",
+      "path": [
+        "proportions",
+        "negative_numbers",
+        "two_step_equations",
+        "inequalities",
+        "area_perimeter",
+        "circles"
+      ]
+    },
+    {
+      "id": 8,
+      "label": "8th grade",
+      "short": "8th",
+      "path": [
+        "exponent_rules",
+        "multi_step_equations",
+        "pythagorean",
+        "linear_functions",
+        "systems"
+      ]
+    }
+  ],
+  "courses": [
+    {
+      "id": "algebra1",
+      "label": "Algebra 1",
+      "blurb": "Equations, functions and graphs",
+      "focus": [
+        "two_step_equations",
+        "inequalities",
+        "linear_functions",
+        "systems",
+        "factoring",
+        "quadratic_equations"
+      ]
+    },
+    {
+      "id": "geometry",
+      "label": "Geometry",
+      "blurb": "Angles, triangles and proofs",
+      "focus": [
+        "angles",
+        "triangles",
+        "pythagorean",
+        "area_perimeter",
+        "circles",
+        "coordinate_geometry"
+      ]
+    },
+    {
+      "id": "algebra2",
+      "label": "Algebra 2",
+      "blurb": "Quadratics, radicals and exponentials",
+      "focus": [
+        "factoring",
+        "quadratic_equations",
+        "radicals",
+        "rational_expressions",
+        "exponential_equations",
+        "logarithms"
+      ]
+    },
+    {
+      "id": "precalc_calc",
+      "label": "Pre-calculus / Calculus",
+      "blurb": "Logs, trig and derivatives",
+      "focus": [
+        "functions",
+        "logarithms",
+        "trig_values",
+        "trig_equations",
+        "limits",
+        "derivatives"
+      ]
+    }
+  ],
+  "somethingElse": {
+    "id": "other",
+    "label": "Something else",
+    "blurb": "Any math you're working on",
+    "focus": []
+  },
+  "skills": {
+    "add_fractions_like": {
+      "name": "Adding fractions",
+      "blurb": "Same bottom number, like 2/7 + 3/7",
+      "example": [
+        "\\frac{2}{7} + \\frac{3}{7}"
+      ]
+    },
+    "add_fractions_unlike": {
+      "name": "Adding unlike fractions",
+      "blurb": "Different bottoms, like 3/4 + 1/6",
+      "example": [
+        "\\frac{3}{4} + \\frac{1}{6}"
+      ]
+    },
+    "add_subtract_within_1000": {
+      "name": "3-digit adding and subtracting",
+      "blurb": "Bigger sums like 386 + 247",
+      "example": [
+        "386 + 247"
+      ]
+    },
+    "add_tens": {
+      "name": "Adding tens",
+      "blurb": "Count by tens, like 40 + 30",
+      "example": [
+        "40 + 30"
+      ]
+    },
+    "add_within_10": {
+      "name": "Adding to 10",
+      "blurb": "Put two small numbers together, like 3 + 4",
+      "example": [
+        "3 + 4"
+      ]
+    },
+    "add_within_100": {
+      "name": "Adding 2-digit numbers",
+      "blurb": "Add numbers like 47 + 38",
+      "example": [
+        "47 + 38"
+      ]
+    },
+    "add_within_20": {
+      "name": "Adding to 20",
+      "blurb": "Add facts like 8 + 7",
+      "example": [
+        "8 + 7"
+      ]
+    },
+    "angles": {
+      "name": "Angles",
+      "blurb": "Angles on a line and around a point",
+      "example": [
+        "x + 65^{\\circ} = 180^{\\circ}"
+      ]
+    },
+    "area_perimeter": {
+      "name": "Area and perimeter",
+      "blurb": "How much space, and the way round",
+      "example": [
+        "A = 6 \\times 4"
+      ]
+    },
+    "circles": {
+      "name": "Circles",
+      "blurb": "Circumference and area with π",
+      "example": [
+        "C = 2\\pi r"
+      ]
+    },
+    "coordinate_geometry": {
+      "name": "Distance and midpoint",
+      "blurb": "Distance and midpoint of two points",
+      "example": [
+        "\\sqrt{3^{2} + 4^{2}}"
+      ]
+    },
+    "decimals_add_subtract": {
+      "name": "Adding decimals",
+      "blurb": "Line up the points: 3.45 + 2.8",
+      "example": [
+        "3.45 + 2.8"
+      ]
+    },
+    "decimals_multiply": {
+      "name": "Multiplying decimals",
+      "blurb": "Like 1.2 × 3",
+      "example": [
+        "1.2 \\times 3"
+      ]
+    },
+    "derivatives": {
+      "name": "Derivatives",
+      "blurb": "How fast things change: d/dx",
+      "example": [
+        "\\frac{d}{dx} x^{3}"
+      ]
+    },
+    "divide_fractions": {
+      "name": "Dividing fractions",
+      "blurb": "Flip and multiply: 3/4 ÷ 1/2",
+      "example": [
+        "\\frac{3}{4} \\div \\frac{1}{2}"
+      ]
+    },
+    "division_facts": {
+      "name": "Division facts",
+      "blurb": "Share equally, like 42 ÷ 6",
+      "example": [
+        "42 \\div 6"
+      ]
+    },
+    "equivalent_fractions": {
+      "name": "Equivalent fractions",
+      "blurb": "Same amount, new numbers: 6/8 = 3/4",
+      "example": [
+        "\\frac{6}{8} = \\frac{3}{4}"
+      ]
+    },
+    "exponent_rules": {
+      "name": "Exponent rules",
+      "blurb": "x² · x³ and the other power rules",
+      "example": [
+        "x^{2} \\cdot x^{3}"
+      ]
+    },
+    "exponential_equations": {
+      "name": "Exponential equations",
+      "blurb": "Solve equations like 2ˣ = 32",
+      "example": [
+        "2^{x} = 32"
+      ]
+    },
+    "factoring": {
+      "name": "Factoring",
+      "blurb": "Turn x² + 5x + 6 into brackets",
+      "example": [
+        "x^{2} + 5x + 6"
+      ]
+    },
+    "functions": {
+      "name": "Functions",
+      "blurb": "f(x): put a number in, get one out",
+      "example": [
+        "f(x) = 2x + 1"
+      ]
+    },
+    "inequalities": {
+      "name": "Inequalities",
+      "blurb": "Solve with <, >, ≤ and ≥",
+      "example": [
+        "2x + 1 > 7"
+      ]
+    },
+    "limits": {
+      "name": "Limits",
+      "blurb": "Where a function is heading",
+      "example": [
+        "\\lim_{x \\to 2} (x + 3)"
+      ]
+    },
+    "linear_functions": {
+      "name": "Lines and slope",
+      "blurb": "Slope, lines and y = mx + b",
+      "example": [
+        "y = 2x + 1"
+      ]
+    },
+    "logarithms": {
+      "name": "Logarithms",
+      "blurb": "Logs, the opposite of powers",
+      "example": [
+        "\\log_{2} 8"
+      ]
+    },
+    "long_division": {
+      "name": "Long division",
+      "blurb": "Like 864 ÷ 4",
+      "example": [
+        "864 \\div 4"
+      ]
+    },
+    "multi_digit_add_subtract": {
+      "name": "Big adding and subtracting",
+      "blurb": "4-digit sums like 4386 + 2947",
+      "example": [
+        "4386 + 2947"
+      ]
+    },
+    "multi_step_equations": {
+      "name": "Multi-step equations",
+      "blurb": "Brackets, or x on both sides",
+      "example": [
+        "3(x + 2) = 18"
+      ]
+    },
+    "multiply_by_tens": {
+      "name": "Multiplying by tens",
+      "blurb": "Like 4 × 60 = 240",
+      "example": [
+        "4 \\times 60"
+      ]
+    },
+    "multiply_fractions": {
+      "name": "Multiplying fractions",
+      "blurb": "Like 2/3 × 3/5",
+      "example": [
+        "\\frac{2}{3} \\times \\frac{3}{5}"
+      ]
+    },
+    "multiply_multi_digit": {
+      "name": "Multiplying bigger numbers",
+      "blurb": "Like 46 × 7 and 34 × 26",
+      "example": [
+        "34 \\times 26"
+      ]
+    },
+    "negative_numbers": {
+      "name": "Negative numbers",
+      "blurb": "Numbers below zero",
+      "example": [
+        "-5 + 8"
+      ]
+    },
+    "one_step_equations": {
+      "name": "One-step equations",
+      "blurb": "Solve x + 5 = 12 in one step",
+      "example": [
+        "x + 5 = 12"
+      ]
+    },
+    "order_of_operations": {
+      "name": "Order of operations",
+      "blurb": "Which step comes first (PEMDAS)",
+      "example": [
+        "2 + 3 \\times 4"
+      ]
+    },
+    "percents": {
+      "name": "Percents",
+      "blurb": "A percent of a number, like 25% of 80",
+      "example": [
+        "25\\% \\text{ of } 80"
+      ]
+    },
+    "powers_roots": {
+      "name": "Powers and square roots",
+      "blurb": "Squares, cubes and square roots",
+      "example": [
+        "3^{2} + \\sqrt{16}"
+      ]
+    },
+    "proportions": {
+      "name": "Proportions",
+      "blurb": "Equal ratios, like x/4 = 9/12",
+      "example": [
+        "\\frac{x}{4} = \\frac{9}{12}"
+      ]
+    },
+    "pythagorean": {
+      "name": "Pythagorean theorem",
+      "blurb": "a² + b² = c² in a right triangle",
+      "example": [
+        "a^{2} + b^{2} = c^{2}"
+      ]
+    },
+    "quadratic_equations": {
+      "name": "Quadratic equations",
+      "blurb": "Solve equations with an x²",
+      "example": [
+        "x^{2} - 5x + 6 = 0"
+      ]
+    },
+    "radicals": {
+      "name": "Radicals",
+      "blurb": "Simplify roots and solve √ equations",
+      "example": [
+        "\\sqrt{x + 3} = 5"
+      ]
+    },
+    "rational_expressions": {
+      "name": "Rational expressions",
+      "blurb": "Fractions with x in them",
+      "example": [
+        "\\frac{4}{x} + \\frac{9}{x}"
+      ]
+    },
+    "simplify_expressions": {
+      "name": "Simplifying expressions",
+      "blurb": "Collect like terms, like 3x + 2x",
+      "example": [
+        "3x + 2x"
+      ]
+    },
+    "subtract_within_10": {
+      "name": "Taking away to 10",
+      "blurb": "Take some away, like 7 − 2",
+      "example": [
+        "7 - 2"
+      ]
+    },
+    "subtract_within_100": {
+      "name": "Subtracting 2-digit numbers",
+      "blurb": "Take away numbers like 72 − 35",
+      "example": [
+        "72 - 35"
+      ]
+    },
+    "subtract_within_20": {
+      "name": "Subtracting to 20",
+      "blurb": "Take-away facts like 15 − 8",
+      "example": [
+        "15 - 8"
+      ]
+    },
+    "systems": {
+      "name": "Systems of equations",
+      "blurb": "Two equations, two unknowns",
+      "example": [
+        "x + y = 10",
+        "x - y = 2"
+      ]
+    },
+    "times_tables": {
+      "name": "Times tables",
+      "blurb": "Multiply facts like 6 × 7",
+      "example": [
+        "6 \\times 7"
+      ]
+    },
+    "triangles": {
+      "name": "Triangles",
+      "blurb": "The angles in a triangle make 180°",
+      "example": [
+        "x + 50 + 60 = 180"
+      ]
+    },
+    "trig_equations": {
+      "name": "Trig equations",
+      "blurb": "Solve equations like 2 sin x = 1",
+      "example": [
+        "2\\sin x = 1"
+      ]
+    },
+    "trig_values": {
+      "name": "Trig values",
+      "blurb": "sin, cos and tan of special angles",
+      "example": [
+        "\\sin 30^{\\circ}"
+      ]
+    },
+    "two_step_equations": {
+      "name": "Two-step equations",
+      "blurb": "Solve equations like 2x + 3 = 11",
+      "example": [
+        "2x + 3 = 11"
+      ]
+    }
+  },
+  "problems": [
+    {
+      "id": "k2-0",
+      "band": "k2",
+      "lines": [
+        "3 + 4"
+      ],
+      "hint": "Hold up 3 fingers, then 4 more.",
+      "oneStep": true,
+      "firstStep": "7",
+      "grade": 0,
+      "skill": "add_within_10"
+    },
+    {
+      "id": "k2-1",
+      "band": "k2",
+      "lines": [
+        "5 + 2"
+      ],
+      "hint": "Start at 5 and count on 2 more.",
+      "oneStep": true,
+      "firstStep": "7",
+      "grade": 0,
+      "skill": "add_within_10"
+    },
+    {
+      "id": "k2-2",
+      "band": "k2",
+      "lines": [
+        "7 - 3"
+      ],
+      "hint": "Start at 7 and count back 3.",
+      "oneStep": true,
+      "firstStep": "4",
+      "grade": 0,
+      "skill": "subtract_within_10"
+    },
+    {
+      "id": "k2-3",
+      "band": "k2",
+      "lines": [
+        "8 + 7"
+      ],
+      "hint": "Make a 10 first: 8 and 2 more is 10.",
+      "oneStep": true,
+      "firstStep": "15",
+      "grade": 1,
+      "skill": "add_within_20"
+    },
+    {
+      "id": "k2-4",
+      "band": "k2",
+      "lines": [
+        "15 - 8"
+      ],
+      "hint": "Count up from 8 to 15.",
+      "oneStep": true,
+      "firstStep": "7",
+      "grade": 1,
+      "skill": "subtract_within_20"
+    },
+    {
+      "id": "k2-5",
+      "band": "k2",
+      "lines": [
+        "40 + 30"
+      ],
+      "hint": "4 tens and 3 tens make how many tens?",
+      "oneStep": true,
+      "firstStep": "70",
+      "grade": 1,
+      "skill": "add_tens"
+    },
+    {
+      "id": "k2-6",
+      "band": "k2",
+      "lines": [
+        "47 + 38"
+      ],
+      "hint": "Add the tens, then add the ones.",
+      "oneStep": true,
+      "firstStep": "85",
+      "grade": 2,
+      "skill": "add_within_100"
+    },
+    {
+      "id": "k2-7",
+      "band": "k2",
+      "lines": [
+        "72 - 35"
+      ],
+      "hint": "Take away 30, then take away 5.",
+      "oneStep": true,
+      "firstStep": "37",
+      "grade": 2,
+      "skill": "subtract_within_100"
+    },
+    {
+      "id": "k2-8",
+      "band": "k2",
+      "lines": [
+        "56 + 27"
+      ],
+      "hint": "Add the tens, then add the ones.",
+      "oneStep": true,
+      "firstStep": "83",
+      "grade": 2,
+      "skill": "add_within_100"
+    },
+    {
+      "id": "g35-0",
+      "band": "g35",
+      "lines": [
+        "6 \\times 7"
+      ],
+      "hint": "Think of 6 groups of 7.",
+      "oneStep": true,
+      "firstStep": "42",
+      "grade": 3,
+      "skill": "times_tables"
+    },
+    {
+      "id": "g35-1",
+      "band": "g35",
+      "lines": [
+        "42 \\div 6"
+      ],
+      "hint": "What times 6 makes 42?",
+      "oneStep": true,
+      "firstStep": "7",
+      "grade": 3,
+      "skill": "division_facts"
+    },
+    {
+      "id": "g35-2",
+      "band": "g35",
+      "lines": [
+        "4 \\times 60"
+      ],
+      "hint": "Work out 4 × 6, then put a 0 on the end.",
+      "oneStep": true,
+      "firstStep": "240",
+      "grade": 3,
+      "skill": "multiply_by_tens"
+    },
+    {
+      "id": "g35-3",
+      "band": "g35",
+      "lines": [
+        "\\frac{2}{7} + \\frac{3}{7}"
+      ],
+      "hint": "Same bottom number: add the tops.",
+      "oneStep": true,
+      "firstStep": "\\frac{5}{7}",
+      "grade": 4,
+      "skill": "add_fractions_like"
+    },
+    {
+      "id": "g35-4",
+      "band": "g35",
+      "lines": [
+        "46 \\times 7"
+      ],
+      "hint": "Try 40 × 7 and 6 × 7, then add them.",
+      "oneStep": true,
+      "firstStep": "322",
+      "grade": 4,
+      "skill": "multiply_multi_digit"
+    },
+    {
+      "id": "g35-5",
+      "band": "g35",
+      "lines": [
+        "864 \\div 4"
+      ],
+      "hint": "Share out the hundreds, then tens, then ones.",
+      "oneStep": true,
+      "firstStep": "216",
+      "grade": 4,
+      "skill": "long_division"
+    },
+    {
+      "id": "g35-6",
+      "band": "g35",
+      "lines": [
+        "\\frac{1}{2} + \\frac{1}{3}"
+      ],
+      "hint": "Try writing both fractions in sixths.",
+      "oneStep": false,
+      "firstStep": "\\frac{3}{6} + \\frac{2}{6}",
+      "grade": 5,
+      "skill": "add_fractions_unlike"
+    },
+    {
+      "id": "g35-7",
+      "band": "g35",
+      "lines": [
+        "\\frac{2}{3} \\times \\frac{3}{5}"
+      ],
+      "hint": "Multiply the tops, then the bottoms.",
+      "oneStep": false,
+      "firstStep": "\\frac{6}{15}",
+      "grade": 5,
+      "skill": "multiply_fractions"
+    },
+    {
+      "id": "g35-8",
+      "band": "g35",
+      "lines": [
+        "\\frac{3}{4} + \\frac{1}{6}"
+      ],
+      "hint": "Try writing both fractions in twelfths.",
+      "oneStep": false,
+      "firstStep": "\\frac{9}{12} + \\frac{2}{12}",
+      "grade": 5,
+      "skill": "add_fractions_unlike"
+    },
+    {
+      "id": "g68-0",
+      "band": "g68",
+      "lines": [
+        "x + 7 = 15"
+      ],
+      "hint": "Try taking 7 from both sides.",
+      "oneStep": true,
+      "firstStep": "x = 8",
+      "grade": 6,
+      "skill": "one_step_equations"
+    },
+    {
+      "id": "g68-1",
+      "band": "g68",
+      "lines": [
+        "3x = 24"
+      ],
+      "hint": "Try dividing both sides by 3.",
+      "oneStep": true,
+      "firstStep": "x = 8",
+      "grade": 6,
+      "skill": "one_step_equations"
+    },
+    {
+      "id": "g68-2",
+      "band": "g68",
+      "lines": [
+        "\\frac{3}{4} \\div \\frac{1}{2}"
+      ],
+      "hint": "Flip the second fraction, then multiply.",
+      "oneStep": false,
+      "firstStep": "\\frac{3}{4} \\times \\frac{2}{1}",
+      "grade": 6,
+      "skill": "divide_fractions"
+    },
+    {
+      "id": "g68-3",
+      "band": "g68",
+      "lines": [
+        "2x + 5 = 17"
+      ],
+      "hint": "Try taking 5 from both sides.",
+      "oneStep": false,
+      "firstStep": "2x = 12",
+      "grade": 7,
+      "skill": "two_step_equations"
+    },
+    {
+      "id": "g68-4",
+      "band": "g68",
+      "lines": [
+        "3x - 4 = 11"
+      ],
+      "hint": "Try adding 4 to both sides.",
+      "oneStep": false,
+      "firstStep": "3x = 15",
+      "grade": 7,
+      "skill": "two_step_equations"
+    },
+    {
+      "id": "g68-5",
+      "band": "g68",
+      "lines": [
+        "\\frac{x}{4} = \\frac{9}{12}"
+      ],
+      "hint": "Try cross-multiplying.",
+      "oneStep": false,
+      "firstStep": "12x = 36",
+      "grade": 7,
+      "skill": "proportions"
+    },
+    {
+      "id": "g68-6",
+      "band": "g68",
+      "lines": [
+        "5x - 3 = 2x + 9"
+      ],
+      "hint": "Try taking 2x from both sides.",
+      "oneStep": false,
+      "firstStep": "3x - 3 = 9",
+      "grade": 8,
+      "skill": "multi_step_equations"
+    },
+    {
+      "id": "g68-7",
+      "band": "g68",
+      "lines": [
+        "2(x + 3) = 14"
+      ],
+      "hint": "Try dividing both sides by 2.",
+      "oneStep": false,
+      "firstStep": "x + 3 = 7",
+      "grade": 8,
+      "skill": "multi_step_equations"
+    },
+    {
+      "id": "g68-8",
+      "band": "g68",
+      "lines": [
+        "3x + 4 = x + 10"
+      ],
+      "hint": "Try taking x from both sides.",
+      "oneStep": false,
+      "firstStep": "2x + 4 = 10",
+      "grade": 8,
+      "skill": "multi_step_equations"
+    },
+    {
+      "id": "hs-0",
+      "band": "hs",
+      "lines": [
+        "2x + 3 = 11"
+      ],
+      "hint": "Try taking 3 from both sides.",
+      "oneStep": false,
+      "firstStep": "2x = 8",
+      "grade": null,
+      "skill": null
+    },
+    {
+      "id": "hs-1",
+      "band": "hs",
+      "lines": [
+        "5x - 4 = 21"
+      ],
+      "hint": "Try adding 4 to both sides.",
+      "oneStep": false,
+      "firstStep": "5x = 25",
+      "grade": null,
+      "skill": null
+    },
+    {
+      "id": "hs-2",
+      "band": "hs",
+      "lines": [
+        "3(x + 2) = 18"
+      ],
+      "hint": "Try expanding the bracket.",
+      "oneStep": false,
+      "firstStep": "3x + 6 = 18",
+      "grade": null,
+      "skill": null
+    }
+  ],
+  "heardFrom": [
+    {
+      "id": "friend",
+      "label": "A friend or family"
+    },
+    {
+      "id": "school",
+      "label": "School or a teacher"
+    },
+    {
+      "id": "tiktok",
+      "label": "TikTok"
+    },
+    {
+      "id": "instagram",
+      "label": "Instagram"
+    },
+    {
+      "id": "youtube",
+      "label": "YouTube"
+    },
+    {
+      "id": "x",
+      "label": "X (Twitter)"
+    },
+    {
+      "id": "search",
+      "label": "Google or another search"
+    },
+    {
+      "id": "other",
+      "label": "Somewhere else"
+    }
+  ],
+  "avatars": [
+    "fox",
+    "owl",
+    "cat",
+    "dog",
+    "panda",
+    "rabbit",
+    "tiger",
+    "frog",
+    "penguin",
+    "koala",
+    "lion",
+    "unicorn"
+  ]
+}

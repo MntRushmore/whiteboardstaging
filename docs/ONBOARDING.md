@@ -3,8 +3,9 @@
 **Owner's ask (2026-10-17):** "make sure to build a beautiful onboarding, just like
 https://heyaristotle.com/".
 
-**Status:** design only. Nothing here is built yet. It belongs to Phase 4 (Screens) in
-`docs/IPAD-NATIVE.md`, with the StoreKit parts in Phase 5 (Money).
+**Status:** built on `feat/ipad-onboarding` (2026-10-18): the package `ios/Packages/AgathonOnboarding`
+and the server work below. See "As built" at the end for what differs from this design and what the
+app still has to wire.
 
 **Brand:** A · Blocks (`docs/DESIGN-SYSTEM.md`, `docs/brand/directions.html`). Flat colour only.
 Every component named below is in `AgathonDesign`.
@@ -671,3 +672,30 @@ screens read with no name.
 - **"Not now":** the kid still gets their own profile and the free board (5 problems), like the
   web. This needs the server change described above: the first kid profile without a plan, and AI
   calls for that kid covered on the free board.
+
+## As built (2026-10-18)
+
+- **Package:** `ios/Packages/AgathonOnboarding`. `OnboardingFlow(onFinish:)` is the whole flow;
+  `OnboardingState.needsOnboarding` says whether the app should open on it (this iPad never finished
+  it, or a flow is kept). Labs → "Onboarding (the first run)", or launch with `-lab onboarding`
+  (`-onboardingFresh` starts over, `-onboardingTrial started|pending|cancelled`, `-onboardingMute`,
+  Debug's `-onboardingAutowrite right|wrong,right` writes answers through the canvas's touch path).
+- **The speaker (the lead's call, after the owner's "just like heyaristotle.com"):** unlike "No
+  typewriter" above, the shapes are the speaker on every question screen. They greet at centre stage
+  on `hello`, jump to the top-left on the first answer, and each question is typed into a paper
+  speech bubble (about 26 ms a letter, at most 0.85 s), then the answers rise in 40 ms apart. The
+  tutor's hand still writes "Hi, Sam.", the problem, the tick and the hints, in tutor ink. Reduce
+  Motion: whole words and cross-fades.
+- **The bar:** Back, the thin trail and Skip at the top (Aristotle's place); Continue at the bottom
+  right, or beside the field it belongs to.
+- **Words:** in `Model/Copy.swift`, both voices, curly apostrophes as on the web.
+- **The catalogue** (grades, paths, courses, skills, the try problems, "How did you hear") is
+  written from the TypeScript by `node scripts/build-onboarding-catalog.mjs`; `--check` fails on drift.
+- **Seams:** `TryItChecking` (today `PreAccountTryChecker`: the brain's recognizer payload to
+  `POST /api/try/check` with App Attest; "Type it instead" and Help me on the iPad's brain),
+  `TrialOffering` (`StubTrialOffering` until AgathonStore: the lead passes the store's), and
+  `ParentalGate` (`BirthYearGate` until the billing lane's gate).
+- **Server:** App Attest (`/api/app/attest/challenge`, `/register`, the assertion guard on the three
+  pre-account routes; a debug header only off production), "Not now" (the first kid without a
+  plan; that kid spends the grown-up's ink) and the new steps — migration
+  `20261017210000_ipad_onboarding.sql`.

@@ -160,6 +160,17 @@
                ReferencedContainer = "container:Packages/AgathonAsk">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AgathonOnboardingTests"
+               BuildableName = "AgathonOnboardingTests"
+               BlueprintName = "AgathonOnboardingTests"
+               ReferencedContainer = "container:Packages/AgathonOnboarding">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

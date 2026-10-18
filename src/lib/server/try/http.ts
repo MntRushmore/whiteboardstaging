@@ -83,10 +83,16 @@ export function visitorIp(req: Request): string {
   return cf && IP.test(cf) ? cf : clientIp(req);
 }
 
-/** The body as text, or null once it passes `max` bytes (Content-Length first, then while reading). */
-export async function readCapped(req: Request, max: number): Promise<string | null> {
+/**
+ * The body as text, or null once it passes `max` bytes (Content-Length first, then while reading).
+ * With `"bytes"`: the exact bytes as they came (the iPad app's assertion signs those,
+ * src/lib/server/appAttest/guard.ts), for the caller to decode itself.
+ */
+export async function readCapped(req: Request, max: number): Promise<string | null>;
+export async function readCapped(req: Request, max: number, as: "bytes"): Promise<Buffer | null>;
+export async function readCapped(req: Request, max: number, as?: "bytes"): Promise<string | Buffer | null> {
   if (Number(req.headers.get("content-length")) > max) return null;
-  if (!req.body) return "";
+  if (!req.body) return as === "bytes" ? Buffer.alloc(0) : "";
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -100,7 +106,8 @@ export async function readCapped(req: Request, max: number): Promise<string | nu
     }
     chunks.push(value);
   }
-  return Buffer.concat(chunks).toString("utf8");
+  const bytes = Buffer.concat(chunks);
+  return as === "bytes" ? bytes : bytes.toString("utf8");
 }
 
 /** JSON or undefined (which no schema accepts). */

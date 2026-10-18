@@ -40,6 +40,8 @@ export interface FakeStore extends FamilyStore {
   pinUnavailable: boolean;
   /** grown-ups WITHOUT Unlimited (everyone else has it) */
   noPlan: Set<string>;
+  /** how many times the plan was read (`hasPlan`): a first kid needs no read */
+  planReads: number;
   /** kids added per family today (KID_ADDS) */
   kidAdds: Map<string, number>;
   created: Array<{ parentId: string; termsVersion: string | null }>;
@@ -102,6 +104,7 @@ export async function makeFakeStore(): Promise<FakeStore> {
     pinLocked,
     pinUnavailable: false,
     noPlan,
+    planReads: 0,
     kidAdds,
     created,
     async links(userId) {
@@ -147,6 +150,7 @@ export async function makeFakeStore(): Promise<FakeStore> {
       return { assetsRemoved: 1, assetsError: null };
     },
     async hasPlan(parentId) {
+      store.planReads += 1;
       return !noPlan.has(parentId);
     },
     async kidAddAttempt(parentId) {

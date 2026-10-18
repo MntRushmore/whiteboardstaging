@@ -76,7 +76,7 @@ export interface FamilyStore {
   deleteKid(kidId: string): Promise<{ assetsRemoved: number; assetsError: string | null }>;
   /** Only the kid's saved images (the account stays): before the grown-up's account is deleted. */
   removeKidAssets(kidId: string): Promise<{ assetsRemoved: number; assetsError: string | null }>;
-  /** Whether `parentId`'s plan gives Unlimited now (`has_unlimited`): kids are added only then. Throws when unread. */
+  /** Whether `parentId`'s plan gives Unlimited now (`has_unlimited`): kids after the first are added only then. Throws when unread. */
   hasPlan(parentId: string): Promise<boolean>;
   /** One kid added, counted against the family's KID_ADDS. Throws when the counter cannot be asked. */
   kidAddAttempt(parentId: string): Promise<{ ok: boolean; retryAfterMs: number }>;

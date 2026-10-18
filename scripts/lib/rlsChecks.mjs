@@ -2630,8 +2630,8 @@ export const FAMILY_FUNCTIONS = [
  * Users: nobody but the service role writes `families` or `family_members`, and nobody reads
  * `families` (the PIN's hash) at all. A family's grown-up P and kid K read their own family_members
  * row; anyone else (A) reads none. No user may call FAMILY_FUNCTIONS. With the service role (P and K
- * are made with `newUser`): a kid never spends ink of their own (refused, plan_required, while P has
- * no plan); the kid shares the grown-up's plan (ink_summary().unlimited, consume_credits() through
+ * are made with `newUser`): a kid never spends ink of their own (while P has no plan, K's call spends
+ * P's ink: 20261017210000_ipad_onboarding.sql); the kid shares the grown-up's plan (ink_summary().unlimited, consume_credits() through
  * the Unlimited path, counted on the GROWN-UP's fair-use rows: one allowance per family) while A does
  * not, the kid keeps their own checkout_ref; the PIN's budgets are per family (5 per 15 minutes, then
  * refused; a forgiven try comes back; the day's 10th try locks, a new PIN unlocks); adding kids has
@@ -2712,15 +2712,17 @@ export async function checkFamily({ anon, a, service, newUser }) {
     const refK = rows(kRef)[0]?.checkout_ref ?? null;
     const before = asObject((await rpc(k, "ink_summary")).body);
     out.push(result("family: K has no plan while P has none", before?.unlimited?.status === "none" && before?.unlimited?.unlimited === false, JSON.stringify(before?.unlimited ?? null).slice(0, 200)));
-    // K was made as an ordinary account (newUser), so K HAS ink: a kid still never spends it.
+    // K was made as an ordinary account (newUser), so K HAS ink: a kid still never spends it. Without
+    // the plan, K's call spends P's ink ("Not now" on the iPad's trial).
     const kidSpend = await rpc(k, "consume_credits", { p_route: "rls-verify-family", p_units: 1, p_request_id: `rls-verify-family-noplan-${tag}` });
     const kidSpent = asObject(kidSpend.body);
     const kidUsage = await service.rest("GET", "usage_events", { query: { user_id: `eq.${k.userId}`, select: "id" } });
+    const parentUsage = await service.rest("GET", "usage_events", { query: { request_id: `eq.rls-verify-family-noplan-${tag}`, select: "user_id" } });
     out.push(
       result(
-        "family: K cannot spend ink of their own while P has no plan (insufficient_credits, plan_required, nothing written)",
-        isOk(kidSpend) && kidSpent?.ok === false && kidSpent?.reason === "insufficient_credits" && kidSpent?.plan_required === true && affectedNoRows(kidUsage),
-        `${describe(kidSpend)} / ${describe(kidUsage)}`,
+        "family: K never spends ink of their own; while P has no plan K's call spends P's ink (the row is on P)",
+        isOk(kidSpend) && kidSpent?.ok === true && affectedNoRows(kidUsage) && rows(parentUsage).length === 1 && rows(parentUsage)[0]?.user_id === p.userId,
+        `${describe(kidSpend)} / ${describe(kidUsage)} / ${describe(parentUsage)}`,
       ),
     );
     const planned = await service.rest("POST", "unlimited_subscriptions", {
@@ -3859,11 +3861,73 @@ export async function checkStartSteps({ anon, a, b, service }) {
 }
 
 /**
+ * The iPad onboarding (supabase/migrations/20261017210000_ipad_onboarding.sql). App Attest's tables,
+ * app_attest_keys and app_attest_challenges, have no client grants at all: anon and a signed-in
+ * user can neither read nor write them (A: 42501). The service role writes and removes a challenge.
+ * record_start_step() takes the iPad's own steps (start_handoff_kid ... start_first_board, here
+ * start_trial_declined with { client: "ipad" }). Without the service role only the refusals run.
+ * Removes the rows it wrote.
+ * @param {CheckContext} ctx
+ */
+export async function checkIpadOnboarding({ anon, a, service }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const refusedWith = (/** @type {HttpResult} */ res, /** @type {string} */ want) => !isOk(res) && code(res) === want;
+  const challenge = `rlsverify${uuid().replace(/-/g, "")}${uuid().replace(/-/g, "")}`.slice(0, 43);
+  const journey = uuid();
+  /** a row each table would take, so only the missing grant can refuse it */
+  const rowFor = (/** @type {string} */ table) =>
+    table === "app_attest_keys"
+      ? { key_id: `${Buffer.alloc(32, 7).toString("base64")}`, public_key: "-----BEGIN PUBLIC KEY-----\nrls\n-----END PUBLIC KEY-----", environment: "development" }
+      : { challenge, expires_at: new Date().toISOString() };
+  try {
+    for (const table of ["app_attest_keys", "app_attest_challenges"]) {
+      const anonSel = await anon.rest("GET", table, { query: { select: "*", limit: "1" } });
+      out.push(result(`ipad: anon cannot select ${table}`, isDenied(anonSel), describe(anonSel)));
+      const anonIns = await anon.rest("POST", table, { body: rowFor(table), prefer: "return=minimal" });
+      out.push(result(`ipad: anon cannot insert into ${table}`, isDenied(anonIns), describe(anonIns)));
+      const aSel = await a.rest("GET", table, { query: { select: "*", limit: "1" } });
+      out.push(result(`ipad: A cannot select ${table} (42501)`, refusedWith(aSel, "42501"), describe(aSel)));
+      const aIns = await a.rest("POST", table, { body: rowFor(table), prefer: "return=minimal" });
+      out.push(result(`ipad: A cannot insert into ${table} (42501)`, refusedWith(aIns, "42501"), describe(aIns)));
+      const aUpd = await a.rest("PATCH", table, { query: { created_at: "lt.2000-01-01" }, body: { created_at: new Date().toISOString() }, prefer: "return=representation" });
+      out.push(result(`ipad: A cannot update ${table} (42501)`, refusedWith(aUpd, "42501"), describe(aUpd)));
+      const aDel = await a.rest("DELETE", table, { query: { created_at: "lt.2000-01-01" }, prefer: "return=representation" });
+      out.push(result(`ipad: A cannot delete from ${table} (42501)`, refusedWith(aDel, "42501"), describe(aDel)));
+    }
+    if (!service) {
+      out.push(result("ipad: the service role's half (skipped: no service role client)", true));
+      return out;
+    }
+    const made = await service.rest("POST", "app_attest_challenges", { body: { challenge, expires_at: new Date(Date.now() + 300_000).toISOString() }, prefer: "return=minimal" });
+    const used = await service.rest("DELETE", "app_attest_challenges", { query: { challenge: `eq.${challenge}` }, prefer: "return=representation" });
+    out.push(result("ipad: the service role keeps a challenge and uses it up once", isOk(made) && rows(used).length === 1, `${describe(made)} / ${describe(used)}`));
+    const step = await rpc(service, "record_start_step", { p_journey: journey, p_event: "start_trial_declined", p_meta: { client: "ipad" } });
+    const kept = rows(await service.rest("GET", "start_steps", { query: { journey_id: `eq.${journey}`, select: "event,meta" } }));
+    out.push(
+      result(
+        "ipad: record_start_step() takes the iPad's steps (start_trial_declined, client ipad)",
+        isOk(step) && kept.length === 1 && kept[0]?.event === "start_trial_declined" && kept[0]?.meta?.client === "ipad",
+        `${describe(step)} / ${JSON.stringify(kept)}`,
+      ),
+    );
+  } finally {
+    if (service) {
+      await service.rest("DELETE", "app_attest_challenges", { query: { challenge: `eq.${challenge}` } });
+      await service.rest("DELETE", "start_steps", { query: { journey_id: `eq.${journey}` } });
+    }
+  }
+  return out;
+}
+
+/**
  * The steps before the account's checks, run after FUNNEL_STEP_CHECKS by scripts/verify-rls.mjs and src/__tests__/db-rls.integration.test.ts.
  * @type {CheckDef[]}
  */
 export const START_STEP_CHECKS = [
   { name: "start steps: start_steps out of every client's reach; record_start_step() the service role's; link_start_journey() links only an unlinked journey to the caller; admin_funnel's start has no ids and no admins", run: checkStartSteps },
+  { name: "ipad onboarding: app_attest_keys and app_attest_challenges the service role's alone; record_start_step() takes the iPad's steps", run: checkIpadOnboarding },
 ];
 
 /**

@@ -310,12 +310,24 @@ describe("the other /api/family routes", () => {
     expect(store.deleted).toEqual([]);
   });
 
-  it("adding a kid without the grown-up's Unlimited is 409 plan_required, with the words the Family page shows", async () => {
+  it("adding a second kid without the grown-up's Unlimited is 409 plan_required, with the words the Family page shows", async () => {
     store.noPlan.add(IDS.parent);
     const res = await kidsPost(post("/api/family/kids", TOKENS.parent, { displayName: "Cleo", grade: 2, avatar: "panda" }));
     expect(res.status).toBe(409);
     expect(await json(res)).toMatchObject({ error: "invalid_request", reason: "plan_required", message: "Start your free trial to add kids." });
     expect(store.created).toEqual([]);
+  });
+
+  it('"Not now": a grown-up without the plan and no kids yet adds the first kid (201), not a second (409)', async () => {
+    store.noPlan.add(IDS.parent);
+    store.families.get(IDS.parent)!.kids = [];
+    const first = await kidsPost(post("/api/family/kids", TOKENS.parent, { displayName: "Sam", grade: 3, avatar: "panda" }));
+    expect(first.status).toBe(201);
+    expect(await json(first)).toMatchObject({ displayName: "Sam", grade: 3, isParent: false });
+    const second = await kidsPost(post("/api/family/kids", TOKENS.parent, { displayName: "Ada", grade: 1, avatar: "fox" }));
+    expect(second.status).toBe(409);
+    expect(await json(second)).toMatchObject({ error: "invalid_request", reason: "plan_required" });
+    expect(store.created).toHaveLength(1);
   });
 
   it("past the day's kid adds, 429 kid_add_limit with its own words", async () => {
