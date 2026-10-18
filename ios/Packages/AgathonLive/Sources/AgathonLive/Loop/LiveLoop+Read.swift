@@ -381,8 +381,7 @@ extension LiveLoop {
         }
     }
 
-    /// "OK" on a trouble line: it goes (the kid just writes on). A fair-use pause stays in force for
-    /// the model calls; the pill stops saying so.
+    /// "OK" on a trouble line: it goes (the kid just writes on; a read refused again says so again).
     public func dismissTrouble() {
         lastFailure = nil
         if slowFairUse { slowUntil = scheduler.now; slowFairUse = false }
