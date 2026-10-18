@@ -49,7 +49,8 @@ Every piece is built and tested on its own, but the real app doesn't connect the
    (`AskParts.live(backend:boardId:board:helper:userId:grade:)`, `AskPanelContainer`, an Ask button,
    `LiveLoopAskHelper`). Pass `OpenBoard.practice` through. Hint-card `onSpeak` →
    `AskSpeech.speak(text:)`. Connect `driver.handwriting` to the Live setting.
-2. **Onboarding.** RootView → `OnboardingFlow(onFinish:)` when `OnboardingState.needsOnboarding`.
+2. **Onboarding** (merged; `docs/ONBOARDING.md` "As built"). RootView → `OnboardingFlow(onFinish:)` when
+   `OnboardingState.needsOnboarding`; open the board editor on `.firstBoard`.
    Swap its seams:
    - `TryItChecking` → AgathonLive
    - `TrialOffering` → AgathonStore
@@ -90,26 +91,39 @@ Every piece is built and tested on its own, but the real app doesn't connect the
 - **StoreKit.** `AgathonTests/StoreKitFlowTests` runs only from Xcode (Product › Test with
   `AGATHON_STOREKIT=1`); `SKTestSession` fails from the command line.
 
-## Production: waiting for the owner's OK (never apply without it)
+## Production
 
-1. **Migrations,** applied in this order, each after a backup (`docs/RUNBOOK-supabase.md`):
-   - `supabase/migrations/20261017000000_agathon_doc.sql`: the iPad board document column. After
-     this the web can only view iPad-edited boards.
-   - `supabase/migrations/20261017200000_apple_subscriptions.sql`: Apple plans in
-     `unlimited_subscriptions`.
-   - `supabase/migrations/20261017210000_ipad_onboarding.sql`: App Attest tables; "Not now" (a kid
-     without a plan spends the grown-up's ink); the new onboarding steps.
-2. **Merging this branch into `main` deploys the web changes**:
-   - read-only iPad boards and the server readers
-   - the client-errors `ios` source
-   - the Apple billing routes, which need `APPLE_ENVIRONMENT` / `APPLE_APP_APPLE_ID` in Vercel
-   - the App Attest routes
-
-   The web side works with or without the migrations, but apply them first.
-3. **App Store Connect checklist:** `docs/RUNBOOK-billing.md` §16. It covers the Paid Apps agreement,
-   the Small Business Program, the app record, the subscription `app.agathon.unlimited.monthly`, the
-   1-week free intro offer, the Server Notifications V2 URL, the In-App Purchase key, sandbox
-   testers, privacy labels and review notes.
+- **Supabase migrations: APPLIED 2026-10-18 18:33 ET with the owner's OK** ("yes u can do everything to
+  prod supabase").
+  - All six are applied and recorded in `supabase_migrations.schema_migrations` (44 in total):
+    - `20261013000000_try_board_step`, `20261013020000_start_steps`, `20261013030000_free_board_step`.
+      These were on `main` but had never been applied, so `/start` and the try board on the live web
+      lacked their database pieces until now.
+    - `20261017000000_agathon_doc`, `20261017200000_apple_subscriptions`,
+      `20261017210000_ipad_onboarding`.
+  - Backup taken first:
+    `~/.config/agathon-classroom/backups/prod-public-20261018-1833-before-ipad-migrations.dump`
+    (pg_dump of the public schema, 17 MB, checked with `pg_restore -l`).
+  - Verified:
+    - the doc columns exist on `whiteboards` (180 boards, none with a doc yet)
+    - all 23 subscriptions are `provider = 'stripe'`
+    - the App Attest and `start_steps` tables have RLS on, with no policies and no grants (service
+      role only)
+    - `apply_apple_subscription` and `refund_ink_for` are service-only
+    - `consume_credits`, `ink_summary` and `delete_own_account` are callable by signed-in users, as
+      before
+  - Effect: the app's saving (AgathonSync) now writes iPad documents in production. Once a board is
+    saved from the iPad, the web can only view it.
+- **Not done (needs its own OK): merging this branch into `main`**, which deploys the web changes.
+  These are:
+  - read-only iPad boards and the server readers
+  - the client-errors `ios` source
+  - the Apple billing routes (they need `APPLE_ENVIRONMENT` / `APPLE_APP_APPLE_ID` in Vercel)
+  - the App Attest routes
+- **App Store Connect checklist:** `docs/RUNBOOK-billing.md` §16. It covers the Paid Apps agreement,
+  the Small Business Program, the app record, the subscription `app.agathon.unlimited.monthly`, the
+  1-week free intro offer, the Server Notifications V2 URL, the In-App Purchase key, sandbox
+  testers, privacy labels and review notes.
 
 ## Open decisions for the owner
 
@@ -144,6 +158,11 @@ Every piece is built and tested on its own, but the real app doesn't connect the
   month.
 - **Screens:** Today's practice lists problems over the board instead of writing them in the tutor's
   hand.
+- **Onboarding:**
+  - the largest-text run fails at the first board
+  - no avatar art yet
+  - App Attest on a real device may need the App Attest capability
+  - the try page is small in portrait
 
 ## Branches
 
@@ -151,4 +170,4 @@ Every piece is built and tested on its own, but the real app doesn't connect the
 |---|---|
 | `feat/ipad-app` | Everything merged here |
 | `feat/ipad-reader` | Parked |
-| `feat/ipad-kit`, `-brain`, `-board`, `-design`, `-tools`, `-sync`, `-live`, `-billing`, `-screens`, `-ask`, `-fast`, `-onboarding` | Merged lane branches |
+| `feat/ipad-kit`, `-brain`, `-board`, `-design`, `-tools`, `-sync`, `-live`, `-billing`, `-screens`, `-ask`, `-fast`, `-onboarding` | Merged lane branches (all merged into `feat/ipad-app`) |
