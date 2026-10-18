@@ -1,4 +1,5 @@
 #if DEBUG
+import AgathonOnboarding
 import SwiftUI
 
 /// A small "Labs" button over every screen of a Debug build, so the developer screens open on a
@@ -10,7 +11,7 @@ extension View {
 }
 
 private struct LabsButton: ViewModifier {
-    @State private var open: Lab?
+    @State private var open: Lab? = Lab.fromLaunch
 
     func body(content: Content) -> some View {
         content
@@ -35,15 +36,23 @@ private struct LabsButton: ViewModifier {
 }
 
 private enum Lab: String, CaseIterable, Identifiable {
-    case board, brain, design
+    case board, brain, design, onboarding
 
     var id: String { rawValue }
+
+    /// `-lab <name>` opens that lab at launch (the onboarding's UI tests and QA videos use it).
+    static var fromLaunch: Lab? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-lab"), i + 1 < args.count else { return nil }
+        return Lab(rawValue: args[i + 1])
+    }
 
     var title: String {
         switch self {
         case .board: return "Board Lab (draw with the Pencil)"
         case .brain: return "Brain Lab (maths engine timings)"
         case .design: return "Design Gallery (the Blocks look)"
+        case .onboarding: return "Onboarding (the first run)"
         }
     }
 
@@ -52,6 +61,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .board: return "pencil.tip"
         case .brain: return "function"
         case .design: return "paintpalette"
+        case .onboarding: return "hand.wave"
         }
     }
 }
@@ -66,15 +76,16 @@ private struct LabScreen: View {
             case .board: BoardLabView()
             case .brain: BrainLabView()
             case .design: DesignGallery()
+            case .onboarding: OnboardingLab(close: close)
             }
-            Button(action: close) {
+            if lab != .onboarding { Button(action: close) {
                 Label("Close", systemImage: "xmark")
                     .font(.footnote.weight(.semibold))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(.thinMaterial, in: Capsule())
             }
-            .padding(16)
+            .padding(16) }
         }
     }
 }
