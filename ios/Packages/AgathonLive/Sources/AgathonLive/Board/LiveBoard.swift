@@ -1,0 +1,132 @@
+import AgathonBoard
+import AgathonBrain
+import CoreGraphics
+import Foundation
+
+/// What the Live loop needs from a board: its records, the screen on show, the kid's pen, and the
+/// tutor's hand. `CanvasLiveBoard` is the app's (AgathonBoard's controller and canvas); the tests
+/// use an in-memory one.
+@MainActor
+public protocol LiveBoard: AnyObject {
+    /// The board's records. The loop reads the kid's strokes and writes its own records (lines,
+    /// problems, marks, typeset steps) with origin `.tutor`: saved, never in the kid's undo stack.
+    var store: BoardStore { get }
+    var currentScreenID: RecordID { get }
+    /// The current screen's rect (page units; 1600 × 900 for a new screen).
+    var screenRect: BrainRect { get }
+    /// The board's fit zoom (view points per page unit with the screen fitted): sizes the tutor's
+    /// hand and the clustering's sense of a glyph (the web's `getBaseZoom`). nil: unknown.
+    var fitZoom: Double? { get }
+    /// Records the kid picked with the select tool (Help me acts on their line); empty with none.
+    var selection: [RecordID] { get }
+    /// A stroke is being drawn right now.
+    var isPenDown: Bool { get }
+    /// Reduce Motion: the tutor's writing appears at once.
+    var reduceMotion: Bool { get }
+    /// Set by the loop: the kid's pen went down (true) or up (false).
+    var onPen: ((Bool) -> Void)? { get set }
+    /// Set by the loop: the board moved to another screen.
+    var onScreenChange: ((RecordID) -> Void)? { get set }
+    /// Writes lines in the tutor's hand at handwriting pace on the current screen; `meta` goes on
+    /// every stroke. `onDone` runs once the last stroke is in the store (or the pen was cancelled).
+    func write(_ lines: [TutorLine], meta: Meta, onDone: @escaping @MainActor () -> Void) -> TutorPen
+    /// Adds a blank screen and shows it; nil at the cap.
+    func addScreen() -> RecordID?
+}
+
+/// One block of the tutor's writing in progress.
+@MainActor
+public protocol TutorPen: AnyObject {
+    var isWriting: Bool { get }
+    /// How long the block takes to write (wall clock, ms; 0 under Reduce Motion).
+    var wallMs: Double { get }
+    /// Stops: lines begun are finished whole, the rest are not written.
+    func cancel()
+}
+
+/// Where page points are on screen, for the overlays (hint cards, cheers, readbacks).
+@MainActor
+public protocol LiveCanvasGeometry: AnyObject {
+    /// A page point in the board view's coordinates (points).
+    func viewPoint(_ page: AgathonBrain.Point) -> CGPoint
+    /// The board view's size (points).
+    var viewSize: CGSize { get }
+}
+
+/// The meta keys the loop stamps on what it writes (the web's own keys, so a board read by either
+/// app means the same).
+enum LiveMeta {
+    static let live = "live"
+    static let source = "source"
+    static let lineId = "lineId"
+    static let createdAt = "createdAt"
+    /// on a mark's strokes: its key (`check:12,30,40,10`)
+    static let mark = "mark"
+    /// on a question mark's strokes: `unread` or `unjudged`
+    static let markWhy = "markWhy"
+    /// on a worked solution: what it solves (written once)
+    static let solvedLatex = "solvedLatex"
+    /// on the right next step beside a ringed line: the ringed read
+    static let suggestFor = "suggestFor"
+    /// on an answer finishing the kid's `=`: the line as read
+    static let answerFor = "answerFor"
+    static let answerLatex = "answerLatex"
+    /// on Help's step after a line's `=`
+    static let nextStepFor = "nextStepFor"
+    /// on everything one write made (the loop finds a block's strokes by it)
+    static let job = "liveJob"
+    /// on a line record: the read the model called wrong
+    static let aiWarnLatex = "aiWarnLatex"
+    /// on a line record: its confidence and provider, and its ink hash
+    static let confidence = "confidence"
+    static let provider = "provider"
+    static let hash = "hash"
+    /// on a problem record: where the problem is written (page rect) and the attempt it follows
+    static let rect = "rect"
+    static let parent = "parentId"
+}
+
+extension BoardStore {
+    /// The kid's finished strokes on a screen, as the brain takes ink (page coordinates).
+    func kidStrokes(on screen: RecordID) -> [BrainStroke] {
+        drawables(on: screen).compactMap { record -> BrainStroke? in
+            guard case .stroke(let s) = record, s.author == .kid, s.meta["highlight"]?.boolValue != true, !s.points.isEmpty else { return nil }
+            var xs: [Double] = []
+            var ys: [Double] = []
+            xs.reserveCapacity(s.points.count)
+            ys.reserveCapacity(s.points.count)
+            for p in s.points {
+                let v = s.pagePoint(p)
+                xs.append((v.x * 100).rounded() / 100)
+                ys.append((v.y * 100).rounded() / 100)
+            }
+            return BrainStroke(id: s.id.rawValue, x: xs, y: ys)
+        }
+    }
+
+    /// Records on a screen whose meta says the loop wrote them for `lineId`.
+    func liveRecords(on screen: RecordID, lineId: String) -> [BoardRecord] {
+        drawables(on: screen).filter { $0.meta[LiveMeta.lineId]?.stringValue == lineId && $0.meta[LiveMeta.live]?.boolValue == true }
+    }
+
+    /// Every record the loop wrote on a screen (drawn ones).
+    func liveDrawables(on screen: RecordID) -> [BoardRecord] {
+        drawables(on: screen).filter { $0.meta[LiveMeta.live]?.boolValue == true }
+    }
+
+    /// The semantic records (lines, problems, marks) of a screen.
+    func semantic(on screen: RecordID) -> [BoardRecord] {
+        records.values.filter { r in
+            switch r {
+            case .line(let l): return l.screen == screen
+            case .problem(let p): return p.screen == screen
+            case .mark(let m): return m.screen == screen
+            default: return false
+            }
+        }
+    }
+}
+
+extension Meta {
+    func string(_ key: String) -> String { self[key]?.stringValue ?? "" }
+}
