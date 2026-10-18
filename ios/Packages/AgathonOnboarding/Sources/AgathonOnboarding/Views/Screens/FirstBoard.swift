@@ -11,14 +11,14 @@ import SwiftUI
 ///    `START_PROBLEMS`).
 @MainActor
 enum FirstBoardMaker {
-    static let handSize = 72.0
 
     /// The document, and the first practice problem left for the tutor to write live on screen 1.
     /// `boardId`: the row it goes into, so the first screen's id is the one the board session uses.
     static func make(answers a: OnboardingAnswers, seed: Int, boardId: String? = nil) async -> Made {
         let store = BoardStore(document: boardId.map(BoardSession.blankDocument(boardId:)) ?? .blank())
-        guard let first = store.screenIDs.first else { return Made(document: .blank(), liveProblem: nil, liveY: 300) }
+        guard let first = store.screenIDs.first else { return Made(document: .blank(), liveProblem: nil, liveX: nil, liveY: 300) }
         var bottom = 140.0
+        var left: Double?
 
         // the try, as it was
         if let t = a.tries.first(where: { $0.checked }) ?? a.tries.first, let p = OnboardingCatalog.shared.problem(t.problemId) {
@@ -31,6 +31,7 @@ enum FirstBoardMaker {
                 let lines = TryBoard.tutorLines(plan, dx: o.x - b.x, dy: o.y - b.y)
                 put(lines, on: first, in: store, meta: ["problem": .bool(true)])
                 bottom = o.y + b.h
+                left = o.x
             }
             var inkBox: Box?
             for pts in (t.answerStrokes ?? t.strokes) where pts.count >= 2 {
@@ -67,25 +68,35 @@ enum FirstBoardMaker {
         }
         var live: String?
         for (i, problem) in problems.enumerated() {
-            let latex = problem.joined(separator: " ")
+            let latex = Self.asked(problem.joined(separator: " "))
             if i == 0 {
                 live = latex
                 continue
             }
             let s = ScreenRecord(order: OrderKey.after(store.screens.last?.order), name: "Screen \(store.screens.count + 1)")
             store.put(.screen(s), origin: .system)
-            if let plan = try? await Brain.shared.layoutHandwriting(HandwritingRequest(steps: problem, size: handSize, seedKey: latex)).plan {
-                put(TryBoard.tutorLines(plan, dx: 160 - plan.bounds.x, dy: 120 - plan.bounds.y), on: s.id, in: store, meta: ["problem": .bool(true)])
+            if let plan = try? await Brain.shared.layoutHandwriting(HandwritingRequest(steps: [latex], size: TryBoard.handSize, seedKey: latex)).plan {
+                let o = TryBoard.problemOrigin(width: plan.bounds.w, beside: latex.hasSuffix("="))
+                put(TryBoard.tutorLines(plan, dx: o.x - plan.bounds.x, dy: 200 - plan.bounds.y), on: s.id, in: store, meta: ["problem": .bool(true)])
             }
         }
         // the next problem goes under the try (or at the top when there was no try)
-        return Made(document: store.document, liveProblem: live, liveY: a.tries.isEmpty ? 260 : max(600, bottom + 150))
+        return Made(document: store.document, liveProblem: live, liveX: left, liveY: a.tries.isEmpty ? 260 : max(580, bottom + 110))
+    }
+
+    /// An arithmetic problem as the tutor asks it on a board: with its "=" (algebra keeps its own).
+    static func asked(_ latex: String) -> String {
+        let bare = latex.replacingOccurrences(of: #"\\[a-zA-Z]+"#, with: "", options: .regularExpression)
+        let letters = bare.range(of: "[a-zA-Z]", options: .regularExpression) != nil
+        return !latex.contains("=") && !letters ? latex + " =" : latex
     }
 
     struct Made {
         var document: BoardDocument
         /// written live on screen 1 by the first board (then saved with it)
         var liveProblem: String?
+        /// the try problem's left edge, so the next problem lines up under it; nil: centred
+        var liveX: Double?
         var liveY: Double
     }
 
@@ -173,9 +184,9 @@ struct FirstBoardScreen: View {
         guard let live else { return }
         Task {
             try? await Task.sleep(for: .milliseconds(700))
-            guard let plan = try? await Brain.shared.layoutHandwriting(HandwritingRequest(steps: [live], size: FirstBoardMaker.handSize, seedKey: live)).plan else { return }
+            guard let plan = try? await Brain.shared.layoutHandwriting(HandwritingRequest(steps: [live], size: TryBoard.handSize, seedKey: live)).plan else { return }
             let y = model.firstBoardMade?.liveY ?? 600
-            let x = (Box.screen.w - plan.bounds.w) / 2
+            let x = model.firstBoardMade?.liveX ?? (Box.screen.w - plan.bounds.w) / 2
             w.write(TryBoard.tutorLines(plan, dx: x - plan.bounds.x, dy: y - plan.bounds.y), meta: ["problem": .bool(true)])
         }
     }
