@@ -65,6 +65,8 @@ public struct Banner: View {
         case paused
         /// No connection.
         case offline
+        /// Nothing is sent: the work stays on this iPad for now (a board that can't save yet).
+        case notSaved
 
         var badge: DS.Fill {
             switch self {
@@ -73,6 +75,7 @@ public struct Banner: View {
             case .tutor: .cobalt
             case .paused: DS.Fill(background: DS.Palette.ink, foreground: DS.Palette.sunny)
             case .offline: DS.Fill(background: DS.Palette.ink, foreground: DS.Palette.white)
+            case .notSaved: .chalk
             }
         }
 
@@ -83,6 +86,7 @@ public struct Banner: View {
             case .tutor: .chat
             case .paused: .pause
             case .offline: .offline
+            case .notSaved: .notSaved
             }
         }
     }

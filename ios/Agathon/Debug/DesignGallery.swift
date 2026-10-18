@@ -579,6 +579,7 @@ private struct FeedbackPage: View {
                         Banner(.lookAgain, "Look again.", message: "Check the bottom number.")
                         Banner(.paused, "Help is paused for now.", message: "Ask a grown-up to switch it back on.", surface: .ink)
                         Banner(.tutor, "Your tutor wrote on screen 2.", surface: .ink)
+                        Banner(.notSaved, "Not saved yet.", message: "Saving comes soon. What you write stays on this iPad.")
                     }
                     VStack(alignment: .leading, spacing: 14) {
                         CheerPill("Nailed it.")

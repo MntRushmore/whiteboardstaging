@@ -28,6 +28,54 @@ public final class BoardsRepository: Sendable {
         return try Self.decode([BoardSummary].self, response.data)
     }
 
+    /// A board's stored document: the JSON of its `data` column (a tldraw snapshot; `{}` for a board
+    /// nobody has drawn on yet, `null` when the column is empty), selected alone for that one row.
+    /// Read-only: the app never writes `data` (the web owns it until the Agathon document has its
+    /// own column, docs/IPAD-NATIVE.md "Storage").
+    /// Throws `BoardError.notFound` when the board is gone (deleted on another device) or isn't
+    /// this user's.
+    public func snapshot(id: String) async throws -> Data {
+        let response: PostgrestResponse<Void>
+        do {
+            response = try await SkewRetry.run {
+                try await client.from(Self.table)
+                    .select("data")
+                    .eq("id", value: id)
+                    .single()
+                    .execute()
+            }
+        } catch let error as PostgrestError where error.code == "PGRST116" {
+            throw BoardError.notFound
+        }
+        return try Self.documentBytes(fromRow: response.data)
+    }
+
+    public enum BoardError: Error, Equatable, LocalizedError {
+        /// No such board for this user (`.single()` found no row: PGRST116).
+        case notFound
+
+        public var errorDescription: String? {
+            switch self {
+            case .notFound: return "This board isn't here anymore."
+            }
+        }
+    }
+
+    /// The `data` value of a `{"data": …}` row, as JSON bytes.
+    static func documentBytes(fromRow row: Data) throws -> Data {
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: row, options: [.fragmentsAllowed])
+        } catch {
+            throw APIError.invalidResponse("whiteboards.data: not JSON")
+        }
+        guard let fields = object as? [String: Any] else {
+            throw APIError.invalidResponse("whiteboards.data: not a row")
+        }
+        guard let value = fields["data"], !(value is NSNull) else { return Data("null".utf8) }
+        return try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed])
+    }
+
     /// A new, empty board (`data: {}`, as the web inserts it), named `title`.
     public func create(title: String = BoardSummary.defaultTitle) async throws -> BoardSummary {
         guard let userId = client.auth.currentUser?.id.uuidString.lowercased() else { throw APIError.notSignedIn }
