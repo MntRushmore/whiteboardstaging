@@ -36,13 +36,14 @@ private struct LabsButton: ViewModifier {
 }
 
 private enum Lab: String, CaseIterable, Identifiable {
-    case board, brain, design, live, debugScreens
+    case board, editor, brain, design, live, debugScreens
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .board: return "Board Lab (draw with the Pencil)"
+        case .editor: return "Board editor (Blocks)"
         case .brain: return "Brain Lab (maths engine timings)"
         case .design: return "Design Gallery (the Blocks look)"
         case .live: return "Live Lab (the tutor on the board)"
@@ -53,6 +54,7 @@ private enum Lab: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .board: return "pencil.tip"
+        case .editor: return "rectangle.and.pencil.and.ellipsis"
         case .brain: return "function"
         case .design: return "paintpalette"
         case .live: return "checkmark.bubble"
@@ -69,6 +71,7 @@ private struct LabScreen: View {
         ZStack(alignment: .bottomTrailing) {
             switch lab {
             case .board: BoardLabView()
+            case .editor: BoardLabView(startInEditor: true)
             case .brain: BrainLabView()
             case .design: DesignGallery()
             case .live: LiveLabView()

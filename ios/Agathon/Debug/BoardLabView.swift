@@ -1,6 +1,9 @@
 #if DEBUG
 import AgathonBoard
+import AgathonBoardUI
+import AgathonDesign
 import SwiftUI
+import UIKit
 
 /// Board Lab: the engine on its own, for the board lane's measurements (plain UI; the real board's
 /// design comes from the brand lane). Reach it with the launch argument `-boardLab`.
@@ -16,24 +19,80 @@ import SwiftUI
 ///   -boardLabTiles surface   settled ink in IOSurface tiles (default: CGImage tiles)
 ///   -boardLabSweep YES       zoom 1× → 4× → 1× while panning, and report the frames
 ///   -boardLabStats YES       print the numbers to the console after loading / the demo
+///   -boardLabEditor YES      show the board in the Blocks editor (AgathonBoardUI) instead of the Lab's strip
+///   -boardLabSelect <ids>    select these records (comma-separated, or `all`) with the Select tool
+///   -boardLabPanel <shapes|picture|more|colors>   open a dock panel (screenshots)
+///   -boardLabHelp YES        fill the Live lane's slots with stand-ins (Help me, a status pill)
+///   -boardLabWidth <pt>      the editor in a narrower column (a split view)
+///   -boardLabLandscape YES   ask for landscape (screenshots)
+///   -boardLabFrame 1376x1032 the editor laid out at another screen size, scaled to fit (a landscape shot)
 struct BoardLabView: View {
     @StateObject private var lab = BoardLabModel()
+    /// open straight in the Blocks editor, on the objects board when no fixture is named
+    var startInEditor = false
 
-    init() {
+    init(startInEditor: Bool = false) {
+        self.startInEditor = startInEditor
         BoardCanvasView.surfaceTiles = UserDefaults.standard.string(forKey: "boardLabTiles") == "surface"
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            BoardCanvas(controller: lab.controller, insets: CameraConstraints(top: 150, left: 16, bottom: 16, right: 16)) { canvas in
-                lab.attach(canvas)
-            }
-            .ignoresSafeArea()
-            if !UserDefaults.standard.bool(forKey: "boardLabNoChrome") {
-                LabChrome(lab: lab, controller: lab.controller)
+        Group {
+            if lab.editor {
+                editor
+            } else {
+                ZStack(alignment: .top) {
+                    BoardCanvas(controller: lab.controller, insets: CameraConstraints(top: 150, left: 16, bottom: 16, right: 16)) { canvas in
+                        lab.attach(canvas)
+                    }
+                    .ignoresSafeArea()
+                    if !UserDefaults.standard.bool(forKey: "boardLabNoChrome") {
+                        LabChrome(lab: lab, controller: lab.controller)
+                    }
+                }
             }
         }
-        .task { await lab.start() }
+        .task {
+            if UserDefaults.standard.bool(forKey: "boardLabLandscape"),
+               let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                // screenshots: the iPad on its side, without touching the Simulator
+                scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeLeft)) { _ in }
+            }
+            if startInEditor { lab.editor = true }
+            await lab.start(defaultFixture: startInEditor ? "objects" : nil)
+        }
+    }
+
+    /// The board in the Blocks editor (the Lab's back button returns to the plain Lab).
+    @ViewBuilder private var editor: some View {
+        let width = Double(UserDefaults.standard.string(forKey: "boardLabWidth") ?? "")
+        let panel = DockPanel(rawValue: UserDefaults.standard.string(forKey: "boardLabPanel") ?? "")
+        // -boardLabHelp YES: the Live lane's slots filled with stand-ins (Help me, a status pill)
+        let view: AnyView = UserDefaults.standard.bool(forKey: "boardLabHelp")
+            ? AnyView(BoardEditorView(controller: lab.controller, title: lab.title, onBack: { lab.editor = false },
+                                      onCanvas: { lab.attach($0) }, initialPanel: panel,
+                                      topTrailing: { StatusPill("Checking…") }, helpButton: { HelpMeButton {} }, overlay: { _ in EmptyView() }))
+            : AnyView(BoardEditorView(controller: lab.controller, title: lab.title, onBack: { lab.editor = false },
+                                      onCanvas: { lab.attach($0) }, initialPanel: panel))
+        let frame = (UserDefaults.standard.string(forKey: "boardLabFrame") ?? "").split(separator: "x").compactMap { Double($0) }
+        if frame.count == 2 {
+            // another iPad's screen (landscape on a portrait simulator), scaled to fit: screenshots
+            GeometryReader { geo in
+                let k = min(geo.size.width / frame[0], geo.size.height / frame[1])
+                view.frame(width: frame[0], height: frame[1])
+                    .scaleEffect(k)
+                    .frame(width: geo.size.width, height: geo.size.height)
+            }
+            .background(Color.black)
+            .ignoresSafeArea()
+        } else if let width {
+            HStack(spacing: 0) {
+                view.frame(width: width)
+                Color.black.opacity(0.85).ignoresSafeArea()
+            }
+        } else {
+            view
+        }
     }
 }
 
@@ -118,6 +177,7 @@ private struct LabChrome: View {
             Button("Save JSON") { lab.saveJSON() }
             Button("Load JSON") { Task { await lab.load("board-lab") } }
             Button("Blank") { controller.load(.blank()) }
+            Button("Blocks editor") { lab.editor = true }
             Divider().frame(height: 24)
             Button("Demo writing") { Task { await lab.demo() } }
             Button("Tutor marks") { lab.tutorMarks() }
@@ -155,8 +215,17 @@ final class BoardLabModel: ObservableObject {
     private(set) weak var canvas: BoardCanvasView?
     private var writer: TutorWriter?
     @Published var status = ""
+    /// the board shown in the Blocks editor (AgathonBoardUI)
+    @Published var editor = UserDefaults.standard.bool(forKey: "boardLabEditor")
+    @Published var title = "Board Lab"
 
-    static let fixtures = ["kid-algebra", "legacy-noscreen", "legacy-small", "synthetic-2000", "dense-600", "dense-5000", "board-lab"]
+    init() {
+        // pictures added in the Lab stay in memory
+        controller.assetStore = MemoryBoardAssetStore()
+        controller.boardId = "board-lab"
+    }
+
+    static let fixtures = ["objects", "kid-algebra", "legacy-noscreen", "legacy-small", "synthetic-2000", "dense-600", "dense-5000", "board-lab"]
 
     /// The package's test fixtures, read from the Mac's disk (the simulator can; a device cannot).
     static let fixtureDir = URL(fileURLWithPath: #filePath)
@@ -167,6 +236,9 @@ final class BoardLabModel: ObservableObject {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("board-lab.json")
     }
 
+    static let titles = ["objects": "Pictures, maths and graphs", "kid-algebra": "Solving for x", "legacy-noscreen": "My first board",
+                         "legacy-small": "Shapes and lines", "synthetic-2000": "Lots of writing", "dense-600": "A full page", "dense-5000": "5,000 strokes"]
+
     static func bytes(_ n: Int) -> String {
         n >= 1_000_000 ? String(format: "%.2f MB", Double(n) / 1_000_000) : String(format: "%.1f KB", Double(n) / 1000)
     }
@@ -174,17 +246,19 @@ final class BoardLabModel: ObservableObject {
     func attach(_ canvas: BoardCanvasView) {
         self.canvas = canvas
         writer = TutorWriter(controller: controller, canvas: canvas)
+        // a canvas made again (the Lab ⇄ the editor): draw the board into it
+        controller.resetScene()
     }
 
     private var args: UserDefaults { .standard }
 
-    func start() async {
+    func start(defaultFixture: String? = nil) async {
         // the canvas laid out and its first screen drawn before anything is written on it
         while canvas == nil || (canvas?.bounds.width ?? 0) == 0 || controller.isLoading {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
         try? await Task.sleep(nanoseconds: 300_000_000)
-        guard let name = args.string(forKey: "boardLabFixture") else {
+        guard let name = args.string(forKey: "boardLabFixture") ?? defaultFixture else {
             if args.bool(forKey: "boardLabDemo") { await demo() }
             return
         }
@@ -202,6 +276,12 @@ final class BoardLabModel: ObservableObject {
             canvas.setZoom(z, around: at.count == 2 ? canvas.camera.toView(Vec2(at[0], at[1])) : nil)
         }
         if args.bool(forKey: "boardLabDemo") { await demo() }
+        if let pick = args.string(forKey: "boardLabSelect") {
+            controller.tool = .select
+            let ids = pick == "all" ? Set(controller.store.drawableIDs(on: controller.currentScreenID))
+                : Set(pick.split(separator: ",").map { RecordID(String($0)) })
+            controller.select(ids)
+        }
         if args.bool(forKey: "boardLabSweep"), let canvas {
             let (frames, workMax, detailMs) = await withCheckedContinuation { (k: CheckedContinuation<([Double], Double, Double), Never>) in
                 canvas.sweepCamera { k.resume(returning: ($0, $1, $2)) }
@@ -233,6 +313,10 @@ final class BoardLabModel: ObservableObject {
                 doc = SyntheticBoards.handwriting(strokes: 600)
             case "dense-5000":
                 doc = SyntheticBoards.handwriting(strokes: 5000)
+            case "objects":
+                let (d, store) = await BoardFixtures.objects()
+                doc = d
+                controller.assetStore = store
             case "board-lab":
                 let data = try Data(contentsOf: Self.savedURL)
                 let t1 = CFAbsoluteTimeGetCurrent()
@@ -259,6 +343,7 @@ final class BoardLabModel: ObservableObject {
             controller.resetScene(onDrawn: done)
         }
         let total = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        title = Self.titles[name] ?? name
         status = String(format: "%@: open %.0f ms total — %@", name, total, detail)
         log("load \(name): total \(Int(total)) ms; before store \(Int((t2 - t0) * 1000)) ms; \(detail); scene \(controller.stats.lastLoadBreakdown)")
         if args.bool(forKey: "boardLabStats") { printStats("after load \(name)") }

@@ -32,6 +32,10 @@ packages:
   # pictures in board-assets, on AgathonBoard + AgathonKit.
   AgathonSync:
     path: Packages/AgathonSync
+  # The board editor in Blocks (the canvas, the kid dock, pages, pictures, typeset maths), on
+  # AgathonBoard and AgathonDesign; it brings the vendored SwiftMath (Packages/SwiftMath).
+  AgathonBoardUI:
+    path: Packages/AgathonBoardUI
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -54,6 +58,7 @@ targets:
       - package: AgathonDesign
       - package: AgathonLive
       - package: AgathonSync
+      - package: AgathonBoardUI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon
@@ -103,6 +108,7 @@ targets:
         - AgathonUITests
         - package: AgathonBoard/AgathonBoardTests
         - package: AgathonSync/AgathonSyncTests
+        - package: AgathonBoardUI/AgathonBoardUITests
       gatherCoverageData: false
       environmentVariables:
         # Tick in Product > Scheme > Edit Scheme > Run > Arguments to call a local `npm run dev`.
