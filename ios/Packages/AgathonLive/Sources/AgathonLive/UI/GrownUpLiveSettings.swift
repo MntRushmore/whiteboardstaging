@@ -24,7 +24,8 @@ public struct GrownUpLiveButton: View {
 }
 
 /// For grown-ups: how much help (Off, Hint, Next step, Solve it), Auto, the tutor's hand,
-/// celebrations, Live itself, and clearing the tutor's marks.
+/// celebrations, Live itself, answers after `=` (homework checking; off by default), and clearing
+/// the tutor's marks.
 public struct GrownUpLiveSettings: View {
     @ObservedObject var loop: LiveLoop
     let close: () -> Void
@@ -53,6 +54,8 @@ public struct GrownUpLiveSettings: View {
                 LiveSwitch(LiveCopy.GrownUps.handwriting, isOn: $loop.settings.handwriting)
                 LiveSwitch(LiveCopy.GrownUps.celebrations, isOn: $loop.settings.celebrations)
                 LiveSwitch(LiveCopy.GrownUps.live, isOn: $loop.settings.enabled)
+                LiveSwitch(LiveCopy.GrownUps.answerOnEquals, detail: LiveCopy.GrownUps.answerOnEqualsDetail, isOn: $loop.settings.answerOnEquals)
+                    .accessibilityIdentifier("live.answerOnEquals")
             }
             PillButton(LiveCopy.GrownUps.clearMarks, icon: .delete, kind: .secondaryOnPaper) { loop.clearMarks() }
         }

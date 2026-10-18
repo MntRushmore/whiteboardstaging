@@ -12,16 +12,20 @@ import UIKit
 /// - The pen: a gesture recognizer that only watches (it never recognizes, cancels or delays a
 ///   touch) tells the loop when the kid's pen or finger is on the board, so nothing is read or
 ///   answered mid-stroke.
+/// - The hover: where a hovering Pencil (iPads that report hover) or pointer is, so a line the pen
+///   has left is read at once (`LiveLoop+ReadEarly`).
 /// - The selection is the tools lane's to provide (`selectionProvider`).
 @MainActor
 public final class CanvasLiveBoard: LiveBoard, LiveCanvasGeometry {
     public let controller: BoardController
     public private(set) weak var canvas: BoardCanvasView?
     public var onPen: ((Bool) -> Void)?
+    public var onHover: ((AgathonBrain.Point?) -> Void)?
     public var onScreenChange: ((RecordID) -> Void)?
     /// The records the kid picked with the select tool (wired to the board's selection when there is one).
     public var selectionProvider: () -> [RecordID] = { [] }
     private let observer = PenObserver()
+    private let hover = HoverWatcher()
     private var cancellables: Set<AnyCancellable> = []
 
     public init(controller: BoardController, canvas: BoardCanvasView) {
@@ -29,6 +33,16 @@ public final class CanvasLiveBoard: LiveBoard, LiveCanvasGeometry {
         self.canvas = canvas
         observer.onChange = { [weak self] down in self?.onPen?(down) }
         canvas.addGestureRecognizer(observer)
+        // a hovering Pencil (iPads that report hover) or pointer, in page units: the loop reads a
+        // line early once the pen has left it
+        hover.onMove = { [weak self, weak canvas] at in
+            guard let self, let canvas else { return }
+            self.onHover?(at.map { p in
+                let v = canvas.camera.toPage(p)
+                return AgathonBrain.Point(x: v.x, y: v.y)
+            })
+        }
+        canvas.addGestureRecognizer(hover.recognizer)
         controller.$currentScreenID.dropFirst().removeDuplicates()
             .sink { [weak self] id in
                 // after the controller has finished switching (its published value is set first)
@@ -96,6 +110,24 @@ final class WriterPen: TutorPen {
 
     var isWriting: Bool { writer.isWriting }
     func cancel() { writer.cancel() }
+}
+
+/// Where a hovering Pencil or pointer is over the canvas (view points), nil when it goes. A hover
+/// recognizer never takes part in touches.
+final class HoverWatcher: NSObject {
+    var onMove: ((CGPoint?) -> Void)?
+    private(set) lazy var recognizer: UIHoverGestureRecognizer = {
+        let r = UIHoverGestureRecognizer(target: self, action: #selector(hovered(_:)))
+        r.cancelsTouchesInView = false
+        return r
+    }()
+
+    @objc private func hovered(_ r: UIHoverGestureRecognizer) {
+        switch r.state {
+        case .began, .changed: onMove?(r.location(in: r.view))
+        default: onMove?(nil)
+        }
+    }
 }
 
 /// Watches touches on the canvas without taking part: never recognizes, never cancels, never

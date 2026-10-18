@@ -41,6 +41,10 @@ public enum LiveTiming {
     /// a tick counts for a cheer after this; a ring only after the longer wait
     public static let cheerSettleMs = 700.0
     public static let cheerMissSettleMs = 3_000.0
+    /// no call to the server for this long: the next pen-down warms the road (a free capabilities GET)
+    public static let warmAfterMs = 60_000.0
+    /// a "Graph it" chip shows this long after its line is read
+    public static let graphOfferMs = 12_000.0
 }
 
 /// The web's `LIVE_LIMITS`.
@@ -128,13 +132,35 @@ public struct LiveSettings: Equatable, Sendable, Codable {
     public var handwriting: Bool
     /// cheers and confetti when the tutor ticks a step
     public var celebrations: Bool
+    /// "Show the answer when I write =": a sum the kid ends with `=` is answered after it at once, in
+    /// any mode (homework checking, practice checking). Off by default: tutoring shouldn't hand out
+    /// answers.
+    public var answerOnEquals: Bool
 
-    public init(enabled: Bool = true, mode: LiveMode = .feedback, auto: Bool = true, handwriting: Bool = true, celebrations: Bool = true) {
+    public init(enabled: Bool = true, mode: LiveMode = .feedback, auto: Bool = true, handwriting: Bool = true, celebrations: Bool = true,
+                answerOnEquals: Bool = false) {
         self.enabled = enabled
         self.mode = mode
         self.auto = auto
         self.handwriting = handwriting
         self.celebrations = celebrations
+        self.answerOnEquals = answerOnEquals
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, mode, auto, handwriting, celebrations, answerOnEquals
+    }
+
+    /// Settings saved before a field existed keep the rest, with the new field at its default.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = LiveSettings()
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
+        mode = try c.decodeIfPresent(LiveMode.self, forKey: .mode) ?? d.mode
+        auto = try c.decodeIfPresent(Bool.self, forKey: .auto) ?? d.auto
+        handwriting = try c.decodeIfPresent(Bool.self, forKey: .handwriting) ?? d.handwriting
+        celebrations = try c.decodeIfPresent(Bool.self, forKey: .celebrations) ?? d.celebrations
+        answerOnEquals = try c.decodeIfPresent(Bool.self, forKey: .answerOnEquals) ?? d.answerOnEquals
     }
 
     /// New boards start in Feedback ("Hint"): Off makes Live look broken.

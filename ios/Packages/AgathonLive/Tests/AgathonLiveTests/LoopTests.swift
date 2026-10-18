@@ -7,11 +7,13 @@ import Testing
 
 /// The loop on a test board with the kid's ink from the handwriting scoreboard, a clock moved by
 /// hand and a scripted API: timing, reading, marks, caching, cancellation.
+///
+/// The quiet gate itself, with reading early off (`ReadEarlyTests` has the gate's early way out).
 @MainActor
 @Suite(.serialized)
 struct LoopTimingTests {
     @Test func theQuietGateWaits600msAfterPenUp() async throws {
-        let h = Harness()
+        let h = Harness(readsEarly: false)
         await h.start()
         await h.write("2x + 3 = 11", at: Vec2(200, 150))
         await h.pass(500)
@@ -22,7 +24,7 @@ struct LoopTimingTests {
     }
 
     @Test func moreInkRestartsTheGate() async throws {
-        let h = Harness()
+        let h = Harness(readsEarly: false)
         await h.start()
         let ink = KidHands.strokes("2x + 3 = 11", at: Vec2(200, 150))
         h.board.kidWrites(Array(ink.prefix(4)))
@@ -35,7 +37,7 @@ struct LoopTimingTests {
     }
 
     @Test func nothingIsReadWhileThePenIsDown() async throws {
-        let h = Harness()
+        let h = Harness(readsEarly: false)
         await h.start()
         await h.write("2x = 8", at: Vec2(200, 150))
         h.board.onPen?(true)
@@ -47,7 +49,7 @@ struct LoopTimingTests {
     }
 
     @Test func aRewriteWaits450ms() async throws {
-        let h = Harness()
+        let h = Harness(readsEarly: false)
         await h.start()
         let ids = await h.write("x = 5", at: Vec2(200, 150))
         await h.pass(700)

@@ -117,7 +117,10 @@ extension LiveLoop {
             return
         }
         let wrong = target.analysis?.verdict == "mismatch" || target.isModelFlagged
-        if wrong || target.analysis?.verdict == "unknown" {
+        if target.analysis?.verdict == "mismatch", !target.isModelFlagged, let writer = hintWriter, writer.isReady {
+            // the engine found the slip: the iPad words where to look; the server only if it cannot
+            hintOnDevice(target, writer: writer)
+        } else if wrong || target.analysis?.verdict == "unknown" {
             startCheck(column: target.column, focus: target.id, userAsked: true, forceHint: true)
         } else {
             openHint(target, message: "Your steps so far look right.", question: "What could you do next?", level: 1)
@@ -256,6 +259,32 @@ extension LiveLoop {
         }
         rt[focus, default: LineRuntime()].checkTask = task
         track { await task.value }
+    }
+
+    /// A hint for a step the engine found wrong, worded on the iPad (`HintWording`): the engine's
+    /// facts in, one checked sentence out; anything the rules refuse goes to the server's check.
+    func hintOnDevice(_ target: LiveLine, writer: HintWriter) {
+        let id = target.id
+        let latex = target.latex
+        let started = scheduler.now
+        checking += 1
+        refreshActivity()
+        track { [weak self] in
+            guard let self else { return }
+            let facts = HintFacts(previous: self.lastGoodLineAbove(target)?.latex, line: latex,
+                                  expected: await self.rightNextStep(target), note: target.analysis?.note ?? "")
+            let raw = await writer.write(facts)
+            self.checking = max(0, self.checking - 1)
+            self.refreshActivity()
+            guard let cur = self.lines[id], cur.latex == latex else { return }
+            if let words = HintWording.accept(raw, facts: facts) {
+                self.metrics.deviceHint.append(self.scheduler.now - started)
+                self.openHint(cur, message: words, question: nil, level: 1)
+            } else {
+                if raw != nil { self.metrics.deviceHintRefused += 1 }
+                self.startCheck(column: cur.column, focus: id, userAsked: true, forceHint: true)
+            }
+        }
     }
 
     /// The engine's own words, when the kid asked for a hint and the model had none for the line.
