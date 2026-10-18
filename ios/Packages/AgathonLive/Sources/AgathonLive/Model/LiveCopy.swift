@@ -75,6 +75,12 @@ public enum LiveCopy {
         public static let failed = "Couldn't write a new problem just now."
     }
 
+    public enum Graph {
+        public static let graphIt = "Graph it"
+        public static func label(_ line: String) -> String { "Graph \(line)" }
+        public static let noRoom = "No room for a graph here. Try a new screen."
+    }
+
     public enum GrownUps {
         public static let button = "For grown-ups"
         public static let title = "For grown-ups"
@@ -86,6 +92,8 @@ public enum LiveCopy {
         public static let handwriting = "Tutor writes by hand"
         public static let celebrations = "Celebrations"
         public static let live = "Check work as it's written"
+        public static let answerOnEquals = "Show the answer when I write ="
+        public static let answerOnEqualsDetail = "For checking homework. Leave it off while they practise."
         public static let clearMarks = "Clear the tutor's marks"
     }
 }

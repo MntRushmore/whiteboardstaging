@@ -38,8 +38,11 @@ extension LiveLoop {
             var changed: [String] = []
             for st in columnLines(column) {
                 guard !st.latex.isEmpty else { continue }
-                let ctx = AnalyzeContext(mode: mode, previous: previous, original: original)
-                let key = "\(mode.rawValue)|\(st.latex)|\(previous?.math ?? "")|\(previous?.kind ?? "")|\(original?.math ?? "")"
+                // the grown-ups want answers after `=`: the engine works a sum ended with one out
+                // as in Solve (the policy still decides what is shown)
+                let lineMode = settings.answerOnEquals && LivePolicy.endsWithRelation(st.latex) ? LiveMode.answer : mode
+                let ctx = AnalyzeContext(mode: lineMode, previous: previous, original: original)
+                let key = "\(lineMode.rawValue)|\(st.latex)|\(previous?.math ?? "")|\(previous?.kind ?? "")|\(original?.math ?? "")"
                 let a: LineAnalysis
                 if let hit = analysisCache[key] {
                     a = hit
@@ -94,7 +97,8 @@ extension LiveLoop {
         LivePolicy.Input(
             mode: settings.mode, analysis: st.analysis, confidence: st.confidence, settled: settled ?? self.settled,
             auto: autoFor(st), userAsked: userAsked, hintsShownForLine: st.hintsShown, openHintCount: hints.count,
-            rewritesWithWarn: st.rewritesWithWarn, liveShapeCount: liveShapeCount(), latex: st.latex)
+            rewritesWithWarn: st.rewritesWithWarn, liveShapeCount: liveShapeCount(), latex: st.latex,
+            answerOnEquals: settings.answerOnEquals)
     }
 
     func decision(_ st: LiveLine, userAsked: Bool = false, settled: Bool? = nil) -> LivePolicy.Decision {
@@ -156,8 +160,11 @@ extension LiveLoop {
         syncMark(st, ring ? .circle : tick ? .check : why != nil ? .question : nil, why)
         updateVerdict(st, ring ? "warn" : marked == "solved" ? "solved" : tick ? "ok" : "none")
         if ring && !quiet && auto { suggestNextStep(id) }
+        // a ring is where Help me's hint comes next: the iPad's writer loads now, not at launch
+        if ring { hintWriter?.prewarm() }
         if marked == "solved" { problemSolved(st) }
         if tick || ring { tracker.marked(problem: problemKey(for: st), right: tick) }
+        if !quiet { offerGraph(st) }
     }
 
     /// A read Mathpix was unsure of: the "?" is for it (after a moment).
@@ -229,8 +236,9 @@ extension LiveLoop {
             markDone(id, pen: nil)
             return
         }
-        if let up = st.ink.strokeIds.compactMap({ lastPenUpAt[$0] }).max() {
+        if let (last, up) = st.ink.strokeIds.compactMap({ s in lastPenUpAt[s].map { (s, $0) } }).max(by: { $0.1 < $1.1 }) {
             metrics.penUpToMark.append(scheduler.now - up)
+            metrics.markAfterPenUp[last] = scheduler.now - up
             for s in st.ink.strokeIds { lastPenUpAt[s] = nil }
         }
         let job = UUID().uuidString
@@ -405,6 +413,7 @@ extension LiveLoop {
             if let a = m[LiveMeta.answerFor]?.stringValue, a != st.latex { return true }
             if let n = m[LiveMeta.nextStepFor]?.stringValue, n != st.latex { return true }
             if let s = m[LiveMeta.suggestFor]?.stringValue, s != st.latex || !ring { return true }
+            if let g = m[LiveMeta.graphFor]?.stringValue, g != st.latex { return true }
             return false
         }.map(\.id)
         if !stale.isEmpty {

@@ -25,6 +25,9 @@ public protocol LiveBoard: AnyObject {
     var reduceMotion: Bool { get }
     /// Set by the loop: the kid's pen went down (true) or up (false).
     var onPen: ((Bool) -> Void)? { get set }
+    /// Set by the loop: where a hovering Pencil (or pointer) is over the page, nil when the hover
+    /// ends. A board without hover leaves it alone (the default does nothing).
+    var onHover: ((AgathonBrain.Point?) -> Void)? { get set }
     /// Set by the loop: the board moved to another screen.
     var onScreenChange: ((RecordID) -> Void)? { get set }
     /// Writes lines in the tutor's hand at handwriting pace on the current screen; `meta` goes on
@@ -32,6 +35,14 @@ public protocol LiveBoard: AnyObject {
     func write(_ lines: [TutorLine], meta: Meta, onDone: @escaping @MainActor () -> Void) -> TutorPen
     /// Adds a blank screen and shows it; nil at the cap.
     func addScreen() -> RecordID?
+}
+
+extension LiveBoard {
+    /// No hover on this board.
+    public var onHover: ((AgathonBrain.Point?) -> Void)? {
+        get { nil }
+        set {}
+    }
 }
 
 /// One block of the tutor's writing in progress.
@@ -73,6 +84,8 @@ enum LiveMeta {
     static let answerLatex = "answerLatex"
     /// on Help's step after a line's `=`
     static let nextStepFor = "nextStepFor"
+    /// on a graph the kid asked for ("Graph it"): the line it plots, as read
+    static let graphFor = "graphFor"
     /// on everything one write made (the loop finds a block's strokes by it)
     static let job = "liveJob"
     /// on a line record: the read the model called wrong

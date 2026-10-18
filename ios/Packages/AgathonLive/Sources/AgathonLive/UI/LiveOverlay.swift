@@ -4,7 +4,8 @@ import SwiftUI
 
 /// Everything the tutor shows over the board, for the board's `overlay` slot (laid out over the
 /// canvas, in the canvas's own coordinates): the hint card beside its line, cheers beside the
-/// marks, a line's readback for a moment, "Now you try one", the out-of-ink card, a quiet note.
+/// marks, a line's readback for a moment, "Graph it" beside a function line, "Now you try one", the
+/// out-of-ink card, a quiet note.
 /// Follows the camera while anything is showing.
 public struct LiveOverlay: View {
     @ObservedObject var loop: LiveLoop
@@ -25,13 +26,14 @@ public struct LiveOverlay: View {
         self.onSpeak = onSpeak
     }
 
-    private var following: Bool { !loop.hints.isEmpty || !loop.cheers.isEmpty || !loop.readbacks.isEmpty }
+    private var following: Bool { !loop.hints.isEmpty || !loop.cheers.isEmpty || !loop.readbacks.isEmpty || !loop.graphOffers.isEmpty }
 
     public var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !following)) { _ in
             ZStack(alignment: .topLeading) {
                 Color.clear
                 ForEach(loop.readbacks) { r in readback(r) }
+                ForEach(loop.graphOffers) { g in graphChip(g) }
                 ForEach(loop.cheers) { c in cheer(c) }
                 ForEach(loop.hints) { h in hintCard(h) }
             }
@@ -84,6 +86,16 @@ public struct LiveOverlay: View {
             .transition(.opacity)
             .allowsHitTesting(false)
             .accessibilityLabel("The tutor read: \(MathText.plain(r.latex))")
+    }
+
+    /// "Graph it", just right of the line (past where a mark would sit), on its middle.
+    private func graphChip(_ g: GraphOffer) -> some View {
+        let end = max(g.anchor.maxX, LiveMarks.markRect(.check, g.anchor).maxX)
+        let at = point(end + 16, g.anchor.y + g.anchor.h / 2)
+        return GraphChip(label: LiveCopy.Graph.label(MathText.plain(g.latex))) { loop.graphIt(g.id) }
+            .alignmentGuide(.leading) { _ in -at.x }
+            .alignmentGuide(.top) { d in -(at.y - d.height / 2) }
+            .transition(.opacity)
     }
 
     private func cheer(_ c: Cheer) -> some View {
@@ -208,6 +220,32 @@ struct CardButton: View {
                 .contentShape(Capsule())
                 .scaleEffect(configuration.isPressed && !reduceMotion ? DS.Motion.pressScale : 1)
         }
+    }
+}
+
+/// "Graph it": a small chalk pill with the tutor's cobalt badge (the graph is drawn in the tutor's
+/// colour), as tall as the smallest target a kid gets (`DS.Size.minTarget`).
+struct GraphChip: View {
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Circle().fill(DS.Color.tutorInk).frame(width: 30, height: 30)
+                    .overlay(Image(systemName: "chart.xyaxis.line").font(.system(size: 14, weight: .semibold)).foregroundStyle(DS.Color.onInk))
+                Text(LiveCopy.Graph.graphIt).dsFont(.button, size: 17).foregroundStyle(DS.Color.ink)
+            }
+            .padding(.leading, 7)
+            .padding(.trailing, 16)
+            .frame(minHeight: DS.Size.minTarget)
+            .background(Capsule().fill(DS.Color.surfaceSunken))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("live.graphIt")
     }
 }
 

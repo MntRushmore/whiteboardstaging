@@ -18,6 +18,9 @@ import os
 ///     normalized into the recognizer payload (its sha-1 is the cache key), and sent to
 ///     `/api/live/recognize` (2 at a time; a crop with the vision recognizer, or once after
 ///     `needsCrop`). A read that looks wrong goes to the second reader (`/api/live/reread`).
+///     A line that looks finished is read before its gate runs out (`LiveLoop+ReadEarly`: a pause a
+///     little longer than the kid's own, on a relation with its right side started, or the Pencil
+///     hovering away); the gate takes that read instead of asking again.
 ///  3. **Judges them.** Each line is analysed by the engine against its column (the last right line
 ///     above it, the column's first relation, a problem the tutor wrote above it), and the policy
 ///     (`LivePolicy`) decides by the help mode what the tutor does: a tick, a ring, a "?", a hint,
@@ -76,6 +79,8 @@ public final class LiveLoop: ObservableObject {
     @Published public internal(set) var metrics = LiveMetrics()
     /// A celebration's big burst (a counter: each change fires the burst once).
     @Published public internal(set) var bigBurst = 0
+    /// "Graph it" chips beside function lines just read (`LiveLoop+Graph`).
+    @Published public internal(set) var graphOffers: [GraphOffer] = []
 
     // MARK: lifecycle state
 
@@ -124,6 +129,35 @@ public final class LiveLoop: ObservableObject {
     var analysisCache = LRUCache<String, LineAnalysis>(capacity: 2_000)
     var analyzing = Set<Int>()
     var analyzeAgain = Set<Int>()
+
+    // MARK: reading early (LiveLoop+ReadEarly)
+
+    /// Start reading a line before its quiet gate runs out when it looks finished (or the Pencil
+    /// hovers away from it); the gate stays as the fallback. On by default.
+    public var readsEarly = true
+    /// the kid's rhythm at the pen: the line being written, their pauses inside a line
+    var rhythm = PenRhythm()
+    /// a fixed wait before an early read instead of the kid's rhythm (the timing bench)
+    var earlyDelayOverride: Double?
+    /// bumped by every change to the kid's ink on the screen
+    var inkSeq = 0
+    /// the kid's last fresh stroke and the ink version it landed at: what an early read is about
+    var earlyStroke: (id: String, seq: Int)?
+    var earlyTimer: LiveTimer?
+    /// early reads in flight, by payload hash
+    var earlyReads: [String: EarlyRead] = [:]
+    /// payloads an early read put in the cache that no line has used yet
+    var earlyUnused = Set<String>()
+    /// early reads that failed (not stopped): the gate's read of that ink takes the same error
+    var earlyFailures: [String: Error] = [:]
+    /// when the loop last called the server (ms): a long quiet warms the road before the next read
+    var lastCallAt = -Double.infinity
+
+    // MARK: hint words on the iPad (HintWording)
+
+    /// Writes a ringed step's hint on the iPad (Apple Intelligence) instead of asking the server's
+    /// check; nil (the default) asks the server. `start()` sets it when the owner's debug switch is on.
+    public var hintWriter: HintWriter?
 
     // MARK: network
 
@@ -175,6 +209,9 @@ public final class LiveLoop: ObservableObject {
     var offeredFor = Set<String>()
     var readbackTimers: [String: LiveTimer] = [:]
     var noteTimer: LiveTimer?
+    /// the reading of each line a graph was offered for (once per reading), and the offers' clocks
+    var graphOffered: [String: String] = [:]
+    var graphOfferTimers: [String: LiveTimer] = [:]
 
     // MARK: tasks (for `waitUntilIdle`)
 
@@ -209,11 +246,13 @@ public final class LiveLoop: ObservableObject {
         guard !started else { return }
         started = true
         board.onPen = { [weak self] down in self?.pen(down) }
+        board.onHover = { [weak self] at in self?.penHover(at) }
         board.onScreenChange = { [weak self] _ in self?.switchScreen() }
         connectivity.onChange = { [weak self] online in self?.setOnline(online) }
         lastOnline = connectivity.isOnline
         subscription = board.store.observe { [weak self] change in self?.storeChanged(change) }
         screenSeen = board.currentScreenID
+        if hintWriter == nil && HintWording.debugEnabled { hintWriter = HintWording.onDevice() }
         track { [weak self] in
             guard let self else { return }
             do {
@@ -235,6 +274,7 @@ public final class LiveLoop: ObservableObject {
         subscription?.cancel()
         subscription = nil
         board.onPen = nil
+        board.onHover = nil
         board.onScreenChange = nil
         connectivity.onChange = nil
         resetRuntime()
@@ -290,6 +330,7 @@ public final class LiveLoop: ObservableObject {
         offlineReplayTimer = nil
         settled = false
         cancelHandwriting()
+        dropEarlyReads()
         for r in rt.values {
             r.checkTask?.cancel()
             r.solveTask?.cancel()
@@ -302,6 +343,8 @@ public final class LiveLoop: ObservableObject {
         for t in readbackTimers.values { t.cancel() }
         readbackTimers.removeAll()
         readbacks = []
+        withdrawGraphOffers()
+        graphOffered.removeAll()
         hints = []
         settler.reset()
         reading.removeAll()
@@ -343,6 +386,7 @@ public final class LiveLoop: ObservableObject {
     func settingsChanged(from old: LiveSettings) {
         settings.save(boardId: boardId)
         guard started else { return }
+        if !settings.enabled || settings.mode == .off { withdrawGraphOffers() }
         if old.enabled != settings.enabled {
             if !settings.enabled {
                 for r in rt.values {
@@ -356,6 +400,7 @@ public final class LiveLoop: ObservableObject {
                 armQuietTimer()
             }
         }
+        if old.answerOnEquals != settings.answerOnEquals && old.mode == settings.mode { reanalyzeAll() }
         if old.mode != settings.mode {
             cancelHandwriting()
             hints = []
@@ -465,12 +510,27 @@ struct ProblemHead: Equatable {
 public struct LiveMetrics: Equatable, Sendable {
     /// the kid's pen lifted → the tutor's tick or ring starts, per mark
     public var penUpToMark: [Double] = []
+    /// by the line's last stroke (its id): its pen-up → the line's read in, and → its mark (ms)
+    public var readAfterPenUp: [String: Double] = [:]
+    public var markAfterPenUp: [String: Double] = [:]
     /// `/api/live/recognize` round trips (cache misses)
     public var recognize: [Double] = []
     /// reads answered from the cache
     public var cacheHits = 0
+    /// reads started before the quiet gate ran out (each is one of `calls["recognize"]`)
+    public var readsEarly = 0
+    /// …of which a line used (the gate's read, or the early flush, took it)
+    public var readsEarlyUsed = 0
+    /// …of which were stopped because the kid wrote on in that line
+    public var readsEarlyCancelled = 0
+    /// early reads that let the gate finish before its time
+    public var earlyFlushes = 0
     /// Solve asked → the tutor's first stroke of the steps
     public var solveFirstStep: [Double] = []
+    /// Help me → a hint card worded on the iPad (`HintWording`)
+    public var deviceHint: [Double] = []
+    /// hint words the iPad wrote that failed `HintWording.accept` (the server worded those)
+    public var deviceHintRefused = 0
     /// `/api/live/check` asked → its first annotation
     public var checkFirstAnnotation: [Double] = []
     public var calls: [String: Int] = [:]

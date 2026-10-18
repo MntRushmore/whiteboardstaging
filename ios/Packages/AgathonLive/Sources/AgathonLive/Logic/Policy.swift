@@ -8,7 +8,8 @@ import Foundation
 /// Marks may be immediate; answers must wait. A tick, a ring and a hint are about work already
 /// done and land on the per-line cadence; a result is the next thing the kid was going to write, so
 /// it waits for the kid to stop (`settled`), and only Solve shows it at all. With Auto off the tutor
-/// says nothing it was not asked for.
+/// says nothing it was not asked for. The one exception is the grown-ups' own: "Show the answer when
+/// I write =" (`answerOnEquals`, off by default) answers a sum ended with `=` at once, in any mode.
 public enum LivePolicy {
     public struct Input: Equatable, Sendable {
         public var mode: LiveMode
@@ -22,9 +23,12 @@ public enum LivePolicy {
         public var rewritesWithWarn: Int
         public var liveShapeCount: Int
         public var latex: String?
+        /// the grown-ups' "Show the answer when I write =": a sum ended with `=` is answered at once
+        public var answerOnEquals: Bool
 
         public init(mode: LiveMode, analysis: LineAnalysis?, confidence: Double, settled: Bool, auto: Bool, userAsked: Bool,
-                    hintsShownForLine: Int = 0, openHintCount: Int = 0, rewritesWithWarn: Int = 0, liveShapeCount: Int = 0, latex: String? = nil) {
+                    hintsShownForLine: Int = 0, openHintCount: Int = 0, rewritesWithWarn: Int = 0, liveShapeCount: Int = 0, latex: String? = nil,
+                    answerOnEquals: Bool = false) {
             self.mode = mode
             self.analysis = analysis
             self.confidence = confidence
@@ -36,6 +40,7 @@ public enum LivePolicy {
             self.rewritesWithWarn = rewritesWithWarn
             self.liveShapeCount = liveShapeCount
             self.latex = latex
+            self.answerOnEquals = answerOnEquals
         }
     }
 
@@ -83,7 +88,9 @@ public enum LivePolicy {
         let trailingEquals = kind == "incomplete" || (analysis?.math ?? "").range(of: #"=\s*$"#, options: .regularExpression) != nil
             || endsWithRelation(input.latex ?? "")
         let answerAllowedHere = !trailingEquals || mode == .answer
-        let showResult = echo && hasResult && answerAllowedHere && (input.userAsked || (unasked && input.settled))
+        // the grown-ups asked for answers after `=` (homework checking): at once, in any mode, asked or not
+        let answerNow = input.answerOnEquals && trailingEquals
+        let showResult = echo && hasResult && (answerNow || (answerAllowedHere && (input.userAsked || (unasked && input.settled))))
 
         var runLlmCheck = false
         if mode != .off && echo && !capped {

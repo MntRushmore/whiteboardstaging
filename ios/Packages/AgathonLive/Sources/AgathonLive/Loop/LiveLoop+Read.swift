@@ -108,11 +108,17 @@ extension LiveLoop {
     /// One read: from the cache, else the network (two at a time), with ONE retry carrying a crop
     /// when the server had nothing to fall back on (`needsCrop`).
     func recognize(_ id: String, payload: RecognizerPayload, strokes: [BrainStroke]) async throws -> (RecognizeResponse, Bool) {
+        var request = RecognizeRequest(boardId: boardId, lineId: id, payload: payload)
+        do {
+            // read early (LiveLoop+ReadEarly): its reply, in the cache or on its way, is this read
+            if let early = try await earlyReply(payload.hash) { return (early, true) }
+        } catch {
+            return try await recognizeAgain(after: error, request: request, id: id, hash: payload.hash)
+        }
         if let hit = cache[payload.hash] { return (hit, true) }
         await acquireReadSlot()
         defer { releaseReadSlot() }
         if let hit = cache[payload.hash] { return (hit, true) }
-        var request = RecognizeRequest(boardId: boardId, lineId: id, payload: payload)
         if recognizer == "vision" { request.crop = crop(id) }
         count("recognize")
         do {
@@ -120,17 +126,24 @@ extension LiveLoop {
             cache[payload.hash] = res
             return (res, false)
         } catch {
-            let failure = LiveFailure.from(error)
-            guard case .needsCrop(let down) = failure, request.crop == nil else { throw error }
-            if down { recognizer = "vision" }
-            guard let crop = crop(id) else { throw LiveFailure.unreadable }
-            request.crop = crop
-            request.cropOnly = true
-            count("recognize")
-            let res = try await services.recognize(request)
-            cache[payload.hash] = res
-            return (res, false)
+            return try await recognizeAgain(after: error, request: request, id: id, hash: payload.hash)
         }
+    }
+
+    /// A read that failed: ONE more with a crop of the line when the server had nothing to fall
+    /// back on (`needsCrop`); any other failure is the read's.
+    func recognizeAgain(after error: Error, request: RecognizeRequest, id: String, hash: String) async throws -> (RecognizeResponse, Bool) {
+        let failure = LiveFailure.from(error)
+        guard case .needsCrop(let down) = failure, request.crop == nil else { throw error }
+        if down { recognizer = "vision" }
+        guard let crop = crop(id) else { throw LiveFailure.unreadable }
+        var request = request
+        request.crop = crop
+        request.cropOnly = true
+        count("recognize")
+        let res = try await services.recognize(request)
+        cache[hash] = res
+        return (res, false)
     }
 
     func acquireReadSlot() async {
@@ -158,6 +171,7 @@ extension LiveLoop {
 
     func count(_ route: String) {
         metrics.calls[route, default: 0] += 1
+        lastCallAt = scheduler.now
     }
 
     // MARK: - a read that failed
@@ -422,6 +436,9 @@ extension LiveLoop {
         st.provider = reread == nil ? (res.provider == "vision" ? .vision : .mathpix) : .reread
         st.updatedAt = scheduler.now
         if st.modelWarned != nil && st.modelWarned != st.latex { st.modelWarned = nil }
+        if let (last, up) = st.ink.strokeIds.compactMap({ s in lastPenUpAt[s].map { (s, $0) } }).max(by: { $0.1 < $1.1 }) {
+            metrics.readAfterPenUp[last] = scheduler.now - up
+        }
         lines[id] = st
         tracker.wrote(problem: problemKey(for: st))
         persistLine(id)

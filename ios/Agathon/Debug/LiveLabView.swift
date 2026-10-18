@@ -16,6 +16,8 @@ import SwiftUI
 /// Launch arguments (all optional):
 ///   -liveLab                 open the Lab at launch (LabsMenu)
 ///   -liveLabHand <hand>      clean | slanted | steep | messy
+///   -liveLabPace <pace>      lab (quick, the pen down for a whole line) | brisk | typical | slow (KidPace:
+///                            a kid's pauses, the pen lifted between strokes, so reading early can act)
 ///   -liveLabDemo <name>      run a script: `e2e` (a slip ticked and ringed, a hint, the next step,
 ///                            Solve and Now you try), `slip`, `solve`
 /// Environment: AGATHON_TEST_EMAIL / AGATHON_TEST_PASSWORD sign the QA user in when signed out.
@@ -33,6 +35,7 @@ struct LiveLabView: View {
             .ignoresSafeArea()
             if let loop = lab.loop, let board = lab.board {
                 LiveOverlay(loop: loop, geometry: board, onSpeak: { lab.speak($0) }).ignoresSafeArea()
+                    .sheet(isPresented: $lab.showHintEval) { HintEvalSheet(lab: lab) }
                 VStack(spacing: 10) {
                     HStack(alignment: .top, spacing: 12) {
                         LiveHelpBar(loop: loop)
@@ -61,6 +64,15 @@ struct LiveLabView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 300)
+                Picker("Pace", selection: $lab.pace) {
+                    ForEach(LiveLabModel.paces, id: \.self) { Text($0).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 260)
+                Toggle("Read early", isOn: Binding(get: { lab.loop?.readsEarly ?? true }, set: { lab.loop?.readsEarly = $0; lab.objectWillChange.send() }))
+                    .fixedSize()
+                Toggle("iPad hint words", isOn: $lab.onDeviceHints).fixedSize()
+                Button("Hint words: iPad vs server") { lab.showHintEval = true }
                 ForEach(LiveLabModel.scenarios, id: \.name) { s in
                     Button(s.name) { Task { await lab.play(s.lines) } }
                 }
@@ -84,6 +96,7 @@ private struct LabStats: View {
         let med = { (xs: [Double]) in LiveMetrics.median(xs).map { String(format: "%.0f", $0) } ?? "–" }
         VStack(alignment: .leading, spacing: 2) {
             Text("pen-up→mark \(med(m.penUpToMark)) ms (n=\(m.penUpToMark.count)) · recognize \(med(m.recognize)) ms (n=\(m.recognize.count), cache \(m.cacheHits))")
+            Text("read early \(m.readsEarly) (used \(m.readsEarlyUsed), stopped \(m.readsEarlyCancelled), gate let off \(m.earlyFlushes)) · iPad hints \(med(m.deviceHint)) ms (n=\(m.deviceHint.count), refused \(m.deviceHintRefused))")
             Text("solve→first step \(med(m.solveFirstStep)) ms · check→first note \(med(m.checkFirstAnnotation)) ms · calls \(m.calls.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", "))")
             Text("lines: " + loop.lines.values.sorted { ($0.column, $0.row) < ($1.column, $1.row) }.map { "\($0.latex.isEmpty ? "…" : $0.latex) [\($0.analysis?.verdict ?? "-")]" }.joined(separator: " · "))
         }
@@ -104,6 +117,7 @@ final class LiveLabModel: ObservableObject {
 
     static let log = Logger(subsystem: "app.agathon.Agathon", category: "live")
     static let hands = ["clean", "slanted", "steep", "messy"]
+    static let paces = ["lab"] + KidPace.all.map(\.name)
     static let scenarios = [
         Scenario(name: "Slip: 2x+3=11 / 2x=8 / x=5", lines: ["2x + 3 = 11", "2x = 8", "x = 5"]),
         Scenario(name: "Right: 3x-5=10 / 3x=15 / x=5", lines: ["3x - 5 = 10", "3x = 15", "x = 5"]),
@@ -117,7 +131,18 @@ final class LiveLabModel: ObservableObject {
     @Published private(set) var board: CanvasLiveBoard?
     @Published private(set) var loop: LiveLoop?
     @Published var hand = UserDefaults.standard.string(forKey: "liveLabHand") ?? "clean"
+    @Published var pace = UserDefaults.standard.string(forKey: "liveLabPace") ?? "lab"
     @Published var status = ""
+    @Published var showHintEval = false
+    /// Apple Intelligence words the hints of rings (the owner's debug switch, `HintWording`)
+    @Published var onDeviceHints = HintWording.debugEnabled {
+        didSet {
+            HintWording.debugEnabled = onDeviceHints
+            loop?.hintWriter = onDeviceHints ? HintWording.onDevice() : nil
+            status = onDeviceHints ? (HintWording.unavailableReason ?? "iPad hint words on") : "iPad hint words off"
+        }
+    }
+    private var paceRng = SplitMix(seed: 7)
     private var nextY = 120.0
     private var x = 140.0
     private let speech = AVSpeech()
@@ -144,7 +169,9 @@ final class LiveLabModel: ObservableObject {
                             settings: LiveSettings(enabled: true, mode: .feedback, auto: true))
         self.board = board
         self.loop = loop
+        if let p = UserDefaults.standard.string(forKey: "liveLabPace"), Self.paces.contains(p) { pace = p }
         loop.start()
+        if onDeviceHints, let reason = HintWording.unavailableReason { status = reason }
         Task {
             await signInIfAsked(backend)
             if let demo = UserDefaults.standard.string(forKey: "liveLabDemo") { await run(demo) }
@@ -178,32 +205,40 @@ final class LiveLabModel: ObservableObject {
         Self.log.notice("LIVELAB \(s, privacy: .public)")
     }
 
-    /// Writes lines one under another through the canvas's own input path, at a kid's pace, with a
-    /// kid's pause between lines.
+    /// Writes lines one under another through the canvas's own input path. `lab` pace: quick, the
+    /// pen down for the whole line, a 900 ms pause between lines (as before). A `KidPace`: each stroke
+    /// its own pen-down, a kid's pauses inside the line and between lines (reading early acts on them).
     func play(_ lines: [String], pauseMs: UInt64 = 900) async {
         guard let canvas, let board else { return }
+        let kid = KidPace.all.first { $0.name == pace }
         for latex in lines {
             guard let strokes = hands[latex]?[hand] else {
                 status = "no ink for \(latex)"
                 continue
             }
-            board.notePen(true)
+            let page: [[Vec2]] = strokes.map { flat in
+                stride(from: 0, to: flat.count - 1, by: 2).map { i in Vec2(x + flat[i] * 1.6, nextY + flat[i + 1] * 1.6) }
+            }
+            let steps = kid?.steps(page, rng: &paceRng)
+            if kid == nil { board.notePen(true) }
             var maxY = nextY
-            for flat in strokes {
-                var pts: [Vec2] = []
-                for i in stride(from: 0, to: flat.count - 1, by: 2) { pts.append(Vec2(x + flat[i] * 1.6, nextY + flat[i + 1] * 1.6)) }
+            for (k, pts) in page.enumerated() {
                 maxY = max(maxY, pts.map(\.y).max() ?? maxY)
+                if let step = steps?[k], step.pauseMs > 0 { try? await Task.sleep(nanoseconds: UInt64(step.pauseMs * 1_000_000)) }
                 let view = densify(pts).map { canvas.camera.toView($0) }
                 let length = zip(pts, pts.dropFirst()).reduce(0) { $0 + $1.0.dist($1.1) }
-                await withCheckedContinuation { (k: CheckedContinuation<Void, Never>) in
-                    canvas.simulateStroke(view, duration: max(0.08, length / 650)) { k.resume() }
+                let seconds = steps.map { $0[k].drawMs / 1_000 } ?? max(0.08, length / 650)
+                if kid != nil { board.notePen(true) }
+                await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                    canvas.simulateStroke(view, duration: seconds) { done.resume() }
                 }
-                try? await Task.sleep(nanoseconds: 60_000_000)
+                if kid != nil { board.notePen(false) } else { try? await Task.sleep(nanoseconds: 60_000_000) }
             }
-            board.notePen(false)
-            log("wrote \(latex) (\(hand))")
+            if kid == nil { board.notePen(false) }
+            log("wrote \(latex) (\(hand), \(pace))")
             nextY = maxY + 50
-            try? await Task.sleep(nanoseconds: pauseMs * 1_000_000)
+            let pause = kid.map { UInt64($0.lineBreak(&paceRng)) } ?? pauseMs
+            try? await Task.sleep(nanoseconds: pause * 1_000_000)
         }
     }
 
@@ -308,6 +343,57 @@ final class LiveLabModel: ObservableObject {
             }.first ?? "none"
             return "\(line.latex)=\(kind)"
         }.joined(separator: ", ")
+    }
+}
+
+/// "Hint words: iPad vs server": Apple Intelligence over the sixteen slips in `HintCorpus`, beside
+/// the words the server's check gave for each, with the time each took and whether the iPad's words
+/// pass the rules a kid's hint must (`HintWording.accept`). For the owner to judge on their iPad.
+private struct HintEvalSheet: View {
+    @ObservedObject var lab: LiveLabModel
+    @State private var rows: [HintCorpus.Row] = []
+    @State private var running = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text(HintWording.unavailableReason ?? "Apple Intelligence is ready on this iPad.")
+                    if !rows.isEmpty { Text(HintCorpus.summary(rows)).font(.headline) }
+                }
+                ForEach(rows) { r in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(r.item.lines.joined(separator: "   →   ")).font(.callout.monospaced())
+                        Text("Server (\(Int(r.item.serverMs)) ms): \(r.item.server)").font(.callout)
+                        Text("iPad (\(Int(r.ms)) ms): \(r.raw ?? "—")").font(.callout)
+                            .foregroundStyle(r.accepted == nil ? .red : .primary)
+                        if r.raw != nil && r.accepted == nil { Text("Refused by the rules: the server would word this one.").font(.caption).foregroundStyle(.secondary) }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("Hint words")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(running ? "Running…" : "Run") { Task { await run() } }
+                        .disabled(running || HintWording.unavailableReason != nil)
+                }
+            }
+        }
+    }
+
+    private func run() async {
+        guard let writer = HintWording.onDevice() else { return }
+        running = true
+        rows = []
+        _ = await HintCorpus.run(writer) { row in
+            rows.append(row)
+            LiveLabModel.log.notice("LIVELAB hint \(row.item.id, privacy: .public) \(Int(row.ms), privacy: .public) ms accepted=\(row.accepted != nil, privacy: .public): \(row.raw ?? "-", privacy: .public)")
+        }
+        LiveLabModel.log.notice("LIVELAB hints \(HintCorpus.summary(rows), privacy: .public)")
+        running = false
     }
 }
 

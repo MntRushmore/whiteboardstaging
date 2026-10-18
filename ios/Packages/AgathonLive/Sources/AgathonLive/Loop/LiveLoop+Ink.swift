@@ -27,21 +27,28 @@ extension LiveLoop {
         var inkChanged = false
         var erased = false
         var finished: [StrokeRecord] = []
+        var fresh: StrokeRecord?
+        var touched: [BrainRect] = []
+        var touchedIds = Set<String>()
         for (id, record) in change.added {
             guard case .stroke(let s) = record, s.author == .kid, s.screen == screen else { continue }
             dirtyStrokes.insert(id.rawValue)
             finished.append(s)
             penUp = true
+            touched.append(StrokeBounds.of(s))
             // a fresh stroke of the pen (not one brought back by Undo): Help follows it
             if change.origin == .kid {
                 penStrokeId = id.rawValue
                 lastPenUpAt[id.rawValue] = scheduler.now
+                fresh = s
             }
         }
         for (id, update) in change.updated {
             guard case .stroke(let s) = update.after, s.author == .kid, s.screen == screen else { continue }
             dirtyStrokes.insert(id.rawValue)
             inkChanged = true
+            touchedIds.insert(id.rawValue)
+            touched.append(StrokeBounds.of(s))
         }
         for (id, record) in change.removed {
             switch record {
@@ -51,6 +58,7 @@ extension LiveLoop {
                 }
                 dirtyStrokes.insert(id.rawValue)
                 erased = true
+                touchedIds.insert(id.rawValue)
             case .stroke(let s) where s.author == .tutor:
                 // the kid rubbed out a mark of the tutor's: a ring waiting to count no longer does
                 let lineId = s.meta.string(LiveMeta.lineId)
@@ -60,6 +68,15 @@ extension LiveLoop {
             }
         }
         guard penUp || inkChanged || erased else { return }
+        // early reads of a line this ink is in are stopped; a fresh stroke may start one sooner
+        earlyInkChanged(boxes: touched, ids: touchedIds)
+        if let fresh, !inkChanged && !erased {
+            earlyInk(stroke: fresh, box: StrokeBounds.of(fresh))
+        } else {
+            earlyTimer?.cancel()
+            earlyTimer = nil
+            earlyStroke = nil
+        }
         markUnsettled()
         for s in finished {
             let box = StrokeBounds.of(s)
@@ -80,6 +97,7 @@ extension LiveLoop {
     /// The kid's pen on the board (from the board's touch observer, or the Lab's replay).
     func pen(_ down: Bool) {
         penDown = down
+        earlyPen(down)
         if down {
             markUnsettled()
         }
@@ -239,6 +257,8 @@ extension LiveLoop {
         pendingSuggestions.remove(id)
         hints.removeAll { $0.lineId == id }
         readbacks.removeAll { $0.id == id }
+        withdrawGraphOffer(id)
+        graphOffered[id] = nil
         celebrate.forget(id)
         settler.removed(id)
         lines[id] = nil

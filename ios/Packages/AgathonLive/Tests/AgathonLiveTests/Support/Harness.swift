@@ -48,6 +48,7 @@ final class TestBoard: LiveBoard {
     var isPenDown = false
     var reduceMotion = true
     var onPen: ((Bool) -> Void)?
+    var onHover: ((AgathonBrain.Point?) -> Void)?
     var onScreenChange: ((RecordID) -> Void)?
     /// hold every write until `finishWrites()`
     var holdWrites = false
@@ -150,8 +151,10 @@ final class FakeServices: LiveServices, @unchecked Sendable {
     private var _rereadRequests: [RereadRequest] = []
     /// errors the next recognize calls throw, in order
     private var readErrors: [Error] = []
-    private var readGate: CheckedContinuation<Void, Never>?
+    private var readGates: [CheckedContinuation<Void, Never>] = []
     private var holdReads = false
+    /// a read takes this long (real time), when set: the bench's network
+    var readLatency: (@Sendable () -> Duration)?
     var capabilitiesRecognizer = "mathpix"
     var checkEvents: [[LiveEvent]] = []
     var solveEvents: [[LiveEvent]] = []
@@ -184,14 +187,17 @@ final class FakeServices: LiveServices, @unchecked Sendable {
     }
 
     func releaseReads() {
-        let gate = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+        let gates = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
             holdReads = false
-            let g = readGate
-            readGate = nil
+            let g = readGates
+            readGates = []
             return g
         }
-        gate?.resume()
+        gates.forEach { $0.resume() }
     }
+
+    /// Reads held right now.
+    var heldReads: Int { lock.withLock { readGates.count } }
 
     func capabilities() async throws -> LiveCapabilities {
         LiveCapabilities(recognizer: capabilitiesRecognizer, liveEnabled: true, models: nil)
@@ -202,7 +208,8 @@ final class FakeServices: LiveServices, @unchecked Sendable {
             _recognizeRequests.append(request)
             return (holdReads, readErrors.isEmpty ? nil : readErrors.removeFirst())
         }
-        if hold { await withCheckedContinuation { c in lock.withLock { readGate = c } } }
+        if hold { await withCheckedContinuation { c in lock.withLock { readGates.append(c) } } }
+        if let latency = readLatency { try await Task.sleep(for: latency()) }
         if let error { throw error }
         let hit = lock.withLock { reads[Self.signature(request.strokes.x, request.strokes.y)] }
         guard let hit else { throw APIError.http(HTTPFailure(status: 503, code: "recognizer_failed", message: "no fake read", body: .object(["unreadable": .bool(true)]))) }
@@ -293,10 +300,11 @@ final class Harness {
     /// the line → its kid strokes
     private(set) var written: [String: [RecordID]] = [:]
 
-    init(mode: LiveMode = .feedback, auto: Bool = true) {
+    init(mode: LiveMode = .feedback, auto: Bool = true, readsEarly: Bool = true) {
         loop = LiveLoop(board: board, boardId: "test-board", services: services,
                         settings: LiveSettings(enabled: true, mode: mode, auto: auto, handwriting: true, celebrations: true),
                         brain: TestBrain.shared, background: TestBrain.background, scheduler: scheduler, connectivity: connectivity)
+        loop.readsEarly = readsEarly
     }
 
     func start() async {
