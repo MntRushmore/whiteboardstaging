@@ -46,7 +46,6 @@ struct ProblemAnchorTests {
         await h.start()
         _ = await firstSum(h)
         let written = answers(h)
-        print("ANCHOR writes after the first sum: \(written)")
         #expect(h.board.tutorStrokes(withMeta: "answerFor", "36 + 24 =").first?.meta["answerLatex"]?.stringValue == "60")
         #expect(written.count == 1, "one answer, once: \(written)")
         // asking for help on it again writes nothing more
@@ -100,7 +99,6 @@ struct ProblemAnchorTests {
         let before = answers(h)
         _ = await answerBeside(h, problem, reads: "= 79")
         await h.pass(3_500)
-        print("ANCHOR writes: \(answers(h)) marks: \(h.board.marks.map(\.kind))")
         #expect(h.board.mark(on: "= 79") == .tick, "79 is 36 + 43")
         #expect(answers(h) == before, "nothing written for it: \(answers(h))")
         #expect(h.loop.lines.values.first { $0.latex == "= 79" }?.analysis?.verdict == "ok")
@@ -113,7 +111,6 @@ struct ProblemAnchorTests {
         let problem = try await tutorProblem(h)
         _ = await answerBeside(h, problem, reads: "= 89")
         await h.pass(3_500)
-        print("ANCHOR writes (89): \(answers(h)) marks: \(h.board.marks.map(\.kind))")
         #expect(h.board.mark(on: "= 89") == .ring)
         let step = h.board.tutorStrokes(withMeta: "suggestFor", "= 89")
         #expect(step.first?.meta["handLine"]?.stringValue.map { $0.contains("79") } == true, "the right step is 36 + 43's: \(step.first?.meta["handLine"]?.stringValue ?? "none")")
