@@ -15,9 +15,13 @@ import UIKit
 /// APPLE_ENVIRONMENT=Xcode) and the local Supabase stack. A fresh grown-up starts the free week; the
 /// server records it and ink_summary says unlimited; a kid added to the family is covered; auto-renew
 /// off, an expiry, a resubscribe and a refund each reach the server; deleting the account with an
-/// Apple plan works. Screenshots of the billing screens go to docs/qa-screenshots/ipad-billing-*.png.
+/// Apple plan works.
 ///
-/// LOCAL STACK ONLY, and skipped unless AGATHON_INTEGRATION=1:
+/// Run it from XCODE (Product > Test, with the scheme's StoreKit configuration): `xcodebuild` does not
+/// sync a StoreKit configuration to the simulator, and SKTestSession then answers
+/// SKInternalErrorDomain 3 (checked with Xcode 26.6). ServerFlowTests covers the same server half
+/// from the command line. LOCAL STACK ONLY, and skipped unless AGATHON_STOREKIT=1 and
+/// AGATHON_INTEGRATION=1 (in Xcode: the test action's environment variables):
 ///
 ///     APPLE_ENVIRONMENT=Xcode npx next dev -p 3401        # with the local stack's .env.local
 ///     TEST_RUNNER_AGATHON_INTEGRATION=1 \
@@ -28,15 +32,15 @@ import UIKit
 ///       -destination 'platform=iOS Simulator,name=iPad Air 11-inch (M4)' -only-testing:AgathonTests/StoreKitFlowTests
 /// The live flows run only when asked for (TEST_RUNNER_AGATHON_INTEGRATION=1).
 let storeKitFlowEnabled = ProcessInfo.processInfo.environment["AGATHON_INTEGRATION"] == "1"
+/// The StoreKit run needs Xcode's StoreKit testing (see StoreKitFlowTests).
+let storeKitTestingEnabled = storeKitFlowEnabled && ProcessInfo.processInfo.environment["AGATHON_STOREKIT"] == "1"
 
 @MainActor
-@Suite(.serialized, .enabled(if: storeKitFlowEnabled, "set TEST_RUNNER_AGATHON_INTEGRATION=1 and point the app at the local stack"))
+@Suite(.serialized, .enabled(if: storeKitTestingEnabled, "run from Xcode with AGATHON_STOREKIT=1 and AGATHON_INTEGRATION=1, pointed at the local stack"))
 struct StoreKitFlowTests {
 
     static let storekit = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent("../Agathon/Agathon.storekit").standardized
-    static let shots = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        .appendingPathComponent("../../docs/qa-screenshots").standardized
 
     @Test func aGrownUpStartsTheFreeWeekAndEveryChangeReachesTheServer() async throws {
         let environment = AgathonEnvironment.current
@@ -44,7 +48,7 @@ struct StoreKitFlowTests {
         try #require(["127.0.0.1", "localhost"].contains(host), "the API must be the local dev server, never production (\(host))")
         try #require(["127.0.0.1", "localhost"].contains(environment.supabaseURL.host ?? ""), "Supabase must be the local stack")
 
-        let session = try SKTestSession(configurationFileNamed: "Agathon")
+        let session = try SKTestSession(contentsOf: Self.storekit)
         session.resetToDefaultState()
         session.disableDialogs = true
         session.askToBuyEnabled = false
@@ -69,12 +73,6 @@ struct StoreKitFlowTests {
         #expect(offer.trialBadge == "7 days free")
         #expect(offer.ctaTitle == "Start your free week")
 
-        let shooter = Shooter(store: store, backend: backend, dir: Self.shots)
-        try await shooter.shoot("gate", landscape: true) { ParentalGateView(onPass: {}, onClose: {}) }
-        try await shooter.shoot("plan-offer", landscape: true) { PlanScreen(onClose: {}) }
-        try await shooter.shoot("plan-offer-portrait", landscape: false) { PlanScreen(onClose: {}) }
-        try await shooter.shoot("out-of-ink-kid", landscape: true) { OutOfInkView(audience: .kid, onClose: {}) }
-        try await shooter.shoot("out-of-ink-grownup", landscape: true) { OutOfInkView(audience: .grownUp, onClose: {}) }
 
         // Start the free week: the purchase carries the checkout reference and the server records it.
         let outcome = await store.purchase { product, options in try await product.purchase(options: options) }
@@ -86,7 +84,6 @@ struct StoreKitFlowTests {
         #expect(plan?.unlimited == true)
         #expect(plan?.provider == "apple")
         #expect(DeletionAdvice(plan: plan) == .cancelAppleFirst)
-        try await shooter.shoot("plan-subscribed", landscape: true) { PlanScreen(onClose: {}) }
 
         // A kid added to the family is covered by the grown-up's Apple plan.
         try await backend.family.setPin("2468")
@@ -110,7 +107,6 @@ struct StoreKitFlowTests {
         try session.expireSubscription(productIdentifier: StorePlan.productID)
         #expect(await eventually { await store.refreshPlan(); return store.plan?.status == "canceled" }, "the expiry reached the server")
         #expect(store.plan?.unlimited == false)
-        try await shooter.shoot("plan-ended", landscape: true) { PlanScreen(onClose: {}) }
 
         // Subscribe again (no second free week on this Apple ID), then a refund.
         await store.loadProduct()
@@ -146,31 +142,5 @@ struct StoreKitFlowTests {
             try? await Task.sleep(for: .milliseconds(500))
         }
         return false
-    }
-}
-
-/// Puts a billing screen in a window of the app's own scene and writes what it draws as a PNG.
-@MainActor
-struct Shooter {
-    let store: PlanStore
-    let backend: AgathonBackend
-    let dir: URL
-
-    func shoot<V: View>(_ name: String, landscape: Bool, settle: Double = 2.0, @ViewBuilder _ view: () -> V) async throws {
-        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        if scene.interfaceOrientation.isLandscape != landscape {
-            scene.requestGeometryUpdate(.iOS(interfaceOrientations: landscape ? .landscapeRight : .portrait)) { _ in }
-            try await Task.sleep(for: .seconds(1.5))
-        }
-        let window = UIWindow(windowScene: scene)
-        window.rootViewController = UIHostingController(rootView: view().environment(store).environment(backend))
-        window.makeKeyAndVisible()
-        try await Task.sleep(for: .seconds(settle))
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try #require(image.pngData()).write(to: dir.appendingPathComponent("ipad-billing-\(name).png"))
-        window.isHidden = true
     }
 }

@@ -343,6 +343,20 @@ public final class PlanStore {
     }
 }
 
+#if DEBUG
+extension PlanStore {
+    /// Previews, screenshots and the Billing Lab: a plan and an offer as if the App Store and the
+    /// server had answered. Debug builds only.
+    public func setPreviewState(offer: PlanOffer?, plan: UnlimitedPlan?, productState: ProductState = .loaded) {
+        self.offer = offer
+        self.plan = plan
+        planLoaded = true
+        planError = nil
+        self.productState = productState
+    }
+}
+#endif
+
 extension PlanPeriod {
     init(_ period: Product.SubscriptionPeriod) {
         let unit: Unit

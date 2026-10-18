@@ -25,6 +25,8 @@ struct GrownUpPlanFlow: View {
 /// comes from the server (`PlanStore.standing`), so a web plan or a kid's grown-up's plan reads right.
 struct PlanScreen: View {
     let onClose: () -> Void
+    /// Reads the plan and the product when it appears (off only for previews and screenshots).
+    var loadsOnAppear = true
 
     @Environment(PlanStore.self) private var store
     @Environment(AgathonBackend.self) private var backend
@@ -33,6 +35,7 @@ struct PlanScreen: View {
     @State private var showRefund = false
     @State private var notice: (title: String, message: String?)?
     @State private var justStarted = false
+    @State private var contentWidth: CGFloat = 0
 
     var body: some View {
         ZStack {
@@ -56,6 +59,7 @@ struct PlanScreen: View {
             }
         }
         .task {
+            guard loadsOnAppear else { return }
             await store.refreshPlan()
             await store.loadProduct()
         }
@@ -80,16 +84,17 @@ struct PlanScreen: View {
                 offer
             case let .subscribed(provider, trialEnds, renews, cancelling):
                 if provider == "apple" {
-                    status(shapes: nil, title: "Agathon Unlimited is on", message: subscribedLine(trialEnds: trialEnds, renews: renews, cancelling: cancelling), manage: true)
+                    status(shapes: nil, icon: (.check, .success), title: "Agathon Unlimited is on",
+                           message: subscribedLine(trialEnds: trialEnds, renews: renews, cancelling: cancelling), manage: true)
                 } else {
-                    status(shapes: nil, title: "Agathon Unlimited is on",
+                    status(shapes: nil, icon: (.check, .success), title: "Agathon Unlimited is on",
                            message: "Your plan is billed through agathon.app. To change or cancel it, sign in there.", manage: false)
                 }
             case let .repeatTrial(provider, startsOn):
-                status(shapes: nil, title: "Your plan starts \(Self.day(startsOn).map { "on \($0)" } ?? "soon")",
+                status(shapes: nil, icon: (.star, .sunny), title: "Your plan starts \(Self.day(startsOn).map { "on \($0)" } ?? "soon")",
                        message: "The free week is for a first plan only, so help uses ink until your first payment.", manage: provider == "apple")
             case let .paymentProblem(provider):
-                status(shapes: nil, title: provider == "apple" ? "Apple couldn't renew your plan" : "Your last payment didn't go through",
+                status(shapes: nil, icon: (.pause, .sunny), title: provider == "apple" ? "Apple couldn't renew your plan" : "Your last payment didn't go through",
                        message: provider == "apple"
                            ? "Update your payment method in Settings, and help switches back on by itself."
                            : "Fix it at agathon.app. Help uses ink meanwhile.",
@@ -109,22 +114,19 @@ struct PlanScreen: View {
                 Text("Agathon Unlimited switches the tutor on for the whole family: hints, checks and worked steps, whenever they're needed.")
                     .dsFont(.body).foregroundStyle(DS.Color.inkSecondary).frame(maxWidth: 640, alignment: .leading)
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: DS.Space.l) { included; buyCard.frame(width: 400) }
-                VStack(spacing: DS.Space.l) { buyCard; included }
+            // Side by side when there is room (landscape), the price first when stacked (portrait).
+            Group {
+                if contentWidth >= 880 {
+                    HStack(alignment: .top, spacing: DS.Space.l) { included; buyCard.frame(width: 420) }
+                } else {
+                    VStack(spacing: DS.Space.l) { buyCard; included }
+                }
             }
-            VStack(alignment: .leading, spacing: DS.Space.s) {
-                if let offer = store.offer {
-                    Text(offer.disclosure).dsFont(.caption).foregroundStyle(DS.Color.inkSecondary)
-                        .accessibilityIdentifier("plan.disclosure")
-                }
-                HStack(spacing: DS.Space.l) {
-                    Link("Terms of Use", destination: link("terms", fragment: "unlimited"))
-                    Link("Privacy Policy", destination: link("privacy"))
-                }
-                .dsFont(.button, size: 16)
-                .foregroundStyle(DS.Color.ink)
-                .frame(minHeight: 44)
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }, action: { contentWidth = $0 })
+            if let offer = store.offer {
+                Text(offer.disclosure).dsFont(.caption).foregroundStyle(DS.Color.inkSecondary)
+                    .frame(maxWidth: 760, alignment: .leading)
+                    .accessibilityIdentifier("plan.disclosure")
             }
         }
     }
@@ -168,29 +170,47 @@ struct PlanScreen: View {
             case .idle, .loading:
                 ProgressView().tint(DS.Color.onInk).frame(maxWidth: .infinity, minHeight: 160)
             }
-            Button {
-                Task { await restore() }
-            } label: {
-                Text(store.activity == .restoring ? "Restoring…" : "Restore purchases")
-                    .dsFont(.button, size: 17).foregroundStyle(DS.Color.onInk)
-                    .frame(minHeight: DS.Size.minTarget)
+            // Restore and the plan's terms, where a reviewer and a grown-up look: right under the button.
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    Task { await restore() }
+                } label: {
+                    Text(store.activity == .restoring ? "Restoring…" : "Restore purchases")
+                        .frame(minHeight: DS.Size.minTarget)
+                }
+                .disabled(store.activity != nil)
+                .accessibilityIdentifier("plan.restore")
+                HStack(spacing: DS.Space.l) {
+                    Link(destination: link("terms", fragment: "unlimited")) { Text("Terms of Use").frame(minHeight: 44) }
+                        .accessibilityIdentifier("plan.terms")
+                    Link(destination: link("privacy")) { Text("Privacy Policy").frame(minHeight: 44) }
+                        .accessibilityIdentifier("plan.privacy")
+                }
+                .dsFont(.callout, size: 15)
+                .foregroundStyle(DS.Color.onInkSecondary)
             }
-            .disabled(store.activity != nil)
-            .accessibilityIdentifier("plan.restore")
+            .dsFont(.button, size: 16)
+            .foregroundStyle(DS.Color.onInk)
         }
     }
 
     // MARK: the plan's state
 
-    private func status(shapes: TheShapes.Pose?, title: String, message: String, manage: Bool) -> some View {
-        Card(.paper, radius: DS.Radius.cardLarge) {
-            if let shapes { TheShapes(shapes).frame(width: 180) }
-            Text(title).dsFont(.title).foregroundStyle(DS.Color.ink).accessibilityIdentifier("plan.status")
-            Text(message).dsFont(.body).foregroundStyle(DS.Color.inkSecondary)
+    private func status(shapes: TheShapes.Pose?, icon: (DS.Icon, DS.Fill)? = nil, title: String, message: String, manage: Bool) -> some View {
+        VStack(spacing: DS.Space.m) {
+            if let shapes {
+                TheShapes(shapes).frame(width: 200)
+            } else if let icon {
+                IconCircle(icon.0, fill: icon.1, diameter: 96)
+            }
+            Text(title).dsFont(.title).foregroundStyle(DS.Color.ink).multilineTextAlignment(.center)
+                .accessibilityIdentifier("plan.status")
+            Text(message).dsFont(.body).foregroundStyle(DS.Color.inkSecondary).multilineTextAlignment(.center)
+                .frame(maxWidth: 520)
             FlowStack(spacing: DS.Space.s) {
                 PillButton("Done", kind: .primary, action: onClose).accessibilityIdentifier("plan.done")
                 if manage {
-                    PillButton("Manage subscription", kind: .secondaryOnPaper) { showManage = true }
+                    PillButton("Manage subscription", kind: .secondary) { showManage = true }
                         .accessibilityIdentifier("plan.manage")
                     if store.latestTransactionID != nil {
                         PillButton("Request a refund", kind: .quiet) { showRefund = true }
@@ -200,6 +220,8 @@ struct PlanScreen: View {
             }
             .padding(.top, DS.Space.s)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, DS.Space.xxxl)
     }
 
     private func subscribedLine(trialEnds: Date?, renews: Date?, cancelling: Bool) -> String {
@@ -255,7 +277,7 @@ struct PlanScreen: View {
     }
 
     static let benefits: [(icon: DS.Icon, title: String, detail: String)] = [
-        (.hand, "Help on every problem", "Hints, checks and worked steps, as often as they're needed."),
+        (.hand, "Hints and worked steps", "Every line checked, and the next step shown when they're stuck."),
         (.chat, "Ask the tutor anything", "Out loud or typed, about what's on the board."),
         (.person, "Every kid in the family", "One plan covers each kid's own profile."),
         (.chart, "Practice and progress", "Today's practice, the skill path and a weekly report."),
