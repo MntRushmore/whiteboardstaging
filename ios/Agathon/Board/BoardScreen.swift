@@ -14,6 +14,7 @@ struct BoardScreen: View {
 
     @Environment(AgathonBackend.self) private var backend
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var model = BoardScreenModel()
 
     var body: some View {
@@ -28,6 +29,19 @@ struct BoardScreen: View {
         }
         .navigationTitle(board.title)
         .navigationBarTitleDisplayMode(.inline)
+        // No system back button: on iPadOS a swipe anywhere on the content goes back, and a stroke
+        // drawn left to right would close the board. Back is this button only.
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Label("Boards", systemImage: "chevron.left").labelStyle(.titleAndIcon)
+                }
+                .accessibilityIdentifier("board.back")
+            }
+        }
         .task { await model.open(board.id, backend: backend) }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { model.leavingScreen() }

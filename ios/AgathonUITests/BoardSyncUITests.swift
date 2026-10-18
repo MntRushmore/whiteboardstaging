@@ -30,17 +30,17 @@ final class BoardSyncUITests: XCTestCase {
         wait(status, "Opened from the web")
         snap("01-converted")
 
-        draw(app, y: 0.78)
+        draw(app, y: 0.66)
         wait(status, "Saved · v", timeout: 30)
         snap("02-saved")
 
-        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["board.back"].tap()
         openBoard(app)
         wait(status, "Saved")
         snap("03-reopened")
 
         // a stroke, then the app killed half a second after the backup and before the 2 s save
-        draw(app, y: 0.86)
+        draw(app, y: 0.70)
         Thread.sleep(forTimeInterval: 1.0)
         app.terminate()
 

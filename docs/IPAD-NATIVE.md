@@ -60,7 +60,9 @@ ios/
 - **Rendering:** variable-width freehand outlines, the same family of algorithm as perfect-freehand.
   Live ink sits on its own layer. Settled ink sits in tiles. The tutor's ink is written at handwriting
   pace.
-- **Storage:** a new `whiteboards` column for the Agathon document, next to the tldraw `data`.
+- **Storage:** a new `whiteboards` column for the Agathon document, next to the tldraw `data`
+  (`doc`, supabase/migrations/20261017000000_agathon_doc.sql; `ios/Packages/AgathonSync` saves it;
+  docs/BOARD-FORMAT.md, "Where a board is kept, and how it is saved").
   - A converter turns a tldraw snapshot into an Agathon document the first time a board opens on
     the iPad. The original stays untouched.
   - The server's board readers move to the new format: the report replay, the admin viewer, the gc
