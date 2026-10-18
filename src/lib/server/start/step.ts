@@ -49,25 +49,31 @@ const isWhole = (min: number, max: number): Check => (v) => typeof v === "number
 /**
  * The details each event may keep (START_EVENTS' notes), and what each must be: the role, the grade
  * (0 = Kindergarten to 8) or a high-school course id, how many skills were picked, whether the try
- * was solved. Every other event keeps none.
+ * was solved and how long the tick took from the pen lifting (whole ms, at most 10 minutes). Every
+ * event may also keep `ALL_EVENTS_KEYS` (which app sent it: only "ipad"); nothing else.
  */
 const META_KEYS: Readonly<Partial<Record<StartEvent, Readonly<Record<string, Check>>>>> = {
   start_who: { role: (v) => typeof v === "string" && (START_ROLES as readonly string[]).includes(v) },
   start_grade: { grade: isWhole(0, 8), course: isCourseId },
   start_focus: { count: isWhole(0, MAX_FOCUS) },
-  start_try_checked: { solved: (v) => typeof v === "boolean" },
+  start_try_checked: { solved: (v) => typeof v === "boolean", ms: isWhole(0, 600_000) },
+};
+
+/** What any event may keep: the iPad app says it is the iPad (the web says nothing). */
+const ALL_EVENTS_KEYS: Readonly<Record<string, Check>> = {
+  client: (v) => v === "ipad",
 };
 
 export type StartMeta = Record<string, string | number | boolean>;
 
 /**
- * The details of a step as the row keeps them, or null: only the keys its event may keep, each
- * only when it is what the event says (never a name, never free text). The rest is dropped, not
- * refused: the step still counts.
+ * The details of a step as the row keeps them, or null: only the keys its event may keep (and
+ * `client`), each only when it is what the event says (never a name, never free text). The rest is
+ * dropped, not refused: the step still counts.
  */
 export function cleanStartMeta(event: StartEvent, meta: StartStepRequest["meta"]): StartMeta | null {
-  const allowed = META_KEYS[event];
-  if (!allowed || !meta) return null;
+  if (!meta) return null;
+  const allowed = { ...META_KEYS[event], ...ALL_EVENTS_KEYS };
   const out: StartMeta = {};
   for (const [key, check] of Object.entries(allowed)) {
     const value = meta[key];

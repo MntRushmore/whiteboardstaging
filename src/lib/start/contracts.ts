@@ -92,6 +92,11 @@ export const START_ANSWERS_PARAM = "a";
  * the admin Funnel can show where families stop BEFORE "Signed up". Once the account exists the
  * journey is linked to it (`start_account`), and from there the account's own funnel takes over.
  * No answers are sent except as noted (never the name).
+ *
+ * The iPad app (docs/ONBOARDING.md) sends the same steps through the same route, and a few of its
+ * own; any step from it may carry meta `{ client: "ipad" }` (only that value) so the admin can split
+ * the iPad out. Its steps after the account (the trial, the PIN, the kid, the first board) still go
+ * by journey: the journey is linked by then, so they join the account.
  */
 export const START_EVENTS = [
   "start_shown",
@@ -104,7 +109,7 @@ export const START_EVENTS = [
   "start_focus",
   "start_proof",
   "start_try_shown",
-  /** the tutor checked a line right on the try board; meta: { solved } */
+  /** the tutor checked a line right on the try board; meta: { solved, ms } (ms: pen lift to the tick, the iPad's) */
   "start_try_checked",
   "start_plan",
   "start_account_shown",
@@ -114,6 +119,26 @@ export const START_EVENTS = [
   "start_handoff_opened",
   /** the account was created (the journey is linked to it) */
   "start_account",
+  /** iPad: the grown-up handed the iPad to the kid for the try ("Sam has it") */
+  "start_handoff_kid",
+  /** iPad: the iPad went back to a grown-up after the plan ("I'm a grown-up") */
+  "start_handoff_grownup",
+  /** iPad: the grown-ups-only check was passed */
+  "start_gate",
+  /** iPad, after the account: the trial screen showed */
+  "start_trial_shown",
+  /** iPad, after the account: Apple's free trial started */
+  "start_trial_started",
+  /** iPad, after the account: the purchase waits for approval (Ask to Buy) */
+  "start_trial_pending",
+  /** iPad, after the account: "Not now" on the trial */
+  "start_trial_declined",
+  /** iPad, after the account: the grown-up's PIN was set */
+  "start_pin_set",
+  /** iPad, after the account: the kid's profile was made */
+  "start_kid_added",
+  /** iPad, after the account: the kid's first board opened */
+  "start_first_board",
 ] as const;
 export type StartEvent = (typeof START_EVENTS)[number];
 

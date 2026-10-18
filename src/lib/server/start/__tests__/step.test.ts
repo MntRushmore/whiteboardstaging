@@ -128,6 +128,32 @@ describe("a step", () => {
     ]);
   });
 
+  it("keeps the iPad's details: client \"ipad\" on any event (only that value), and the try's ms (whole, 0..600000)", async () => {
+    await POST(post(step({ event: "start_shown", meta: { client: "ipad" } })));
+    await POST(post(step({ event: "start_handoff_kid", meta: { client: "ipad", name: "Sam" } })));
+    await POST(post(step({ event: "start_trial_declined", meta: { client: "android" } })));
+    await POST(post(step({ event: "start_try_checked", meta: { solved: true, ms: 1840, client: "ipad" } })));
+    await POST(post(step({ event: "start_try_checked", meta: { solved: false, ms: 1.5 } })));
+    await POST(post(step({ event: "start_try_checked", meta: { solved: true, ms: 600_001 } })));
+    await POST(post(step({ event: "start_who", meta: { role: "kid", ms: 10, client: "ipad" } })));
+    expect(records().map((r) => [r.p_event, r.p_meta])).toEqual([
+      ["start_shown", { client: "ipad" }],
+      ["start_handoff_kid", { client: "ipad" }],
+      ["start_trial_declined", null],
+      ["start_try_checked", { solved: true, ms: 1840, client: "ipad" }],
+      ["start_try_checked", { solved: false }],
+      ["start_try_checked", { solved: true }],
+      ["start_who", { role: "kid", client: "ipad" }],
+    ]);
+  });
+
+  it("takes every one of the iPad's steps (the ones after the account go by journey too)", async () => {
+    for (const event of ["start_handoff_kid", "start_handoff_grownup", "start_gate", "start_trial_shown", "start_trial_started", "start_trial_pending", "start_trial_declined", "start_pin_set", "start_kid_added", "start_first_board"]) {
+      expect((await POST(post(step({ event, meta: undefined })))).status, event).toBe(204);
+    }
+    expect(records()).toHaveLength(10);
+  });
+
   it("logs no journey, no details and no address", async () => {
     await POST(post(step({ meta: { role: "parent" } })));
     fake.recordError = { message: "boom", code: "XX000" };
