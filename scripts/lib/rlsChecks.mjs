@@ -3771,11 +3771,73 @@ export async function checkStartSteps({ anon, a, b, service }) {
 }
 
 /**
+ * The iPad onboarding (supabase/migrations/20261017210000_ipad_onboarding.sql). App Attest's tables,
+ * app_attest_keys and app_attest_challenges, have no client grants at all: anon and a signed-in
+ * user can neither read nor write them (A: 42501). The service role writes and removes a challenge.
+ * record_start_step() takes the iPad's own steps (start_handoff_kid ... start_first_board, here
+ * start_trial_declined with { client: "ipad" }). Without the service role only the refusals run.
+ * Removes the rows it wrote.
+ * @param {CheckContext} ctx
+ */
+export async function checkIpadOnboarding({ anon, a, service }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const refusedWith = (/** @type {HttpResult} */ res, /** @type {string} */ want) => !isOk(res) && code(res) === want;
+  const challenge = `rlsverify${uuid().replace(/-/g, "")}${uuid().replace(/-/g, "")}`.slice(0, 43);
+  const journey = uuid();
+  /** a row each table would take, so only the missing grant can refuse it */
+  const rowFor = (/** @type {string} */ table) =>
+    table === "app_attest_keys"
+      ? { key_id: `${Buffer.alloc(32, 7).toString("base64")}`, public_key: "-----BEGIN PUBLIC KEY-----\nrls\n-----END PUBLIC KEY-----", environment: "development" }
+      : { challenge, expires_at: new Date().toISOString() };
+  try {
+    for (const table of ["app_attest_keys", "app_attest_challenges"]) {
+      const anonSel = await anon.rest("GET", table, { query: { select: "*", limit: "1" } });
+      out.push(result(`ipad: anon cannot select ${table}`, isDenied(anonSel), describe(anonSel)));
+      const anonIns = await anon.rest("POST", table, { body: rowFor(table), prefer: "return=minimal" });
+      out.push(result(`ipad: anon cannot insert into ${table}`, isDenied(anonIns), describe(anonIns)));
+      const aSel = await a.rest("GET", table, { query: { select: "*", limit: "1" } });
+      out.push(result(`ipad: A cannot select ${table} (42501)`, refusedWith(aSel, "42501"), describe(aSel)));
+      const aIns = await a.rest("POST", table, { body: rowFor(table), prefer: "return=minimal" });
+      out.push(result(`ipad: A cannot insert into ${table} (42501)`, refusedWith(aIns, "42501"), describe(aIns)));
+      const aUpd = await a.rest("PATCH", table, { query: { created_at: "lt.2000-01-01" }, body: { created_at: new Date().toISOString() }, prefer: "return=representation" });
+      out.push(result(`ipad: A cannot update ${table} (42501)`, refusedWith(aUpd, "42501"), describe(aUpd)));
+      const aDel = await a.rest("DELETE", table, { query: { created_at: "lt.2000-01-01" }, prefer: "return=representation" });
+      out.push(result(`ipad: A cannot delete from ${table} (42501)`, refusedWith(aDel, "42501"), describe(aDel)));
+    }
+    if (!service) {
+      out.push(result("ipad: the service role's half (skipped: no service role client)", true));
+      return out;
+    }
+    const made = await service.rest("POST", "app_attest_challenges", { body: { challenge, expires_at: new Date(Date.now() + 300_000).toISOString() }, prefer: "return=minimal" });
+    const used = await service.rest("DELETE", "app_attest_challenges", { query: { challenge: `eq.${challenge}` }, prefer: "return=representation" });
+    out.push(result("ipad: the service role keeps a challenge and uses it up once", isOk(made) && rows(used).length === 1, `${describe(made)} / ${describe(used)}`));
+    const step = await rpc(service, "record_start_step", { p_journey: journey, p_event: "start_trial_declined", p_meta: { client: "ipad" } });
+    const kept = rows(await service.rest("GET", "start_steps", { query: { journey_id: `eq.${journey}`, select: "event,meta" } }));
+    out.push(
+      result(
+        "ipad: record_start_step() takes the iPad's steps (start_trial_declined, client ipad)",
+        isOk(step) && kept.length === 1 && kept[0]?.event === "start_trial_declined" && kept[0]?.meta?.client === "ipad",
+        `${describe(step)} / ${JSON.stringify(kept)}`,
+      ),
+    );
+  } finally {
+    if (service) {
+      await service.rest("DELETE", "app_attest_challenges", { query: { challenge: `eq.${challenge}` } });
+      await service.rest("DELETE", "start_steps", { query: { journey_id: `eq.${journey}` } });
+    }
+  }
+  return out;
+}
+
+/**
  * The steps before the account's checks, run after FUNNEL_STEP_CHECKS by scripts/verify-rls.mjs and src/__tests__/db-rls.integration.test.ts.
  * @type {CheckDef[]}
  */
 export const START_STEP_CHECKS = [
   { name: "start steps: start_steps out of every client's reach; record_start_step() the service role's; link_start_journey() links only an unlinked journey to the caller; admin_funnel's start has no ids and no admins", run: checkStartSteps },
+  { name: "ipad onboarding: app_attest_keys and app_attest_challenges the service role's alone; record_start_step() takes the iPad's steps", run: checkIpadOnboarding },
 ];
 
 /**
