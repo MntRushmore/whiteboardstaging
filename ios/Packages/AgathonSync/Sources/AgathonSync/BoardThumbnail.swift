@@ -34,7 +34,7 @@ public enum BoardThumbnail {
         let records = store.drawables(on: screen)
         guard !records.isEmpty else { return nil }
         let inked = records.filter { if case .math = $0 { return false }; return true }
-        let items = (inked.isEmpty ? records : inked).compactMap(RenderGeometry.item(for:))
+        let items = (inked.isEmpty ? records : inked).compactMap { RenderGeometry.item(for: $0) }
         return items.isEmpty ? nil : (items, rect)
     }
 
