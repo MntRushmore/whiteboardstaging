@@ -8,39 +8,65 @@ import Foundation
 /// it (`Stroke.normalized`). The rest are tldraw's palette names, so a converted board keeps the
 /// colour each stroke was drawn in.
 public enum InkColor: String, Codable, Sendable, CaseIterable {
-    // the kid's palette (KID_COLORS on the web: black, red, green, violet)
-    case black, red, green, violet
-    /// the tutor's ink (the web's TUTOR_INK_COLOR, tldraw "blue")
+    // the kid's pens (the Blocks dock, docs/DESIGN-SYSTEM.md: black, red, orange, green, pink)
+    case black, red, orange, green, pink
+    /// the tutor's ink (the web's TUTOR_INK_COLOR, tldraw "blue"; cobalt in Blocks)
     case tutor
+    /// the web's fourth kid colour (KID_COLORS: black, red, green, violet): on old boards only, since
+    /// Blocks has no blue or purple pen
+    case violet
     // tldraw's other colours, for converted boards
-    case blue, grey, orange, yellow, white
+    case blue, grey, yellow, white
     case lightBlue = "light-blue"
     case lightGreen = "light-green"
     case lightRed = "light-red"
     case lightViolet = "light-violet"
 
-    /// The colours a kid can pick, in the dock's order.
-    public static let kidPalette: [InkColor] = [.black, .red, .green, .violet]
+    /// The colours a kid can pick, in the dock's order: the Blocks pens (`DS.KidPen.all`). None is
+    /// blue or purple, so nothing the kid writes reads as the tutor's.
+    public static let kidPalette: [InkColor] = [.black, .red, .orange, .green, .pink]
 
-    /// sRGB components, 0…1 (tldraw's light theme values, so converted boards look the same).
+    /// sRGB components, 0…1. The kid's pens and the tutor's ink are the Blocks values (`DS.Palette`;
+    /// AgathonBoardUI's tests hold them equal); the rest are tldraw's light theme, so a converted
+    /// board keeps the colours it was drawn in.
     public var rgb: (r: Double, g: Double, b: Double) {
         switch self {
-        case .black: return Self.hex(0x1D1D1D)
-        case .red: return Self.hex(0xE03131)
-        case .green: return Self.hex(0x099268)
+        case .black: return Self.hex(0x14151F)
+        case .red: return Self.hex(0xE5302A)
+        case .orange: return Self.hex(0xF58700)
+        case .green: return Self.hex(0x12A150)
+        case .pink: return Self.hex(0xE9449A)
+        case .tutor: return Self.hex(0x2D5BFF)
         case .violet: return Self.hex(0xAE3EC9)
-        case .tutor: return Self.hex(0x4465E9)
         // A kid's blue on an old board (the classic board offered it). Kept a different blue from
         // the tutor's so it never reads as the tutor's writing.
         case .blue: return Self.hex(0x1971C2)
         case .grey: return Self.hex(0x9FA8B2)
-        case .orange: return Self.hex(0xE16919)
         case .yellow: return Self.hex(0xF1AC4B)
         case .white: return Self.hex(0xFFFFFF)
         case .lightBlue: return Self.hex(0x4BA1F1)
         case .lightGreen: return Self.hex(0x4CB05E)
         case .lightRed: return Self.hex(0xF87777)
         case .lightViolet: return Self.hex(0xE085F4)
+        }
+    }
+
+    /// A highlighter's colour in this token (tldraw's `highlightSrgb`: a bright marker colour, black's
+    /// is yellow), drawn translucent behind the ink.
+    public var highlightRGB: (r: Double, g: Double, b: Double) {
+        switch self {
+        case .black, .yellow: return Self.hex(0xFDDD00)
+        case .red: return Self.hex(0xFF636E)
+        case .orange: return Self.hex(0xFFA500)
+        case .green: return Self.hex(0x00FFC8)
+        case .pink, .lightRed: return Self.hex(0xFF7FA3)
+        case .tutor, .blue: return Self.hex(0x10ACFF)
+        case .violet: return Self.hex(0xC77CFF)
+        case .grey: return Self.hex(0xCBE7F1)
+        case .white: return Self.hex(0xFFFFFF)
+        case .lightBlue: return Self.hex(0x00F4FF)
+        case .lightGreen: return Self.hex(0x65F641)
+        case .lightViolet: return Self.hex(0xFF88FF)
         }
     }
 
