@@ -187,7 +187,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         templateLayer.anchorPoint = .zero
         templateLayer.actions = ["sublayers": NSNull(), "hidden": NSNull()]
         for l in [templateAnswer, templateAnswerLabel, templateLabel, templateRules] {
-            l.actions = ["path": NSNull(), "fillColor": NSNull(), "strokeColor": NSNull(), "lineWidth": NSNull()]
+            l.actions = ["path": NSNull(), "fillColor": NSNull(), "strokeColor": NSNull(), "lineWidth": NSNull(), "hidden": NSNull()]
             templateLayer.addSublayer(l)
         }
         templateRules.fillColor = nil
@@ -1074,6 +1074,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
     }
 
     public func sceneChanged(_ delta: SceneDelta, index: SceneIndex) {
+        updateTemplateLabel()
         if delta.appendsOnTop {
             tiles.paintOnTop(delta.added)
             controller.stats.lastPaintMs = (tiles.lastPaintDrawMs, tiles.lastPaintImageMs)
@@ -1105,7 +1106,23 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         templateRules.path = t.rules
         templateRules.lineWidth = t.ruleWidth
         templateLayer.isHidden = false
+        updateTemplateLabel()
     }
+
+    /// "Work it out here" is an invitation: it steps aside once the kid has written on the page (a
+    /// first line written right under the problem would sit on it).
+    private func updateTemplateLabel() {
+        guard !templateLayer.isHidden else { return }
+        let screen = controller.currentScreenID
+        let written = controller.store.drawables(on: screen).contains { r in
+            if case .stroke(let s) = r { return s.author == .kid }
+            return false
+        }
+        if templateLabel.isHidden != written { templateLabel.isHidden = written }
+    }
+
+    /// Whether the template's "Work it out here" shows (tests).
+    public var showsTemplateLabel: Bool { !templateLayer.isHidden && !templateLabel.isHidden }
 
     /// Whether the current screen shows a template (tests, the Lab).
     public var showsTemplate: Bool { !templateLayer.isHidden }

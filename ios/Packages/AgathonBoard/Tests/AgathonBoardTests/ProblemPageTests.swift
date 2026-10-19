@@ -149,6 +149,12 @@ struct ProblemPageCanvasTests {
         #expect(!v.showsTemplate, "a plain page has none")
         c.goToScreen("screen:p")
         #expect(v.showsTemplate)
+        #expect(v.showsTemplateLabel, "Work it out here, on an empty page")
+        // the kid writes: the label steps aside; the tutor's ink alone does not move it
+        c.commitStroke(line("stroke:k", 120, 300, y: 200, order: "a1", screen: "screen:p"))
+        #expect(v.showsTemplate && !v.showsTemplateLabel)
+        c.undo()
+        #expect(v.showsTemplateLabel)
         // the page made plain again (the screen's own record changed)
         c.setProblemPage(nil, on: "screen:p")
         #expect(!v.showsTemplate)
