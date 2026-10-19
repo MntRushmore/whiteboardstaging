@@ -205,6 +205,7 @@ released lines.
 | **the answer spot** | a line whose middle is in the answer spot, read, and no ink in the spot for 1.5 s (`answerQuietMs`) | the extra beat stops `12` being judged as `1`; any time, Auto on or off |
 | **a long pause** | 9 s (`checkPauseMs`) after the last kid stroke on the page, the pen up | Auto on only (Auto off waits for Check, as it waits for Help me) |
 | **Help me** | tapped | releases the target line's column first, then helps as now |
+| **the safety net** | Auto on: 12 s (`checkPauseMs` + `safetyMarginMs`) after the last kid ink, read lines still held and nothing being read | once per stretch of ink; a pen still reading as down by then is a touch left on the board (a resting palm), so the line under it is checked too; why the work was held goes to the log and the Debug probe (`why … net[…]`). Added 2026-10-19 after the journey twice left an answer held with Check showing |
 
 ### What a check does
 
