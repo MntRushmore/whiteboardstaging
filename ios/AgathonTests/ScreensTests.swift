@@ -20,6 +20,9 @@ struct HomeFormatTests {
 
     @Test func aNewBoardIsNamedForItsDay() {
         #expect(HomeFormat.newBoardTitle(day: "2026-10-19") == "Monday’s board")
+        // a second (and third) board that day is numbered
+        #expect(HomeFormat.newBoardTitle(day: "2026-10-19", existing: ["Monday’s board"]) == "Monday’s board 2")
+        #expect(HomeFormat.newBoardTitle(day: "2026-10-19", existing: ["Monday’s board", "Monday’s board 2", "Sam's first board"]) == "Monday’s board 3")
     }
 
     @Test func anyPracticeIsAtLeastAMinute() {

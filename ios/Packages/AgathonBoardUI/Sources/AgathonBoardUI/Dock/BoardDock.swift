@@ -163,7 +163,8 @@ struct BoardDock: View {
         .disabled(!controller.canUndo)
         if layout.redoInMore {
             // the tool in hand may be in there (a shape, Select): More shows as on then
-            DockButton(title: DockCopy.more, isOn: shapesOn || (layout.selectInMore && controller.tool == .select), isOpen: panel == .more || panel == .shapes || panel == .picture, action: { toggle(.more) }) {
+            DockButton(title: DockCopy.more, isOn: shapesOn || (layout.selectInMore && controller.tool == .select), isOpen: panel == .more || panel == .shapes || panel == .picture,
+                       accessibilityHint: DockCopy.moreHint, action: { toggle(.more) }) {
                 BoardIconView(icon: .ds(.more))
             }
         } else {

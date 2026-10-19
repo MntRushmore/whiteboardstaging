@@ -58,6 +58,7 @@ struct BoardTopBar<Trailing: View>: View {
                     .contentShape(Circle())
             }
             .accessibilityLabel(DS.Icon.more.label)
+            .accessibilityHint(DockCopy.boardMoreHint)
             .accessibilityIdentifier("board.more")
         }
         .frame(height: DS.Size.round)

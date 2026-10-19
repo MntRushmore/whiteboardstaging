@@ -241,6 +241,11 @@ final class KidJourneyUITests: XCTestCase {
         sleep(3)
         snap("17-plan")
         tap("plan.close")
+        // the iPad back to Sam (the design pass and the next runs start on the kid's Home)
+        if element("board.back").waitForExistence(timeout: 10) { tap("board.back") }
+        tap("boards.switchProfile", wait: 30)
+        tap("switcher.member.Sam", wait: 20)
+        waitFor("home.greeting", label: "Sam", timeout: 30)
     }
 
     // MARK: - helpers

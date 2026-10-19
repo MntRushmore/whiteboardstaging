@@ -110,6 +110,8 @@ struct LiveSwitch: View {
                 }
             }
             .padding(.horizontal, DS.Space.m)
+            // a row whose words wrap keeps a margin above and below them
+            .padding(.vertical, 10)
             .frame(minHeight: DS.Size.minTarget)
             .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(DS.Color.surfaceSunken))
             .contentShape(Rectangle())

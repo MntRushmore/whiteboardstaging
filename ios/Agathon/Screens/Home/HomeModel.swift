@@ -203,7 +203,7 @@ final class HomeModel {
         do {
             // a new board is named for its day ("Monday’s board"), not "Untitled Whiteboard": a grid of
             // boards all called the same tells a kid nothing
-            let board = try await backend.boards.create(title: title ?? HomeFormat.newBoardTitle(day: today))
+            let board = try await backend.boards.create(title: title ?? HomeFormat.newBoardTitle(day: today, existing: boards.map(\.title)))
             boards.insert(board, at: 0)
             return board
         } catch {

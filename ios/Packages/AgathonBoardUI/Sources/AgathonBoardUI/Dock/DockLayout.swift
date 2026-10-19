@@ -23,6 +23,9 @@ public enum DockCopy {
     public static let undo = "Undo"
     public static let redo = "Redo"
     public static let more = "More"
+    /// VoiceOver: the dock's More and the top bar's More are told apart by what they hold
+    public static let moreHint = "The other tools: shapes, pictures and redo"
+    public static let boardMoreHint = "Pages, and drawing with your finger"
     public static let color = "Color"
     public static let colors = "Colors"
     public static let newPage = "New page"
