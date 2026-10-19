@@ -1,12 +1,19 @@
 import AgathonDesign
 import AgathonKit
+import AgathonStore
 import SwiftUI
 
 /// Home, in Blocks (docs/brand/directions.html, "Blocks: Home"): the mark, the tutor's ink, who is
 /// signed in and the grown-ups' door at the top; "Hi Maya." and New board; then My boards as tiles.
 /// Tapping a board opens it full screen through `BoardOpening`.
 struct HomeView: View {
+    /// The kid's first board, handed over by the first run: opened at once (`tookFirstBoard` then
+    /// forgets it, so a later Home never opens it again).
+    var firstBoard: FirstBoardRequest?
+    var tookFirstBoard: () -> Void = {}
+
     @Environment(AgathonBackend.self) private var backend
+    @Environment(PlanStore.self) private var planStore
     @Environment(\.boardOpening) private var opening
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -20,6 +27,19 @@ struct HomeView: View {
     @State private var area: AreaRequest?
     /// The content column's width: Today and the path sit side by side when there's room.
     @State private var contentWidth: CGFloat = 0
+
+    /// Agathon Unlimited for a grown-up, behind the parental gate.
+    @State private var showsPlan = false
+
+    init(firstBoard: FirstBoardRequest? = nil, tookFirstBoard: @escaping () -> Void = {}) {
+        self.firstBoard = firstBoard
+        self.tookFirstBoard = tookFirstBoard
+        if let first = firstBoard, let id = first.boardId {
+            // straight onto the board, no Home in between
+            _openBoard = State(initialValue: OpenBoard(board: BoardSummary(id: id, title: first.title),
+                                                       audience: BoardAudience(isKid: true, grade: nil), seed: first.document))
+        }
+    }
 
     enum HomeSheet: String, Identifiable {
         case switcher, grownUpPin, topics
@@ -69,19 +89,40 @@ struct HomeView: View {
             }
         }
         .dsAnimation(DS.Motion.snap, value: model.toast)
+        .onAppear { if firstBoard != nil { tookFirstBoard() } }
         .task {
+            if let first = firstBoard, first.boardId == nil {
+                // the first run couldn't make the row: make it now, and open it with the board on it
+                if let board = await model.create(backend, title: first.title) {
+                    openBoard = OpenBoard(board: board, audience: BoardAudience(isKid: true, grade: nil), seed: first.document)
+                }
+            }
             await model.load(backend)
             if HomeFlow.openGrownUpsNext {
                 HomeFlow.openGrownUpsNext = false
                 area = AreaRequest(page: .account)
             }
         }
-        .fullScreenCover(item: $openBoard, onDismiss: { Task { await model.refreshQuietly(backend) } }) { request in
+        .fullScreenCover(item: $openBoard, onDismiss: {
+            Task {
+                await model.refreshQuietly(backend)
+                // the board's last save (and its thumbnail) lands a moment after it closes
+                try? await Task.sleep(for: .seconds(2))
+                await model.refreshQuietly(backend)
+            }
+        }) { request in
             opening.makeView(request)
                 .environment(backend)
+                .environment(planStore)
                 #if DEBUG
                 .labsButton()
+                .debugWindow()
                 #endif
+        }
+        .fullScreenCover(isPresented: $showsPlan, onDismiss: { Task { await model.load(backend) } }) {
+            GrownUpPlanFlow { showsPlan = false }
+                .environment(backend)
+                .environment(planStore)
         }
         .sheet(item: $renaming) { board in
             RenameBoardSheet(board: board) { await model.rename(board, to: $0, backend: backend) }
@@ -108,8 +149,10 @@ struct HomeView: View {
                 Task { if let board = await model.startTopic(skill, backend: backend) { openBoard = board } }
             }
             .environment(backend)
+            .environment(planStore)
             #if DEBUG
             .labsButton()
+            .debugWindow()
             #endif
         }
     }
@@ -136,11 +179,23 @@ struct HomeView: View {
         .frame(minHeight: DS.Size.minTarget)
     }
 
+    /// The tutor's ink. A grown-up's opens the plan (behind the gate); a kid's is just the meter.
     @ViewBuilder private var inkMeter: some View {
         if model.ink != nil {
-            InkMeter(level: InkLevel.level(model.ink), style: .compact)
-                .fixedSize()
+            if model.isKid {
+                InkMeter(level: InkLevel.level(model.ink), style: .compact)
+                    .fixedSize()
+                    .accessibilityIdentifier("boards.ink")
+            } else {
+                Button { showsPlan = true } label: {
+                    InkMeter(level: InkLevel.level(model.ink), style: .compact)
+                        .fixedSize()
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Agathon Unlimited, for grown-ups")
                 .accessibilityIdentifier("boards.ink")
+            }
         }
     }
 
@@ -244,7 +299,7 @@ struct HomeView: View {
     private var newBoardButton: some View {
         PillButton(model.creating ? "Making…" : "New board", icon: .plus, kind: .primary) {
             Task {
-                if let board = await model.create(backend) { openBoard = OpenBoard(board: board) }
+                if let board = await model.create(backend) { openBoard = OpenBoard(board: board, audience: model.audience) }
             }
         }
         .disabled(model.creating)
@@ -325,7 +380,7 @@ struct HomeView: View {
             EmptyState(.shapes(.hello), title: "No boards yet",
                        message: "Tap New board, write your math by hand, and the tutor checks each step.",
                        actionTitle: "New board", actionIcon: .plus) {
-                Task { if let board = await model.create(backend) { openBoard = OpenBoard(board: board) } }
+                Task { if let board = await model.create(backend) { openBoard = OpenBoard(board: board, audience: model.audience) } }
             }
             .frame(maxWidth: .infinity)
             .accessibilityIdentifier("boards.empty")
@@ -338,7 +393,7 @@ struct HomeView: View {
             LazyVGrid(columns: columns, alignment: .leading, spacing: DS.Space.l) {
                 ForEach(visibleBoards) { board in
                     BoardTile(board: board, thumbnail: model.thumbnail(for: board),
-                              open: { openBoard = OpenBoard(board: board) },
+                              open: { openBoard = OpenBoard(board: board, audience: model.audience) },
                               rename: { renaming = board },
                               delete: { deleting = board })
                 }
@@ -348,8 +403,10 @@ struct HomeView: View {
 }
 
 #Preview {
+    let backend = AgathonBackend.preview()
     HomeView()
-        .environment(AgathonBackend.preview())
+        .environment(backend)
+        .environment(PlanStore(backend: backend))
 }
 
 /// What Home does next time it appears (a kid typed the grown-up's PIN to reach the grown-ups'

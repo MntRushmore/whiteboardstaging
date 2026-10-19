@@ -119,7 +119,7 @@ final class OnboardingUITests: XCTestCase {
         tap("onboarding.handBack.grownUp")
         sleep(2)
         snap("gate")
-        key("1985")
+        try gate()
         try account()
         tap("onboarding.trial.start", wait: 30)
         // the reminder's one notification ask, at the tap on Start
@@ -153,13 +153,20 @@ final class OnboardingUITests: XCTestCase {
         sleep(2)
         snap("waiting")
         tap("onboarding.waiting.grownUp")
-        key("1985")
+        try gate()
         try account()
         tap("onboarding.trial.notNow", wait: 30)
         try pinAndProfile()
     }
 
     // MARK: - shared
+
+    /// The app's one parental gate: the number written in words, typed on the pad.
+    private func gate() throws {
+        let words = app.descendants(matching: .any).matching(identifier: "onboarding.gate.words").firstMatch
+        XCTAssertTrue(words.waitForExistence(timeout: 15), "no gate")
+        key(try KidJourneyUITests.digits(fromWords: words.label))
+    }
 
     /// The Password AutoFill sheets cover the account form under automation (KitFlowUITests.swift):
     /// AutoFill off in the simulator's Settings.

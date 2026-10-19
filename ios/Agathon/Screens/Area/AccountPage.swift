@@ -1,5 +1,6 @@
 import AgathonDesign
 import AgathonKit
+import AgathonStore
 import StoreKit
 import SwiftUI
 
@@ -19,6 +20,7 @@ struct AccountPage: View {
     @State private var grade: Int?
     @State private var gradeNote: String?
     @State private var deleting = false
+    @State private var showsPlan = false
 
     private var account: AccountService { AccountService(api: backend.api, client: backend.supabase) }
     private var hasKids: Bool { family?.members.contains { !$0.isParent } ?? false }
@@ -54,6 +56,11 @@ struct AccountPage: View {
             }
             AreaCard("Plan") {
                 PlanWords(ink: ink)
+                PillButton(ink?.hasUnlimited == true ? "Manage the plan" : "See the plan", icon: .lock, kind: .secondaryOnPaper) { showsPlan = true }
+                    .fixedSize()
+                    .padding(.top, DS.Space.xs)
+                    .accessibilityHint("For grown-ups")
+                    .accessibilityIdentifier("account.plan")
             }
             AskMemoryCard(kidId: nil, owner: "you")
             AreaCard("Danger zone") {
@@ -69,6 +76,10 @@ struct AccountPage: View {
         .task { await load() }
         .sheet(isPresented: $deleting) {
             DeleteAccountSheet(email: backend.auth.email ?? "", hasKids: hasKids).environment(backend)
+        }
+        .fullScreenCover(isPresented: $showsPlan, onDismiss: { Task { await load() } }) {
+            GrownUpPlanFlow { showsPlan = false }
+                .environment(backend)
         }
     }
 
@@ -300,8 +311,12 @@ struct AskMemoryCard: View {
     }
 }
 
-/// Deleting the account: what goes, type DELETE, then delete. When a plan would charge again,
-/// the sheet says to cancel it first instead (Settings for Apple, agathon.app for the web).
+/// Deleting the account: what goes, type DELETE, then delete (AgathonStore's `DeletionAdvice`, the
+/// server's `delete_own_account`):
+///  - a web plan that would charge again: cancel it on agathon.app first (the server refuses);
+///  - an Apple plan that would charge again: deleting is allowed (only the person can cancel it), but
+///    the sheet says to cancel it in Settings first, with a button to Subscriptions;
+///  - otherwise: nothing about money.
 struct DeleteAccountSheet: View {
     let email: String
     let hasKids: Bool
@@ -311,6 +326,7 @@ struct DeleteAccountSheet: View {
     @State private var typed = ""
     @State private var busy = false
     @State private var blocked: Bool?
+    @State private var advice: DeletionAdvice = .clear
     @State private var problem: String?
 
     private var account: AccountService { AccountService(api: backend.api, client: backend.supabase) }
@@ -321,11 +337,14 @@ struct DeleteAccountSheet: View {
                 SheetHeader("Cancel Agathon Unlimited first", onClose: { dismiss() })
                 Text("Deleting your account doesn't cancel your plan, so cancel it first. Once it's set to cancel, you won't be charged again and you can delete your account here.")
                     .dsFont(.body).foregroundStyle(DS.Color.ink).fixedSize(horizontal: false, vertical: true)
-                Text("Paying through Apple? Cancel in Settings, then your name, then Subscriptions. Paying on agathon.app? Cancel it there.")
+                Text(DeletionAdvice.cancelOnWebFirst.message ?? "")
                     .dsFont(.callout).foregroundStyle(DS.Color.inkSecondary).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("delete.advice")
                 HStack(spacing: DS.Space.s) {
-                    Button(action: manageSubscriptions) { Text("Open Subscriptions").frame(maxWidth: .infinity) }
-                        .buttonStyle(.pill(.primary, size: .large))
+                    Link(destination: backend.environment.apiBaseURL.appendingPathComponent("account")) {
+                        Text("Open agathon.app").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.pill(.primary, size: .large))
                     Button { dismiss() } label: { Text("Not now").frame(maxWidth: .infinity) }
                         .buttonStyle(.pill(.secondaryOnPaper, size: .large))
                 }
@@ -333,6 +352,16 @@ struct DeleteAccountSheet: View {
                 SheetHeader("Delete your account?", onClose: { dismiss() })
                 Text("This deletes \(email) and every board on it\(hasKids ? ", and your kids' profiles and their boards" : ""). This can't be undone.")
                     .dsFont(.body).foregroundStyle(DS.Color.ink).fixedSize(horizontal: false, vertical: true)
+                if advice == .cancelAppleFirst, let words = advice.message {
+                    // an Apple plan keeps charging after the account is gone: say so first
+                    VStack(alignment: .leading, spacing: DS.Space.s) {
+                        Banner(.paused, "Cancel your plan in Settings first", message: words)
+                            .accessibilityIdentifier("delete.advice")
+                        Button(action: manageSubscriptions) { Text("Open Subscriptions") }
+                            .buttonStyle(.pill(.secondaryOnPaper))
+                            .accessibilityIdentifier("delete.subscriptions")
+                    }
+                }
                 Text("Type DELETE to confirm.").dsFont(.button, size: 16).foregroundStyle(DS.Color.ink)
                 PillField("DELETE", text: $typed)
                     .textInputAutocapitalization(.characters)
@@ -356,7 +385,12 @@ struct DeleteAccountSheet: View {
         .blocksSheet(width: 560)
         .interactiveDismissDisabled(busy)
         .task {
-            blocked = (try? await account.planBlocksDeletion()) ?? false
+            async let blocks = try? account.planBlocksDeletion()
+            async let summary = try? backend.profiles.inkSummary()
+            let plan = await summary
+            advice = DeletionAdvice(plan: plan?.unlimited)
+            let refuses = await blocks
+            blocked = (refuses ?? false) || advice == .cancelOnWebFirst
         }
     }
 

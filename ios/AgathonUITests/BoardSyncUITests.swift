@@ -26,17 +26,20 @@ final class BoardSyncUITests: XCTestCase {
         var app = launch()
         signIn(app)
         openBoard(app)
-        let status = app.staticTexts["board.status"]
-        wait(status, "Opened from the web")
-        snap("01-converted")
+        // the board screen's save pill (BoardScreen.swift): its words say "Saved", its value the detail
+        // ("saved v3 converted written")
+        var status = app.descendants(matching: .any).matching(identifier: "board.status").firstMatch
+        waitValue(status, "saved")
+        snap("01-opened")
 
         draw(app, y: 0.66)
-        wait(status, "Saved · v", timeout: 30)
+        waitValue(status, "written", timeout: 30)
         snap("02-saved")
 
-        app.buttons["board.back"].tap()
+        app.buttons["board.back"].firstMatch.tap()
         openBoard(app)
-        wait(status, "Saved")
+        status = app.descendants(matching: .any).matching(identifier: "board.status").firstMatch
+        wait(status, "saved")
         snap("03-reopened")
 
         // a stroke, then the app killed half a second after the backup and before the 2 s save
@@ -46,8 +49,9 @@ final class BoardSyncUITests: XCTestCase {
 
         app = launch()
         openBoard(app)
-        wait(app.staticTexts["board.notice"], "put back")
-        wait(status, "Saved · v", timeout: 30)
+        wait(app.descendants(matching: .any).matching(identifier: "board.notice").firstMatch, "put back")
+        status = app.descendants(matching: .any).matching(identifier: "board.status").firstMatch
+        waitValue(status, "written", timeout: 30)
         snap("04-restored")
     }
 
@@ -96,12 +100,12 @@ final class BoardSyncUITests: XCTestCase {
         let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", boardTitle)).firstMatch
         wait(row, timeout: 30)
         row.tap()
-        wait(app.otherElements["board.canvas"], timeout: 30)
+        wait(app.descendants(matching: .any).matching(identifier: "board.canvas").firstMatch, timeout: 30)
     }
 
     /// A finger stroke across the screen (the simulator draws with a finger).
     private func draw(_ app: XCUIApplication, y: CGFloat) {
-        let canvas = app.otherElements["board.canvas"]
+        let canvas = app.descendants(matching: .any).matching(identifier: "board.canvas").firstMatch
         let from = canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.30, dy: y))
         let to = canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.62, dy: y - 0.05))
         from.press(forDuration: 0.05, thenDragTo: to)
@@ -117,6 +121,13 @@ final class BoardSyncUITests: XCTestCase {
         if let dir = env["AGATHON_QA_SHOTS_DIR"], !dir.isEmpty {
             try? shot.pngRepresentation.write(to: URL(fileURLWithPath: dir).appendingPathComponent("ipad-sync-\(name).png"))
         }
+    }
+
+    private func waitValue(_ element: XCUIElement, _ value: String, timeout: TimeInterval = 20,
+                           file: StaticString = #filePath, line: UInt = #line) {
+        let predicate = NSPredicate(format: "value CONTAINS %@", value)
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: element)], timeout: timeout), .completed,
+                       "\(element) never had \(value); it has \(element.value as? String ?? "nothing")", file: file, line: line)
     }
 
     private func wait(_ element: XCUIElement, _ label: String? = nil, timeout: TimeInterval = 20,

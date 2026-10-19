@@ -1,3 +1,4 @@
+#if DEBUG
 import AgathonKit
 import SwiftUI
 
@@ -54,9 +55,9 @@ struct DebugBoardsView: View {
                             .frame(maxWidth: .infinity)
                     }
                     ForEach(boards) { board in
-                        // the board itself (ios/Agathon/Board/BoardScreen.swift: AgathonSync + the canvas)
+                        // the plain board (Debug/PlainBoardScreen.swift: AgathonSync + the canvas)
                         NavigationLink {
-                            BoardScreen(board: board)
+                            PlainBoardScreen(board: board)
                         } label: {
                             BoardRow(board: board)
                         }
@@ -318,3 +319,4 @@ struct DebugInkReadout: View {
     DebugBoardsView()
         .environment(AgathonBackend.preview())
 }
+#endif

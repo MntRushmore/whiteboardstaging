@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The iPad brain: a minified bundle generated from src/lib/brain by scripts/build-ios-brain.mjs
+    // (`npm run brain:check` keeps it current); its sources are linted.
+    "ios/Packages/AgathonBrain/Sources/AgathonBrain/Resources/brain.js",
   ]),
 ]);
 

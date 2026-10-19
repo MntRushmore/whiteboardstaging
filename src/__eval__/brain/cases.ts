@@ -342,7 +342,14 @@ function askCases(): BrainCase[] {
   return out;
 }
 
-/** Every parity case, in a fixed order. */
+let built: readonly BrainCase[] | undefined;
+
+/**
+ * Every parity case, in a fixed order. Built once per process: the drawings' `writeAt` tags each
+ * piece of writing with a module-wide serial (`_w1`, `_w2`, …), so a second build in the same
+ * process (vitest's retry of the golden test) would name the scene strokes differently.
+ */
 export function parityCases(): BrainCase[] {
-  return [...boundaryCases(), ...analyzeCases(), ...solveCases(), ...engineCases(), ...inkCases(), ...handCases(), ...policyCases(), ...learningCases(), ...askCases()];
+  built ??= [...boundaryCases(), ...analyzeCases(), ...solveCases(), ...engineCases(), ...inkCases(), ...handCases(), ...policyCases(), ...learningCases(), ...askCases()];
+  return [...built];
 }

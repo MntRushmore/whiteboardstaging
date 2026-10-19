@@ -1,3 +1,4 @@
+import AgathonBoard
 import AgathonKit
 import SwiftUI
 
@@ -6,15 +7,9 @@ import SwiftUI
 /// Home presents `makeView(board)` full screen and reads the boards again when it closes (the name
 /// or the thumbnail may have changed). The screen closes itself with `@Environment(\.dismiss)`.
 ///
-/// Today it is `.readOnlyPreview` (this lane's stand-in, `BoardPreviewScreen`): the row's tldraw
-/// snapshot is read, converted with `TldrawImporter` and shown in `BoardCanvas`. Nothing is ever
-/// written back. When the TOOLS lane's `BoardEditorView` and the SYNC lane's `AgathonSync` land,
-/// the lead swaps `current` for them, here and nowhere else:
-///
-///     static let current = BoardOpening { request in AnyView(BoardEditorView(board: request.board)) }
-///
-/// A request can carry a practice set (Today's practice, a topic): the problems the tutor should put
-/// on the board. The stand-in lists them over the board; the real editor writes them on it.
+/// `current` is the real board (`BoardScreen`): the Blocks editor, saved by AgathonSync, the tutor
+/// on it (AgathonLive) and Ask beside it (AgathonAsk). `readOnlyPreview` (the screens lane's
+/// stand-in, `BoardPreviewScreen`: read, convert, show, never write) stays for previews and tests.
 struct BoardOpening {
     let makeView: @MainActor (OpenBoard) -> AnyView
 
@@ -22,11 +17,14 @@ struct BoardOpening {
         self.makeView = makeView
     }
 
-    /// Phase 4's stand-in: read, convert, show; edits stay on the iPad and are never saved.
+    /// The board, saved, with the tutor and Ask.
+    static let editor = BoardOpening { request in AnyView(BoardScreen(request: request)) }
+
+    /// The stand-in: read, convert, show; edits stay on the iPad and are never saved.
     static let readOnlyPreview = BoardOpening { request in AnyView(BoardPreviewScreen(request: request)) }
 
     /// What the app uses.
-    static let current: BoardOpening = .readOnlyPreview
+    static let current: BoardOpening = .editor
 }
 
 private struct BoardOpeningKey: EnvironmentKey {
@@ -45,12 +43,27 @@ extension EnvironmentValues {
 struct OpenBoard: Identifiable {
     let board: BoardSummary
     var practice: PracticeSet?
+    /// Who is at the board (a kid profile never sees money; the grade picks Ask's first chips). Nil:
+    /// the screen reads it.
+    var audience: BoardAudience?
+    /// The document to start from when the row has none yet: the onboarding's first board, when its
+    /// own save didn't reach the server.
+    var seed: BoardDocument?
 
     var id: String { board.id }
 }
 
+/// Who is at the board.
+struct BoardAudience: Equatable {
+    /// A kid profile in a family: out of ink sends them to a grown-up, never to a price.
+    var isKid: Bool
+    /// 0 = K … 8; nil for high school or not known.
+    var grade: Int?
+}
+
 /// Problems to work on this board: Today's practice or a topic's set (LaTeX lines from the brain's
-/// practice generator, `PracticePlanner`).
+/// practice generator, `PracticePlanner`). The tutor writes them on the board in its hand (Ask's
+/// `write_problems`, the web's desk in the brain), each heading the column the kid works under it.
 struct PracticeSet: Equatable {
     enum Kind: Equatable {
         /// Today's practice for a local day (YYYY-MM-DD).

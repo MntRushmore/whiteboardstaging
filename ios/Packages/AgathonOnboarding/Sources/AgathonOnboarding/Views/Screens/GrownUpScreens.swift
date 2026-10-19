@@ -13,24 +13,41 @@ struct GateScreen: View {
     @State private var note: String?
     @State private var paused: Date?
     @State private var miss = false
+    /// the gate's words to type (a new number after a miss)
+    @State private var prompt: String?
 
     var body: some View {
         let c = model.copy
+        // centred when it fits; scrolls at the largest text sizes
+        ScrollView {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             VStack(spacing: 20) {
                 SheetHeader(c.gateHeader, onClose: { model.go(.handBack) })
-                Text(c.gateQuestion)
-                    .dsFont(.title)
-                    .foregroundStyle(DS.Color.ink)
+                // a gate with its own words to type: the words are the big thing, the question a lead-in
+                Text(model.gate.question ?? c.gateQuestion)
+                    .dsFont(prompt == nil ? .title : .body)
+                    .foregroundStyle(prompt == nil ? DS.Color.ink : DS.Color.inkSecondary)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
+                if let words = prompt {
+                    Text(words)
+                        .dsFont(.title)
+                        .foregroundStyle(DS.Color.ink)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(model.gate.spokenPrompt ?? words)
+                        .accessibilityIdentifier("onboarding.gate.words")
+                }
                 PinDots(count: entry.count, length: model.gate.length, lookAgain: miss)
                     .padding(.vertical, 4)
                 Text(note ?? " ")
                     .dsFont(.callout)
                     .foregroundStyle(DS.Color.ink)
-                    .frame(height: 24)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(minHeight: 24)
                 PinPad(entry: $entry, length: model.gate.length) { answer in submit(answer) }
                     .disabled(paused != nil)
                     .opacity(paused != nil ? 0.4 : 1)
@@ -41,7 +58,13 @@ struct GateScreen: View {
             .reveal(0)
             Spacer(minLength: 0)
         }
+        .padding(.vertical, 16)
+        .frame(width: layout.size.width)
+        .frame(minHeight: layout.size.height)
+        }
+        .scrollBounceBehavior(.basedOnSize)
         .frame(width: layout.size.width, height: layout.size.height)
+        .onAppear { prompt = model.gate.prompt }
         .task(id: paused) {
             guard let until = paused else { return }
             try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow)))
@@ -58,7 +81,8 @@ struct GateScreen: View {
             model.passGate()
         case .miss:
             miss = true
-            note = model.copy.gateMiss
+            note = model.gate.missNote ?? model.copy.gateMiss
+            prompt = model.gate.prompt
             OnboardingSound.shared.play(.woodblock)
             Task {
                 try? await Task.sleep(for: .milliseconds(500))
@@ -68,6 +92,7 @@ struct GateScreen: View {
         case .paused(let until):
             paused = until
             note = model.copy.gatePaused
+            prompt = model.gate.prompt
             entry = ""
             miss = false
         }

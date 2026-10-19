@@ -14,7 +14,8 @@ struct BoardTopBar<Trailing: View>: View {
     var body: some View {
         HStack(spacing: DS.Space.m) {
             if let onBack {
-                RoundButton(.back, fill: .paper, action: onBack)
+                RoundButton(.back, fill: .paper, label: DockCopy.back, action: onBack)
+                    .accessibilityIdentifier("board.back")
             }
             Button {
                 showPages = true
@@ -36,6 +37,7 @@ struct BoardTopBar<Trailing: View>: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(title). \(DockCopy.pageOf(controller.screenIndex, controller.screenCount))")
             .accessibilityHint(DockCopy.pages)
+            .accessibilityIdentifier("board.title")
             .layoutPriority(1)
             Spacer(minLength: DS.Space.s)
             trailing
@@ -54,6 +56,7 @@ struct BoardTopBar<Trailing: View>: View {
                     .contentShape(Circle())
             }
             .accessibilityLabel(DS.Icon.more.label)
+            .accessibilityIdentifier("board.more")
         }
         .frame(height: DS.Size.round)
     }

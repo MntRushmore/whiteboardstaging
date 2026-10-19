@@ -1,3 +1,4 @@
+#if DEBUG
 import AgathonKit
 import SwiftUI
 
@@ -191,3 +192,4 @@ struct DebugProfileSwitcher: View {
         (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
     }
 }
+#endif

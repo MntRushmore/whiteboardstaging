@@ -1,3 +1,4 @@
+#if DEBUG
 import AgathonKit
 import SwiftUI
 
@@ -145,3 +146,4 @@ struct DebugSignInView: View {
     DebugSignInView()
         .environment(AgathonBackend.preview())
 }
+#endif

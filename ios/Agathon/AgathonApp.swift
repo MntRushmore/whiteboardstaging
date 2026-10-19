@@ -18,11 +18,16 @@ struct AgathonApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
+                #if DEBUG
                 if BrainLab.isRequested { BrainLabView() } else { RootView() }
+                #else
+                RootView()
+                #endif
             }
             .designGalleryOnLaunch() // `-designGallery` (Debug): the design system's gallery, ios/Agathon/Debug
             #if DEBUG
             .billingScreenOnLaunch() // `-billingScreen …` (Debug): ios/Agathon/Debug/BillingLabView.swift
+            .debugWindow() // `-windowWidth 507` (Debug): a Split View-sized window, ios/Agathon/Debug/DebugWindow.swift
             #endif
             .environment(backend)
             .environment(planStore)
