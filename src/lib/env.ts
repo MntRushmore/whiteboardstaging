@@ -53,6 +53,9 @@ const envSchema = z.object({
   LIVE_MODEL_ASK: optionalString,
   LIVE_MODEL_LECTURE: optionalString,
   LIVE_MODEL_SKETCH: optionalString,
+  // The crop reader of /api/live/recognize: unset (or "vision") is the vision model; "mathpix-text"
+  // tries Mathpix v3/text first (a prototype, off by default: docs/eval/mpx-supernet.md).
+  RECOGNIZE_CROP_READER: optionalString,
 
   // ElevenLabs: lecture mode's realtime speech-to-text (Scribe) and read aloud's voice
   // (POST /api/live/speak). Unset: the browser's own recognizer and voice.
@@ -175,6 +178,18 @@ export function hasElevenLabs(): boolean {
 export function hasMathpix(): boolean {
   const env = getServerEnv();
   return Boolean(env.MATHPIX_APP_ID && env.MATHPIX_APP_KEY);
+}
+
+/** Which reader reads a line's crop in /api/live/recognize when the strokes read produced nothing. */
+export type CropReader = "vision" | "mathpix-text";
+
+/**
+ * `RECOGNIZE_CROP_READER`: only the literal `mathpix-text` turns on Mathpix v3/text as the first crop
+ * reader (the vision model stays the fallback); anything else, including unset, is `vision` (today's
+ * behaviour). A prototype measured in docs/eval/mpx-supernet.md.
+ */
+export function getCropReader(): CropReader {
+  return getServerEnv().RECOGNIZE_CROP_READER?.trim().toLowerCase() === "mathpix-text" ? "mathpix-text" : "vision";
 }
 
 /**

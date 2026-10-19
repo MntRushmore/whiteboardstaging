@@ -8,11 +8,11 @@ import {
   type RecognizeResponse,
   type StrokePayload,
 } from "@/lib/live/contracts";
-import { getLiveModels } from "@/lib/env";
+import { getCropReader, getLiveModels } from "@/lib/env";
 import { json, requireUser } from "@/lib/server/auth";
 import { enforceInk, runCharged } from "@/lib/server/billing";
 import { errorResponse, recordRouteEvent } from "@/lib/server/request";
-import { isMathpixConfigured, recognizeStrokes, type MathpixFailure } from "@/lib/server/mathpix";
+import { isMathpixConfigured, MATHPIX_TEXT_TIMEOUT_MS, recognizeImage, recognizeStrokes, type MathpixFailure } from "@/lib/server/mathpix";
 import { RECOGNIZER_FAILED_STATUS, recognizeFailureHints } from "@/lib/server/recognizeHints";
 import { chatJson, UpstreamError } from "@/lib/server/openrouter";
 import { buildVisionMessages, VisionTranscriptionSchema } from "@/lib/server/prompts/recognizeVision";
@@ -40,6 +40,16 @@ const VISION_MIN_MS = 1_500;
  * response), so the route says it saw it: an info event `client_timeout`.
  */
 const CLIENT_GAVE_UP_MS = LIVE_TIMING.recognizeTimeoutMs - 2_000;
+/** Less time than this left for Mathpix v3/text (after the vision reader's own minimum): straight to vision. */
+const TEXT_MIN_MS = 500;
+
+/**
+ * The strokes read failed in a way that says Mathpix itself (or the way to it) is in trouble, not
+ * the ink: its image reader shares the credentials and the servers, so it is not asked either.
+ */
+function mathpixInTrouble(f: MathpixFailure | null): boolean {
+  return f !== null && (f.reason === "auth" || f.reason === "http" || f.reason === "timeout" || f.reason === "network");
+}
 
 /* ------------------------------------------------------------------------- */
 /* GET: capabilities + warmup                                                 */
@@ -82,7 +92,7 @@ export async function POST(req: Request) {
 
   const payload: StrokePayload = { x: data.strokes.x, y: data.strokes.y, w: data.bounds.w, h: data.bounds.h };
   /** what the read had done when the client left (for `clientGone`) */
-  let stage: "mathpix" | "vision" = "mathpix";
+  let stage: "mathpix" | "mathpix-text" | "vision" = "mathpix";
   const clientGone = () => {
     const ms = Date.now() - startedAt;
     if (ms < CLIENT_GAVE_UP_MS) return;
@@ -119,6 +129,37 @@ export async function POST(req: Request) {
       }
     }
 
+    // RECOGNIZE_CROP_READER=mathpix-text (a prototype, off by default; docs/eval/mpx-supernet.md):
+    // Mathpix v3/text reads the crop first — 6x faster than the vision model, and on the eval's
+    // stacked sums and long divisions it gave the LaTeX the board's parsers take. Never when Mathpix
+    // is the trouble (the vision model is the other vendor), and any miss of its own goes on to
+    // vision as before: the vision read stays the floor. A `cropOnly` retry does not say why the
+    // strokes read failed, so after a Mathpix timeout this can spend its 2 s before vision (≥ 3 s left).
+    let cropText: { reason: string; status?: number } | null = null;
+    if (!result && data.crop && getCropReader() === "mathpix-text" && isMathpixConfigured() && !mathpixInTrouble(mathpixFailure)) {
+      const textMs = Math.min(MATHPIX_TEXT_TIMEOUT_MS, VISION_DEADLINE_MS - (Date.now() - startedAt) - VISION_MIN_MS);
+      if (textMs >= TEXT_MIN_MS) {
+        stage = "mathpix-text";
+        const mt = await recognizeImage(data.crop, req.signal, { requestId, log, timeoutMs: textMs });
+        if (mt.ok && mt.latex) {
+          result = {
+            latex: mt.latex,
+            text: mt.text,
+            kind: classifyKind(mt.latex),
+            confidence: mt.confidence,
+            // a Mathpix read: the board's second reader looks at it as at a strokes read
+            provider: "mathpix",
+            ms: Date.now() - startedAt,
+            ...(liveDebugEnabled() ? { debug: { mathpixText: mt.raw, mathpixFailure } } : {}),
+          };
+        } else {
+          cropText = mt.ok ? { reason: "empty" } : { reason: mt.reason, status: mt.status };
+          if (req.signal.aborted) throw new DOMException("The client went away", "AbortError");
+          log.warn({ reason: cropText.reason, status: cropText.status }, "mathpix v3/text read nothing from the crop; trying vision");
+        }
+      }
+    }
+
     if (!result && data.crop) {
       stage = "vision";
       const models = getLiveModels();
@@ -148,7 +189,7 @@ export async function POST(req: Request) {
         confidence: vision.confidence,
         provider: "vision",
         ms: Date.now() - startedAt,
-        ...(liveDebugEnabled() ? { debug: { vision, mathpixFailure } } : {}),
+        ...(liveDebugEnabled() ? { debug: { vision, mathpixFailure, ...(cropText ? { mathpixText: cropText } : {}) } } : {}),
       };
     }
 
@@ -198,7 +239,7 @@ export async function POST(req: Request) {
     }
 
     const body = RecognizeResponseSchema.parse(result);
-    log.info({ provider: body.provider, ms: body.ms, confidence: body.confidence, kind: body.kind }, "recognized");
+    log.info({ provider: body.provider, ms: body.ms, confidence: body.confidence, kind: body.kind, ...(stage === "mathpix-text" ? { cropReader: "mathpix-text" } : {}) }, "recognized");
     return withRequestId(Response.json(body), requestId);
   }, (err) => {
     if (req.signal.aborted) clientGone();
