@@ -23,7 +23,7 @@ extension LiveLoop {
             var previous: LineAnalysis?
             var original: LineAnalysis?
             func take(_ a: LineAnalysis?) {
-                guard let a, !["label", "incomplete", "unknown", "operation"].contains(a.kind) else { return }
+                guard let a, !["label", "incomplete", "unknown", "operation", "continuation"].contains(a.kind) else { return }
                 previous = a
                 if original == nil && (a.kind == "equation" || a.kind == "inequality") { original = a }
             }
@@ -44,26 +44,41 @@ extension LiveLoop {
             var above: [String] = []
             var slip: LineAnalysis?
             var changed: [String] = []
+            // what the student's line above ended in (`400 + 364 = 764` → 764), for a line that goes
+            // on from it (`+3 = 767`: `ContinuationLine`)
+            var running: String?
             for st in columnLines(column) {
                 guard !st.latex.isEmpty else { continue }
+                // a running total (`+3 = 767`) is judged as the child means it, `764 + 3 = 767`; with
+                // nothing above to go on from it is never judged (read alone it is `3 = 767`, false)
+                let judged: String?
+                if let c = ContinuationLine.parse(st.latex) {
+                    judged = running.map { ContinuationLine.rewritten(c, after: $0) }
+                } else {
+                    judged = st.latex
+                }
                 // the grown-ups want answers after `=`: the engine works a sum ended with one out
                 // as in Solve (the policy still decides what is shown)
                 let lineMode = settings.answerOnEquals && LivePolicy.endsWithRelation(st.latex) ? LiveMode.answer : mode
                 let ctx = AnalyzeContext(mode: lineMode, previous: previous, original: original)
-                let key = "\(lineMode.rawValue)|\(st.latex)|\(previous?.math ?? "")|\(previous?.kind ?? "")|\(original?.math ?? "")"
+                let key = "\(lineMode.rawValue)|\(judged ?? "quiet:" + st.latex)|\(previous?.math ?? "")|\(previous?.kind ?? "")|\(original?.math ?? "")"
                     + "|\(problem.joined(separator: ";"))|\(above.joined(separator: ";"))|\(slip?.math ?? "")"
                 let a: LineAnalysis
                 if let hit = analysisCache[key] {
                     a = hit
-                } else {
+                } else if let judged {
                     do {
-                        a = try await brain.judgeLine(st.latex, context: ctx, problem: problem, above: above, slip: slip)
+                        a = try await brain.judgeLine(judged, context: ctx, problem: problem, above: above, slip: slip)
                     } catch {
                         a = LineAnalysis.unknown
                     }
                     analysisCache[key] = a
+                } else {
+                    a = LineAnalysis.quiet
+                    analysisCache[key] = a
                 }
-                above.append(st.latex)
+                above.append(judged ?? st.latex)
+                running = judged.flatMap(ContinuationLine.result(of:))
                 slip = a.verdict == "mismatch" || a.carried == true ? a : nil
                 guard gen == generation, var cur = lines[st.id], cur.latex == st.latex else {
                     // the line changed while it was analysed: its own read analyses the column again

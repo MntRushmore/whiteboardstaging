@@ -135,6 +135,76 @@ struct ChatProblemTests {
         #expect(h.board.mark(on: "5") == .ring)
     }
 
+    /// The owner's iPad, 2026-10-19 (Today's practice): `403 + 364 − 336` worked as a running total.
+    /// `+3 = 767` read alone is `3 = 767` and was ringed; it goes on from the line above (764 + 3).
+    @Test func aRunningTotalGoesOnFromTheLineAbove() async throws {
+        let h = Harness()
+        await h.start()
+        tutorProblem(h, box: Box(x: 200, y: 100, w: 420, h: 60),
+                     meta: Self.chatMeta(["403 + 364 - 336"], n: 1, cell: Box(x: 180, y: 80, w: 700, h: 520)))
+        h.loop.problemsChanged()
+        await h.write("x = 4", at: Vec2(200, 220), reads: "400+364=764")
+        await h.write("x = 3", at: Vec2(200, 320), reads: "+3=767")
+        // (each line its own ink: the fake recognizer knows a read by its strokes' shape)
+        await h.write("2x = 8", at: Vec2(200, 420), reads: "-336=431")
+        await h.pass(5_000)
+        #expect(h.board.mark(on: "400+364=764") == .tick)
+        #expect(h.board.mark(on: "+3=767") == .tick, "\(String(describing: h.loop.lines.values.first { $0.latex == "+3=767" }?.analysis))")
+        #expect(h.board.mark(on: "-336=431") == .tick)
+        let last = try #require(h.loop.lines.values.first { $0.latex == "-336=431" })
+        #expect(last.analysis?.solved == true, "\(String(describing: last.analysis))")
+    }
+
+    @Test func aWrongRunningTotalIsRingedAndTheNextGoesOnFromIt() async throws {
+        let h = Harness()
+        await h.start()
+        tutorProblem(h, box: Box(x: 200, y: 100, w: 420, h: 60),
+                     meta: Self.chatMeta(["403 + 364 - 336"], n: 1, cell: Box(x: 180, y: 80, w: 700, h: 520)))
+        h.loop.problemsChanged()
+        await h.write("x = 4", at: Vec2(200, 220), reads: "400+364=764")
+        await h.write("x = 3", at: Vec2(200, 320), reads: "+3=768")
+        await h.write("2x = 8", at: Vec2(200, 420), reads: "-336=432")
+        await h.pass(5_000)
+        #expect(h.board.mark(on: "+3=768") == .ring)
+        // built on the ringed total: carried on from that slip, no ring of its own
+        #expect(h.board.mark(on: "-336=432") != .ring)
+    }
+
+    @Test func timesAndDivideGoOnToo() async throws {
+        let h = Harness()
+        await h.start()
+        tutorProblem(h, box: Box(x: 200, y: 100, w: 420, h: 60),
+                     meta: Self.chatMeta(["6 \\times 4 \\div 3"], n: 1, cell: Box(x: 180, y: 80, w: 700, h: 520)))
+        h.loop.problemsChanged()
+        await h.write("x = 4", at: Vec2(200, 220), reads: "6\\times 4=24")
+        await h.write("x = 3", at: Vec2(200, 320), reads: "\\div 3=8")
+        await h.pass(5_000)
+        #expect(h.board.mark(on: "\\div 3=8") == .tick, "\(String(describing: h.loop.lines.values.first { $0.latex == "\\div 3=8" }?.analysis))")
+    }
+
+    @Test func aRunningTotalWithNothingAboveIsLeftAlone() async throws {
+        let h = Harness()
+        await h.start()
+        tutorProblem(h, box: Box(x: 200, y: 100, w: 420, h: 60),
+                     meta: Self.chatMeta(["403 + 364 - 336"], n: 1, cell: Box(x: 180, y: 80, w: 700, h: 520)))
+        h.loop.problemsChanged()
+        await h.write("x = 3", at: Vec2(200, 220), reads: "+3=767")
+        await h.pass(5_000)
+        #expect(h.board.mark(on: "+3=767") == nil)
+    }
+
+    @Test func theRunningTotalsShape() {
+        #expect(ContinuationLine.parse("+3=767") == .init(op: "+", operand: "3", result: "767"))
+        #expect(ContinuationLine.parse("\u{2212}336 = 431") == .init(op: "-", operand: "336", result: "431"))
+        #expect(ContinuationLine.parse("\\div 3=8") == .init(op: "\\div", operand: "3", result: "8"))
+        #expect(ContinuationLine.parse("\\times 2 = 16")?.op == "\\times")
+        #expect(ContinuationLine.parse("-3 \\quad -3") == nil)
+        #expect(ContinuationLine.parse("2x+3=11") == nil)
+        #expect(ContinuationLine.result(of: "400+364=764") == "764")
+        #expect(ContinuationLine.result(of: "2x=8") == nil)
+        #expect(ContinuationLine.rewritten(.init(op: "+", operand: "3", result: "767"), after: "764") == "764 + 3 = 767")
+    }
+
     @Test func theFirstBoardsProblemsHeadTheirColumnsToo() async throws {
         let h = Harness()
         await h.start()

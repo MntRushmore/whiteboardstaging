@@ -272,7 +272,9 @@ struct HomeView: View {
     // MARK: Today's practice and the path
 
     @ViewBuilder private var practiceRow: some View {
-        if contentWidth >= 940 {
+        // side by side on a wide screen; one above the other at the largest text sizes (half a
+        // screen each cut the path's skill to "3-digit adding an…")
+        if contentWidth >= 940 && !typeSize.isAccessibilitySize {
             HStack(alignment: .top, spacing: DS.Space.l) {
                 today.frame(width: (contentWidth - DS.Space.l) * 0.56)
                 path
