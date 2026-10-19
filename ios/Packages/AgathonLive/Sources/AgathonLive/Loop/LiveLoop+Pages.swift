@@ -60,9 +60,24 @@ extension LiveLoop {
     /// `side`: the line is true on its own but no step of the problem's chain (a side fact in an
     /// algebra problem, an identity): the next line is not judged against it.
     func reviewOnPage(_ st: LiveLine, _ a: LineAnalysis, judged: String, solvedAbove: Bool, problem: [String],
-                      original: LineAnalysis?) async -> (analysis: LineAnalysis, ownHead: Bool, side: Bool) {
+                      original: LineAnalysis?, above: String? = nil) async -> (analysis: LineAnalysis, ownHead: Bool, side: Bool) {
         pages.partial.remove(st.id)
         var a = a
+        // an operation line continuing the line above (`+3=767` under `400+364=764`, the web's
+        // operation line): true, it is a right step; the running total reaching the problem's value
+        // solves it (the owner's iPad, 2026-10-19: it was ringed)
+        if a.verdict != "ok", let cont = Self.continued(judged, above: above),
+           let check = try? await brain.analyzeLine(cont.form, context: AnalyzeContext(mode: .answer)), check.verdict == "ok" {
+            var r = a
+            r.verdict = "ok"
+            r.note = ""
+            r.kind = "equation"
+            if problem.count == 1, !problem[0].contains("="),
+               let total = try? await brain.analyzeLine("\(problem[0]) = \(cont.result)", context: AnalyzeContext(mode: .answer)), total.verdict == "ok" {
+                r.solved = true
+            }
+            return (r, false, false)
+        }
         // a bare number answering the letter is the answer, not a lone symbol to keep quiet about
         if judged != st.latex { a.bareAnswer = true }
         // a sum of numbers in a problem with letters (`3 × 4 = 12` beside `4x - 5 = 7`) is side work,
@@ -99,6 +114,23 @@ extension LiveLoop {
             }
         }
         return (r, false, sideWork)
+    }
+
+    /// `+3=767` under `400+364=764`: the line above's result, this line's operation, its result, as
+    /// one line (`764 + 3 = 767`). Nil when the line starts with no operator or the line above has no
+    /// result.
+    static func continued(_ latex: String, above: String?) -> (form: String, result: String)? {
+        guard let above, let eq = above.range(of: "=", options: .backwards) else { return nil }
+        let previous = above[eq.upperBound...].trimmingCharacters(in: .whitespaces)
+        guard !previous.isEmpty, previous.range(of: #"[=<>]"#, options: .regularExpression) == nil else { return nil }
+        let pattern = #"^\s*(\+|-|−|\\times|\\div|\\cdot)\s*([^=]+?)\s*=\s*([^=]+?)\s*$"#
+        guard let re = try? NSRegularExpression(pattern: pattern),
+              let m = re.firstMatch(in: latex, range: NSRange(location: 0, length: (latex as NSString).length)), m.numberOfRanges == 4 else { return nil }
+        let ns = latex as NSString
+        let op = ns.substring(with: m.range(at: 1)) == "−" ? "-" : ns.substring(with: m.range(at: 1))
+        let operand = ns.substring(with: m.range(at: 2))
+        let result = ns.substring(with: m.range(at: 3))
+        return ("\(previous) \(op) \(operand) = \(result)", result)
     }
 
     // MARK: - a second problem: "New page for this one"

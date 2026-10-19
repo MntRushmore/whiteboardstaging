@@ -194,6 +194,27 @@ struct ProblemPagesLoopTests {
         }
     }
 
+    /// The owner's iPad (2026-10-19): on `403 + 364 − 336` the kid wrote `400+364=764`, then `+3=767` —
+    /// an operation line going on from the line above — and the tutor circled it.
+    @Test func anOperationLineContinuesTheLineAbove() async throws {
+        for checking in [CheckTiming.asIGo, .whenDone] {
+            let h = Harness(checking: checking)
+            await h.start()
+            problemPage(h, ["403 + 364 - 336"])
+            await h.write("2x = 8", at: Vec2(200, 280), reads: "400+364=764")
+            await h.write("x = 5", at: Vec2(200, 360), reads: "+3=767")
+            await h.write("x = 4", at: Vec2(200, 440), reads: "-336=431")
+            await h.pass(3_500)
+            if checking == .whenDone { h.loop.checkPage(); await h.pass(500) }
+            #expect(h.board.mark(on: "+3=767") == .tick, "\(checking): 764 + 3 = 767 is a right step")
+            #expect(h.board.mark(on: "-336=431") == .tick, "\(checking)")
+            #expect(h.loop.lines.values.first { $0.latex == "-336=431" }?.analysis?.solved == true, "\(checking): the running total is the answer")
+            #expect(!h.board.marks.contains { $0.kind == .ring }, "\(checking): never a ring on a true step")
+        }
+        #expect(LiveLoop.continued("+3=767", above: "400+364=764")?.form == "764 + 3 = 767")
+        #expect(LiveLoop.continued("x = 3", above: "4x = 12") == nil)
+    }
+
     @Test func oneAnswerOfSeveralIsNoSlip() async throws {
         let h = Harness(checking: .whenDone)
         await h.start()

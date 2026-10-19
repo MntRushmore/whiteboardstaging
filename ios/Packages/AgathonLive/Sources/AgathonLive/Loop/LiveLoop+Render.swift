@@ -69,7 +69,8 @@ extension LiveLoop {
                 }
                 // the page's rules before anything is marked: a true step, one answer of several, a
                 // problem of the kid's own are no slips (docs/PROBLEM-PAGES.md)
-                let review = await reviewOnPage(st, raw, judged: judged, solvedAbove: solvedAbove, problem: problem, original: original)
+                let review = await reviewOnPage(st, raw, judged: judged, solvedAbove: solvedAbove, problem: problem, original: original,
+                                                above: above.last)
                 let a = review.analysis
                 if review.ownHead { pages.ownHeads.insert(st.id) } else { pages.ownHeads.remove(st.id) }
                 above.append(st.latex)

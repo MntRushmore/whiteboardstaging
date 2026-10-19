@@ -21,6 +21,7 @@ import XCTest
 final class ProblemPagesUITests: XCTestCase {
     private var app: XCUIApplication!
     private let env = ProcessInfo.processInfo.environment
+    private nonisolated(unsafe) static var autoFillOff = false
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -32,6 +33,10 @@ final class ProblemPagesUITests: XCTestCase {
                 try XCTSkipUnless(["127.0.0.1", "localhost"].contains(host), "\(key) must be the local stack, never production")
             }
         }
+        if !Self.autoFillOff {
+            turnOffPasswordAutoFill()
+            Self.autoFillOff = true
+        }
         XCUIDevice.shared.orientation = .landscapeLeft
     }
 
@@ -39,6 +44,8 @@ final class ProblemPagesUITests: XCTestCase {
         app = XCUIApplication()
         for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY"] { app.launchEnvironment[key] = env[key] }
         app.launchArguments += [
+            // this iPad finished its first run (the argument domain): sign-in, not the onboarding
+            "-agathon.onboarding.finished", "YES",
             "-practiceProblems", "2x + 3 = 11|3x - 5 = 10|5x + 2 = 17",
             "-boardAutowrite", "2x = 8|answer:x = 4|3x = 15|answer:x = 3|5x = 15|answer:x = 3",
             "-liveMisread", "3x = 15=>3 \\times = 15",
@@ -157,6 +164,24 @@ final class ProblemPagesUITests: XCTestCase {
                 return
             }
             usleep(300_000)
+        }
+    }
+
+    /// Settings > General > AutoFill & Passwords > AutoFill Passwords and Passkeys: off (see KitFlowUITests).
+    private func turnOffPasswordAutoFill() {
+        let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+        settings.launch()
+        defer { settings.terminate() }
+        let general = settings.staticTexts["General"].firstMatch
+        guard general.waitForExistence(timeout: 15) else { return }
+        general.tap()
+        let autofill = settings.staticTexts["AutoFill & Passwords"].firstMatch
+        guard autofill.waitForExistence(timeout: 10) else { return }
+        autofill.tap()
+        let toggle = settings.switches.matching(NSPredicate(format: "label BEGINSWITH 'AutoFill Passwords'")).firstMatch
+        guard toggle.waitForExistence(timeout: 10) else { return }
+        if toggle.value as? String == "1" {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
         }
     }
 
