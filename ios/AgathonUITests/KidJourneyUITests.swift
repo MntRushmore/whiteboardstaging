@@ -171,6 +171,8 @@ final class KidJourneyUITests: XCTestCase {
         XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 40))
         // written in the tutor's hand, each heading the column under it
         waitFor("debug.live", matching: #"problems [1-9]"#, timeout: 90)
+        // the day's count and stars on the board
+        XCTAssertTrue(element("board.daily").waitForExistence(timeout: 10), "no Today's practice count on the board")
         sleep(6)
         snap("13b-todays-practice")
         let first = element("debug.live").label

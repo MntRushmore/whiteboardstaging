@@ -168,6 +168,9 @@ private struct BoardTopTrailing: View {
 
     private func row(words: Bool) -> some View {
         HStack(spacing: DS.Space.xs) {
+            if let daily = model.daily {
+                DailyPracticePill(daily: daily) { model.say(DailyPracticePill.reachedWords) }
+            }
             BoardSaveStatus(session: session, showsWords: words)
             if let loop = model.tutor?.loop {
                 LiveStatusView(loop: loop).fixedSize()
@@ -198,6 +201,43 @@ private struct BoardTopTrailing: View {
             }
             .accessibilityLabel(AskCopy.title)
             .accessibilityIdentifier("ask.open")
+        }
+    }
+}
+
+// MARK: - Today's practice
+
+/// Today's practice on its board: how many of the day's problems are finished, with a star for each
+/// solved alone (AgathonLive's `DailyPractice`, saved to the day's row as it goes). Reaching the goal
+/// says so once.
+struct DailyPracticePill: View {
+    @ObservedObject var daily: DailyPractice
+    let onReached: () -> Void
+
+    static let reachedWords = "That's today's practice done. Nice work."
+
+    var body: some View {
+        let done = min(daily.done, daily.goal)
+        HStack(spacing: 6) {
+            DSIcon(.star, size: 16)
+                .foregroundStyle(daily.stars > 0 ? DS.Color.sunny : DS.Color.inkSecondary)
+            Text("\(done) of \(daily.goal)")
+                .dsFont(.button, size: 15)
+                .foregroundStyle(DS.Color.ink)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 40)
+        .background(Capsule().fill(DS.Color.surface))
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Today's practice: \(done) of \(daily.goal) done, \(daily.stars) \(daily.stars == 1 ? "star" : "stars")")
+        .accessibilityValue("\(done)/\(daily.goal) stars \(daily.stars)")
+        .accessibilityIdentifier("board.daily")
+        .onChange(of: daily.reachedNow) { _, now in
+            guard now else { return }
+            onReached()
+            daily.celebrated()
         }
     }
 }
