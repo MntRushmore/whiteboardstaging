@@ -277,7 +277,7 @@ final class KidJourneyUITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 30), "no autowrite button (Debug build with -boardAutowrite)")
         XCTAssertTrue(button.label.contains(expected), "the autowrite's next line is \(button.label), not \(expected)")
         button.tap()
-        let idle = NSPredicate(format: "value != 'busy'")
+        let idle = NSPredicate(format: "exists == false OR value != 'busy'")
         sleep(1)
         _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: idle, object: button)], timeout: 30)
         sleep(1)

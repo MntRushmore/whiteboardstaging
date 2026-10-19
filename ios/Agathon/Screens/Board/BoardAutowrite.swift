@@ -30,7 +30,8 @@ struct BoardAutowriteButton: View {
     }
 
     var body: some View {
-        if let lines = Self.lines, model.tutor != nil {
+        // gone once the script is written (the design pass's shots show the bar as a kid sees it)
+        if let lines = Self.lines, model.tutor != nil, next < lines.count || busy {
             Button {
                 guard !busy, next < lines.count else { return }
                 busy = true

@@ -124,7 +124,7 @@ final class DesignPassUITests: XCTestCase {
         }
         button.tap()
         sleep(1)
-        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != 'busy'"), object: button)], timeout: 30)
+        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false OR value != 'busy'"), object: button)], timeout: 30)
         sleep(1)
     }
 

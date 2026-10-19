@@ -110,8 +110,11 @@ struct BoardDock: View {
             edits
             DockSeparator()
             colors
-            DockSeparator()
-            pages
+            // the pages part only when it has something (arrows, New page): no separator left hanging
+            if (controller.screenCount > 1 && layout.pageArrows) || !layout.newPageInMore {
+                DockSeparator()
+                pages
+            }
         }
         .padding(.horizontal, DockLayout.Size.padding)
         .frame(height: DockLayout.Size.height)
@@ -129,8 +132,10 @@ struct BoardDock: View {
     private var shapesOn: Bool { controller.tool == .shapes }
 
     @ViewBuilder private var tools: some View {
-        DockButton(title: DockCopy.select, isOn: controller.tool == .select, accessibilityHint: DockCopy.selectHint, action: { use(.select) }) {
-            BoardIconView(icon: .select)
+        if !layout.selectInMore {
+            DockButton(title: DockCopy.select, isOn: controller.tool == .select, accessibilityHint: DockCopy.selectHint, action: { use(.select) }) {
+                BoardIconView(icon: .select)
+            }
         }
         DockButton(title: DockCopy.pen, isOn: controller.tool == .pen, action: { use(.pen) }) {
             BoardIconView(icon: .ds(.pen))
@@ -157,8 +162,8 @@ struct BoardDock: View {
         }
         .disabled(!controller.canUndo)
         if layout.redoInMore {
-            // the tool in hand may be in there (a shape): More shows as on then
-            DockButton(title: DockCopy.more, isOn: shapesOn, isOpen: panel == .more || panel == .shapes || panel == .picture, action: { toggle(.more) }) {
+            // the tool in hand may be in there (a shape, Select): More shows as on then
+            DockButton(title: DockCopy.more, isOn: shapesOn || (layout.selectInMore && controller.tool == .select), isOpen: panel == .more || panel == .shapes || panel == .picture, action: { toggle(.more) }) {
                 BoardIconView(icon: .ds(.more))
             }
         } else {
@@ -185,7 +190,7 @@ struct BoardDock: View {
     }
 
     @ViewBuilder private var pages: some View {
-        if controller.screenCount > 1 {
+        if controller.screenCount > 1 && layout.pageArrows {
             pageArrow(.back, DockCopy.previousPage, enabled: controller.screenIndex > 1) { controller.previousScreen() }
             Text(DockCopy.pageShort(controller.screenIndex, controller.screenCount))
                 .font(DS.Font.fixed(.numeral, size: 17))
@@ -269,6 +274,13 @@ struct DockPanelView: View {
             case .colors:
                 PenSwatches(controller: controller, panel: $panel)
             case .more:
+                if layout.selectInMore {
+                    DockButton(title: DockCopy.select, isOn: controller.tool == .select, accessibilityHint: DockCopy.selectHint, action: {
+                        controller.tool = .select
+                        panel = nil
+                    }) { BoardIconView(icon: .select) }
+                    DockSeparator()
+                }
                 shapeButtons
                 DockSeparator()
                 DockButton(title: DockCopy.picture, action: { panel = .picture }) { BoardIconView(icon: .ds(.picture)) }

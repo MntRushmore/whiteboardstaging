@@ -50,7 +50,8 @@ public struct LiveHelpBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel("How much help: \(current.word)")
         .accessibilityIdentifier("live.helpChoice")
-        .popover(isPresented: $choosing, arrowEdge: .top) {
+        // the chooser sits at the bottom of the board: the menu opens above it (below, it was off screen)
+        .popover(isPresented: $choosing, arrowEdge: .bottom) {
             HelpChoiceMenu(selection: current) { level in
                 loop.settings.mode = level.mode
                 choosing = false

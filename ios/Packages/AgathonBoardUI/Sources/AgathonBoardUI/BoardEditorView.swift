@@ -78,7 +78,8 @@ public struct BoardEditorView<TopTrailing: View, Help: View, Overlay: View>: Vie
 
     public var body: some View {
         GeometryReader { geo in
-            let margin: CGFloat = geo.size.width < 900 ? DS.Space.l + 4 : DS.Space.xxl
+            // the narrowest windows (Slide Over, a third of a split view) keep the folded dock whole
+            let margin: CGFloat = geo.size.width < 420 ? 8 : geo.size.width < 900 ? DS.Space.l + 4 : DS.Space.xxl
             let layout = DockLayout.fitting(width: geo.size.width - 2 * margin, helpWidth: helpSize.width, pages: controller.screenCount)
             let top = geo.safeAreaInsets.top + DS.Space.m + DS.Size.round + DS.Space.m
             let bottom = geo.safeAreaInsets.bottom + DS.Space.m + DockLayout.Size.height + DS.Space.m + (layout.helpAbove ? helpSize.height + DS.Space.s : 0)

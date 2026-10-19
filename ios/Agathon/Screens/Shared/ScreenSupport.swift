@@ -31,6 +31,11 @@ func attempt<T: Sendable>(_ operation: @Sendable () async throws -> T) async -> 
 }
 
 enum HomeFormat {
+    /// A new board's name: its day ("Monday’s board").
+    static func newBoardTitle(day: String) -> String {
+        "\(LocalDay.weekdayName(day))’s board"
+    }
+
     private static let relative: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full

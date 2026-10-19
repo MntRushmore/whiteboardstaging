@@ -117,6 +117,10 @@ private struct BoardRoom: View {
             )
             // the keyboard (typing to Ask) never squeezes the board; Ask's panel keeps its box above it
             .ignoresSafeArea(.keyboard)
+            // the board's chrome (its bars, the dock, Help me, the tutor's cards) grows with the text
+            // size up to the largest standard one: at the accessibility sizes the cards and buttons
+            // would leave the screen. Ask's panel, where the reading is, keeps every size.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
         .overlay(alignment: .top) { noticeBanner }
         #if DEBUG
@@ -163,6 +167,11 @@ private struct BoardTopTrailing: View {
                 row(words: true)
                 row(words: false)
                 compact
+                // the narrowest windows: where the work is, and Ask (the grown-ups' settings wait for a wider one)
+                HStack(spacing: DS.Space.xs) {
+                    BoardSaveStatus(session: session, showsWords: false)
+                    askButton(words: false)
+                }
             }
         }
     }

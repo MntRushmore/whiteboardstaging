@@ -99,26 +99,35 @@ public struct Chip: View {
         self.action = action
     }
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     public var body: some View {
+        // at the accessibility text sizes a chip's words wrap (one line would run off its container)
+        let wraps = typeSize.isAccessibilitySize
         Button(action: action) {
             HStack(spacing: 8) {
                 if let icon { DSIcon(icon, size: 18) }
-                Text(title).dsFont(.button, size: 16).lineLimit(1)
+                Text(title).dsFont(.button, size: 16)
+                    .lineLimit(wraps ? 4 : 1)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: wraps)
             }
         }
-        .buttonStyle(ChipStyle(fill: onPaper ? .chalk : .paper))
+        .buttonStyle(ChipStyle(fill: onPaper ? .chalk : .paper, wraps: wraps))
     }
 
     private struct ChipStyle: ButtonStyle {
         let fill: DS.Fill
+        let wraps: Bool
         func makeBody(configuration: Configuration) -> some View {
             configuration.label
                 .foregroundStyle(fill.foreground.color)
                 .padding(.horizontal, 18)
+                .padding(.vertical, wraps ? 10 : 0)
                 .frame(minHeight: 52)
-                .background(Capsule().fill(configuration.isPressed ? fill.pressed.color : fill.background.color))
+                .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(configuration.isPressed ? fill.pressed.color : fill.background.color))
                 .padding(.vertical, 2)
-                .contentShape(Capsule())
+                .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
                 .pressEffect(configuration.isPressed)
         }
     }
