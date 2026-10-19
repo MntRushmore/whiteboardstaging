@@ -59,12 +59,15 @@ The pieces are connected; the old stand-ins stay only in Debug (Labs).
      tutor's hand through Ask's `write_problems` (the brain's desk), once per board
      (`documentMeta.practiceWritten`). Problems written outside the loop (the desk's, the onboarding's
      first board) become `problem` records (`LiveLoop.problemsChanged`, new file
-     `LiveLoop+Problems.swift`), so the kid's work under each is judged against it.
+     `LiveLoop+Problems.swift`), so the kid's work under each is judged against it (the web's
+     `judgeLine` through the brain: a bare answer beside a sum is checked, a step carried on from a
+     slip is marked as carried). The set is written inside `loop.learning.writing(.practice)`, and
+     Today's practice counts with `loop.learning.daily(day:goal:)` (the star pill in the top bar).
    - **Out of ink** (Live's `outOfInk` or Ask's `ink` failure): `OutOfInkView` over the board, kid
      words for a kid profile, the plan (behind the gate) for a grown-up; at most once a minute; the
      status pill keeps saying "Help is paused".
    - **Lifecycle:** background → backup + save at once (a background task); close → save, stop the
-     loop, Ask's reply, voice and mic, then everything is freed (`BoardIntegrationTests`
+     loop, Ask's reply, its pen (lines begun finish whole), voice and mic, then everything is freed (`BoardIntegrationTests`
      `aClosedBoardLetsEverythingGo`). Home reads the boards again when a board closes (and 2 s later,
      for the last save's thumbnail).
 2. **First launch:** `RootView` opens `OnboardingFlow` signed out on an iPad that never finished it
@@ -141,16 +144,61 @@ the dev server's routes first, since a cold `next dev` compiles a route slower t
 
 Use your own `-derivedDataPath` (`DD=`): two worktrees building into one DerivedData mix products.
 
-**State at the hand-off (2026-10-18, 21:20):** `test1Journey` passes from a fresh install through the
-whole first run (the real try check, the app's gate, a real account, the PIN, the kid) into the real
-board (saved, the tutor and Ask on it): `docs/qa-screenshots/ipad-integrate-journey-0*.png`. It then
-stopped at its first Debug autowrite: a tap on the autowrite button (then an overlay over the board)
-never reached it under XCUITest (twice, on clean builds). The button now sits in the editor's own top
-bar, where the Ask Lab's UI test taps `ask.open` fine; rerun `journey` first. The later steps (tick,
-ring, hint, Ask writing, thumbnail, Progress), `family`, `ink`, `resilience`, `a11y` and `design` have
-not run yet, nor the unit suites on the final tree. On the first board the carried try's tick was
-gone on open and its answer read again (one recognize): the loop didn't restore the carried `line`
-(`ChatProblemTests.aCarriedTickStaysOneTick` checks this; run it first).
+The dev server needs `APPLE_ENVIRONMENT=Xcode` (`AgathonTests/ServerFlowTests` posts Xcode-signed
+Apple purchases). The UI tests launch with `-noLabs` (Debug's Labs button sat over Ask's Send).
+
+**State (2026-10-19, `e091e085`, after merging `feat/ipad-app` with the LEARNING lane):** on one tree, through
+`sim-run.sh`, own DerivedData, local stack only —
+
+- every Swift unit suite in the scheme (11 bundles): 644 tests, 637 passed, 0 failed, 7 skipped by design
+  (StoreKitFlowTests is Xcode-only; the billing screenshots, two benches and a snapshot look are opt-in);
+- `KidJourneyUITests`: the whole journey (fresh install → the try ticked → the gate → the account and
+  PIN → the first board with the try's tick carried, once → a tick, a ring, Help me's hint → Ask writes
+  two problems → Home's thumbnail → Progress shows the work), the family switch, Today's practice
+  (written once, its count on the board), out of ink for the kid (kid words, no price) and the
+  grown-up (the plan behind the gate) — all pass;
+- `BoardResilienceUITests` (network lost and found, killed before the save, background, turning while
+  Ask streams), `BoardAccessibilityUITests` (every control named; `ipad-integrate-voiceover-labels.txt`),
+  `BoardPopoverUITests`, `DesignPassUITests` in landscape, portrait, a Split View-sized window and the
+  largest text, and the learning lane's `LearningProgressUITests` — all pass.
+
+Shots: `docs/qa-screenshots/ipad-integrate-*.png`. The design pass found and fixed, over three rounds:
+a tap closing a popover wrote a dot on the board (iPadOS passes it through); the help chooser opened
+off screen; Ask with the keyboard up squeezed the board to nothing (portrait, Split View); the largest
+text pushed the hint card and dock off screen, drew the grown-ups' settings rows over one another and
+hid Ask's Send; the Split View dock overflowed and the grown-ups' button had no room; the pages sheet's
+New page tile was cut off (and duplicated the button); every board was "Untitled Whiteboard" (now the
+day's name, numbered); Progress read "0 minutes" after real work; VoiceOver read each settings row
+twice; the account area cut its tab names at the largest text (and had no Sign out in a narrow
+window). Left, cosmetic: a 16:9 page in portrait leaves wide empty bands; at the largest text the
+docked Ask panel shows one chip before it scrolls; "Come back tomorrow for five more" names the
+default goal (5); Debug's autowrite pill shows in Debug shots.
+
+**The column rules, web vs iPad (2026-10-19, after the owner's rings).** The engine (`judgeLine`,
+`primaryWork`, operation lines, chains, `=`-first lines) is shared through the brain; these are the
+loop's own rules (web `liveLoop.ts`, iPad `AgathonLive/Loop`):
+
+| Web rule | iPad |
+|---|---|
+| A kid's line belongs to the chat problem whose cell its middle is in (`cells.ts` `cellOf`) | Ported 2026-10-19 (was: the problem whose ink box ±40 px it overlapped — the owner's rings) |
+| What `judgeLine` gets: problem, lines above, last right line, slip | Ported; `slipAbove` skipping non-steps ported 2026-10-19 |
+| A young hand's read (`youngRead`: wobbly `=`, the ink's signs, her own tick) | Ported 2026-10-19 (brain `youngRead`) |
+| The problem's end written again, then the answer (`answerBeside`) | Ported 2026-10-19 (`judgeLine` `beside`) |
+| `=`-first lines, chains read link by link, operation lines | Engine, shared |
+| Typeset problems (the hand off) head their columns | iPad fix 2026-10-19 |
+| One line spanning two cells cut apart (`splitAtCells`, `splitBesideProblem`) | Missing (brain `clusterStrokes` takes no cells) |
+| Column gaps kept together under a cell (`columnOptions` filled/together) | Partial: a gap can split a cell's work in two columns, both under the same problem |
+| Stray ink (`withoutStrays`: signs-only lines, her tick, pen taps) | Missing |
+| A bar with a number under it is `\div n` (`barDivisionLatex`) | Missing |
+| Stacked sums, givens (`3x + 24 =` over `x = 3`) | Missing (known gaps) |
+| Re-read both lines before a ring (`holdRing`), re-ring unchanged ink | Missing |
+| iPad-only: `+3 = 767` under `… = 764` is `764 + 3 = 767` (`ContinuationLine`, the owner asked) | The web rings it: port to `primaryWork` |
+| iPad-only: never ring a true line of plain numbers (`ArithmeticTruth`) | The web never rings a true relation either |
+
+**A running total** (the owner's iPad, 2026-10-19): `+3 = 767` under `400 + 364 = 764` was ringed
+(read alone it is `3 = 767`). `AgathonLive/Loop/ContinuationLine.swift` judges `op number = number`
+under a line of arithmetic ending in a number as `764 + 3 = 767` through the column's judge; with
+nothing above to go on from it stays quiet (`ChatProblemTests`).
 
 ## Production
 
@@ -203,8 +251,8 @@ gone on open and its answer read again (one recognize): the loop didn't restore 
 ## Known gaps (from the lanes' reports)
 
 - **Live:**
-  - not yet ported: `learning_attempts` recording, graphs/figures/proofs from ink, stacked sums,
-    "givens"
+  - not yet ported: graphs/figures/proofs from ink, stacked sums, "givens" (`learning_attempts`
+    recording landed with the LEARNING lane; the board's Today's practice and topics use it)
   - slow writers' lines are read about 3 times
 - **Ask:** "Practice my weak spots", the learner record, the topic kickoff, the account's "What Ask
   remembers" view, and real ElevenLabs voice (the QA user had no plan, so only the fallbacks ran).
@@ -212,17 +260,18 @@ gone on open and its answer read again (one recognize): the loop didn't restore 
   - erase speed on a device is unmeasured
   - the highlighter has no dock button
   - no rotate handle
-  - the Pages sheet has no UI test
+  - the Pages sheet's only UI test is the design pass's shot
 - **Saving:** real Storage picture uploads are unverified locally (42P10), and so is the live admin
   viewer.
 - **Billing:** the admin funnel counts sandbox rows, and Apple has no equivalent of the Stripe referral
   month.
-- **Integration (2026-10-18):**
-  - Progress shows the onboarding's try only: the board's own work is recorded once the LEARNING
-    lane's `learning_attempts` recording in AgathonLive lands (call it from `BoardTutor`).
-  - The Debug Labs button sits over the Help level chooser at the bottom right (Debug only).
+- **Integration (2026-10-19):**
   - Offline was tested by cutting connections through a proxy (the simulator's network path stays
     "online"); real airplane mode (NWPathMonitor → "Offline · kept on this iPad") needs the iPad.
+  - The Split View shots come from `-windowWidth 507` (the app laid out at that width in a full
+    window): a popover can reach past that width there; in a real Split View iPadOS keeps it inside.
+  - Needs the owner's iPad and Pencil: Pencil latency and hover, App Attest on a device, the real
+    keyboard over Ask (the simulator's is software), ElevenLabs voice, real airplane mode.
 - **Onboarding:**
   - no avatar art yet
   - App Attest on a real device: the entitlement is in; confirm on the owner's iPad (Debug = Apple's

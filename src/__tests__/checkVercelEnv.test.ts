@@ -137,6 +137,8 @@ describe("envExample: section headers and classification", () => {
       "SKETCH_EVAL_REASONING",
       "RUN_PRIVACY_EVAL",
       "BRAIN_GOLDEN_WRITE",
+      "LEARNING_GOLDEN_WRITE",
+      "RUN_MPX_TEXT_EVAL",
       "GRAPH_GALLERY",
       "FIGURE_GALLERY",
       "LECTURE_GALLERY",

@@ -97,6 +97,8 @@ final class DesignPassUITests: XCTestCase {
 
         // Progress
         if element("home.path").waitForExistence(timeout: 20) {
+            // below Today's practice at the largest text: scrolled into view first
+            for _ in 0..<4 where !element("home.path").isHittable { app.swipeUp(); sleep(1) }
             tap("home.path")
             sleep(4)
             snap("12-progress")

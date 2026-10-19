@@ -81,6 +81,9 @@ public final class LiveLoop: ObservableObject {
     @Published public internal(set) var bigBurst = 0
     /// "Graph it" chips beside function lines just read (`LiveLoop+Graph`).
     @Published public internal(set) var graphOffers: [GraphOffer] = []
+    /// Problem pages, check when done and "I read" (`LiveLoop+Check`, `+Pages`, `+Fix`;
+    /// docs/PROBLEM-PAGES.md): what the board shows for them, and what the loop remembers.
+    public let pages = LivePages()
 
     // MARK: the learning record
 
@@ -349,6 +352,8 @@ public final class LiveLoop: ObservableObject {
         settled = false
         cancelHandwriting()
         dropEarlyReads()
+        // problem pages: what the loop remembered of the page left (its records keep what matters)
+        pages.reset()
         for r in rt.values {
             r.checkTask?.cancel()
             r.solveTask?.cancel()
@@ -407,6 +412,14 @@ public final class LiveLoop: ObservableObject {
     func settingsChanged(from old: LiveSettings) {
         settings.save(boardId: boardId)
         guard started else { return }
+        if old.checking != settings.checking {
+            // into "when they're done": what is marked now stays (checked at its reading)
+            if settings.checking == .whenDone {
+                for st in lines.values where !st.latex.isEmpty && pages.released[st.id] == nil { pages.released[st.id] = st.latex }
+            }
+            reanalyzeAll()
+        }
+        if old.showReadings != settings.showReadings || old.checking != settings.checking { refreshPage() }
         if !settings.enabled || settings.mode == .off { withdrawGraphOffers() }
         if old.enabled != settings.enabled {
             if !settings.enabled {
@@ -525,6 +538,8 @@ struct ProblemHead: Equatable {
     var lines: [String]
     var rect: BrainRect
     var analyses: [LineAnalysis?] = []
+    /// a chat problem's grid cell: the kid's lines whose middle is in it are its work (the web's `cellOf`)
+    var cell: BrainRect?
 }
 
 /// The latencies the Lab shows and the logs keep (ms).

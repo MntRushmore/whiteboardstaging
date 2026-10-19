@@ -31,7 +31,7 @@ struct LocalStackLiveTests {
         let board = TestBoard()
         let scheduler = ManualScheduler()
         let loop = LiveLoop(board: board, boardId: "ios-live-integration", services: LiveAPIServices(backend: backend),
-                            settings: LiveSettings(enabled: true, mode: .feedback, auto: true), brain: TestBrain.shared,
+                            settings: LiveSettings(enabled: true, mode: .feedback, auto: true, checking: .asIGo), brain: TestBrain.shared,
                             background: TestBrain.background, scheduler: scheduler, connectivity: ManualConnectivity())
         loop.start()
         await loop.waitUntilIdle()

@@ -22,6 +22,12 @@ public protocol BoardRendering: AnyObject {
     func sceneReset(_ index: SceneIndex, screen: ScreenRecord, done: @escaping () -> Void)
     /// some records of the current screen changed
     func sceneChanged(_ delta: SceneDelta, index: SceneIndex)
+    /// the current screen's own record changed (its `meta.page`: a problem page's template)
+    func screenChanged(_ screen: ScreenRecord)
+}
+
+extension BoardRendering {
+    public func screenChanged(_ screen: ScreenRecord) {}
 }
 
 /// The tool in the kid's hand.
@@ -154,6 +160,8 @@ public final class BoardController: ObservableObject {
     private var docBytesScheduled = false
     /// per screen, the store's `seq` when it last changed (thumbnails redraw when it moves)
     private var screenRevisions: [RecordID: UInt64] = [:]
+    /// the current screen's place in the screens' order (where to go back to if it goes)
+    private var currentOrder: OrderKey?
 
     static let fingerKey = "agathon.board.drawWithFinger"
     static let pencilKey = "agathon.board.pencilSeen"
@@ -216,8 +224,11 @@ public final class BoardController: ObservableObject {
             store.put(.screen(s), origin: .system)
             currentScreenID = s.id
         } else if store[currentScreenID]?.screen == nil {
-            currentScreenID = store.screenIDs[0]
+            // the one before where the current screen was, else the first
+            let before = currentOrder.flatMap { gone in store.screens.last { $0.order < gone } }
+            currentScreenID = before?.id ?? store.screenIDs[0]
         }
+        currentOrder = store[currentScreenID]?.screen?.order
     }
 
     /// Lays out and draws the current screen from scratch (off the main thread for a big screen).
@@ -325,9 +336,12 @@ public final class BoardController: ObservableObject {
         if newImages { requestImages() }
         if screensChanged {
             if store[currentScreenID]?.screen == nil {
-                // the current screen went (an undo of "new screen"): show its neighbour
+                // the current screen went (an undo of "new screen", of "New page for this one"): show
+                // the screen before it
                 ensureScreen()
                 resetScene()
+            } else if change.ids.contains(currentScreenID), let screen = currentScreen {
+                renderer?.screenChanged(screen)
             }
             refreshCounts()
         }
@@ -615,6 +629,7 @@ public final class BoardController: ObservableObject {
         guard id != currentScreenID, store[id]?.screen != nil else { return }
         clearSelection()
         currentScreenID = id
+        currentOrder = store[id]?.screen?.order
         refreshCounts()
         resetScene()
     }
@@ -641,6 +656,87 @@ public final class BoardController: ObservableObject {
         store.put(.screen(s), origin: .kid)
         goToScreen(s.id)
         return true
+    }
+
+    /// A blank screen put right after `after` (the current screen when nil; the end when `after` is
+    /// the last), with `meta` (a problem page's `page`), shown when `go`. One change of `origin`:
+    /// the tutor's pages (a practice set) are no step the kid undoes; the kid's own are. Nil at the
+    /// cap (50).
+    @discardableResult
+    public func insertScreen(after: RecordID? = nil, meta: Meta = [:], origin: ChangeOrigin = .kid, go: Bool = true) -> RecordID? {
+        let screens = store.screens
+        guard screens.count < ScreenRecord.maxScreens else {
+            notice = BoardNotice(kind: .boardFull)
+            return nil
+        }
+        let anchor = after ?? currentScreenID
+        let order: OrderKey
+        if let i = screens.firstIndex(where: { $0.id == anchor }) {
+            let next = i + 1 < screens.count ? screens[i + 1].order : nil
+            order = (try? OrderKey.between(screens[i].order, next)) ?? OrderKey.after(screens.last?.order)
+        } else {
+            order = OrderKey.after(screens.last?.order)
+        }
+        let s = ScreenRecord(order: order, name: "Screen \(screens.count + 1)", meta: meta)
+        store.put(.screen(s), origin: origin)
+        if go { goToScreen(s.id) } else { refreshCounts() }
+        return s.id
+    }
+
+    /// The kid's "New page for this one" (docs/PROBLEM-PAGES.md): `ids` (strokes and shapes of the
+    /// current screen) move to a new screen right after it, shifted by `offset`, with `meta` on the
+    /// screen, and `alsoRemove` (what the tutor read and marked there for that ink) goes — all as ONE
+    /// kid undo step. The board then shows the new screen. Nil at the cap, or with nothing to move.
+    @discardableResult
+    public func moveToNewScreen(_ ids: [RecordID], offset: Vec2 = .zero, meta: Meta = [:], alsoRemove: [RecordID] = []) -> RecordID? {
+        let from = currentScreenID
+        let moving = ids.compactMap { store[$0] }.filter { $0.screenID == from && ($0.type == .stroke || $0.type == .shape) }
+        guard !moving.isEmpty else { return nil }
+        let screens = store.screens
+        guard screens.count < ScreenRecord.maxScreens else {
+            notice = BoardNotice(kind: .boardFull)
+            return nil
+        }
+        let i = screens.firstIndex { $0.id == from }
+        let next = i.flatMap { $0 + 1 < screens.count ? screens[$0 + 1].order : nil }
+        let order = (i.flatMap { try? OrderKey.between(screens[$0].order, next) }) ?? OrderKey.after(screens.last?.order)
+        let screen = ScreenRecord(order: order, name: "Screen \(screens.count + 1)", meta: meta)
+        // z-order kept: fresh keys on the new screen, bottom to top
+        let sorted = moving.sorted { ($0.order ?? .first) != ($1.order ?? .first) ? ($0.order ?? .first) < ($1.order ?? .first) : $0.id < $1.id }
+        clearSelection()
+        store.transact(.kid) { tx in
+            tx.put(.screen(screen))
+            var key = OrderKey.first
+            for r in sorted {
+                switch r {
+                case .stroke(var s):
+                    s.screen = screen.id
+                    s.order = key
+                    s.x += offset.x
+                    s.y += offset.y
+                    tx.put(.stroke(s))
+                case .shape(var s):
+                    s.screen = screen.id
+                    s.order = key
+                    s.x += offset.x
+                    s.y += offset.y
+                    tx.put(.shape(s))
+                default:
+                    continue
+                }
+                key = OrderKey.after(key)
+            }
+            for id in alsoRemove where tx[id] != nil && !ids.contains(id) { tx.remove(id) }
+        }
+        goToScreen(screen.id)
+        return screen.id
+    }
+
+    /// Sets a screen's problem page (or makes it plain with nil): the tutor's, never a kid's undo step.
+    public func setProblemPage(_ page: ProblemPage?, on id: RecordID, origin: ChangeOrigin = .tutor) {
+        guard case .screen(var s)? = store[id], s.problemPage != page else { return }
+        s.problemPage = page
+        store.put(.screen(s), origin: origin)
     }
 
     /// Deletes a screen and everything on it (ink, objects, what the tutor read and marked there) as

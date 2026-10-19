@@ -87,6 +87,8 @@ extension LiveLoop {
         }
         // the kid is working again: the tutor puts the pen down, finishing what it began
         cancelHandwriting()
+        // check when done: the long pause starts again, the answer spot's quiet, the chips step aside
+        pageInk(fresh: fresh, changed: finished.map(\.id.rawValue) + Array(touchedIds))
         let rewrite = dirtyStrokes.contains { id in lineOfStroke(id).map { !($0.latex.isEmpty) } ?? false }
         pendingRewrite = pendingRewrite || rewrite
         armQuietTimer()
@@ -97,6 +99,8 @@ extension LiveLoop {
     func noteTutorChanges(_ change: ChangeSet, screen: RecordID) {
         // a problem the tutor wrote is a new problem for the learning record
         learnTutorChanges(change)
+        // the page on show became a problem page (a practice set's), or its page changed
+        if change.ids.contains(screen) { refreshPage() }
     }
 
     /// The kid's pen on the board (from the board's touch observer, or the Lab's replay).
@@ -269,6 +273,11 @@ extension LiveLoop {
         celebrate.forget(id)
         settler.removed(id)
         lines[id] = nil
+        pages.released[id] = nil
+        pages.ownHeads.remove(id)
+        pages.partial.remove(id)
+        pages.second[id] = nil
+        if pages.fixing?.id == id { pages.fixing = nil }
         let screen = board.currentScreenID
         let lineRecord = RecordID("line:\(id)")
         let owned = board.store.liveRecords(on: screen, lineId: id).map(\.id)
@@ -279,6 +288,7 @@ extension LiveLoop {
         let gone = owned + marks + (board.store[lineRecord] != nil ? [lineRecord] : [])
         if !gone.isEmpty { board.store.remove(gone, origin: .tutor) }
         refreshActivity()
+        refreshPage()
     }
 
     // MARK: - rebuild: a board opened, a screen switched
@@ -291,17 +301,25 @@ extension LiveLoop {
         let screen = board.currentScreenID
         let store = board.store
         var seeds: [InkLine] = []
-        var reads: [String: (latex: String, confidence: Double, warned: String?)] = [:]
+        var reads: [String: (latex: String, confidence: Double, warned: String?, provider: ReadProvider)] = [:]
+        let markedLines = Set(store.semantic(on: screen).compactMap { r -> RecordID? in
+            if case .mark(let m) = r { return m.target }
+            return nil
+        })
         for case .line(let l) in store.semantic(on: screen) {
-            let ids = l.strokes.map(\.rawValue).filter { store[RecordID($0)] != nil }
+            // a stroke moved to another page ("New page for this one") is no ink of this page's
+            let ids = l.strokes.map(\.rawValue).filter { store[RecordID($0)]?.screenID == screen }
             guard !ids.isEmpty else { continue }
             let boxes = ids.compactMap { store.stroke(RecordID($0)).map(StrokeBounds.of) }
             guard let bounds = BrainRect.around(boxes) else { continue }
             let key = String(l.id.key)
             seeds.append(InkLine.make(id: key, strokeIds: ids, bounds: bounds, hash: l.meta.string(LiveMeta.hash)))
             if !l.latex.isEmpty {
-                reads[key] = (l.latex, l.meta[LiveMeta.confidence]?.numberValue ?? 1, l.meta[LiveMeta.aiWarnLatex]?.stringValue)
+                let fixed = l.meta.string(LiveMeta.provider) == ReadProvider.fixed.rawValue
+                reads[key] = (l.latex, l.meta[LiveMeta.confidence]?.numberValue ?? 1, l.meta[LiveMeta.aiWarnLatex]?.stringValue, fixed ? .fixed : .restored)
             }
+            // checked at, the kid's own reading, the second opinion (problem pages)
+            restorePageState(l, key: key, latex: l.latex, marked: markedLines.contains(l.id))
         }
         let strokes = store.kidStrokes(on: screen)
         let gen = generation
@@ -319,7 +337,7 @@ extension LiveLoop {
                 if let read = reads[ink.id], Set(seeds.first(where: { $0.id == ink.id })?.strokeIds ?? []) == Set(ink.strokeIds) {
                     line.latex = read.latex
                     line.confidence = read.confidence
-                    line.provider = .restored
+                    line.provider = read.provider
                     line.modelWarned = read.warned
                 } else {
                     unread.append(ink)
@@ -331,6 +349,7 @@ extension LiveLoop {
             for st in self.lines.values where !st.latex.isEmpty { _ = self.autoOnce(self.autoKey("check", st)) }
             // ink never read (written with Live off, or offline before a reload): read now
             for ink in unread { self.processLine(ink, moveOnly: false) }
+            self.refreshPage()
         }
     }
 
@@ -344,7 +363,8 @@ extension LiveLoop {
             guard let latex = p.latex, !latex.isEmpty, let rect = p.meta[LiveMeta.rect].flatMap(BrainRect.init(meta:)) else { continue }
             let old = heads.first { $0.id == p.id }
             let lines = latex.components(separatedBy: "\n").filter { !$0.isEmpty }
-            next.append(ProblemHead(id: p.id, lines: lines, rect: rect, analyses: old?.lines == lines ? old?.analyses ?? [] : []))
+            let cell = p.meta[Self.problemCellMeta].flatMap(BrainRect.init(meta:))
+            next.append(ProblemHead(id: p.id, lines: lines, rect: rect, analyses: old?.lines == lines ? old?.analyses ?? [] : [], cell: cell))
         }
         heads = next
     }
@@ -366,11 +386,14 @@ extension LiveLoop {
     func anchorAtProblems(_ input: [InkLine]) -> [InkLine] {
         columnHeads = [:]
         guard !heads.isEmpty, !input.isEmpty else { return input }
-        var homes = input.map { problemHome(for: $0.bounds) }
+        // a problem page: all its ink is the page's problem's work, wherever it is (docs/PROBLEM-PAGES.md)
+        let onPage = pageHomes(input)
+        var homes = onPage ?? input.map { problemHome(for: $0.bounds) }
         guard homes.contains(where: { $0 != nil }) else { return input }
         // work under a problem but far below it is not its work (the column keeps its own)
-        for (i, l) in input.enumerated() {
-            guard let home = homes[i], let head = heads.first(where: { $0.id == home }), !Self.besideProblem(l.bounds, head.rect) else { continue }
+        for (i, l) in input.enumerated() where onPage == nil {
+            // (a chat problem's cell says where its work is, however far down: the web's `cellOf`)
+            guard let home = homes[i], let head = heads.first(where: { $0.id == home }), head.cell == nil, !Self.besideProblem(l.bounds, head.rect) else { continue }
             let top = input.indices.filter { input[$0].column == l.column && homes[$0] == home }.map { input[$0].bounds.y }.min() ?? l.bounds.y
             if top - head.rect.maxY >= 360 { homes[i] = nil }
         }
@@ -400,9 +423,20 @@ extension LiveLoop {
     /// The tutor's problem a line of the kid's belongs to: the one it is beside, on its row (an
     /// answer after it), else the nearest one above it over the same stretch of the page.
     func problemHome(for b: BrainRect) -> RecordID? {
-        if let beside = heads.first(where: { Self.besideProblem(b, $0.rect) }) { return beside.id }
+        // a chat problem in its grid cell (practice, Ask's problems): the cell the line's middle is
+        // in, level with the problem or below it, or beside it on its row — the web's `cellOf`. By
+        // the ink's own box, a kid's wide line under problem 1 reached past problem 2's ink and was
+        // judged as problem 2's work (the owner's iPad, 2026-10-19)
+        let cx = b.x + b.w / 2, cy = b.y + b.h / 2
+        for h in heads {
+            guard let r = h.cell else { continue }
+            if cx < r.x || cx > r.maxX || cy > r.maxY { continue }
+            if (cy < r.y || cy < h.rect.y) && !Self.besideProblem(b, h.rect) { continue }
+            return h.id
+        }
+        if let beside = heads.first(where: { $0.cell == nil && Self.besideProblem(b, $0.rect) }) { return beside.id }
         return heads
-            .filter { $0.rect.maxY <= b.y + b.h * 0.5 && $0.rect.x < b.maxX + 40 && $0.rect.maxX > b.x - 40 }
+            .filter { $0.cell == nil && $0.rect.maxY <= b.y + b.h * 0.5 && $0.rect.x < b.maxX + 40 && $0.rect.maxX > b.x - 40 }
             .max { $0.rect.maxY < $1.rect.maxY }?.id
     }
 

@@ -82,6 +82,24 @@ public final class CanvasLiveBoard: LiveBoard, LiveCanvasGeometry {
         controller.addScreen() ? controller.currentScreenID : nil
     }
 
+    // problem pages: the board's own page operations
+
+    public func goToScreen(_ id: RecordID) {
+        controller.goToScreen(id)
+    }
+
+    public func insertScreen(after: RecordID?, meta: Meta, go: Bool) -> RecordID? {
+        controller.insertScreen(after: after, meta: meta, origin: .tutor, go: go)
+    }
+
+    public func setProblemPage(_ page: ProblemPage?, on id: RecordID) {
+        controller.setProblemPage(page, on: id, origin: .tutor)
+    }
+
+    public func moveToNewScreen(_ ids: [RecordID], offset: Vec2, meta: Meta, alsoRemove: [RecordID]) -> RecordID? {
+        controller.moveToNewScreen(ids, offset: offset, meta: meta, alsoRemove: alsoRemove)
+    }
+
     // MARK: LiveCanvasGeometry
 
     public func viewPoint(_ page: AgathonBrain.Point) -> CGPoint {

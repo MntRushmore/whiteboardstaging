@@ -38,6 +38,8 @@ extension LiveLoop {
     public func helpMe() {
         guard settings.enabled, settings.mode != .off else { return }
         noteAsked()
+        // check when done: Help me checks the line's column first (its marks come with the help)
+        if checksWhenDone, let target = helpTargetLine(), !reading.contains(target.id) { releaseColumn(target.column, reason: .help) }
         if helpAfterRead() { return }
         _ = helpNow()
     }
@@ -550,7 +552,7 @@ extension LiveLoop {
         var due: [Int: [LiveLine]] = [:]
         for st in lines.values {
             if let column, st.column != column { continue }
-            guard !st.latex.isEmpty, !reading.contains(st.id), rt[st.id]?.checkTask == nil else { continue }
+            guard !st.latex.isEmpty, !reading.contains(st.id), rt[st.id]?.checkTask == nil, !isHeld(st) else { continue }
             guard decision(st, settled: stopped ?? settled).runLlmCheck, !autoDone.contains(autoKey("check", st)) else { continue }
             due[st.column, default: []].append(st)
         }
@@ -586,8 +588,8 @@ extension LiveLoop {
 
     /// The line Auto works on: where the pen last wrote (never a pick, never an old line).
     func autoTarget() -> LiveLine? {
-        guard penStrokeId != nil, board.selection.isEmpty, let id = penLineId else { return nil }
-        return lines[id]
+        guard penStrokeId != nil, board.selection.isEmpty, let id = penLineId, let st = lines[id], !isHeld(st) else { return nil }
+        return st
     }
 
     /// A line Auto may finish: maths the tutor judges, with a next step, not solved, no ring in its

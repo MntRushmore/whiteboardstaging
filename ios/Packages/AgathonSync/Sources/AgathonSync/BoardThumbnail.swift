@@ -21,7 +21,11 @@ public enum BoardThumbnail {
         if store.screenIDs.allSatisfy({ store.drawableCount(on: $0) == 0 }) { return .clear }
         guard let scene = scene(store: store, screen: screen) else { return .keep }
         let start = memory?.start(now) ?? 0
-        let fit = await Task.detached(priority: .utility) { fitted(scene.items, rect: scene.rect, maxChars: maxChars, startAt: start) }.value
+        // a problem page's guide lines and answer spot, faint, under the ink (docs/PROBLEM-PAGES.md)
+        let template = store[screen]?.screen.flatMap { s in s.problemPage.flatMap { PageTemplate(page: $0, screen: s.rect) } }
+        let fit = await Task.detached(priority: .utility) {
+            fitted(scene.items, rect: scene.rect, maxChars: maxChars, startAt: start, template: template)
+        }.value
         memory?.fitted(fit?.rung)
         return fit.map { .set($0.url) } ?? .keep
     }
@@ -39,11 +43,11 @@ public enum BoardThumbnail {
     }
 
     /// The first rung, from `startAt` down, whose data URL fits `maxChars`.
-    public static func fitted(_ items: [RenderItem], rect: Box, maxChars: Int, startAt: Int = 0) -> (url: String, rung: Int)? {
+    public static func fitted(_ items: [RenderItem], rect: Box, maxChars: Int, startAt: Int = 0, template: PageTemplate? = nil) -> (url: String, rung: Int)? {
         var images: [Double: CGImage] = [:]
         for rung in max(0, startAt)..<rungs.count {
             let (width, quality) = rungs[rung]
-            if images[width] == nil { images[width] = render(items, rect: rect, width: width) }
+            if images[width] == nil { images[width] = render(items, rect: rect, width: width, template: template) }
             guard let image = images[width], let jpeg = jpeg(image, quality: quality) else { continue }
             let length = "data:image/jpeg;base64,".count + 4 * ((jpeg.count + 2) / 3)
             if length <= maxChars { return ("data:image/jpeg;base64,\(jpeg.base64EncodedString())", rung) }
@@ -51,8 +55,8 @@ public enum BoardThumbnail {
         return nil
     }
 
-    /// The screen at `width` px wide (16:9), on white.
-    public static func render(_ items: [RenderItem], rect: Box, width: Double) -> CGImage? {
+    /// The screen at `width` px wide (16:9), on white (a problem page's template under the ink).
+    public static func render(_ items: [RenderItem], rect: Box, width: Double, template: PageTemplate? = nil) -> CGImage? {
         let w = Int(width.rounded())
         let h = Int((width * 9 / 16).rounded())
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
@@ -63,6 +67,7 @@ public enum BoardThumbnail {
         // the screen's rect fills the picture (a grown legacy screen is 16:9 too)
         let scale = Double(w) / max(1, rect.w)
         TileRasterizer.preparePageSpace(ctx, rect: rect, scale: scale, pixelHeight: h)
+        template?.draw(in: ctx, colors: .blocks)
         for item in items where item.bounds.intersects(rect) { item.draw(in: ctx) }
         return ctx.makeImage()
     }

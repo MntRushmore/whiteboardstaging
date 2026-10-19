@@ -24,9 +24,10 @@ public struct GrownUpLiveButton: View {
     }
 }
 
-/// For grown-ups: how much help (Off, Hint, Next step, Solve it), Auto, the tutor's hand,
-/// celebrations, Live itself, answers after `=` (homework checking; off by default), and clearing
-/// the tutor's marks.
+/// For grown-ups: how much help (Off, Hint, Next step, Solve it), when the work is checked (when
+/// they're done, the default; or as they go), Auto, the tutor's hand, celebrations, Live itself,
+/// "I read" beside each line, answers after `=` (homework checking; off by default), and clearing the
+/// tutor's marks.
 public struct GrownUpLiveSettings: View {
     @ObservedObject var loop: LiveLoop
     let close: () -> Void
@@ -62,12 +63,29 @@ public struct GrownUpLiveSettings: View {
                 ], onPaper: true)
                 .accessibilityIdentifier("live.dial")
             }
+            if ProblemPagesRollout.secondPart {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
+                Text(LiveCopy.GrownUps.checking).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
+                SegmentedPicker(selection: $loop.settings.checking, options: [
+                    (CheckTiming.whenDone, LiveCopy.GrownUps.whenDone),
+                    (CheckTiming.asIGo, LiveCopy.GrownUps.asTheyGo),
+                ], onPaper: true)
+                .accessibilityIdentifier("live.checking")
+                Text(loop.settings.checking == .whenDone ? LiveCopy.GrownUps.whenDoneDetail : LiveCopy.GrownUps.asTheyGoDetail)
+                    .dsFont(.caption).foregroundStyle(DS.Color.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            }
             VStack(spacing: DS.Space.xs) {
                 LiveSwitch(LiveCopy.GrownUps.auto, detail: loop.settings.auto ? LiveCopy.GrownUps.autoOn : LiveCopy.GrownUps.autoOff, isOn: $loop.settings.auto)
                     .accessibilityIdentifier("live.auto")
                 LiveSwitch(LiveCopy.GrownUps.handwriting, isOn: $loop.settings.handwriting)
                 LiveSwitch(LiveCopy.GrownUps.celebrations, isOn: $loop.settings.celebrations)
                 LiveSwitch(LiveCopy.GrownUps.live, isOn: $loop.settings.enabled)
+                if ProblemPagesRollout.secondPart {
+                    LiveSwitch(LiveCopy.GrownUps.showReadings, detail: LiveCopy.GrownUps.showReadingsDetail, isOn: $loop.settings.showReadings)
+                        .accessibilityIdentifier("live.showReadings")
+                }
                 LiveSwitch(LiveCopy.GrownUps.answerOnEquals, detail: LiveCopy.GrownUps.answerOnEqualsDetail, isOn: $loop.settings.answerOnEquals)
                     .accessibilityIdentifier("live.answerOnEquals")
             }

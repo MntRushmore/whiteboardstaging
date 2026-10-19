@@ -110,12 +110,15 @@ extension LiveLoop {
     /// hand at the kid's size.
     func writeProblem(_ problem: [String], origin: String, parent: String?, parentAttempt: String? = nil) async -> Bool {
         let kidHeight = lines.values.map(\.bounds.h).sorted().dropFirst(lines.count / 2).first ?? 48
-        guard let plan = await plan(problem, lineHeight: max(40, kidHeight), seedKey: "problem:\(problem.joined())") else { return false }
+        guard let plan = await plan(problem, lineHeight: max(48, kidHeight), seedKey: "problem:\(problem.joined())") else { return false }
         let screenRect = board.screenRect
         let margin = 80.0
         let used = BrainRect.around(avoidRects())
         var at = AgathonBrain.Point(x: screenRect.x + margin, y: screenRect.y + margin)
-        if let used {
+        // one problem per page (docs/PROBLEM-PAGES.md): its own page, right after this one
+        if let page = ownPageForProblem(origin: origin) {
+            at = page
+        } else if let used {
             let below = used.maxY + 70
             // room for the problem and three lines of work under it
             if below + plan.bounds.h + 3 * 70 < screenRect.maxY {
@@ -135,6 +138,7 @@ extension LiveLoop {
         if let parentAttempt { meta[Self.parentAttemptMeta] = .string(parentAttempt) }
         let record = ProblemRecord(id: id, screen: board.currentScreenID, lines: [], latex: problem.joined(separator: "\n"), origin: origin, meta: meta)
         board.store.put(.problem(record), origin: .tutor)
+        pageProblemWritten(id, bounds: placed.bounds)
         refreshHeads()
         reanchorLines()
         startHandwriting(placed, lineId: "problem:\(id.key)")

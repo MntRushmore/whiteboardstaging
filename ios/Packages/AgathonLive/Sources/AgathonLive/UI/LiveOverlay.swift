@@ -1,4 +1,5 @@
 import AgathonBrain
+import Combine
 import AgathonDesign
 import SwiftUI
 
@@ -13,6 +14,8 @@ public struct LiveOverlay: View {
     let onGrownUp: () -> Void
     let onSpeak: ((String) -> Void)?
     let showsOutOfInk: Bool
+    let onAllDoneBack: (() -> Void)?
+    let onMoreLikeThese: (() -> Void)?
     @State private var outOfInkSeen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -22,13 +25,16 @@ public struct LiveOverlay: View {
     ///   - onSpeak: the hint card's speaker (read aloud is Ask's lane; nil hides the button)
     ///   - showsOutOfInk: the out-of-ink card over the board (false: the app shows its own screen for
     ///     it, and the status pill keeps saying "Help is paused")
+    ///   - onAllDoneBack / onMoreLikeThese: the All done page's buttons (nil hides one)
     public init(loop: LiveLoop, geometry: LiveCanvasGeometry, onGrownUp: @escaping () -> Void = {}, onSpeak: ((String) -> Void)? = nil,
-                showsOutOfInk: Bool = true) {
+                showsOutOfInk: Bool = true, onAllDoneBack: (() -> Void)? = nil, onMoreLikeThese: (() -> Void)? = nil) {
         self.loop = loop
         self.geometry = geometry
         self.onGrownUp = onGrownUp
         self.onSpeak = onSpeak
         self.showsOutOfInk = showsOutOfInk
+        self.onAllDoneBack = onAllDoneBack
+        self.onMoreLikeThese = onMoreLikeThese
     }
 
     private var following: Bool { !loop.hints.isEmpty || !loop.cheers.isEmpty || !loop.readbacks.isEmpty || !loop.graphOffers.isEmpty }
@@ -37,6 +43,8 @@ public struct LiveOverlay: View {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !following)) { _ in
             ZStack(alignment: .topLeading) {
                 Color.clear
+                // problem pages: "I read", the action corner, "New page for this one", All done
+                PagesLayer(pages: loop.pages, loop: loop, geometry: geometry, onAllDoneBack: onAllDoneBack, onMoreLikeThese: onMoreLikeThese)
                 ForEach(loop.readbacks) { r in readback(r) }
                 ForEach(loop.graphOffers) { g in graphChip(g) }
                 ForEach(loop.cheers) { c in cheer(c) }
@@ -126,6 +134,126 @@ public struct LiveOverlay: View {
             .alignmentGuide(.leading) { _ in -x }
             .alignmentGuide(.top) { d in roomBelow ? -(below.y + 14) : -(above.y - 14 - d.height) }
             .transition(reduceMotion ? .opacity : .scale(scale: 0.9, anchor: roomBelow ? .topLeading : .bottomLeading).combined(with: .opacity))
+    }
+}
+
+/// Problem pages over the board (docs/PROBLEM-PAGES.md), following the camera: the "I read" chips
+/// (a tap opens "Fix what I read"), Check / Next in the page's action corner, "New page for this one"
+/// under a second problem, and the All done card on the page that ends a set.
+struct PagesLayer: View {
+    @ObservedObject var pages: LivePages
+    let loop: LiveLoop
+    let geometry: LiveCanvasGeometry
+    let onAllDoneBack: (() -> Void)?
+    let onMoreLikeThese: (() -> Void)?
+    /// bumped when the camera moves (the board's own viewport): everything here follows it
+    @State private var cameraTick = 0
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.clear
+            if !pages.chipsHidden {
+                ForEach(pages.readings) { r in chip(r) }
+            }
+            if let offer = pages.offer { offerBar(offer) }
+            if let action = pages.action { corner(action) }
+            if pages.page?.kind == .done { allDone }
+        }
+        .onReceive(cameraChanges) { _ in cameraTick &+= 1 }
+        .sheet(item: Binding(get: { pages.fixing.map { FixID(id: $0.id) } }, set: { if $0 == nil { loop.closeFix() } })) { _ in
+            // the sheet watches the pages itself: the readings it may have been arrive after it opens
+            FixSheetHost(pages: pages, loop: loop)
+                .presentationDetents([.large])
+                .presentationCornerRadius(DS.Radius.card)
+        }
+        .dsAnimation(DS.Motion.snap, value: pages.action)
+        .dsAnimation(DS.Motion.snap, value: pages.offer)
+    }
+
+    /// The canvas's camera, when the geometry is the app's board (else the overlay's own clock follows).
+    /// Its moves only: a `@Published` publisher replays its value to every new subscriber, and a new
+    /// subscription on each render bumping `cameraTick` would render again, for ever.
+    private var cameraChanges: AnyPublisher<Void, Never> {
+        #if canImport(UIKit)
+        if let canvas = geometry as? CanvasLiveBoard {
+            return canvas.controller.viewport.$camera.dropFirst().removeDuplicates().map { _ in () }.eraseToAnyPublisher()
+        }
+        #endif
+        return Empty().eraseToAnyPublisher()
+    }
+
+    private func point(_ x: Double, _ y: Double) -> CGPoint {
+        _ = cameraTick
+        return geometry.viewPoint(AgathonBrain.Point(x: x, y: y))
+    }
+
+    /// The page's rect on screen (view points).
+    private var pageFrame: CGRect {
+        let r = loop.board.screenRect
+        let a = point(r.x, r.y)
+        let b = point(r.x + r.w, r.y + r.h)
+        return CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
+    }
+
+    private func chip(_ r: LineReading) -> some View {
+        let at = point(r.at.x, r.at.y)
+        let size = geometry.viewSize
+        return ReadbackChip(reading: r) { loop.openFix(r.id) }
+            .alignmentGuide(.leading) { d in -min(at.x, max(8, size.width - d.width - 8)) }
+            .alignmentGuide(.top) { d in -(at.y - d.height / 2) }
+            .transition(.opacity)
+    }
+
+    private func offerBar(_ offer: NewPageOffer) -> some View {
+        let at = point(offer.anchor.x, offer.anchor.y + offer.anchor.h)
+        return NewPageOfferBar(take: { loop.takeNewPage() }, keep: { loop.keepHere() })
+            .alignmentGuide(.leading) { _ in -at.x }
+            .alignmentGuide(.top) { _ in -(at.y + 12) }
+            .transition(.opacity)
+    }
+
+    /// Check / Next at the page's bottom right (a problem page's action corner, beside the answer spot).
+    @ViewBuilder
+    private func corner(_ action: PageAction) -> some View {
+        let page = pageFrame
+        let anchor = CGPoint(x: page.maxX - 20, y: page.maxY - 20)
+        Group {
+            switch action {
+            case .check: CheckButton { loop.checkPage() }
+            case .next(let last): NextButton(last: last) { loop.nextPage() }
+            }
+        }
+        .alignmentGuide(.leading) { d in -(anchor.x - d.width) }
+        .alignmentGuide(.top) { d in -(anchor.y - d.height) }
+        .transition(.opacity)
+    }
+
+    private var allDone: some View {
+        let page = pageFrame
+        return AllDoneCard(problems: pages.setProblems, onProblem: { loop.goToPage($0.id) }, onBack: onAllDoneBack, onMore: onMoreLikeThese)
+            .frame(width: max(320, page.width - 40))
+            .alignmentGuide(.leading) { _ in -(page.minX + 20) }
+            .alignmentGuide(.top) { d in -(page.midY - d.height / 2) }
+    }
+}
+
+/// The sheet's identity: one line's fix (its readings change under it without a new sheet).
+struct FixID: Identifiable, Equatable {
+    let id: String
+}
+
+/// "Fix what I read" for the line being fixed, kept up to date as its other readings arrive.
+struct FixSheetHost: View {
+    @ObservedObject var pages: LivePages
+    let loop: LiveLoop
+
+    var body: some View {
+        if let fix = pages.fixing {
+            FixReadingSheet(fix: fix, onUse: { loop.useReading(fix.id, latex: $0) }, onConfirm: { loop.confirmReading(fix.id) },
+                            onCancel: { loop.closeFix() })
+                // a new line's fix starts its own typing
+                .id(fix.id)
+        }
     }
 }
 

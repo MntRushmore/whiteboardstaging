@@ -19,6 +19,8 @@ extension AskParts {
     public static func live(backend: AgathonBackend, boardId: String, board: CanvasLiveBoard, helper: AskBoardHelper? = nil,
                             userId: String? = nil, grade: Int? = nil, brain: Brain = .shared) -> (AskParts, AskBoardDriver) {
         let driver = AskBoardDriver(canvasBoard: board, brain: brain, helper: helper)
+        // every problem the tutor gives goes on a page of its own (docs/PROBLEM-PAGES.md)
+        driver.problemPages = true
         let voice = AskVoice(source: LiveSpeechAudio(api: backend.api))
         let speech = AskSpeech(voice: voice, brain: brain, userId: userId, grade: grade)
         let session = AskSession(boardId: boardId, transport: LiveAskTransport(backend: backend), board: driver, speech: speech.queue, grade: grade)

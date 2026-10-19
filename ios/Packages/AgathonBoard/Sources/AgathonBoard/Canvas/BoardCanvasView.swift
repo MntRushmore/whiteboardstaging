@@ -13,12 +13,15 @@ public struct CanvasAppearance: Equatable, Sendable {
     public var paperShadow: Bool
     /// the selection's frame and handles
     public var selectionInk: UIColor
+    /// a problem page's template (docs/PROBLEM-PAGES.md): its guide lines, labels and answer spot
+    public var template: PageTemplate.Colors
 
-    public init(surface: UIColor, paperRadius: CGFloat, paperShadow: Bool, selectionInk: UIColor) {
+    public init(surface: UIColor, paperRadius: CGFloat, paperShadow: Bool, selectionInk: UIColor, template: PageTemplate.Colors = .blocks) {
         self.surface = surface
         self.paperRadius = paperRadius
         self.paperShadow = paperShadow
         self.selectionInk = selectionInk
+        self.template = template
     }
 
     /// Board Lab's plain look.
@@ -35,7 +38,8 @@ public struct CanvasAppearance: Equatable, Sendable {
 /// The board on screen: the current 16:9 screen on a flat surface, Apple Pencil first.
 ///
 /// Layers, in page space under one camera transform:
-///   paper (the white screen) → settled ink tiles (`TileLayers`) → the tutor's writing being revealed
+///   paper (the white screen) → a problem page's template (`PageTemplate`: guide lines, labels, the
+///   answer spot; never ink) → settled ink tiles (`TileLayers`) → the tutor's writing being revealed
 ///   → a lifted selection (moving or resizing) → the shape being dragged → the kid's live stroke
 /// and, in view space over them: the selection's frame and handles, the lasso, the Pencil's hover.
 ///
@@ -68,6 +72,14 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
 
     private let content = CALayer()
     private let paper = CALayer()
+    /// a problem page's template, in page space between the paper and the ink
+    private let templateLayer = CALayer()
+    private let templateAnswer = CAShapeLayer()
+    private let templateAnswerLabel = CAShapeLayer()
+    private let templateLabel = CAShapeLayer()
+    private let templateRules = CAShapeLayer()
+    /// the page the template was drawn for (redrawn only when it changes)
+    private var templateFor: (page: ProblemPage?, rect: Box)?
     /// all ink, clipped to the screen (the last row of tiles overhangs it): a rectangular
     /// `masksToBounds` (a scissor, no offscreen pass), its bounds the screen rect so its sublayers
     /// stay in page space
@@ -172,6 +184,16 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         paper.backgroundColor = UIColor.white.cgColor
         paper.actions = ["position": NSNull(), "bounds": NSNull(), "shadowPath": NSNull(), "cornerRadius": NSNull()]
         content.addSublayer(paper)
+        templateLayer.anchorPoint = .zero
+        templateLayer.actions = ["sublayers": NSNull(), "hidden": NSNull()]
+        for l in [templateAnswer, templateAnswerLabel, templateLabel, templateRules] {
+            l.actions = ["path": NSNull(), "fillColor": NSNull(), "strokeColor": NSNull(), "lineWidth": NSNull(), "hidden": NSNull()]
+            templateLayer.addSublayer(l)
+        }
+        templateRules.fillColor = nil
+        templateRules.lineCap = .round
+        templateLayer.isHidden = true
+        content.addSublayer(templateLayer)
         inkRoot.anchorPoint = .zero
         inkRoot.masksToBounds = true
         inkRoot.actions = ["sublayers": NSNull(), "position": NSNull(), "bounds": NSNull()]
@@ -228,6 +250,10 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         paper.shadowOpacity = appearance.paperShadow ? 0.10 : 0
         paper.shadowRadius = 10
         paper.shadowOffset = CGSize(width: 0, height: 2)
+        templateAnswer.fillColor = appearance.template.answer
+        templateAnswerLabel.fillColor = appearance.template.answerLabel
+        templateLabel.fillColor = appearance.template.label
+        templateRules.strokeColor = appearance.template.rule
         selectionFrame.strokeColor = appearance.selectionInk.cgColor
         selectionHandles.strokeColor = appearance.selectionInk.cgColor
         lassoLayer.strokeColor = appearance.selectionInk.withAlphaComponent(0.7).cgColor
@@ -1030,6 +1056,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         paper.frame = screen.rect.cgRect
+        updateTemplate(screen)
         inkRoot.position = screen.rect.cgRect.origin
         inkRoot.bounds = screen.rect.cgRect
         CATransaction.commit()
@@ -1047,6 +1074,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
     }
 
     public func sceneChanged(_ delta: SceneDelta, index: SceneIndex) {
+        updateTemplateLabel()
         if delta.appendsOnTop {
             tiles.paintOnTop(delta.added)
             controller.stats.lastPaintMs = (tiles.lastPaintDrawMs, tiles.lastPaintImageMs)
@@ -1054,6 +1082,50 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
             tiles.invalidate(delta.removedBounds + delta.added.map(\.bounds))
         }
     }
+
+    public func screenChanged(_ screen: ScreenRecord) {
+        guard screen.id == controller.currentScreenID else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        updateTemplate(screen)
+        CATransaction.commit()
+    }
+
+    /// The template for the screen's problem page (none for a plain screen or the All done page).
+    private func updateTemplate(_ screen: ScreenRecord) {
+        let page = screen.problemPage
+        if let last = templateFor, last.page == page, last.rect == screen.rect { return }
+        templateFor = (page, screen.rect)
+        guard let page, let t = PageTemplate(page: page, screen: screen.rect) else {
+            templateLayer.isHidden = true
+            return
+        }
+        templateAnswer.path = t.answer
+        templateAnswerLabel.path = t.answerLabel
+        templateLabel.path = t.label
+        templateRules.path = t.rules
+        templateRules.lineWidth = t.ruleWidth
+        templateLayer.isHidden = false
+        updateTemplateLabel()
+    }
+
+    /// "Work it out here" is an invitation: it steps aside once the kid has written on the page (a
+    /// first line written right under the problem would sit on it).
+    private func updateTemplateLabel() {
+        guard !templateLayer.isHidden else { return }
+        let screen = controller.currentScreenID
+        let written = controller.store.drawables(on: screen).contains { r in
+            if case .stroke(let s) = r { return s.author == .kid }
+            return false
+        }
+        if templateLabel.isHidden != written { templateLabel.isHidden = written }
+    }
+
+    /// Whether the template's "Work it out here" shows (tests).
+    public var showsTemplateLabel: Bool { !templateLayer.isHidden && !templateLabel.isHidden }
+
+    /// Whether the current screen shows a template (tests, the Lab).
+    public var showsTemplate: Bool { !templateLayer.isHidden }
 
     /// Redraws now whatever is waiting for this run-loop turn's flush (tests and measurements).
     public func flushTiles() { tiles.flushInvalidations() }

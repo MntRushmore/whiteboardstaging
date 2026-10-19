@@ -35,6 +35,20 @@ public protocol LiveBoard: AnyObject {
     func write(_ lines: [TutorLine], meta: Meta, onDone: @escaping @MainActor () -> Void) -> TutorPen
     /// Adds a blank screen and shows it; nil at the cap.
     func addScreen() -> RecordID?
+
+    // problem pages (docs/PROBLEM-PAGES.md)
+
+    /// Shows another page (Next problem; the page a problem moved to).
+    func goToScreen(_ id: RecordID)
+    /// A blank page right after `after` (the current one when nil) with `meta`, shown when `go`: the
+    /// tutor's (a practice set's pages), no step the kid undoes. Nil at the cap.
+    func insertScreen(after: RecordID?, meta: Meta, go: Bool) -> RecordID?
+    /// A page's `meta.page` (the tutor's).
+    func setProblemPage(_ page: ProblemPage?, on id: RecordID)
+    /// "New page for this one": `ids` (the kid's strokes on this page) move to a new page right after
+    /// it, shifted by `offset`, with `meta` on the page and `alsoRemove` gone, as ONE kid undo step;
+    /// the board shows the new page. Nil when it cannot.
+    func moveToNewScreen(_ ids: [RecordID], offset: Vec2, meta: Meta, alsoRemove: [RecordID]) -> RecordID?
 }
 
 extension LiveBoard {
@@ -43,6 +57,36 @@ extension LiveBoard {
         get { nil }
         set {}
     }
+
+    /// A board that cannot change its page on show stays where it is.
+    public func goToScreen(_ id: RecordID) {}
+
+    /// A page put in the board's records after `after` (a board that cannot show another page keeps
+    /// the one it is on).
+    public func insertScreen(after: RecordID?, meta: Meta, go: Bool) -> RecordID? {
+        let screens = store.screens
+        guard screens.count < ScreenRecord.maxScreens else { return nil }
+        let anchor = after ?? currentScreenID
+        let i = screens.firstIndex { $0.id == anchor }
+        let next = i.flatMap { $0 + 1 < screens.count ? screens[$0 + 1].order : nil }
+        let order = (i.flatMap { try? OrderKey.between(screens[$0].order, next) }) ?? OrderKey.after(screens.last?.order)
+        let s = ScreenRecord(order: order, meta: meta)
+        store.put(.screen(s), origin: .tutor)
+        if go { goToScreen(s.id) }
+        return s.id
+    }
+
+    public func setProblemPage(_ page: ProblemPage?, on id: RecordID) {
+        guard case .screen(var s)? = store[id], s.problemPage != page else { return }
+        s.problemPage = page
+        store.put(.screen(s), origin: .tutor)
+    }
+
+    /// A board without its controller cannot move ink to a page of its own.
+    public func moveToNewScreen(_ ids: [RecordID], offset: Vec2, meta: Meta, alsoRemove: [RecordID]) -> RecordID? { nil }
+
+    /// The page on show as a problem page (or the All done page), if it is one.
+    public var currentProblemPage: ProblemPage? { store[currentScreenID]?.screen?.problemPage }
 }
 
 /// One block of the tutor's writing in progress.
