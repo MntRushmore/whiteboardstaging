@@ -18,6 +18,7 @@ const fake = vi.hoisted(() => ({
   GOOD_TOKEN: "aaaa.bbbb.cccc",
   USER_ID: "11111111-2222-4333-8444-555555555555",
   mathpix: null as unknown,
+  mathpixText: null as unknown,
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -36,18 +37,18 @@ vi.mock("@/lib/server/openrouter", async (importOriginal) => {
 });
 vi.mock("@/lib/server/mathpix", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/server/mathpix")>();
-  return { ...actual, isMathpixConfigured: () => true, recognizeStrokes: vi.fn(async () => fake.mathpix) };
+  return { ...actual, isMathpixConfigured: () => true, recognizeStrokes: vi.fn(async () => fake.mathpix), recognizeImage: vi.fn(async () => fake.mathpixText) };
 });
 
 import { resetServerEnvCache } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { recordEvent } from "@/lib/server/events";
-import { recognizeStrokes } from "@/lib/server/mathpix";
+import { recognizeImage, recognizeStrokes } from "@/lib/server/mathpix";
 import { chatJson } from "@/lib/server/openrouter";
 import { resetRateLimits } from "@/lib/server/rate-limit";
 import { POST as recognize } from "@/app/api/live/recognize/route";
 
-const ENV_VARS = ["BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+const ENV_VARS = ["RECOGNIZE_CROP_READER", "BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
 
 const IMAGE = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==";
@@ -76,6 +77,8 @@ beforeEach(() => {
   resetRateLimits();
   vi.mocked(recordEvent).mockReset();
   vi.mocked(recognizeStrokes).mockClear();
+  vi.mocked(recognizeImage).mockClear();
+  delete process.env.RECOGNIZE_CROP_READER;
   vi.mocked(chatJson).mockReset();
   logger.level = "silent";
 });
@@ -203,5 +206,76 @@ describe("live/recognize: the crop retry", () => {
     expect(events()).toEqual([
       expect.objectContaining({ level: "error", kind: "route.live.recognize", code: "timeout", meta: expect.objectContaining({ upstreamStatus: 504, hadCrop: true, cropOnly: true }) }),
     ]);
+  });
+});
+
+describe("live/recognize: RECOGNIZE_CROP_READER=mathpix-text (the v3/text prototype, off by default)", () => {
+  const TEXT_READ = { ok: true, latex: "3 \\longdiv { 1 2 6 }", text: "3 \\longdiv { 1 2 6 }", confidence: 0.999, confidences: {}, raw: { version: "SuperNet-201p1" } };
+
+  it("unset: the crop goes to the vision model, as before, and v3/text is never asked", async () => {
+    fake.mathpix = { ok: false, reason: "api_error" };
+    fake.mathpixText = TEXT_READ;
+    vi.mocked(chatJson).mockResolvedValue({ latex: "x=4", text: "x=4", confidence: 0.9, isMath: true } as never);
+    const res = await recognize(request({ ...BODY, crop: IMAGE, cropOnly: true }));
+    expect(await res.json()).toMatchObject({ latex: "x=4", provider: "vision" });
+    expect(recognizeImage).not.toHaveBeenCalled();
+  });
+
+  it("on: v3/text reads the crop first; its read is a Mathpix read and vision is not asked", async () => {
+    process.env.RECOGNIZE_CROP_READER = "mathpix-text";
+    fake.mathpixText = TEXT_READ;
+    const res = await recognize(request({ ...BODY, crop: IMAGE, cropOnly: true }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ latex: TEXT_READ.latex, provider: "mathpix", confidence: 0.999 });
+    expect(recognizeStrokes).not.toHaveBeenCalled();
+    expect(recognizeImage).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(recognizeImage).mock.calls[0][0]).toBe(IMAGE);
+    // inside the client's 6 s with the vision model's turn kept: at most 2 s
+    expect(vi.mocked(recognizeImage).mock.calls[0][2]?.timeoutMs).toBeLessThanOrEqual(2_000);
+    expect(chatJson).not.toHaveBeenCalled();
+  });
+
+  it("on, after strokes Mathpix could not read: v3/text is still asked (Mathpix is up, the ink was the trouble)", async () => {
+    process.env.RECOGNIZE_CROP_READER = "mathpix-text";
+    fake.mathpix = { ok: false, reason: "api_error", status: 200 };
+    fake.mathpixText = TEXT_READ;
+    const res = await recognize(request({ ...BODY, crop: IMAGE }));
+    expect(await res.json()).toMatchObject({ provider: "mathpix", latex: TEXT_READ.latex });
+    expect(recognizeStrokes).toHaveBeenCalledTimes(1);
+    expect(recognizeImage).toHaveBeenCalledTimes(1);
+  });
+
+  it("on: a v3/text miss (nothing read, or an empty read) goes on to vision — the vision read stays the floor", async () => {
+    process.env.RECOGNIZE_CROP_READER = "mathpix-text";
+    vi.mocked(chatJson).mockResolvedValue({ latex: "5", text: "5", confidence: 0.9, isMath: true } as never);
+    fake.mathpixText = { ok: false, reason: "api_error", status: 200, detail: "image_no_content" };
+    let res = await recognize(request({ ...BODY, crop: IMAGE, cropOnly: true }));
+    expect(await res.json()).toMatchObject({ latex: "5", provider: "vision" });
+    fake.mathpixText = { ...TEXT_READ, latex: "", text: "" };
+    res = await recognize(request({ ...BODY, crop: IMAGE, cropOnly: true }));
+    expect(await res.json()).toMatchObject({ latex: "5", provider: "vision" });
+    expect(recognizeImage).toHaveBeenCalledTimes(2);
+    expect(chatJson).toHaveBeenCalledTimes(2);
+  });
+
+  it("on, but Mathpix itself is in trouble (credentials, 5xx, timeout, network): straight to vision, the other vendor", async () => {
+    process.env.RECOGNIZE_CROP_READER = "mathpix-text";
+    fake.mathpixText = TEXT_READ;
+    vi.mocked(chatJson).mockResolvedValue({ latex: "x=4", text: "x=4", confidence: 0.9, isMath: true } as never);
+    for (const failure of [{ reason: "auth", status: 401 }, { reason: "http", status: 500 }, { reason: "timeout" }, { reason: "network" }]) {
+      fake.mathpix = { ok: false, ...failure };
+      const res = await recognize(request({ ...BODY, crop: IMAGE }));
+      expect(await res.json(), failure.reason).toMatchObject({ provider: "vision" });
+    }
+    expect(recognizeImage).not.toHaveBeenCalled();
+  });
+
+  it("any other value is today's vision reader", async () => {
+    process.env.RECOGNIZE_CROP_READER = "mathpix";
+    fake.mathpixText = TEXT_READ;
+    vi.mocked(chatJson).mockResolvedValue({ latex: "x=4", text: "x=4", confidence: 0.9, isMath: true } as never);
+    const res = await recognize(request({ ...BODY, crop: IMAGE, cropOnly: true }));
+    expect(await res.json()).toMatchObject({ provider: "vision" });
+    expect(recognizeImage).not.toHaveBeenCalled();
   });
 });

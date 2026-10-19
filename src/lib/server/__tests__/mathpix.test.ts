@@ -11,7 +11,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetServerEnvCache } from "@/lib/env";
 import {
   MATHPIX_STROKES_URL,
+  MATHPIX_TEXT_URL,
   buildStrokesBody,
+  buildTextBody,
+  latexFromMathpixText,
+  recognizeImage,
+  textConfidences,
+  unwrapMathText,
   isMathpixAuthFailure,
   isMathpixConfigured,
   latexFromMathpix,
@@ -257,5 +263,95 @@ describe("recognizeStrokes — failures are distinguishable", () => {
       reason: "invalid_payload",
     });
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe("v3/text (SuperNet-201): the crop reader prototype", () => {
+  const IMAGE = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==";
+
+  it("builds the v3/text body with the strokes call's privacy and rotation settings", () => {
+    expect(buildTextBody(IMAGE)).toEqual({
+      src: IMAGE,
+      formats: ["text", "latex_styled"],
+      include_line_data: true,
+      auto_rotate_confidence_threshold: 1,
+      metadata: { improve_mathpix: false },
+    });
+  });
+
+  it("takes latex_styled, else unwraps the Mathpix Markdown (words as \\text, rows joined with \\\\)", () => {
+    expect(latexFromMathpixText({ latex_styled: "18 \\times 7", text: "\\( 18 \\times 7 \\)" })).toBe("18 \\times 7");
+    expect(latexFromMathpixText({ text: "\\( 2 x+3=11 \\)" })).toBe("2 x+3=11");
+    expect(latexFromMathpixText({ text: "\\( 5 \\mathrm{~km} \\) to \\( \\mathrm{m} \\)" })).toBe("5 \\mathrm{~km} \\text{ to } \\mathrm{m}");
+    expect(latexFromMathpixText({ text: "\\[ x=4 \\]" })).toBe("x=4");
+    expect(latexFromMathpixText({ text: "12-5" })).toBe("12-5");
+    expect(latexFromMathpixText({ text: "\\( 2x=8 \\)\n\\( x=4 \\)" })).toBe("2x=8 \\\\ x=4");
+    expect(latexFromMathpixText({})).toBe("");
+  });
+
+  it("unwraps \\text round maths (Mathpix took the handwriting for prose), never round words", () => {
+    expect(unwrapMathText("\\text { 12-5 }")).toBe("12-5");
+    expect(unwrapMathText("\\text { 3R2 }")).toBe("3R2");
+    expect(unwrapMathText("\\text { 4) } \\overline{128}")).toBe("4) \\overline{128}");
+    expect(unwrapMathText("b=\\text { ? }")).toBe("b=?");
+    expect(unwrapMathText("\\text { 12, 15, 9, } 20")).toBe("12, 15, 9, 20");
+    expect(unwrapMathText("15 \\% \\text { of } 80=")).toBe("15 \\% \\text { of } 80=");
+    expect(unwrapMathText("\\text { G }")).toBe("\\text { G }");
+    // the converter applies it, unless asked not to
+    expect(latexFromMathpixText({ latex_styled: "\\text { 52-17 }" })).toBe("52-17");
+    expect(latexFromMathpixText({ latex_styled: "\\text { 52-17 }" }, { unwrap: false })).toBe("\\text { 52-17 }");
+  });
+
+  it("reads the confidences: top level, and the lowest of each over the regions in the result", () => {
+    expect(
+      textConfidences({
+        confidence: 0.95,
+        confidence_rate: 0.98,
+        line_data: [
+          { type: "math", confidence: 0.97, confidence_rate: 0.99, text_confidence: null, conversion_output: true },
+          { type: "math", confidence: 0.6, confidence_rate: 0.9, text_confidence: 0.7, layout_confidence: 0.8, conversion_output: true },
+          { type: "diagram", confidence: 0.1, conversion_output: false },
+        ],
+      }),
+    ).toEqual({ confidence: 0.95, confidenceRate: 0.98, line: 0.6, lineText: 0.7, lineLayout: 0.8, lineRate: 0.9 });
+    expect(textConfidences({})).toEqual({ confidence: null, confidenceRate: null, line: null, lineText: null, lineLayout: null, lineRate: null });
+  });
+
+  it("recognizeImage posts the crop to v3/text with the privacy flag and the credentials as headers only", async () => {
+    const { calls } = fakeFetch(async () =>
+      jsonResponse(200, { latex_styled: "\\text { 3R2 }", text: "3R2", confidence: 0.954, confidence_rate: 0.994, line_data: [{ type: "math", confidence: 0.954, conversion_output: true }], version: "SuperNet-201p1" }),
+    );
+    const out = await recognizeImage(IMAGE, undefined, { requestId: "req-t" });
+    expect(out).toMatchObject({ ok: true, latex: "3R2", text: "3R2", confidence: 0.954, confidences: { confidence: 0.954, line: 0.954 } });
+    expect(calls[0].url).toBe(MATHPIX_TEXT_URL);
+    const headers = calls[0].init?.headers as Record<string, string>;
+    expect(headers.app_key).toBe("app-key-super-secret");
+    expect(headers["X-Request-Id"]).toBe("req-t");
+    expect(JSON.parse(String(calls[0].init?.body))).toMatchObject({ src: IMAGE, include_line_data: true, metadata: { improve_mathpix: false } });
+  });
+
+  it("recognizeImage fails as recognizeStrokes does, and never sends what is not an image", async () => {
+    fakeFetch(async () => jsonResponse(200, { error: "Content not found", error_info: { id: "image_no_content" } }));
+    const log = fakeLog();
+    expect(await recognizeImage(IMAGE, undefined, { log })).toMatchObject({ ok: false, reason: "api_error", status: 200 });
+    expect(log.warns[0].msg).toBe("mathpix could not read the image");
+    expect(JSON.stringify(log.warns)).not.toContain("/9j/");
+
+    fakeFetch(async () => jsonResponse(401, { error: "Invalid credentials" }));
+    expect(await recognizeImage(IMAGE)).toMatchObject({ ok: false, reason: "auth", status: 401 });
+
+    const { spy } = fakeFetch(async () => jsonResponse(200, { text: "x" }));
+    expect(await recognizeImage("https://example.com/a.jpg")).toEqual({ ok: false, reason: "invalid_payload" });
+    delete process.env.MATHPIX_APP_KEY;
+    resetServerEnvCache();
+    expect(await recognizeImage(IMAGE)).toEqual({ ok: false, reason: "unconfigured" });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the lowest region's confidence, then confidence_rate", async () => {
+    fakeFetch(async () => jsonResponse(200, { text: "\\( x=4 \\)", line_data: [{ confidence: 0.81, conversion_output: true }] }));
+    expect(await recognizeImage(IMAGE)).toMatchObject({ ok: true, confidence: 0.81 });
+    fakeFetch(async () => jsonResponse(200, { text: "\\( x=4 \\)", confidence_rate: 0.77 }));
+    expect(await recognizeImage(IMAGE)).toMatchObject({ ok: true, confidence: 0.77 });
   });
 });
