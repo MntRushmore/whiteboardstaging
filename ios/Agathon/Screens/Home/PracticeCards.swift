@@ -10,6 +10,15 @@ struct TodayCard: View {
     let busy: Bool
     let start: () -> Void
 
+    /// Debug: the UI tests' own practice set starts whatever today's row says (`-practiceProblems`).
+    static var debugSet: Bool {
+        #if DEBUG
+        return HomeModel.debugPractice != nil
+        #else
+        return false
+        #endif
+    }
+
     private var goal: Int { row?.goal ?? DailyRow.defaultGoal }
     private var done: Int { min(row?.done ?? 0, goal) }
     private var finished: Bool { row?.isDone ?? false }
@@ -50,7 +59,7 @@ struct TodayCard: View {
                 .padding(.top, 10)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: DS.Space.l)
-            if !finished || row?.boardId != nil {
+            if !finished || row?.boardId != nil || Self.debugSet {
                 PillButton(buttonTitle, icon: .play, kind: .sunny, size: .large, action: start)
                     .disabled(busy)
                     .fixedSize()
@@ -104,6 +113,7 @@ struct PathCard: View {
     let isKid: Bool
     let open: () -> Void
     let pickGrade: (() -> Void)?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         if let path {
@@ -152,20 +162,25 @@ struct PathCard: View {
         .padding(.top, DS.Space.l)
         Spacer(minLength: DS.Space.l)
         if let next = path.next {
-            HStack(alignment: .center, spacing: DS.Space.s) {
+            // the largest text: the tag above the skill's name, and room for the words to wrap
+            let big = typeSize.isAccessibilitySize
+            let row = big ? AnyLayout(VStackLayout(alignment: .leading, spacing: DS.Space.xs)) : AnyLayout(HStackLayout(alignment: .center, spacing: DS.Space.s))
+            row {
                 Tag("Next up", style: .ink)
                 Text(next.name)
                     .dsFont(.headline, size: 26)
                     .foregroundStyle(DS.Color.ink)
-                    .lineLimit(2)
+                    .lineLimit(big ? 4 : 2)
                     .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: big)
             }
             Text(GradePath.names[next.id]?.blurb ?? GradePath.levelLabel(next.level))
                 .dsFont(.callout, size: 16)
                 .foregroundStyle(DS.Color.ink)
                 .padding(.top, 6)
                 .padding(.leading, 2)
-                .lineLimit(2)
+                .lineLimit(big ? 5 : 2)
+                .fixedSize(horizontal: false, vertical: big)
         } else {
             Text("You did it. Every skill on your path is done.")
                 .dsFont(.body)

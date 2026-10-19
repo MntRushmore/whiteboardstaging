@@ -30,17 +30,30 @@ public final class LiveAPIServices: LiveServices {
     /// The backend these routes belong to, when made from one: the loop's learning record saves as
     /// its signed-in student (`LiveLearning.connect(backend:)`).
     public let backend: AgathonBackend?
+    /// Debug only (the UI tests, `-liveMisread "3x = 15=>3 \\times = 15"`): a read rewritten before the
+    /// loop sees it, the second reader's too, so a misread can be shown on purpose. Nil in the app.
+    public let misread: (from: String, to: String)?
 
     public init(api: APIClient, live: LiveAPI, recognizeTimeout: Duration = .milliseconds(Int(LiveTiming.recognizeTimeoutMs)),
-                backend: AgathonBackend? = nil) {
+                backend: AgathonBackend? = nil, misread: (from: String, to: String)? = nil) {
         self.api = api
         self.live = live
         self.recognizeTimeout = recognizeTimeout
         self.backend = backend
+        self.misread = misread
     }
 
-    @MainActor public convenience init(backend: AgathonBackend) {
-        self.init(api: backend.api, live: backend.live, backend: backend)
+    @MainActor public convenience init(backend: AgathonBackend, misread: (from: String, to: String)? = nil) {
+        self.init(api: backend.api, live: backend.live, backend: backend, misread: misread)
+    }
+
+    static func flat(_ latex: String) -> String {
+        latex.replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression)
+    }
+
+    func misreading(_ latex: String) -> String? {
+        guard let m = misread, Self.flat(latex) == Self.flat(m.from) else { return nil }
+        return m.to
     }
 
     public static let recognizePath = "/api/live/recognize"
@@ -53,13 +66,17 @@ public final class LiveAPIServices: LiveServices {
 
     public func recognize(_ request: RecognizeRequest) async throws -> RecognizeResponse {
         let api = self.api
-        return try await Self.withTimeout(recognizeTimeout) {
+        var res = try await Self.withTimeout(recognizeTimeout) {
             try await api.post(Self.recognizePath, body: request, as: RecognizeResponse.self)
         }
+        if let wrong = misreading(res.latex) { res.latex = wrong }
+        return res
     }
 
     public func reread(_ request: RereadRequest) async throws -> RereadResponse {
-        try await api.post(Self.rereadPath, body: request, as: RereadResponse.self)
+        var res = try await api.post(Self.rereadPath, body: request, as: RereadResponse.self)
+        if let wrong = misreading(res.latex) { res.latex = wrong }
+        return res
     }
 
     public func setup(_ request: SetupRequest) async throws -> SetupResponse {

@@ -87,6 +87,8 @@ extension LiveLoop {
         }
         // the kid is working again: the tutor puts the pen down, finishing what it began
         cancelHandwriting()
+        // check when done: the long pause starts again, the answer spot's quiet, the chips step aside
+        pageInk(fresh: fresh, changed: finished.map(\.id.rawValue) + Array(touchedIds))
         let rewrite = dirtyStrokes.contains { id in lineOfStroke(id).map { !($0.latex.isEmpty) } ?? false }
         pendingRewrite = pendingRewrite || rewrite
         armQuietTimer()
@@ -97,6 +99,8 @@ extension LiveLoop {
     func noteTutorChanges(_ change: ChangeSet, screen: RecordID) {
         // a problem the tutor wrote is a new problem for the learning record
         learnTutorChanges(change)
+        // the page on show became a problem page (a practice set's), or its page changed
+        if change.ids.contains(screen) { refreshPage() }
     }
 
     /// The kid's pen on the board (from the board's touch observer, or the Lab's replay).
@@ -269,6 +273,11 @@ extension LiveLoop {
         celebrate.forget(id)
         settler.removed(id)
         lines[id] = nil
+        pages.released[id] = nil
+        pages.ownHeads.remove(id)
+        pages.partial.remove(id)
+        pages.second[id] = nil
+        if pages.fixing?.id == id { pages.fixing = nil }
         let screen = board.currentScreenID
         let lineRecord = RecordID("line:\(id)")
         let owned = board.store.liveRecords(on: screen, lineId: id).map(\.id)
@@ -279,6 +288,7 @@ extension LiveLoop {
         let gone = owned + marks + (board.store[lineRecord] != nil ? [lineRecord] : [])
         if !gone.isEmpty { board.store.remove(gone, origin: .tutor) }
         refreshActivity()
+        refreshPage()
     }
 
     // MARK: - rebuild: a board opened, a screen switched
@@ -291,17 +301,25 @@ extension LiveLoop {
         let screen = board.currentScreenID
         let store = board.store
         var seeds: [InkLine] = []
-        var reads: [String: (latex: String, confidence: Double, warned: String?)] = [:]
+        var reads: [String: (latex: String, confidence: Double, warned: String?, provider: ReadProvider)] = [:]
+        let markedLines = Set(store.semantic(on: screen).compactMap { r -> RecordID? in
+            if case .mark(let m) = r { return m.target }
+            return nil
+        })
         for case .line(let l) in store.semantic(on: screen) {
-            let ids = l.strokes.map(\.rawValue).filter { store[RecordID($0)] != nil }
+            // a stroke moved to another page ("New page for this one") is no ink of this page's
+            let ids = l.strokes.map(\.rawValue).filter { store[RecordID($0)]?.screenID == screen }
             guard !ids.isEmpty else { continue }
             let boxes = ids.compactMap { store.stroke(RecordID($0)).map(StrokeBounds.of) }
             guard let bounds = BrainRect.around(boxes) else { continue }
             let key = String(l.id.key)
             seeds.append(InkLine.make(id: key, strokeIds: ids, bounds: bounds, hash: l.meta.string(LiveMeta.hash)))
             if !l.latex.isEmpty {
-                reads[key] = (l.latex, l.meta[LiveMeta.confidence]?.numberValue ?? 1, l.meta[LiveMeta.aiWarnLatex]?.stringValue)
+                let fixed = l.meta.string(LiveMeta.provider) == ReadProvider.fixed.rawValue
+                reads[key] = (l.latex, l.meta[LiveMeta.confidence]?.numberValue ?? 1, l.meta[LiveMeta.aiWarnLatex]?.stringValue, fixed ? .fixed : .restored)
             }
+            // checked at, the kid's own reading, the second opinion (problem pages)
+            restorePageState(l, key: key, latex: l.latex, marked: markedLines.contains(l.id))
         }
         let strokes = store.kidStrokes(on: screen)
         let gen = generation
@@ -319,7 +337,7 @@ extension LiveLoop {
                 if let read = reads[ink.id], Set(seeds.first(where: { $0.id == ink.id })?.strokeIds ?? []) == Set(ink.strokeIds) {
                     line.latex = read.latex
                     line.confidence = read.confidence
-                    line.provider = .restored
+                    line.provider = read.provider
                     line.modelWarned = read.warned
                 } else {
                     unread.append(ink)
@@ -331,6 +349,7 @@ extension LiveLoop {
             for st in self.lines.values where !st.latex.isEmpty { _ = self.autoOnce(self.autoKey("check", st)) }
             // ink never read (written with Live off, or offline before a reload): read now
             for ink in unread { self.processLine(ink, moveOnly: false) }
+            self.refreshPage()
         }
     }
 
@@ -366,10 +385,12 @@ extension LiveLoop {
     func anchorAtProblems(_ input: [InkLine]) -> [InkLine] {
         columnHeads = [:]
         guard !heads.isEmpty, !input.isEmpty else { return input }
-        var homes = input.map { problemHome(for: $0.bounds) }
+        // a problem page: all its ink is the page's problem's work, wherever it is (docs/PROBLEM-PAGES.md)
+        let onPage = pageHomes(input)
+        var homes = onPage ?? input.map { problemHome(for: $0.bounds) }
         guard homes.contains(where: { $0 != nil }) else { return input }
         // work under a problem but far below it is not its work (the column keeps its own)
-        for (i, l) in input.enumerated() {
+        for (i, l) in input.enumerated() where onPage == nil {
             guard let home = homes[i], let head = heads.first(where: { $0.id == home }), !Self.besideProblem(l.bounds, head.rect) else { continue }
             let top = input.indices.filter { input[$0].column == l.column && homes[$0] == home }.map { input[$0].bounds.y }.min() ?? l.bounds.y
             if top - head.rect.maxY >= 360 { homes[i] = nil }

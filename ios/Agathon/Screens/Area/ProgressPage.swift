@@ -9,6 +9,7 @@ struct ProgressPage: View {
     let practice: (String) -> Void
 
     @Environment(AgathonBackend.self) private var backend
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var summary: LearningSummary?
     @State private var grade: Int?
     @State private var loading = true
@@ -71,7 +72,8 @@ struct ProgressPage: View {
         let weekStart = week.first?.date ?? ""
         let independent = summary.recent.filter { $0.startedAt >= weekStart && ["first_try", "self_corrected"].contains($0.outcome) }.count
         return AreaCard("This week") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: DS.Space.s)], spacing: DS.Space.s) {
+            // two to a row at the largest text sizes (four narrow ones broke "minutes" mid-word)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 300 : 150), spacing: DS.Space.s)], spacing: DS.Space.s) {
                 StatTile(value: "\(minutes)", label: minutes == 1 ? "minute" : "minutes")
                 StatTile(value: "\(problems)", label: "problems worked on")
                 StatTile(value: "\(min(independent, problems))", label: "solved on your own")

@@ -199,7 +199,7 @@ struct LearningLoopTests {
         h.loop.stop()
         // the board opened again: its lines come back from their records, unread
         let again = LiveLoop(board: h.board, boardId: "test-board", services: h.services,
-                             settings: LiveSettings(enabled: true, mode: .feedback, auto: true), brain: TestBrain.shared,
+                             settings: LiveSettings(enabled: true, mode: .feedback, auto: true, checking: .asIGo), brain: TestBrain.shared,
                              background: TestBrain.background, scheduler: h.scheduler, connectivity: h.connectivity)
         let store = FakeLearningStore()
         again.learning.connect(.init(store: store, userId: "u1", course: nil, storage: LearningMemoryStorage()))

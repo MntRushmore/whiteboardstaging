@@ -145,7 +145,13 @@ private struct BoardRoom: View {
             LiveOverlay(loop: tutor.loop, geometry: tutor.liveBoard,
                         onGrownUp: { model.money = model.audience?.isKid == false ? .plan : .outOfInk },
                         onSpeak: { [weak speech = tutor.ask.speech] words in speech?.speak(text: words) },
-                        showsOutOfInk: false)
+                        showsOutOfInk: false,
+                        // a set's All done page (docs/PROBLEM-PAGES.md): back Home, or three more like these from Ask
+                        onAllDoneBack: close,
+                        onMoreLikeThese: { [weak session = tutor.ask.session] in
+                            model.askOpen = true
+                            session?.send(LiveCopy.Pages.moreLikeTheseAsk)
+                        })
         }
     }
 

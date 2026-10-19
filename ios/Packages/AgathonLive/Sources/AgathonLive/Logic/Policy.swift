@@ -25,10 +25,14 @@ public enum LivePolicy {
         public var latex: String?
         /// the grown-ups' "Show the answer when I write =": a sum ended with `=` is answered at once
         public var answerOnEquals: Bool
+        /// Check when done: the line is not checked yet (docs/PROBLEM-PAGES.md). Nothing is said about
+        /// it — no mark, no hint, no step, no model check, no result — but its echo (the "I read"
+        /// chip) stands. The grown-ups' answers after `=` still come at once: they asked for them.
+        public var held: Bool
 
         public init(mode: LiveMode, analysis: LineAnalysis?, confidence: Double, settled: Bool, auto: Bool, userAsked: Bool,
                     hintsShownForLine: Int = 0, openHintCount: Int = 0, rewritesWithWarn: Int = 0, liveShapeCount: Int = 0, latex: String? = nil,
-                    answerOnEquals: Bool = false) {
+                    answerOnEquals: Bool = false, held: Bool = false) {
             self.mode = mode
             self.analysis = analysis
             self.confidence = confidence
@@ -41,6 +45,7 @@ public enum LivePolicy {
             self.liveShapeCount = liveShapeCount
             self.latex = latex
             self.answerOnEquals = answerOnEquals
+            self.held = held
         }
     }
 
@@ -57,7 +62,8 @@ public enum LivePolicy {
         public var capped: Bool
     }
 
-    static let silentKinds: Set<String> = ["label", "incomplete", "text"]
+    /// `continuation`: a running total (`+3 = 767`) with nothing above to go on from (`ContinuationLine`)
+    static let silentKinds: Set<String> = ["label", "incomplete", "text", "continuation"]
     static let checkableKinds: Set<String> = ["equation", "expression", "inequality", "assignment"]
     static let unjudgedKinds: Set<String> = ["label", "incomplete", "text", "unknown"]
 
@@ -102,6 +108,12 @@ public enum LivePolicy {
         let allowSteps = mode == .answer && input.userAsked && !capped
         let revealChemBalance = mode == .answer && !capped && (unasked || input.userAsked)
         let offerHintPrompt = mode != .off && input.rewritesWithWarn >= 2
+
+        if input.held {
+            // checked when the kid is done: quiet until then
+            return Decision(echo: echo, badge: "none", showResult: echo && hasResult && answerNow, runLlmCheck: false, allowHint: false,
+                            allowSteps: false, revealChemBalance: false, offerHintPrompt: false, capped: capped)
+        }
 
         return Decision(echo: echo, badge: badge, showResult: showResult, runLlmCheck: runLlmCheck, allowHint: allowHint,
                         allowSteps: allowSteps, revealChemBalance: revealChemBalance, offerHintPrompt: offerHintPrompt, capped: capped)

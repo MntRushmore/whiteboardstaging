@@ -85,6 +85,40 @@ final class TestBoard: LiveBoard {
         return s.id
     }
 
+    // problem pages: as the board's controller does them
+
+    func goToScreen(_ id: RecordID) {
+        guard id != currentScreenID, store[id]?.screen != nil else { return }
+        currentScreenID = id
+        onScreenChange?(id)
+    }
+
+    func moveToNewScreen(_ ids: [RecordID], offset: Vec2, meta: Meta, alsoRemove: [RecordID]) -> RecordID? {
+        let from = currentScreenID
+        let moving = ids.compactMap { store.stroke($0) }.filter { $0.screen == from }
+        guard !moving.isEmpty else { return nil }
+        let screens = store.screens
+        let i = screens.firstIndex { $0.id == from }
+        let next = i.flatMap { $0 + 1 < screens.count ? screens[$0 + 1].order : nil }
+        let order = (i.flatMap { try? OrderKey.between(screens[$0].order, next) }) ?? OrderKey.after(screens.last?.order)
+        let screen = ScreenRecord(order: order, meta: meta)
+        store.transact(.kid) { tx in
+            tx.put(.screen(screen))
+            var key = OrderKey.first
+            for var s in moving.sorted(by: { $0.order < $1.order }) {
+                s.screen = screen.id
+                s.order = key
+                s.x += offset.x
+                s.y += offset.y
+                tx.put(.stroke(s))
+                key = OrderKey.after(key)
+            }
+            for id in alsoRemove where tx[id] != nil { tx.remove(id) }
+        }
+        goToScreen(screen.id)
+        return screen.id
+    }
+
     // MARK: the kid's pen
 
     /// Strokes the kid wrote (page coordinates), one undo step each, as the canvas commits them.
@@ -300,9 +334,11 @@ final class Harness {
     /// the line → its kid strokes
     private(set) var written: [String: [RecordID]] = [:]
 
-    init(mode: LiveMode = .feedback, auto: Bool = true, readsEarly: Bool = true) {
+    /// `checking`: the suites written before problem pages test the tutor as it was ("as I go");
+    /// `ProblemPagesLoopTests` tests "when they're done".
+    init(mode: LiveMode = .feedback, auto: Bool = true, readsEarly: Bool = true, checking: CheckTiming = .asIGo) {
         loop = LiveLoop(board: board, boardId: "test-board", services: services,
-                        settings: LiveSettings(enabled: true, mode: mode, auto: auto, handwriting: true, celebrations: true),
+                        settings: LiveSettings(enabled: true, mode: mode, auto: auto, handwriting: true, celebrations: true, checking: checking),
                         brain: TestBrain.shared, background: TestBrain.background, scheduler: scheduler, connectivity: connectivity)
         loop.readsEarly = readsEarly
     }
@@ -325,7 +361,8 @@ final class Harness {
 
     /// The kid writes `latex` (fixture ink) at `at`; the fake recognizer will read it as `reads`.
     @discardableResult
-    func write(_ latex: String, at: Vec2, hand: String = "clean", reads: String? = nil, confidence: Double = 0.98) async -> [RecordID] {
+    /// `confidence`: Mathpix's for the read (under 0.99 the tutor asks "Is this right?" and rings nothing)
+    func write(_ latex: String, at: Vec2, hand: String = "clean", reads: String? = nil, confidence: Double = 0.995) async -> [RecordID] {
         let ink = KidHands.strokes(latex, hand: hand, at: at)
         let ids = board.kidWrites(ink)
         await register(ids, reads: reads ?? latex, confidence: confidence)
@@ -334,7 +371,7 @@ final class Harness {
     }
 
     /// The fake recognizer reads these strokes (as the board stores them) as `reads`.
-    func register(_ ids: [RecordID], reads: String, confidence: Double = 0.98) async {
+    func register(_ ids: [RecordID], reads: String, confidence: Double = 0.995) async {
         let set = Set(ids.map(\.rawValue))
         let strokes = board.store.kidStrokes(on: board.currentScreenID).filter { set.contains($0.id) }
         if let payload = try? await TestBrain.shared.recognizerPayload(strokes) {

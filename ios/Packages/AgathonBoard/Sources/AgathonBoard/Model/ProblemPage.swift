@@ -1,0 +1,187 @@
+import Foundation
+
+/// A screen that is one problem's page (docs/PROBLEM-PAGES.md): the problem at the top in the
+/// tutor's hand, "Work it out here" over faint guide lines, the answer spot at the bottom — or the
+/// "All done" page that ends a set. Kept in the screen's `meta.page` (a meta key: no schema bump).
+///
+/// ```json
+/// "page": { "kind": "problem", "set": "daily:2026-10-19", "index": 2, "count": 5,
+///           "problem": "problem:k3Vb…", "origin": "practice", "workTop": 186 }
+/// ```
+public struct ProblemPage: Equatable, Sendable {
+    public enum Kind: String, Sendable {
+        /// one problem's page
+        case problem
+        /// the "All done" page after a set's last problem
+        case done
+    }
+
+    /// The meta key on the screen.
+    public static let metaKey = "page"
+
+    public var kind: Kind
+    /// the set the page belongs to (the practice key, `ask:<uuid>`); nil on a kid's own page
+    public var setId: String?
+    /// its place in the set, from 1, and the set's size (nil on a kid's own page)
+    public var index: Int?
+    public var count: Int?
+    /// the page's `problem` record, once written
+    public var problem: RecordID?
+    /// practice, chat, nowYouTry, student
+    public var origin: String?
+    /// where the work area starts (page units), under the problem as written; nil: the default
+    public var workTop: Double?
+    /// the page has an answer spot (false: a problem whose answer is a drawing)
+    public var answer: Bool
+
+    public init(kind: Kind = .problem, setId: String? = nil, index: Int? = nil, count: Int? = nil, problem: RecordID? = nil,
+                origin: String? = nil, workTop: Double? = nil, answer: Bool = true) {
+        self.kind = kind
+        self.setId = setId
+        self.index = index
+        self.count = count
+        self.problem = problem
+        self.origin = origin
+        self.workTop = workTop
+        self.answer = answer
+    }
+
+    /// The page in a screen's meta, if it is one (an unknown kind is no page: an older build's
+    /// reader of a newer page draws a plain screen).
+    public init?(meta: Meta) {
+        guard let v = meta[Self.metaKey], let kind = v["kind"]?.stringValue.flatMap(Kind.init(rawValue:)) else { return nil }
+        self.kind = kind
+        setId = v["set"]?.stringValue
+        index = v["index"]?.numberValue.map { Int($0) }
+        count = v["count"]?.numberValue.map { Int($0) }
+        problem = v["problem"]?.stringValue.map { RecordID($0) }
+        origin = v["origin"]?.stringValue
+        workTop = v["workTop"]?.numberValue
+        answer = v["answer"]?.boolValue ?? true
+    }
+
+    /// As the screen's meta stores it (fields at their default left out).
+    public var json: JSONValue {
+        var o: [String: JSONValue] = ["kind": .string(kind.rawValue)]
+        if let setId { o["set"] = .string(setId) }
+        if let index { o["index"] = .number(Double(index)) }
+        if let count { o["count"] = .number(Double(count)) }
+        if let problem { o["problem"] = .string(problem.rawValue) }
+        if let origin { o["origin"] = .string(origin) }
+        if let workTop { o["workTop"] = .number((workTop * 100).rounded() / 100) }
+        if !answer { o["answer"] = .bool(false) }
+        return .object(o)
+    }
+
+    /// One of a set of two or more ("Problem 2 of 5").
+    public var inSet: Bool { setId != nil && (count ?? 0) > 1 && index != nil }
+
+    /// The set's last problem.
+    public var isLast: Bool { (index ?? 0) >= (count ?? 0) }
+
+    /// The work area's top on this page.
+    public var resolvedWorkTop: Double { workTop ?? ProblemPageLayout.defaultWorkTop }
+}
+
+extension ScreenRecord {
+    /// The screen as a problem page (or the All done page); nil for a plain screen. Setting nil
+    /// makes it plain again.
+    public var problemPage: ProblemPage? {
+        get { ProblemPage(meta: meta) }
+        set { meta[ProblemPage.metaKey] = newValue?.json }
+    }
+}
+
+/// Where everything on a problem page goes, in page units on the 1600 × 900 screen (the doc's
+/// table, docs/PROBLEM-PAGES.md "The page"). A page converted from an old board can have another
+/// rect: everything is placed relative to the screen's own rect, scaled by its width.
+public enum ProblemPageLayout {
+    /// the tutor's problem starts here (its ink's top-left)
+    public static let problemOrigin = Vec2(88, 60)
+    /// the problem's ink stays left of this
+    public static let problemMaxX = 1512.0
+    /// the tutor's hand for a problem (the desk's `PROBLEM_GRID.size`)
+    public static let problemSize = 48.0
+    /// the problem area is at least this deep, and this much below the problem's ink
+    public static let problemMinBottom = 170.0
+    public static let problemGap = 20.0
+    /// between the problem area and the work area
+    public static let workGap = 16.0
+    /// a one-line problem's work area top
+    public static let defaultWorkTop = problemMinBottom + workGap
+    /// "Work it out here": its baseline under the work area's top, its size
+    public static let workLabelBaseline = 30.0
+    public static let workLabelSize = 22.0
+    /// the guide lines: the first under the work area's top, then every `rulePitch`, down to `workBottom`
+    public static let firstRuleOffset = 74.0
+    public static let rulePitch = 80.0
+    public static let workBottom = 720.0
+    public static let ruleLeft = 88.0
+    public static let ruleRight = 1160.0
+    public static let ruleWidth = 2.5
+    /// the margin lane, right of the guide lines: the tutor's "I read" line up here
+    public static let laneX = 1180.0
+    public static let laneMaxX = 1512.0
+    /// the answer spot
+    public static let answer = Box(x: 88, y: 744, w: 872, h: 116)
+    public static let answerRadius = 28.0
+    public static let answerLabelInset = 32.0
+    public static let answerLabelSize = 30.0
+    /// the action corner, right of the answer spot: Check and Next sit here (view space)
+    public static let actions = Box(x: 1000, y: 744, w: 512, h: 116)
+    /// a work area keeps at least this many guide rows
+    public static let minRows = 2
+
+    /// The work area's top for a problem whose ink ends at `problemBottom` (page units).
+    public static func workTop(problemBottom: Double) -> Double {
+        let bottom = max(problemMinBottom, problemBottom + problemGap)
+        // the work area keeps its two rows, the answer spot its place
+        let latest = workBottom - firstRuleOffset - Double(minRows - 1) * rulePitch
+        return min(bottom + workGap, latest)
+    }
+
+    /// The guide lines' y, top to bottom, under a work area starting at `workTop`.
+    public static func rules(workTop: Double) -> [Double] {
+        var out: [Double] = []
+        var y = workTop + firstRuleOffset
+        while y <= workBottom + 0.5 {
+            out.append(y)
+            y += rulePitch
+        }
+        return out
+    }
+
+    /// The deepest a problem's ink may go and still leave the work area its rows.
+    public static var problemMaxBottom: Double {
+        workBottom - firstRuleOffset - Double(minRows - 1) * rulePitch - workGap - problemGap
+    }
+
+    /// The work area (page units, on a 1600 × 900 screen).
+    public static func workArea(workTop: Double) -> Box {
+        Box(x: ruleLeft, y: workTop, w: laneMaxX - ruleLeft, h: workBottom - workTop)
+    }
+
+    /// `box` (a line's ink, page units on a 1600 × 900 screen) is written in the answer spot: its
+    /// middle is inside it.
+    public static func isInAnswer(_ box: Box) -> Bool {
+        answer.contains(box.center)
+    }
+
+    /// A point of the layout (on the 1600 × 900 screen) on `screen` (its own rect).
+    public static func place(_ p: Vec2, on screen: Box) -> Vec2 {
+        let k = screen.w / Box.screen.w
+        return Vec2(screen.x + p.x * k, screen.y + p.y * k)
+    }
+
+    /// A box of the layout on `screen`.
+    public static func place(_ b: Box, on screen: Box) -> Box {
+        let k = screen.w / Box.screen.w
+        return Box(x: screen.x + b.x * k, y: screen.y + b.y * k, w: b.w * k, h: b.h * k)
+    }
+
+    /// A box on `screen` back in the layout's own units (the inverse of `place`).
+    public static func unplace(_ b: Box, from screen: Box) -> Box {
+        let k = screen.w > 0 ? Box.screen.w / screen.w : 1
+        return Box(x: (b.x - screen.x) * k, y: (b.y - screen.y) * k, w: b.w * k, h: b.h * k)
+    }
+}

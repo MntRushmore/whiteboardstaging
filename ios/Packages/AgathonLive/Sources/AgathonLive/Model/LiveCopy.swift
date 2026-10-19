@@ -81,6 +81,65 @@ public enum LiveCopy {
         public static let noRoom = "No room for a graph here. Try a new screen."
     }
 
+    /// Problem pages and checking when done (docs/PROBLEM-PAGES.md).
+    public enum Pages {
+        public static let check = "Check"
+        public static let checkLabel = "Check my work"
+        /// Check with nothing written yet
+        public static let nothingToCheck = "Write your work first, then tap Check."
+        /// a check that found every step right, the problem not finished yet
+        public static let keepGoing = "Looks right so far. Keep going."
+        /// …on a page with an answer spot
+        public static let keepGoingAnswer = "Looks right so far. Write your answer in the box."
+        /// one root of two (a partial answer)
+        public static let oneAnswer = "That's one answer. Is there another one?"
+        /// Check offline, lines waiting to be read
+        public static let checkOffline = "I'll check when the Wi-Fi is back."
+        public static let next = "Next problem"
+        public static let allDone = "All done"
+        public static let nextLabel = "Go to the next problem"
+        public static let newPage = "New page for this one"
+        public static let newPageLabel = "Move this problem to a new page"
+        public static let keepHere = "Keep it here"
+        public static let allDoneTitle = "All done."
+        public static func allDoneLine(_ count: Int, alone: Int) -> String {
+            let problems = count == 1 ? "1 problem" : "\(count) problems"
+            if alone == count { return "\(problems). All on your own." }
+            if alone == 0 { return "\(problems). You worked them all out." }
+            return "\(problems). \(alone) on your own."
+        }
+        public static let notYet = "Not yet"
+        public static let backToBoards = "Back to my boards"
+        public static let moreLikeThese = "More like these"
+        /// what "More like these" asks Ask for (it writes them on pages of their own)
+        public static let moreLikeTheseAsk = "Give me 3 more problems like these."
+        public static func stickerLabel(_ n: Int, _ outcome: String) -> String { "Problem \(n): \(outcome)" }
+        public static let onYourOwn = "done on your own"
+        public static let withAHint = "done with a hint"
+        public static let withHelp = "worked out together"
+    }
+
+    /// "I read" and "Fix what I read" (docs/PROBLEM-PAGES.md, "Trust in reading").
+    public enum Reading {
+        public static let iRead = "I read"
+        public static let tapToFix = "Tap to fix"
+        public static let isThisRight = "Is this right?"
+        public static let yesRight = "Yes, that's right"
+        /// a check found a slip on a line the tutor is not sure it read right
+        public static let didIReadThis = "Did I read this right? Tap what I read to check."
+        public static let fixed = "Fixed"
+        public static let unread = "I couldn't read this"
+        public static func spoken(_ plain: String) -> String { "I read \(plain). Tap to fix it." }
+        public static func asking(_ plain: String) -> String { "I read \(plain). Is this right? Tap to check." }
+        public static let sheetTitle = "Fix what I read"
+        public static let didYouMean = "Did you mean"
+        public static let typeIt = "Or type it"
+        public static let use = "Use this"
+        public static let cancel = "Cancel"
+        public static let clear = "Clear"
+        public static let delete = "Delete"
+    }
+
     public enum GrownUps {
         public static let button = "For grown-ups"
         public static let title = "For grown-ups"
@@ -95,5 +154,12 @@ public enum LiveCopy {
         public static let answerOnEquals = "Show the answer when I write ="
         public static let answerOnEqualsDetail = "For checking homework. Leave it off while they practise."
         public static let clearMarks = "Clear the tutor's marks"
+        public static let checking = "Check the work"
+        public static let whenDone = "When they're done"
+        public static let asTheyGo = "As they go"
+        public static let whenDoneDetail = "Quiet while they work. Checks when they write the answer, tap Check, or stop for a bit."
+        public static let asTheyGoDetail = "Ticks and rings each line as soon as it's read."
+        public static let showReadings = "Show what the tutor read"
+        public static let showReadingsDetail = "\"I read\" beside each line. Tap one to fix it."
     }
 }

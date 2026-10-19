@@ -102,6 +102,9 @@ extension LiveLoop {
             guard current(id, ticket, gen) else { return }
             reading.remove(id)
             readFailed(id, hash: hash, error: error)
+            // a check waiting for this read goes on without it
+            runPendingCheck()
+            refreshPage()
         }
     }
 
@@ -120,6 +123,11 @@ extension LiveLoop {
         defer { releaseReadSlot() }
         if let hit = cache[payload.hash] { return (hit, true) }
         if recognizer == "vision" { request.crop = crop(id) }
+        // the second opinion (docs/PROBLEM-PAGES.md): the route reads the crop too, behind its own flag
+        if pages.secondOpinion {
+            if request.crop == nil { request.crop = crop(id) }
+            if request.crop != nil { request.secondOpinion = true }
+        }
         count("recognize")
         do {
             let res = try await services.recognize(request)
@@ -433,9 +441,12 @@ extension LiveLoop {
         guard var st = lines[id] else { return }
         // ink read in this session: new work for the learning record
         learnFresh(id)
-        st.latex = reread ?? res.latex
-        st.confidence = reread == nil ? res.confidence : max(res.confidence, LiveLimits.minConfidence)
-        st.provider = reread == nil ? (res.provider == "vision" ? .vision : .mathpix) : .reread
+        // the kid's own reading of this ink stands over any read of it ("Fix what I read")
+        let fixed = fixedReading(id, hash: st.ink.hash)
+        st.latex = fixed ?? reread ?? res.latex
+        st.confidence = fixed != nil ? 1 : reread == nil ? res.confidence : max(res.confidence, LiveLimits.minConfidence)
+        st.provider = fixed != nil ? .fixed : reread == nil ? (res.provider == "vision" ? .vision : .mathpix) : .reread
+        noteSecondOpinion(id, res, read: st.latex)
         st.updatedAt = scheduler.now
         if st.modelWarned != nil && st.modelWarned != st.latex { st.modelWarned = nil }
         if let (last, up) = st.ink.strokeIds.compactMap({ s in lastPenUpAt[s].map { (s, $0) } }).max(by: { $0.1 < $1.1 }) {
@@ -452,10 +463,18 @@ extension LiveLoop {
             autoChecks(column: st.column)
             autoSolve()
         }
+        // a check waiting for the reads goes now, if this was the last
+        runPendingCheck()
+        refreshPage()
     }
 
     /// "The tutor saw it": the line's readback shows for a moment.
     func showReadback(_ id: String) {
+        // "I read" beside every line instead, when the grown-ups have it on (problem pages)
+        if settings.showReadings {
+            refreshReadings()
+            return
+        }
         guard let st = lines[id], !st.latex.isEmpty, settings.mode != .off,
               LivePolicy.decide(policyInput(st)).echo else { return }
         readbacks.removeAll { $0.id == id }
@@ -474,7 +493,7 @@ extension LiveLoop {
     /// never offline, never for a read that is not Mathpix's, silent when it fails.
     func secondRead(_ ink: InkLine, _ res: RecognizeResponse) {
         guard engineReady, !ink.hash.isEmpty, res.provider == "mathpix", rereads[ink.hash] == nil, connectivity.isOnline, !inkOut,
-              let st = lines[ink.id], st.latex == res.latex else { return }
+              let st = lines[ink.id], st.latex == res.latex, st.provider != .fixed else { return }
         let col = columnLines(st.column).filter { $0.id != st.id && !$0.latex.isEmpty }
         let above = col.filter { $0.row < st.row }.map(\.latex)
         let below = col.filter { $0.row >= st.row }.map(\.latex)
@@ -524,5 +543,11 @@ extension LineAnalysis {
     /// What a line that could not be read is.
     static var unknown: LineAnalysis {
         try! JSONDecoder().decode(LineAnalysis.self, from: Data(#"{"kind":"unknown","math":"","resultLatex":"","verdict":"unknown","note":""}"#.utf8))
+    }
+
+    /// A line the loop leaves alone, never judged and never a "?" (`ContinuationLine` with nothing
+    /// above to go on from).
+    static var quiet: LineAnalysis {
+        try! JSONDecoder().decode(LineAnalysis.self, from: Data(#"{"kind":"continuation","math":"","resultLatex":"","verdict":"none","note":""}"#.utf8))
     }
 }

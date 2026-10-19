@@ -54,7 +54,7 @@ struct SSETests {
         let board = TestBoard()
         let scheduler = ManualScheduler()
         let loop = LiveLoop(board: board, boardId: "sse-board", services: services,
-                            settings: LiveSettings(enabled: true, mode: mode, auto: true), brain: TestBrain.shared,
+                            settings: LiveSettings(enabled: true, mode: mode, auto: true, checking: .asIGo), brain: TestBrain.shared,
                             background: TestBrain.background, scheduler: scheduler, connectivity: ManualConnectivity())
         return (board, scheduler, loop)
     }
