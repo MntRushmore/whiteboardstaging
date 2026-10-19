@@ -27,8 +27,24 @@ public final class LivePages: ObservableObject {
     @Published public internal(set) var chipsHidden = false
 
     /// Ask the server for a second opinion on every line (a crop with each read; the route's
-    /// `RECOGNIZE_SECOND_OPINION` flag decides). Off by default: it doubles Mathpix's calls.
+    /// `RECOGNIZE_SECOND_OPINION` flag decides). Off by default: it doubles Mathpix's calls. The Live
+    /// Lab's switch (`secondOpinionDebug`) turns it on for this iPad's boards in a Debug build.
     public var secondOpinion = false
+
+    /// The Live Lab's switch for the second opinion (UserDefaults, this iPad). Read only by Debug builds:
+    /// a Release build asks for it when the owner turns it on (a remote setting, later).
+    public static let secondOpinionDebugKey = "agathon.debug.secondOpinion"
+
+    public static var secondOpinionDebug: Bool {
+        get {
+            #if DEBUG
+            return UserDefaults.standard.bool(forKey: secondOpinionDebugKey)
+            #else
+            return false
+            #endif
+        }
+        set { UserDefaults.standard.set(newValue, forKey: secondOpinionDebugKey) }
+    }
     /// The second part of problem pages (`ProblemPagesRollout`): the page's judging rules (a true step,
     /// one answer of several, the kid's own problem), never ringing a read in doubt, "New page for this
     /// one". Off: the pages alone, judged as the loop judges (scoped to the page's problem).

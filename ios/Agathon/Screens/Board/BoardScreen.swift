@@ -177,10 +177,6 @@ private struct BoardTopTrailing: View {
 
     var body: some View {
         HStack(spacing: DS.Space.xs) {
-            #if DEBUG
-            // in the editor's own bar (an overlay over the board took no XCUITest taps: see the report)
-            BoardAutowriteButton(model: model)
-            #endif
             ViewThatFits(in: .horizontal) {
                 row(words: true)
                 row(words: false)
@@ -196,6 +192,12 @@ private struct BoardTopTrailing: View {
                     askButton(words: false)
                 }
             }
+            #if DEBUG
+            // in the editor's own bar (an overlay over the board took no XCUITest taps: see the report),
+            // at its right end: on the left of the row it moved each time the save and tutor pills came
+            // and went, and a UI test's tap could land on the board between them (a finger's dot of ink)
+            BoardAutowriteButton(model: model)
+            #endif
         }
     }
 
