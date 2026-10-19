@@ -62,20 +62,29 @@ extension LiveLoop {
     func reviewOnPage(_ st: LiveLine, _ a: LineAnalysis, judged: String, solvedAbove: Bool, problem: [String],
                       original: LineAnalysis?) async -> (analysis: LineAnalysis, ownHead: Bool, side: Bool) {
         pages.partial.remove(st.id)
-        // a sum of numbers in a problem with letters (`3 × 4 = 12` beside `4x - 5 = 7`) is side work
+        var a = a
+        // a bare number answering the letter is the answer, not a lone symbol to keep quiet about
+        if judged != st.latex { a.bareAnswer = true }
+        // a sum of numbers in a problem with letters (`3 × 4 = 12` beside `4x - 5 = 7`) is side work,
+        // and so is an identity (true for every x: `2(x + 1) = 2x + 2`)
         let theirs = ReadingContext.letters(problem)
         let mine = ReadingContext.letters([judged])
-        let sideWork = !theirs.isEmpty && mine.isEmpty && a.bareAnswer != true
-        guard a.verdict == "mismatch", a.solved != true else { return (a, false, sideWork) }
-        var r = a
-        if a.bareAnswer != true, a.kind == "equation" || a.kind == "inequality" {
+        let identity = a.kind == "equation" && a.variable != nil && a.solutions?.isEmpty == true
+        let sideWork = (!theirs.isEmpty && mine.isEmpty && a.bareAnswer != true) || identity
+        // a relation that does not follow, after a solved line or with none of the problem's letters:
+        // the kid's own next problem (the engine calls a new letter's equation none or unknown, not a slip)
+        if a.verdict != "ok", a.solved != true, a.bareAnswer != true,
+           a.kind == "equation" || a.kind == "inequality" {
             let otherLetters = !mine.isEmpty && !theirs.isEmpty && mine.isDisjoint(with: theirs)
             if solvedAbove || otherLetters {
+                var r = a
                 r.verdict = "none"
                 r.note = ""
                 return (r, true, false)
             }
         }
+        guard a.verdict == "mismatch", a.solved != true else { return (a, false, sideWork) }
+        var r = a
         if let alone = try? await brain.analyzeLine(judged, context: AnalyzeContext(mode: .answer)), alone.verdict == "ok" {
             r.verdict = "none"
             r.note = ""
