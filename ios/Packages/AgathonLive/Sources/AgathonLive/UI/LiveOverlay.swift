@@ -171,10 +171,12 @@ struct PagesLayer: View {
     }
 
     /// The canvas's camera, when the geometry is the app's board (else the overlay's own clock follows).
+    /// Its moves only: a `@Published` publisher replays its value to every new subscriber, and a new
+    /// subscription on each render bumping `cameraTick` would render again, for ever.
     private var cameraChanges: AnyPublisher<Void, Never> {
         #if canImport(UIKit)
         if let canvas = geometry as? CanvasLiveBoard {
-            return canvas.controller.viewport.$camera.map { _ in () }.eraseToAnyPublisher()
+            return canvas.controller.viewport.$camera.dropFirst().removeDuplicates().map { _ in () }.eraseToAnyPublisher()
         }
         #endif
         return Empty().eraseToAnyPublisher()

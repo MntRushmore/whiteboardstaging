@@ -99,6 +99,8 @@ extension LiveLoop {
     func noteTutorChanges(_ change: ChangeSet, screen: RecordID) {
         // a problem the tutor wrote is a new problem for the learning record
         learnTutorChanges(change)
+        // the page on show became a problem page (a practice set's), or its page changed
+        if change.ids.contains(screen) { refreshPage() }
     }
 
     /// The kid's pen on the board (from the board's touch observer, or the Lab's replay).

@@ -27,6 +27,7 @@ extension LiveLoop {
         syncProblemRecords(on: board.currentScreenID)
         refreshHeads()
         reanchorLines()
+        refreshPage()
     }
 
     /// One problem written in the tutor's strokes: its key, LaTeX lines and where its ink is, and the

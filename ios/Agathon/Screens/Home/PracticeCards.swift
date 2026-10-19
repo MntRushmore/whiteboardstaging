@@ -10,6 +10,15 @@ struct TodayCard: View {
     let busy: Bool
     let start: () -> Void
 
+    /// Debug: the UI tests' own practice set starts whatever today's row says (`-practiceProblems`).
+    static var debugSet: Bool {
+        #if DEBUG
+        return HomeModel.debugPractice != nil
+        #else
+        return false
+        #endif
+    }
+
     private var goal: Int { row?.goal ?? DailyRow.defaultGoal }
     private var done: Int { min(row?.done ?? 0, goal) }
     private var finished: Bool { row?.isDone ?? false }
@@ -50,7 +59,7 @@ struct TodayCard: View {
                 .padding(.top, 10)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: DS.Space.l)
-            if !finished || row?.boardId != nil {
+            if !finished || row?.boardId != nil || Self.debugSet {
                 PillButton(buttonTitle, icon: .play, kind: .sunny, size: .large, action: start)
                     .disabled(busy)
                     .fixedSize()
