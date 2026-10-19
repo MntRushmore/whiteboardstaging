@@ -97,6 +97,8 @@ extension LiveLoop {
     /// The kid asked: Auto's quiet ends (what fails now is theirs to see), Auto adds nothing of its
     /// own until they write again, and with Auto off the problem asked about gets its marks now.
     func noteAsked(_ lineId: String? = nil) {
+        // the learning record: an explicit ask about this problem (before what it changes below)
+        learnAsk(lineId)
         autoLines.removeAll()
         askedSinceInk = true
         if lastFailure != nil { clearFailure() }
@@ -280,6 +282,8 @@ extension LiveLoop {
             if let words = HintWording.accept(raw, facts: facts) {
                 self.metrics.deviceHint.append(self.scheduler.now - started)
                 self.openHint(cur, message: words, question: nil, level: 1)
+                // the learning record: the hint the kid asked for (the web's check would have said it)
+                self.learnHint(id)
             } else {
                 if raw != nil { self.metrics.deviceHintRefused += 1 }
                 self.startCheck(column: cur.column, focus: id, userAsked: true, forceHint: true)
@@ -293,6 +297,8 @@ extension LiveLoop {
         let note = st.analysis?.note ?? ""
         openHint(st, message: wrong ? (note.isEmpty ? LiveCopy.Hint.lookAgain : note) : "Your steps so far look right.",
                  question: wrong ? nil : "What could you do next?", level: 1)
+        // the learning record: words about a slip, asked for, are a hint
+        if wrong { learnHint(st.id) }
     }
 
     /// One annotation: a ring and its words. True when it opened a hint card.
@@ -311,6 +317,8 @@ extension LiveLoop {
             if let fresh = lines[id] {
                 syncMark(fresh, .circle)
                 updateVerdict(fresh, "warn")
+                // the learning record: the kind of mistake the model saw — and, asked for, its words are a hint
+                learnAnnotation(fresh, a, userAsked: userAsked)
             }
         }
         var carded = false
@@ -410,6 +418,7 @@ extension LiveLoop {
         }
         metrics.solveFirstStep.append(scheduler.now - askedAt)
         tracker.helped(problem: problem, solved: !onlyFirstStep)
+        learnSolveWritten(st, onlyFirstStep: onlyFirstStep)
         return .written
     }
 
@@ -450,6 +459,7 @@ extension LiveLoop {
         }
         metrics.solveFirstStep.append(scheduler.now - askedAt)
         noteSuccess()
+        learnSolveWritten(st, onlyFirstStep: onlyFirstStep)
         return true
     }
 
@@ -505,6 +515,7 @@ extension LiveLoop {
             }
             metrics.solveFirstStep.append(scheduler.now - askedAt)
             tracker.helped(problem: problem, solved: !onlyFirstStep)
+            learnSolveWritten(st, onlyFirstStep: onlyFirstStep)
         } else if !failed && discarded > 0 {
             fail(LiveFailure.other(LiveCopy.Help.solveFailed), kind: "solve", lineId: st.id, retry: .solve(lineId: st.id, onlyFirstStep: onlyFirstStep))
         }

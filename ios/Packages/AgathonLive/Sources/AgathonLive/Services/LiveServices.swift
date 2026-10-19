@@ -27,15 +27,20 @@ public final class LiveAPIServices: LiveServices {
     public let live: LiveAPI
     /// A read abandoned after this (the web's `recognizeTimeoutMs`); the server gives up a second sooner.
     public let recognizeTimeout: Duration
+    /// The backend these routes belong to, when made from one: the loop's learning record saves as
+    /// its signed-in student (`LiveLearning.connect(backend:)`).
+    public let backend: AgathonBackend?
 
-    public init(api: APIClient, live: LiveAPI, recognizeTimeout: Duration = .milliseconds(Int(LiveTiming.recognizeTimeoutMs))) {
+    public init(api: APIClient, live: LiveAPI, recognizeTimeout: Duration = .milliseconds(Int(LiveTiming.recognizeTimeoutMs)),
+                backend: AgathonBackend? = nil) {
         self.api = api
         self.live = live
         self.recognizeTimeout = recognizeTimeout
+        self.backend = backend
     }
 
     @MainActor public convenience init(backend: AgathonBackend) {
-        self.init(api: backend.api, live: backend.live)
+        self.init(api: backend.api, live: backend.live, backend: backend)
     }
 
     public static let recognizePath = "/api/live/recognize"

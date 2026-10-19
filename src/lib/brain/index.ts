@@ -39,10 +39,11 @@ import { composeHandwriting, layoutMath, mulberry32 } from "@/lib/hand";
 import { practiceProblems, hasPractice } from "@/lib/learning/practiceSet";
 import { findVariant } from "@/lib/learning/generators/variant";
 import { classifyProblem } from "@/lib/learning/skills";
+import { classifyMistake } from "@/lib/learning/mistakes";
 import { problemLines, seedOf } from "@/lib/learning/nowYouTry";
 import { learnerHint, summarize } from "@/lib/learning/summary";
 import type { AttemptRecord, PracticeProblem, SkillId } from "@/lib/learning/contracts";
-import type { LearnerHint } from "@/lib/learning/hint";
+import type { LearnerHint, MistakeKind } from "@/lib/learning/hint";
 import type { CourseId } from "@/lib/onboarding/courseIds";
 import type { Grade } from "@/lib/learning/grades";
 import type { ComplexRootsSetting } from "@/lib/live/engine/complexSetting";
@@ -440,6 +441,15 @@ export function classify(args: { lines: string[]; course?: string | null }): Ski
   return classifyProblem(args.lines, args.course);
 }
 
+/**
+ * What kind of mistake a ringed line is, compared with the line above it (`classifyMistake`, the
+ * board's own classifier for the learning record); null when none of the kinds explains it.
+ */
+export function mistakeOf(args: { previous: string; latex: string }): MistakeKind | null {
+  need(typeof args.previous === "string" && typeof args.latex === "string", "previous and latex are strings");
+  return classifyMistake(engine(), args.previous, args.latex);
+}
+
 export interface ProgressArgs {
   attempts: AttemptRecord[];
   /** ms since the epoch */
@@ -545,6 +555,7 @@ export const METHODS: Readonly<Record<string, Method>> = {
   practice: { run: practice },
   weakSpotPractice: { run: weakSpotPractice },
   classify: { run: classify },
+  classifyMistake: { run: mistakeOf },
   progressSummary: { run: progressSummary },
   sketchGraph: { run: sketchGraph },
   chatPlan: { run: chatPlan },
