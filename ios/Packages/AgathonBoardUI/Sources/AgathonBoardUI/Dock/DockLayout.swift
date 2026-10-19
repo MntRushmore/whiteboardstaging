@@ -1,3 +1,4 @@
+import AgathonBoard
 import CoreGraphics
 import Foundation
 
@@ -34,6 +35,19 @@ public enum DockCopy {
     public static let full = "This board is full"
 
     public static func pageOf(_ n: Int, _ count: Int) -> String { "Page \(n) of \(count)" }
+    /// a problem page in a set (docs/PROBLEM-PAGES.md)
+    public static func problemOf(_ n: Int, _ count: Int) -> String { "Problem \(n) of \(count)" }
+    public static let allDone = "All done"
+
+    /// What the top bar says under the board's name: "Problem 2 of 5" on a problem page in a set,
+    /// "All done" on the page that ends one, else "Page 2 of 6".
+    public static func whereAmI(_ page: ProblemPage?, screen n: Int, of count: Int) -> String {
+        if let page {
+            if page.kind == .done && page.setId != nil { return allDone }
+            if page.kind == .problem, page.inSet, let i = page.index, let c = page.count { return problemOf(i, c) }
+        }
+        return pageOf(n, count)
+    }
     public static func pageShort(_ n: Int, _ count: Int) -> String { "\(n)/\(count)" }
 
     public static let deleteTitle = "Delete this page?"

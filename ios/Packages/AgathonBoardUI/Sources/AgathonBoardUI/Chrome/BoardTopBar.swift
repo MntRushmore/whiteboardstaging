@@ -2,7 +2,8 @@ import AgathonBoard
 import AgathonDesign
 import SwiftUI
 
-/// The board's top bar (Blocks): back, the board's name and "Page 2 of 3" (a tap opens the pages),
+/// The board's top bar (Blocks): back, the board's name and "Page 2 of 3" ("Problem 2 of 5" on a
+/// problem page in a set, docs/PROBLEM-PAGES.md; a tap opens the pages),
 /// the Live lane's slot (`topTrailing`: the tutor's status pill, the ink meter), and More.
 struct BoardTopBar<Trailing: View>: View {
     @ObservedObject var controller: BoardController
@@ -26,7 +27,7 @@ struct BoardTopBar<Trailing: View>: View {
                         .tracking(-0.03 * 24)
                         .foregroundStyle(DS.Color.ink)
                         .lineLimit(1)
-                    Text(DockCopy.pageOf(controller.screenIndex, controller.screenCount))
+                    Text(whereAmI)
                         .font(DS.Font.fixed(.caption, size: 14))
                         .foregroundStyle(DS.Color.inkSecondary)
                         .monospacedDigit()
@@ -35,7 +36,7 @@ struct BoardTopBar<Trailing: View>: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(title). \(DockCopy.pageOf(controller.screenIndex, controller.screenCount))")
+            .accessibilityLabel("\(title). \(whereAmI)")
             .accessibilityHint(DockCopy.pages)
             .accessibilityIdentifier("board.title")
             .layoutPriority(1)
@@ -59,6 +60,10 @@ struct BoardTopBar<Trailing: View>: View {
             .accessibilityIdentifier("board.more")
         }
         .frame(height: DS.Size.round)
+    }
+
+    private var whereAmI: String {
+        DockCopy.whereAmI(controller.currentScreen?.problemPage, screen: controller.screenIndex, of: controller.screenCount)
     }
 }
 

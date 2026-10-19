@@ -130,3 +130,30 @@ struct ProblemPageTests {
         #expect(c.moveToNewScreen(["stroke:nope"]) == nil)
     }
 }
+
+#if canImport(UIKit)
+import UIKit
+
+/// The canvas draws a problem page's template under the ink, and nothing on a plain page.
+@MainActor
+struct ProblemPageCanvasTests {
+    @Test func theCanvasShowsTheTemplateOnAProblemPageOnly() throws {
+        var page = ScreenRecord(id: "screen:p", order: "a1")
+        page.problemPage = ProblemPage(setId: "s", index: 1, count: 2, origin: "practice")
+        let doc = BoardDocument([.screen(ScreenRecord(id: "screen:a", order: "a0")), .screen(page)])
+        let c = BoardController(document: doc, defaults: UserDefaults(suiteName: "test.template.\(UUID())")!)
+        let v = BoardCanvasView(controller: c)
+        v.frame = CGRect(x: 0, y: 0, width: 1376, height: 1032)
+        v.layoutIfNeeded()
+        c.resetScene()
+        #expect(!v.showsTemplate, "a plain page has none")
+        c.goToScreen("screen:p")
+        #expect(v.showsTemplate)
+        // the page made plain again (the screen's own record changed)
+        c.setProblemPage(nil, on: "screen:p")
+        #expect(!v.showsTemplate)
+        c.setProblemPage(ProblemPage(kind: .done, setId: "s"), on: "screen:p")
+        #expect(!v.showsTemplate, "the All done page draws nothing on the page")
+    }
+}
+#endif

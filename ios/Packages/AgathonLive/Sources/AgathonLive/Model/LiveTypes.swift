@@ -82,7 +82,17 @@ public enum LiveActivity: Equatable, Sendable {
 
 /// Where a line's read came from.
 public enum ReadProvider: String, Sendable, Equatable {
-    case none, mathpix, vision, reread, restored
+    /// `fixed`: the kid (or a grown-up) picked or typed the line's reading ("Fix what I read")
+    case none, mathpix, vision, reread, restored, fixed
+}
+
+/// When the tutor judges the kid's lines (docs/PROBLEM-PAGES.md, "Check when done").
+public enum CheckTiming: String, Sendable, Codable, CaseIterable {
+    /// quiet while the kid works; checks when they write in the answer spot, tap Check, or stop for a
+    /// long pause (the default since 2026-10-19)
+    case whenDone
+    /// every line as soon as it is read (the tutor before 2026-10-19)
+    case asIGo
 }
 
 /// One line of the kid's work as the loop holds it (the web's `LiveLineState`).
@@ -136,19 +146,25 @@ public struct LiveSettings: Equatable, Sendable, Codable {
     /// any mode (homework checking, practice checking). Off by default: tutoring shouldn't hand out
     /// answers.
     public var answerOnEquals: Bool
+    /// When the tutor judges: when the kid is done (default), or as they go.
+    public var checking: CheckTiming
+    /// "I read: …" under each line, tap to fix (default on).
+    public var showReadings: Bool
 
     public init(enabled: Bool = true, mode: LiveMode = .feedback, auto: Bool = true, handwriting: Bool = true, celebrations: Bool = true,
-                answerOnEquals: Bool = false) {
+                answerOnEquals: Bool = false, checking: CheckTiming = .whenDone, showReadings: Bool = true) {
         self.enabled = enabled
         self.mode = mode
         self.auto = auto
         self.handwriting = handwriting
         self.celebrations = celebrations
         self.answerOnEquals = answerOnEquals
+        self.checking = checking
+        self.showReadings = showReadings
     }
 
     enum CodingKeys: String, CodingKey {
-        case enabled, mode, auto, handwriting, celebrations, answerOnEquals
+        case enabled, mode, auto, handwriting, celebrations, answerOnEquals, checking, showReadings
     }
 
     /// Settings saved before a field existed keep the rest, with the new field at its default.
@@ -161,6 +177,9 @@ public struct LiveSettings: Equatable, Sendable, Codable {
         handwriting = try c.decodeIfPresent(Bool.self, forKey: .handwriting) ?? d.handwriting
         celebrations = try c.decodeIfPresent(Bool.self, forKey: .celebrations) ?? d.celebrations
         answerOnEquals = try c.decodeIfPresent(Bool.self, forKey: .answerOnEquals) ?? d.answerOnEquals
+        // settings saved before 2026-10-19 take the new default (the owner's: check when done)
+        checking = (try? c.decodeIfPresent(CheckTiming.self, forKey: .checking)) ?? d.checking
+        showReadings = try c.decodeIfPresent(Bool.self, forKey: .showReadings) ?? d.showReadings
     }
 
     /// New boards start in Feedback ("Hint"): Off makes Live look broken.

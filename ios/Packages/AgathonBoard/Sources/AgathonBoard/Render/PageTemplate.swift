@@ -8,7 +8,7 @@ import Foundation
 /// the thumbnail draws it on white. Text is turned into glyph outlines, so it is vector too.
 public struct PageTemplate {
     /// What the template draws, each part in one colour.
-    public struct Colors: Equatable {
+    public struct Colors: Equatable, @unchecked Sendable {
         /// the guide lines
         public var rule: CGColor
         /// "Work it out here"
@@ -31,7 +31,7 @@ public struct PageTemplate {
 
         /// Blocks (flat): rules a shade off the chalk, a light grey label, the answer spot in chalk,
         /// "Answer:" in ink secondary.
-        nonisolated(unsafe) public static let blocks = Colors(rule: rgb(0xE6E8EE), label: rgb(0xA3A6B4), answer: rgb(0xF1F2F6), answerLabel: rgb(0x5B5E6E))
+        public static let blocks = Colors(rule: rgb(0xE6E8EE), label: rgb(0xA3A6B4), answer: rgb(0xF1F2F6), answerLabel: rgb(0x5B5E6E))
     }
 
     /// stroked at `ruleWidth`, round caps

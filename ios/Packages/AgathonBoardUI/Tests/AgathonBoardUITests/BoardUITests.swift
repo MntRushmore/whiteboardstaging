@@ -55,6 +55,13 @@ struct DockLayoutTests {
         #expect(DockCopy.newPage == "New page") // the web's two words, the dock's widest
         #expect(DockCopy.color == "Color") // US English
         #expect(DockCopy.pageOf(2, 3) == "Page 2 of 3")
+        // a problem page in a set says where in the set (docs/PROBLEM-PAGES.md); a kid's own page, a page
+        // of no set, says the page
+        #expect(DockCopy.whereAmI(ProblemPage(setId: "daily:x", index: 2, count: 5), screen: 3, of: 7) == "Problem 2 of 5")
+        #expect(DockCopy.whereAmI(ProblemPage(kind: .done, setId: "daily:x"), screen: 7, of: 7) == "All done")
+        #expect(DockCopy.whereAmI(ProblemPage(origin: "student"), screen: 4, of: 7) == "Page 4 of 7")
+        #expect(DockCopy.whereAmI(ProblemPage(setId: "nyt:1", index: 1, count: 1), screen: 2, of: 2) == "Page 2 of 2")
+        #expect(DockCopy.whereAmI(nil, screen: 1, of: 1) == "Page 1 of 1")
         // kind words: never "wrong"
         for s in [DockCopy.pictureFailed, DockCopy.pdfFailed, DockCopy.deleteMessage, DockCopy.boardFullMessage] {
             #expect(!s.lowercased().contains("wrong"))
