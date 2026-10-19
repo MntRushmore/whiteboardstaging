@@ -122,6 +122,25 @@ The pieces are connected; the old stand-ins stay only in Debug (Labs).
 - **StoreKit.** `AgathonTests/StoreKitFlowTests` runs only from Xcode (Product › Test with
   `AGATHON_STOREKIT=1`); `SKTestSession` fails from the command line.
 
+### The integration's QA
+
+`scripts/ios-integration-qa.sh [build journey family ink resilience a11y design]` runs the integration's
+UI tests through `sim-run.sh` against the local stack (a dev server on `PORT`, default 3901; it warms
+the dev server's routes first, since a cold `next dev` compiles a route slower than the app waits):
+
+- `journey`: `KidJourneyUITests/test1Journey` from a fresh install (it writes the new account's
+  email to `JOURNEY_STATE`);
+- `family`: the family switch and Today's practice (written once);
+- `ink`: sets that grown-up's ink to 0 in the local database, runs out of ink for the kid and the
+  grown-up, then puts it back;
+- `resilience`: `BoardResilienceUITests` with `scripts/lib/netcut-proxy.mjs` cutting the network on
+  cue (the app points at the proxy: 3902 → the API, 54329 → Supabase);
+- `a11y`: `BoardAccessibilityUITests` (every control on the board named);
+- `design`: `DesignPassUITests` in landscape, portrait, a Split View-sized window (`-windowWidth 507`)
+  and the largest text.
+
+Use your own `-derivedDataPath` (`DD=`): two worktrees building into one DerivedData mix products.
+
 ## Production
 
 - **Supabase migrations: APPLIED 2026-10-18 18:33 ET with the owner's OK** ("yes u can do everything to
