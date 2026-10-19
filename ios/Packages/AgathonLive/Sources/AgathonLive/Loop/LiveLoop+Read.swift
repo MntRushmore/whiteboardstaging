@@ -439,6 +439,9 @@ extension LiveLoop {
 
     func applyRecognition(_ id: String, _ res: RecognizeResponse, reread: String?) async {
         guard let before = lines[id] else { return }
+        // to a check, the line is still being read until its reading is on it
+        pages.applying.insert(id)
+        defer { pages.applying.remove(id) }
         // a young hand's read put right (the web's `youngRead`): a wobbly `=` is an `=`, and under a
         // problem of plain numbers an answer's signs are its ink's (`-54` from a wobbly `=` is `= 54`)
         let raw = reread ?? res.latex
@@ -463,6 +466,7 @@ extension LiveLoop {
             metrics.readAfterPenUp[last] = scheduler.now - up
         }
         lines[id] = st
+        pages.applying.remove(id)
         tracker.wrote(problem: problemKey(for: st))
         persistLine(id)
         await analyze(column: st.column)

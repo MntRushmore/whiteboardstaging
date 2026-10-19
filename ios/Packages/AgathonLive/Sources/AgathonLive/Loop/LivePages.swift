@@ -54,6 +54,9 @@ public final class LivePages: ObservableObject {
 
     /// the reading each line was checked at (check when done): a line is held until then
     var released: [String: String] = [:]
+    /// lines whose read has landed but is still being put on them (`applyRecognition`'s awaits): to a
+    /// check they are still being read (one ran in that moment and skipped a just-read answer)
+    var applying = Set<String>()
     /// a check waiting for the reads in flight, and its watchdog
     var pendingCheck: CheckReason?
     var pendingCheckTimer: LiveTimer?
@@ -90,6 +93,7 @@ public final class LivePages: ObservableObject {
         chipsTimer = nil
         pendingCheck = nil
         released = [:]
+        applying = []
         lastInkAt = -.infinity
         strokeAt = [:]
         fixed = [:]

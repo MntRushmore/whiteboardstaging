@@ -114,6 +114,29 @@ struct ProblemPagesLoopTests {
         #expect(h.loop.pages.action == .next(last: false), "solved, in a set: Next")
     }
 
+    @Test func aReadThatLandsAfterTheAnswerSpotsCheckIsCheckedByThePause() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        // a slow network: the reads have not landed when the answer spot's check runs
+        h.services.holdReadsNow()
+        h.idleTimeout = .milliseconds(100)
+        await h.write("2x = 8", at: Vec2(200, 280))
+        await h.write("x = 4", at: Vec2(300, 768))
+        await h.pass(1_600)
+        // the check waits for the reads, then goes without them (the lines are still being read)
+        await h.pass(PageTiming.readWaitMs)
+        #expect(h.board.marks.isEmpty)
+        h.idleTimeout = .seconds(20)
+        h.services.releaseReads()
+        await h.pass(200)
+        #expect(line(h, "x = 4") != nil, "read")
+        // the long pause after the last ink (9 s) checks what the answer spot's check could not
+        await h.pass(1_000)
+        #expect(h.board.mark(on: "2x = 8") == .tick && h.board.mark(on: "x = 4") == .tick, "\(h.board.marks.map(\.kind))")
+        #expect(h.loop.pages.action == .next(last: false))
+    }
+
     @Test func anUnfinishedLineIsNeverJudged() async throws {
         let h = harness(checking: .whenDone)
         await h.start()
