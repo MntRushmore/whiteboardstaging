@@ -4,6 +4,24 @@
 `docs/problem-pages/mock-*.png` (Blocks, iPad Air 13" landscape, drawn in page units by
 `docs/problem-pages/mockups.html`; `./render.sh` renders them again).
 
+## Rollout (2026-10-19)
+
+The owner, on the iPad: "we need 1 question per screen or some way to not leak one handwriting into
+another" (Today's practice had written five problems on one page; #1's work ran into #2). So the
+pages ship first, alone:
+
+- **On now:** every problem the tutor gives on its own page (the problem at the top in the tutor's
+  hand, the work area under it), "Problem n of N", Next once solved, the dock's ‹ › as before, All
+  done at the end (Back to my boards, More like these), and the tutor judging a page's ink against
+  that page's problem only.
+- **Built, off** (`ProblemPagesRollout.secondPart = false`; the tests turn it on where they test it):
+  check when done (the default stays "as I go"; the grown-ups' switch is hidden), the answer spot,
+  "I read" and tap to fix, the page's own judging rules (true steps, partial answers, the kid's own
+  problem, never ringing a read in doubt) and "New page for this one".
+- **Continuation rules** (`+3 = 767` under `400 + 364 = 764`, trailing equals, chains…) are the
+  integration's (`ContinuationLine`, the web's rules ported with their tests); the page review sits on
+  top of them and adds none of its own.
+
 ## Why
 
 A parent, about the web app:
