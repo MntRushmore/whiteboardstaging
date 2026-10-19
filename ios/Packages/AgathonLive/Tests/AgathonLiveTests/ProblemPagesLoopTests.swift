@@ -363,6 +363,42 @@ struct ProblemPagesLoopTests {
         #expect(rec.meta[PageMeta.fixed]?.stringValue == "2x = 8")
     }
 
+    @Test func theSecondOpinionDisagreeingAsksAndOffersItsRead() async throws {
+        let h = harness(checking: .whenDone)
+        h.loop.pages.secondOpinion = true
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        // the kid wrote 2x = 8; the strokes read 2x = 6, sure of it; the crop's read says 2x = 8
+        await h.write("2x = 8", at: Vec2(200, 280), reads: "2x = 6", second: ("2x = 8", false))
+        await h.pass(1_000)
+        #expect(h.services.recognizeRequests.last?.secondOpinion == true, "the board asked, with the line's crop")
+        #expect(h.services.recognizeRequests.last?.crop != nil)
+        let st = try #require(line(h, "2x = 6"))
+        #expect(h.loop.pages.readings.first { $0.id == st.id }?.state == .asking, "the readers disagree: Is this right?")
+        h.loop.checkPage()
+        await h.pass(500)
+        #expect(h.board.mark(on: "2x = 6") == nil, "a read the readers disagree on is never ringed")
+        // never swapped: the kid picks the second read from Fix what I read
+        #expect(h.loop.lines[st.id]?.latex == "2x = 6")
+        h.loop.openFix(st.id)
+        await h.pass(200)
+        #expect(h.loop.pages.fixing?.alternatives.first == "2x = 8", "\(String(describing: h.loop.pages.fixing))")
+        h.loop.useReading(st.id, latex: "2x = 8")
+        await h.pass(500)
+        #expect(h.board.mark(on: "2x = 8") == .tick)
+    }
+
+    @Test func readersThatAgreeAskNothing() async throws {
+        let h = harness(checking: .whenDone)
+        h.loop.pages.secondOpinion = true
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        await h.write("2x = 8", at: Vec2(200, 280), second: ("2 x=8", true))
+        await h.pass(1_000)
+        let st = try #require(line(h, "2x = 8"))
+        #expect(h.loop.pages.readings.first { $0.id == st.id }?.state == .read)
+    }
+
     @Test func readingsAreQuietAndOffWithTheSwitch() async throws {
         let h = harness(checking: .whenDone)
         await h.start()

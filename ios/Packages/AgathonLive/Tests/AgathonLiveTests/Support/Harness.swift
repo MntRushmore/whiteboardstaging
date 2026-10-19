@@ -363,20 +363,23 @@ final class Harness {
     @discardableResult
     /// `confidence`: Mathpix's for the read (under 0.99 the tutor asks "Is this right?" and rings nothing,
     /// with problem pages' second part on)
-    func write(_ latex: String, at: Vec2, hand: String = "clean", reads: String? = nil, confidence: Double = 0.995, scale: Double = 1.4) async -> [RecordID] {
+    /// `second`: the route's second opinion on the line (its read, and whether it agreed)
+    func write(_ latex: String, at: Vec2, hand: String = "clean", reads: String? = nil, confidence: Double = 0.995, scale: Double = 1.4,
+               second: (latex: String, agree: Bool)? = nil) async -> [RecordID] {
         let ink = KidHands.strokes(latex, hand: hand, at: at, scale: scale)
         let ids = board.kidWrites(ink)
-        await register(ids, reads: reads ?? latex, confidence: confidence)
+        await register(ids, reads: reads ?? latex, confidence: confidence, second: second)
         written[latex] = ids
         return ids
     }
 
     /// The fake recognizer reads these strokes (as the board stores them) as `reads`.
-    func register(_ ids: [RecordID], reads: String, confidence: Double = 0.995) async {
+    func register(_ ids: [RecordID], reads: String, confidence: Double = 0.995, second: (latex: String, agree: Bool)? = nil) async {
         let set = Set(ids.map(\.rawValue))
         let strokes = board.store.kidStrokes(on: board.currentScreenID).filter { set.contains($0.id) }
         if let payload = try? await TestBrain.shared.recognizerPayload(strokes) {
-            services.register(payload, as: RecognizeResponse(latex: reads, confidence: confidence))
+            services.register(payload, as: RecognizeResponse(latex: reads, confidence: confidence,
+                                                             second: second.map { .init(latex: $0.latex, confidence: 0.97) }, agree: second?.agree))
         }
     }
 
