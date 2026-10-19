@@ -491,6 +491,69 @@ struct ProblemPagesLoopTests {
         #expect(h.loop.pages.action == .next(last: true))
     }
 
+    /// The journey's page 3 (a step, then the answer in the answer spot) under many timings, on the fake
+    /// services: reads quick or slow (landing before, during or long after the answer spot's check),
+    /// reading early on or off, the loop's async work cut short between clock steps (so a timer can
+    /// fire while a read is being put on its line), and sometimes a touch left on the board once the
+    /// line has gone to be read (a resting palm: the pen reads as down for good; before that, the loop
+    /// reads nothing, as ever). The answer is always checked: by the answer spot, the long pause, or
+    /// the safety net.
+    @Test func theAnswerIsAlwaysCheckedWhateverTheTimings() async throws {
+        var failures: [String] = []
+        for seed in 1...30 {
+            var rng = SplitMix(seed: UInt64(seed) &* 7_919)
+            let h = harness(checking: .whenDone)
+            h.loop.readsEarly = Bool.random(using: &rng)
+            await h.start()
+            problemPage(h, ["5x + 2 = 17"], index: 3, count: 3)
+            await h.pass(300)
+            h.idleTimeout = .milliseconds(Int.random(in: 2...40, using: &rng))
+            await h.write("5x = 15", at: Vec2(200, 280))
+            await h.pass(Double(Int.random(in: 100...3_000, using: &rng)))
+            let slow = Bool.random(using: &rng)
+            if slow { h.services.holdReadsNow() }
+            await h.write("x = 3", at: Vec2(300, 768))
+            if slow {
+                await h.pass(Double(Int.random(in: 0...10_000, using: &rng)))
+                h.services.releaseReads()
+            }
+            // (past the quiet gate: the loop never reads a line while the pen is down)
+            await h.pass(Double(Int.random(in: 700...2_000, using: &rng)))
+            // a touch left on the board from here on (sometimes)
+            let palm = Int.random(in: 0..<3, using: &rng) == 0
+            if palm {
+                h.board.isPenDown = true
+                h.board.onPen?(true)
+            }
+            h.idleTimeout = .seconds(20)
+            await h.pass(14_000)
+            let step = markHere(h, "5x = 15"), answer = markHere(h, "x = 3")
+            if step != .tick || answer != .tick || h.loop.pages.action != .next(last: true) {
+                failures.append("seed \(seed) (early \(h.loop.readsEarly), slow \(slow), palm \(palm)): 5x = 15 \(String(describing: step)), "
+                                + "x = 3 \(String(describing: answer)), action \(String(describing: h.loop.pages.action)); \(h.loop.checkDiagnosis)")
+            }
+            h.board.isPenDown = false
+        }
+        #expect(failures.isEmpty, "\(failures.count) of 30:\n\(failures.joined(separator: "\n"))")
+    }
+
+    @Test func theSafetyNetChecksWorkHeldByATouchLeftOnTheBoard() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        await h.write("2x = 8", at: Vec2(200, 280))
+        await h.pass(1_000)
+        // a palm comes to rest on the board: the long pause waits for the pen, and waits
+        h.board.isPenDown = true
+        h.board.onPen?(true)
+        await h.pass(10_000)
+        #expect(h.board.marks.isEmpty, "the long pause waits while the pen is down")
+        await h.pass(2_500)
+        #expect(h.board.mark(on: "2x = 8") == .tick, "the safety net checked it")
+        #expect(h.loop.pages.lastSafetyNet?.contains("2x = 8") == true, "and noted why it was held: \(h.loop.pages.lastSafetyNet ?? "nil")")
+        h.board.isPenDown = false
+    }
+
     @Test func nextGoesToTheNextPage() async throws {
         let h = Harness()
         await h.start()

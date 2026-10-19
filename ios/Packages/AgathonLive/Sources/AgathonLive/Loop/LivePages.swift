@@ -63,6 +63,11 @@ public final class LivePages: ObservableObject {
     var pauseTimer: LiveTimer?
     var answerTimer: LiveTimer?
     var chipsTimer: LiveTimer?
+    /// the safety net (`safetyNetCheck`): its timer, the ink it last checked after, and why the work
+    /// it checked had been held (the Debug probe shows it)
+    var netTimer: LiveTimer?
+    var netFiredFor = -Double.infinity
+    public internal(set) var lastSafetyNet: String?
     /// the kid's last stroke on the page (scheduler ms)
     var lastInkAt = -Double.infinity
     /// per stroke: when the kid last drew or changed it (the line the pen is on is never judged at a
@@ -86,11 +91,13 @@ public final class LivePages: ObservableObject {
 
     /// The page on show changed (or the loop stopped): what it remembered of the last goes.
     func reset() {
-        for t in [pendingCheckTimer, pauseTimer, answerTimer, chipsTimer] { t?.cancel() }
+        for t in [pendingCheckTimer, pauseTimer, answerTimer, chipsTimer, netTimer] { t?.cancel() }
         pendingCheckTimer = nil
         pauseTimer = nil
         answerTimer = nil
         chipsTimer = nil
+        netTimer = nil
+        netFiredFor = -.infinity
         pendingCheck = nil
         released = [:]
         applying = []
@@ -123,6 +130,9 @@ public enum CheckReason: String, Sendable {
     case help
     /// a reading fixed or confirmed (that line)
     case fixed
+    /// the safety net: work still unchecked, nothing being read or written, and no ink for longer
+    /// than the long pause and a margin (whatever held it: a touch left on the board, a lost timer)
+    case idle
 }
 
 /// The clocks of check when done.
@@ -137,6 +147,8 @@ public enum PageTiming {
     public static let readWaitMs = 7_000.0
     /// the "I read" chips step aside this long after the pen lifts
     public static let chipsBackMs = 1_000.0
+    /// the safety net checks this long after the long pause, if the work is still unchecked
+    public static let safetyMarginMs = 3_000.0
     /// Mathpix's strokes confidence under this: "Is this right?" (the eval's threshold)
     public static let askBelowConfidence = 0.99
 }
