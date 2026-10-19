@@ -1,21 +1,20 @@
+#if DEBUG
 import AgathonBoard
 import AgathonKit
 import AgathonSync
 import SwiftUI
 import UIKit
 
-/// One board, opened from the boards list: read through AgathonSync (the iPad's document, or the
-/// web's board converted on this open), drawn on the AgathonBoard canvas, saved as the kid works.
-///
-/// Plain controls only (pen, eraser, colours, undo, screens) and the save indicator: the board lane
-/// is building the real editor (BoardEditorView), which the lead swaps in here.
-struct BoardScreen: View {
+/// The sync lane's plain board (Labs › Old debug screens only): read through AgathonSync, drawn on the
+/// AgathonBoard canvas, saved as the kid works, with plain controls and a detailed save line. The
+/// app's board is `BoardScreen` (ios/Agathon/Screens/Board).
+struct PlainBoardScreen: View {
     let board: BoardSummary
 
     @Environment(AgathonBackend.self) private var backend
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var model = BoardScreenModel()
+    @StateObject private var model = PlainBoardScreenModel()
 
     var body: some View {
         Group {
@@ -51,7 +50,7 @@ struct BoardScreen: View {
 }
 
 @MainActor
-final class BoardScreenModel: ObservableObject {
+final class PlainBoardScreenModel: ObservableObject {
     @Published private(set) var session: BoardSession?
     @Published private(set) var failure: String?
     private var opened = false
@@ -91,7 +90,7 @@ final class BoardScreenModel: ObservableObject {
 /// The open board: canvas, plain tools, save state.
 private struct BoardSessionView: View {
     @ObservedObject var session: BoardSession
-    @ObservedObject var model: BoardScreenModel
+    @ObservedObject var model: PlainBoardScreenModel
 
     var body: some View {
         switch session.phase {
@@ -224,3 +223,4 @@ private struct SaveIndicator: View {
         }
     }
 }
+#endif

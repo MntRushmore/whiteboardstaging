@@ -12,6 +12,7 @@ public struct LiveOverlay: View {
     let geometry: LiveCanvasGeometry
     let onGrownUp: () -> Void
     let onSpeak: ((String) -> Void)?
+    let showsOutOfInk: Bool
     @State private var outOfInkSeen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -19,11 +20,15 @@ public struct LiveOverlay: View {
     ///   - geometry: where page points are on screen (the app's `CanvasLiveBoard`)
     ///   - onGrownUp: the out-of-ink card's "For grown-ups" (the billing screens, behind their gate)
     ///   - onSpeak: the hint card's speaker (read aloud is Ask's lane; nil hides the button)
-    public init(loop: LiveLoop, geometry: LiveCanvasGeometry, onGrownUp: @escaping () -> Void = {}, onSpeak: ((String) -> Void)? = nil) {
+    ///   - showsOutOfInk: the out-of-ink card over the board (false: the app shows its own screen for
+    ///     it, and the status pill keeps saying "Help is paused")
+    public init(loop: LiveLoop, geometry: LiveCanvasGeometry, onGrownUp: @escaping () -> Void = {}, onSpeak: ((String) -> Void)? = nil,
+                showsOutOfInk: Bool = true) {
         self.loop = loop
         self.geometry = geometry
         self.onGrownUp = onGrownUp
         self.onSpeak = onSpeak
+        self.showsOutOfInk = showsOutOfInk
     }
 
     private var following: Bool { !loop.hints.isEmpty || !loop.cheers.isEmpty || !loop.readbacks.isEmpty || !loop.graphOffers.isEmpty }
@@ -49,7 +54,7 @@ public struct LiveOverlay: View {
                         .onTapGesture { loop.dismissNote() }
                         .transition(.opacity)
                 }
-                if loop.activity == .outOfInk && !outOfInkSeen {
+                if showsOutOfInk && loop.activity == .outOfInk && !outOfInkSeen {
                     OutOfInkCard(onGrownUp: onGrownUp) { outOfInkSeen = true }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else if let offer = loop.offer {

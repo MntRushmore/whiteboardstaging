@@ -18,7 +18,9 @@ public final class PreAccountAPI: Sendable {
     public init(api: APIClient, defaults: UserDefaults = .standard) {
         self.api = api
         let host = api.baseURL.host ?? "api"
-        attestor = AppAttestor(host: host, defaults: defaults) { path, body, headers in
+        // the simulator's debug header is for the local stack and previews only, never production
+        let production = host == AgathonEnvironment.production.apiBaseURL.host
+        attestor = AppAttestor(host: host, allowsDebugHeader: !production, defaults: defaults) { path, body, headers in
             try await Self.send(api, path: path, body: body, headers: headers)
         }
     }

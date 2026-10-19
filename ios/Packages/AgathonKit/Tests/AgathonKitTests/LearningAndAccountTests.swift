@@ -125,6 +125,11 @@ struct AccountRuleTests {
         #expect(!blocks(#"[{"status":"active","cancel_at_period_end":false,"cancel_at":"2026-11-01T00:00:00Z"}]"#))
         #expect(!blocks(#"[{"status":"canceled","cancel_at_period_end":false,"cancel_at":null}]"#))
         #expect(!blocks("[]"))
+        // a web plan blocks; an Apple plan never does (delete_own_account lets it through: the app
+        // tells the grown-up to cancel it in Settings instead, DeletionAdvice)
+        #expect(blocks(#"[{"status":"active","cancel_at_period_end":false,"cancel_at":null,"provider":"stripe"}]"#))
+        #expect(!blocks(#"[{"status":"active","cancel_at_period_end":false,"cancel_at":null,"provider":"apple"}]"#))
+        #expect(blocks(#"[{"status":"active","provider":"apple"},{"status":"past_due","provider":"stripe"}]"#))
     }
 
     @Test func askMemoryShape() throws {

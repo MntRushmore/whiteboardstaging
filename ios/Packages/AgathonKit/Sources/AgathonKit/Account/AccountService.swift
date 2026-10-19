@@ -97,13 +97,15 @@ public final class AccountService: Sendable {
     /// Plan statuses that would charge again (deleteAccount.ts CHARGING).
     static let charging: Set<String> = ["trialing", "active", "past_due", "unpaid"]
 
-    /// A plan that would charge again and isn't set to cancel blocks deletion: the grown-up cancels
-    /// it first (on agathon.app, or in Settings for an Apple subscription).
+    /// A web (Stripe) plan that would charge again and isn't set to cancel blocks deletion: the
+    /// grown-up cancels it on agathon.app first. An Apple plan never blocks (only the person can
+    /// cancel it, in Settings; `delete_own_account` lets it through, and the app says to cancel it
+    /// first: AgathonStore's `DeletionAdvice`).
     public func planBlocksDeletion() async throws -> Bool {
         let response: PostgrestResponse<Void>
         do {
             response = try await SkewRetry.run {
-                try await client.from("unlimited_subscriptions").select("status,cancel_at_period_end,cancel_at").execute()
+                try await client.from("unlimited_subscriptions").select("status,cancel_at_period_end,cancel_at,provider").execute()
             }
         } catch let error as PostgrestError where error.message.range(of: "could not find the table|does not exist",
                                                                          options: [.regularExpression, .caseInsensitive]) != nil {
@@ -118,7 +120,8 @@ public final class AccountService: Sendable {
             let status = row["status"] as? String ?? ""
             let cancelling = row["cancel_at_period_end"] as? Bool == true
             let cancelAt = row["cancel_at"]
-            return charging.contains(status) && !cancelling && (cancelAt == nil || cancelAt is NSNull)
+            let apple = row["provider"] as? String == "apple"
+            return !apple && charging.contains(status) && !cancelling && (cancelAt == nil || cancelAt is NSNull)
         }
     }
 

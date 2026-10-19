@@ -9,9 +9,10 @@ public enum GateResult: Sendable, Equatable {
     case paused(until: Date)
 }
 
-/// The seam for the grown-ups-only check before the account (docs/ONBOARDING.md, `gate`). The
-/// BILLING lane is building the app's parental gate; until it is merged, `BirthYearGate` stands in.
-/// Once the PIN exists it replaces any gate (the switcher's job, not this one's).
+/// The seam for the grown-ups-only check before the account (docs/ONBOARDING.md, `gate`). The app
+/// passes its one gate, the billing screens' (a three-digit number written in words, typed on the
+/// pad: `AppParentalGate` in ios/Agathon/Billing); `BirthYearGate` is the package's own default for
+/// tests and previews. Once the PIN exists it replaces any gate (the switcher's job, not this one's).
 public protocol ParentalGate: AnyObject, Sendable {
     /// Digits the gate asks for (a year: 4).
     var length: Int { get }
@@ -19,6 +20,22 @@ public protocol ParentalGate: AnyObject, Sendable {
     @MainActor func check(_ answer: String, now: Date) -> GateResult
     /// Paused until then, if paused.
     @MainActor func pausedUntil(now: Date) -> Date?
+    /// The question, when the gate asks its own ("Type this number:"); nil: the onboarding's words.
+    @MainActor var question: String? { get }
+    /// What to type, in big words under the question (the app's gate: a number written in words);
+    /// it may change after a miss. nil: nothing more than the question.
+    @MainActor var prompt: String? { get }
+    /// What VoiceOver reads for the prompt (never the digits).
+    @MainActor var spokenPrompt: String? { get }
+    /// The line after a miss, when the gate has its own ("Look again. Here's a new number.").
+    @MainActor var missNote: String? { get }
+}
+
+extension ParentalGate {
+    @MainActor public var question: String? { nil }
+    @MainActor public var prompt: String? { nil }
+    @MainActor public var spokenPrompt: String? { nil }
+    @MainActor public var missNote: String? { nil }
 }
 
 /// "What year were you born?": open when the year makes them 18 or older, without ever saying the

@@ -446,9 +446,14 @@ public final class LiveLoopAskHelper: AskBoardHelper {
         return "writing"
     }
 
-    public func problemsChanged() {}
+    /// The desk wrote or cleared problems: they head the columns under them, so the kid's answers
+    /// are judged against them (`LiveLoop.problemsChanged`).
+    public func problemsChanged() {
+        loop.problemsChanged()
+    }
 
     public func tutorCleared() {
         loop.clearMarks()
+        loop.problemsChanged()
     }
 }

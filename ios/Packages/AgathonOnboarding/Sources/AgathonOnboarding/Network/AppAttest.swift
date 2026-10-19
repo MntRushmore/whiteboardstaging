@@ -32,6 +32,8 @@ public actor AppAttestor {
     private let post: Post
     private let defaults: UserDefaults
     private let host: String
+    /// The simulator's debug header may be sent (never to production, which refuses it anyway).
+    private let allowsDebugHeader: Bool
     private let service: DCAppAttestService
     private var registering: Task<String, Error>?
 
@@ -40,9 +42,11 @@ public actor AppAttestor {
     static let deviceKey = "agathon.appattest.device"
 
     /// `host`: the API's host, so a key registered with one server is registered again with another
-    /// (the local stack and production).
-    public init(host: String, defaults: UserDefaults = .standard, post: @escaping Post) {
+    /// (the local stack and production). `allowsDebugHeader`: a device that cannot attest (the
+    /// simulator) may send the debug header; false for production, where the call fails instead.
+    public init(host: String, allowsDebugHeader: Bool = true, defaults: UserDefaults = .standard, post: @escaping Post) {
         self.host = host
+        self.allowsDebugHeader = allowsDebugHeader
         self.defaults = defaults
         self.post = post
         service = DCAppAttestService.shared
@@ -59,7 +63,11 @@ public actor AppAttestor {
 
     /// The headers that prove `body` came from this app.
     public func headers(for body: Data) async throws -> [String: String] {
-        guard isSupported else { return [Headers.debug: deviceId()] }
+        guard isSupported else {
+            // production never takes the debug header: no point sending a device id it would refuse
+            guard allowsDebugHeader else { throw TryCheckError.refused("app attest unsupported") }
+            return [Headers.debug: deviceId()]
+        }
         let keyId = try await registeredKey()
         let hash = Data(SHA256.hash(data: body))
         do {

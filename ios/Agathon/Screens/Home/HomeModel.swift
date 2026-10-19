@@ -102,7 +102,7 @@ final class HomeModel {
         let problems = await PracticePlanner.daily(day: day, userId: backend.auth.userId ?? "", path: path, summary: summary)
         let set = PracticeSet(kind: .daily(day: day), title: "Today's practice", problems: problems)
         if let id = todayRow?.boardId, let board = boards.first(where: { $0.id == id }) {
-            return OpenBoard(board: board, practice: set)
+            return OpenBoard(board: board, practice: set, audience: audience)
         }
         do {
             let board = try await backend.boards.create(title: "Today's practice · \(LocalDay.weekdayName(day))")
@@ -112,7 +112,7 @@ final class HomeModel {
                 daily.removeAll { $0.day == day }
                 daily.insert(row, at: 0)
             }
-            return OpenBoard(board: board, practice: set)
+            return OpenBoard(board: board, practice: set, audience: audience)
         } catch {
             toast = Toast(kind: .lookAgain, title: "Today's practice didn't open.", message: "Try again in a moment.")
             await backend.errors.reportUserError(kind: "live.daily", code: "start_failed", message: "Today's practice didn't open",
@@ -128,7 +128,7 @@ final class HomeModel {
             let board = try await backend.boards.create(title: name)
             boards.insert(board, at: 0)
             let problems = await PracticePlanner.topic(skill, seed: PracticePlanner.seed("\(board.id)|\(skill)"))
-            return OpenBoard(board: board, practice: PracticeSet(kind: .topic(skill: skill), title: name, problems: problems))
+            return OpenBoard(board: board, practice: PracticeSet(kind: .topic(skill: skill), title: name, problems: problems), audience: audience)
         } catch {
             toast = Toast(kind: .lookAgain, title: "That topic didn't open.", message: "Try again in a moment.")
             await backend.errors.reportUserError(kind: "live.topics", code: "start_failed", message: "That topic didn't open",
@@ -189,13 +189,19 @@ final class HomeModel {
         if showsPractice { await loadLearning(backend) }
     }
 
+    /// Who is at a board opened from here (nil until the family is read: the board reads it).
+    var audience: BoardAudience? {
+        guard family != nil || profile != nil else { return nil }
+        return BoardAudience(isKid: isKid, grade: grade)
+    }
+
     /// Makes a new board and returns it (Home then opens it), or nil with a toast.
-    func create(_ backend: AgathonBackend) async -> BoardSummary? {
+    func create(_ backend: AgathonBackend, title: String? = nil) async -> BoardSummary? {
         guard !creating else { return nil }
         creating = true
         defer { creating = false }
         do {
-            let board = try await backend.boards.create()
+            let board = try await backend.boards.create(title: title ?? BoardSummary.defaultTitle)
             boards.insert(board, at: 0)
             return board
         } catch {

@@ -6,6 +6,7 @@ import Foundation
 /// screens are "pages" to a kid, everywhere.
 public enum DockCopy {
     public static let dock = "Tools"
+    public static let back = "Back to my boards"
     public static let select = "Select"
     public static let selectHint = "Tap or circle your work to move it, resize it or delete it"
     public static let pen = "Pen"

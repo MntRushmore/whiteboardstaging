@@ -1,3 +1,4 @@
+#if DEBUG
 import AgathonBrain
 import SwiftUI
 
@@ -171,3 +172,4 @@ private struct InkCanvas: View {
 #Preview {
     BrainLabView()
 }
+#endif
