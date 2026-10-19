@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ASSET_COPY } from "@/components/live/copy";
 import {
+  BOARD_EDITED_ON_IPAD,
   MAX_PREVIEW_LENGTH,
   NEARLY_FULL_BYTES,
+  PG_RAISE_EXCEPTION,
   SAVE_COPY,
   blockedMessageFor,
   blockedMessageForSync,
@@ -513,6 +515,17 @@ describe("persistErrorResult / persistResultFromThrown", () => {
     expect(persistResultFromThrown(new Error("anything"), false)).toEqual({ ok: false, kind: "offline" });
   });
 
+  it("the iPad app keeps the board now (P0001 board_edited_on_ipad): gone, so the queue stops, with words that say so", () => {
+    const refusal = { code: PG_RAISE_EXCEPTION, message: BOARD_EDITED_ON_IPAD, hint: "This board is kept by the iPad app (whiteboards.doc); its tldraw data is read-only." };
+    expect(persistErrorResult(refusal, true)).toEqual({ ok: false, kind: "gone", message: SAVE_COPY.editedOnIpad });
+    // the server answered: never mistaken for being offline
+    expect(persistErrorResult(refusal, false)).toEqual({ ok: false, kind: "gone", message: SAVE_COPY.editedOnIpad });
+    expect(SAVE_COPY.editedOnIpad).toBe("This board was changed on the iPad app. Reload to see it.");
+    // another raised exception is not the refusal
+    expect(persistErrorResult({ code: "P0001", message: "something else" }, true)).toEqual({ ok: false, kind: "other", message: "something else (code: P0001)" });
+    expect(persistErrorResult({ code: "42501", message: BOARD_EDITED_ON_IPAD }, true)).toMatchObject({ kind: "other" });
+  });
+
   it("everything else is other, with the message and code kept", () => {
     expect(persistErrorResult({ code: "42501", message: "permission denied" }, true)).toEqual({
       ok: false,
@@ -579,6 +592,16 @@ describe("resolvePersistResult", () => {
       ok: false,
       kind: "offline",
     });
+  });
+
+  it("a write refused because the iPad app keeps the board is gone (no existence probe, no retry)", async () => {
+    const exists = vi.fn(async () => true);
+    expect(await resolvePersistResult({ error: { code: "P0001", message: "board_edited_on_ipad" }, rows: null }, ctx({ exists }))).toEqual({
+      ok: false,
+      kind: "gone",
+      message: SAVE_COPY.editedOnIpad,
+    });
+    expect(exists).not.toHaveBeenCalled();
   });
 
   it("a row without a version is reported instead of pretending success", async () => {

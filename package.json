@@ -27,13 +27,18 @@
     "eval:lecture": "RUN_LECTURE_EVAL=1 EVAL_WRITE=1 vitest run src/__eval__/lecture/lecture.test.ts",
     "eval:sketch": "RUN_SKETCH_EVAL=1 EVAL_WRITE=1 vitest run src/__eval__/sketch/sketch.test.ts",
     "eval:privacy": "RUN_PRIVACY_EVAL=1 EVAL_WRITE=1 vitest run src/__eval__/privacy/providers.test.ts",
+    "eval:mpx-text": "RUN_MPX_TEXT_EVAL=1 EVAL_WRITE=1 vitest run src/__eval__/mpx-text/mpx-text.test.ts",
     "env:check": "node scripts/check-vercel-env.mjs",
     "bundle:check": "node scripts/check-bundle.mjs",
     "dead-code": "node scripts/find-dead-code.mjs",
-    "smoke:live": "node scripts/live-smoke.mjs"
+    "smoke:live": "node scripts/live-smoke.mjs",
+    "brain:build": "node scripts/build-ios-brain.mjs --report",
+    "brain:check": "node scripts/build-ios-brain.mjs --check",
+    "brain:golden": "BRAIN_GOLDEN_WRITE=1 vitest run src/__eval__/brain/golden.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.0.0",
+    "@apple/app-store-server-library": "3.1.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-label": "^2.1.8",
@@ -67,6 +72,7 @@
     "@types/node": "^22.20.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "^16.2.4",
     "pino-pretty": "^13.1.3",

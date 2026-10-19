@@ -21,9 +21,12 @@ const CLIENT_ERRORS_LIMIT = { limit: 120, windowMs: 60_000 } as const;
 /** Per signed-in user: one page load sends at most MAX_REPORTS crashes and 20 errors it showed. */
 const CLIENT_ERRORS_USER_LIMIT = { limit: 30, windowMs: 60_000 } as const;
 
-/** ClientErrorReport (src/lib/clientErrors.ts). Unknown keys are dropped, never logged. */
+/**
+ * ClientErrorReport (src/lib/clientErrors.ts). Unknown keys are dropped, never logged. `ios` is the
+ * native iPad app's reports (ios/Packages/AgathonKit, ClientErrorReporter; release `ios-<version>-<build>`).
+ */
 const ReportSchema = z.object({
-  source: z.enum(["error", "rejection", "boundary", "global", "live"]),
+  source: z.enum(["error", "rejection", "boundary", "global", "live", "ios"]),
   message: z.string().min(1).max(MAX_MESSAGE),
   stack: z.string().max(MAX_STACK).optional(),
   path: z.string().max(512).startsWith("/"),
@@ -166,7 +169,8 @@ export async function POST(req: Request) {
   // The same report as an app event, for the admin page and the error-spike alert (fire and
   // forget: the 204 never waits for it).
   recordEvent({
-    source: shown && report.source === "live" ? "live" : "client",
+    // an error a student saw on the board (the web's `live`, or the iPad app's with a kind) is `live`
+    source: shown && (report.source === "live" || report.source === "ios") ? "live" : "client",
     level,
     kind: report.kind ?? `client.${report.source}`,
     code: report.code,

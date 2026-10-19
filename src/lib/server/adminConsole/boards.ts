@@ -14,12 +14,20 @@
  * the data second, so the snapshot is never older than `board.version`: a save in between means the
  * next follow-live poll fetches it again, never that one is missed.
  *
+ * A board the iPad app keeps (`whiteboards.doc` current: 20261017000000_agathon_doc.sql) is its doc,
+ * not its data (the tldraw original the app converted it from, frozen since). One small read of
+ * `doc,version,doc_version` decides, before the data is opened: for such a board the doc is turned
+ * back into tldraw (`loadBoardSnapshot`, src/lib/boards/agathonDoc.ts) and the answer is the same
+ * document with that snapshot and `snapshotSource: "doc"`. A database without those columns yet (the
+ * web deploys before the migration) answers the read with "no such column": the data, as before.
+ *
  * Privacy: a page of rows (their thumbnails are students' screens) and every answer with a snapshot
  * write admin_audit first (`boards.list`, `board.view`); when that fails, nothing is shown. Following
  * a board live is one look: its polls write again only REPEAT_LOOK_MS after the admin's last row
  * for that board (`auditRepeatLook`), while opening it always writes.
  */
 import { ADMIN_LIMITS, type AdminBoardDoc, type AdminBoardList, type AdminBoardRow } from "@/lib/admin/contracts";
+import { docIsCurrent, loadBoardSnapshot, type BoardRowLike } from "@/lib/boards/agathonDoc";
 import { toAdminAttempt, ATTEMPT_SELECT, type AttemptRow } from "./attempts";
 import { auditLook, auditRepeatLook } from "./audit";
 import { DAY_MS, errorCounts, inList, latestEvents, toAdminEvent } from "./events";
@@ -138,11 +146,64 @@ export async function buildBoardList(deps: ConsoleDeps, query: BoardListQuery, a
 export type BoardDocResult =
   | { kind: "missing" }
   | { kind: "unchanged"; version: number }
-  /** the AdminBoardDoc's JSON, streamed (the snapshot spliced in as stored) */
+  /** the AdminBoardDoc's JSON, streamed (the data spliced in as stored, or the iPad's doc as tldraw) */
   | { kind: "doc"; version: number; body: ReadableStream<Uint8Array> };
 
 const OPEN_BRACE = 0x7b;
 const isSpace = (b: number) => b === 0x20 || b === 0x0a || b === 0x0d || b === 0x09;
+
+/** Postgres undefined_column: PostgREST's answer to a select naming a column the database lacks. */
+const UNDEFINED_COLUMN = "42703";
+
+/**
+ * A read that named the iPad's doc columns on a database without them yet (before
+ * 20261017000000_agathon_doc.sql): Postgres's 42703, or a PGRST error naming one of them.
+ */
+function isMissingDocColumn(body: unknown): boolean {
+  if (!body || typeof body !== "object") return false;
+  const { code, message } = body as { code?: unknown; message?: unknown };
+  if (code === UNDEFINED_COLUMN) return true;
+  return typeof code === "string" && code.startsWith("PGRST") && typeof message === "string" && /\bdoc(_version|_schema)?\b/.test(message);
+}
+
+/** The board's snapshot, opened: the stored data to stream, or the iPad's doc as tldraw. */
+type OpenedSnapshot =
+  | { source: "data"; lead: Uint8Array; reader: ReadableStreamDefaultReader<Uint8Array> }
+  | { source: "doc"; snapshot: unknown };
+
+/**
+ * The iPad app's doc as a tldraw snapshot when it is the board; null when `data` is (no doc, a doc
+ * older than the last data write, one this reader cannot read, or no doc columns in this database);
+ * "missing" when the board is gone.
+ */
+async function readDocSnapshot(rest: Rest, id: string, signal: AbortSignal): Promise<{ snapshot: unknown } | null | "missing"> {
+  const res = await rest.stream(
+    { table: "whiteboards", params: { select: "doc,version,doc_version", id: `eq.${id}`, deleted_at: "is.null" } },
+    { accept: "application/vnd.pgrst.object+json", signal },
+  );
+  if (!res.ok) {
+    if (isMissingDocColumn(await res.clone().json().catch(() => null))) return null;
+    const err = await failureOf("whiteboards", res);
+    // PGRST116: the object answer found no row (the board was deleted after its row was read)
+    if (res.status === 406 && /PGRST116/.test(err.message)) return "missing";
+    throw err;
+  }
+  const row = (await res.json().catch(() => null)) as BoardRowLike | null;
+  if (!row || typeof row !== "object" || !docIsCurrent(row)) return null;
+  // a doc this reader cannot read (a newer app's): the data, the board as it was before the iPad
+  let unreadable = false;
+  const snapshot = loadBoardSnapshot(row, { onError: () => (unreadable = true) });
+  return unreadable || !snapshot ? null : { snapshot };
+}
+
+/** The board's snapshot: the iPad's doc when it is the board, else the data opened to stream; null when the board is gone. */
+async function openBoardSnapshot(rest: Rest, id: string, signal: AbortSignal): Promise<OpenedSnapshot | null> {
+  const doc = await readDocSnapshot(rest, id, signal);
+  if (doc === "missing") return null;
+  if (doc) return { source: "doc", snapshot: doc.snapshot };
+  const data = await openSnapshot(rest, id, signal);
+  return data && { source: "data", ...data };
+}
 
 /**
  * Reads up to PostgREST's opening brace of `{"snapshot": …}`; null when the board is gone. The rest
@@ -190,7 +251,7 @@ export async function openBoardDoc(deps: ConsoleDeps, id: string, opts: { since?
   // The snapshot first (the slow part), everything else beside it; the look logged before any of it is answered.
   const abort = new AbortController();
   const firstByte = setTimeout(() => abort.abort(new DOMException("The board's data did not arrive in time.", "TimeoutError")), SNAPSHOT_FIRST_BYTE_MS);
-  const snapshot = openSnapshot(rest, id, abort.signal);
+  const snapshot = openBoardSnapshot(rest, id, abort.signal);
   // Never an unhandled rejection: it is awaited below, or abandoned when something else failed first.
   snapshot.catch(() => {});
   try {
@@ -218,7 +279,20 @@ export async function openBoardDoc(deps: ConsoleDeps, id: string, opts: { since?
       events: events.map((e) => toAdminEvent(e, emails)),
       attempts: attempts.map(toAdminAttempt),
       history: history.map((h) => ({ id: Number(h.id), at: h.created_at, version: Number(h.version) || 0, reason: h.reason ?? "interval" })),
+      snapshotSource: opened.source,
     };
+    if (opened.source === "doc") {
+      // the iPad's doc, already read and turned into tldraw: the whole document in one piece
+      const whole: AdminBoardDoc = { ...head, snapshot: opened.snapshot };
+      const bytes = new TextEncoder().encode(JSON.stringify(whole));
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      });
+      return { kind: "doc", version, body };
+    }
     // `{…head…,` + `"snapshot": …}`: the head's closing brace becomes the comma before PostgREST's key.
     const prefix = new TextEncoder().encode(`${JSON.stringify(head).slice(0, -1)},`);
     const { lead, reader } = opened;

@@ -5,7 +5,7 @@
  * `buildStartView`), from made-up answers. The migration's list of events is checked against the
  * contract's.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { START_EVENTS, type StartEvent } from "@/lib/start/contracts";
 import { PAYWALL_AT, START_STAGES, type StartStage } from "../contracts";
@@ -80,6 +80,15 @@ describe("startReached", () => {
     expect(reached(["start_account"])).not.toContain("start_try_checked");
     expect(reached(["start_try_checked"])).toEqual(["start_shown", "start_who", "start_grade", "start_try_shown", "start_try_checked"]);
     expect(reached(["start_plan", "start_try_checked"])).toEqual(["start_shown", "start_who", "start_grade", "start_try_shown", "start_try_checked", "start_plan"]);
+  });
+
+  it("places the iPad's own steps on the same chain: the kid hand-off after the grade, the hand-back and the gate after the plan, the rest after the account", () => {
+    expect(reached(["start_handoff_kid"])).toEqual(["start_shown", "start_who", "start_grade"]);
+    expect(reached(["start_handoff_grownup"])).toEqual(["start_shown", "start_who", "start_grade", "start_try_shown", "start_plan"]);
+    expect(reached(["start_gate", "start_try_checked"])).toEqual(["start_shown", "start_who", "start_grade", "start_try_shown", "start_try_checked", "start_plan"]);
+    for (const event of ["start_trial_shown", "start_trial_started", "start_trial_pending", "start_trial_declined", "start_pin_set", "start_kid_added", "start_first_board"] as const) {
+      expect(reached([event]), event).toEqual(["start_shown", "start_who", "start_grade", "start_try_shown", "start_plan", "start_account_shown", "start_account"]);
+    }
   });
 
   it("leaves out a journey opened from a grown-up's link (it continues a kid's)", () => {
@@ -205,8 +214,16 @@ describe("the section", () => {
 describe("the migration", () => {
   const sql = readFileSync(new URL("../../../../supabase/migrations/20261013020000_start_steps.sql", import.meta.url), "utf8");
 
-  it("knows exactly the contract's events, in its order", () => {
-    const check = sql.match(/start_steps_event_known check \(event in \(([\s\S]*?)\)\)/)?.[1] ?? "";
+  it("knows exactly the contract's events, in its order (the latest migration that sets the check: the iPad's, 20261017210000)", () => {
+    const dir = new URL("../../../../supabase/migrations/", import.meta.url);
+    const latest = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .map((f) => readFileSync(new URL(f, dir), "utf8"))
+      .filter((text) => text.includes("add constraint start_steps_event_known"))
+      .at(-1)!;
+    expect(latest).toContain("start_first_board");
+    const check = latest.match(/start_steps_event_known check \(event in \(([\s\S]*?)\)\)/)?.[1] ?? "";
     expect([...check.matchAll(/'([a-z_]+)'/g)].map((m) => m[1])).toEqual([...START_EVENTS]);
   });
 

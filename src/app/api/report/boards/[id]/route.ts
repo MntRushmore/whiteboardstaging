@@ -13,7 +13,8 @@ const log = logger.child({ module: "report", route: "report/boards/[id]" });
 
 /**
  * GET /api/report/boards/<id> — one board to replay from the weekly report ("Watch them solve it"):
- * `{ id, ownerId, ownerName, title, updatedAt, snapshot }`, the snapshot as stored. A kid's board is
+ * `{ id, ownerId, ownerName, title, updatedAt, snapshot }`, the snapshot the board's tldraw data as
+ * stored, or the iPad app's document turned back into tldraw (`loadBoardSnapshot`). A kid's board is
  * private to their family: RLS lets only the kid read it, so the grown-up's look goes through here,
  * where the service role reads it only after `mayWatch` (src/lib/report/access.ts) found the board's
  * owner to be the caller or one of the caller's OWN kids. The owner is read first and the board's

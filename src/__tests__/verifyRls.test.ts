@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_CHECKS,
+  checkAgathonDoc,
   ADMIN_CONSOLE_TABLES,
   ADMIN_CONSOLE_VIEWS,
   ALL_CHECKS,
@@ -102,6 +103,9 @@ type Leak =
   | "snapshotEveryWrite"
   | "snapshotNoShrinkKeep"
   | "snapshotPruneCallable"
+  // the iPad app's doc (20261017000000_agathon_doc.sql)
+  | "docDataOverwrite"
+  | "docVersionForgeable"
   // accounts & billing
   | "plansWritable"
   | "profileCrossRead"
@@ -696,7 +700,12 @@ function makeWorld(leaks: Leak[] = []) {
       case "whiteboards": {
         if (method === "POST") {
           if (body.user_id !== uid) return denied(uid);
-          const row: Row = { id: uuid(), user_id: uid, title: body.title ?? "Untitled Whiteboard", data: body.data ?? {}, version: 1 };
+          const doc = (body.doc ?? null) as Row | null;
+          const row: Row = {
+            id: uuid(), user_id: uid, title: body.title ?? "Untitled Whiteboard", data: body.data ?? {}, version: 1,
+            // the version trigger stamps these from the doc, never from the client
+            doc, doc_version: doc ? 1 : null, doc_schema: doc ? doc.schema : null,
+          };
           boards.set(row.id as string, row);
           return ok(rep ? [row] : null, 201);
         }
@@ -705,10 +714,48 @@ function makeWorld(leaks: Leak[] = []) {
         const visible = [...boards.values()].filter((r) => (r.user_id === uid || crossLeak) && matches(r, query));
         if (method === "GET") return ok(visible);
         if (method === "PATCH") {
+          // whiteboards_doc_format: an Agathon envelope or nothing
+          const d = body.doc as Row | null | undefined;
+          if (d !== undefined && d !== null && !(d.format === "agathon.board" && typeof d.schema === "number" && d.records && typeof d.records === "object")) {
+            return { status: 400, body: { code: "23514", message: 'new row for relation "whiteboards" violates check constraint "whiteboards_doc_format"' } };
+          }
+          // the guard: once a board has a doc, a write that changes data alone is refused (the whole statement)
+          for (const r of visible) {
+            const dataChanged = "data" in body && JSON.stringify(body.data) !== JSON.stringify(r.data);
+            const docChanged = "doc" in body && JSON.stringify(body.doc ?? null) !== JSON.stringify(r.doc ?? null);
+            if (r.doc != null && dataChanged && !docChanged && !leak("docDataOverwrite")) {
+              return { status: 400, body: { code: "P0001", message: "board_edited_on_ipad", hint: "This board is kept by the iPad app" } };
+            }
+          }
+          for (const r of visible) {
+            const docChanged = "doc" in body && JSON.stringify(body.doc ?? null) !== JSON.stringify(r.doc ?? null);
+            const beforeDoc = { version: r.version, doc: r.doc ?? null, doc_schema: r.doc_schema ?? null };
+            if (!leak("docVersionForgeable")) {
+              delete body.doc_version;
+              delete body.doc_schema;
+            }
+            if (docChanged) {
+              Object.assign(r, { doc: body.doc ?? null });
+              r.version = (r.version as number) + 1;
+              r.doc_version = r.doc ? r.version : null;
+              r.doc_schema = r.doc ? (r.doc as Row).schema : null;
+              // history: the doc it replaced (the first doc replaced nothing), the data's rule
+              if (beforeDoc.doc) {
+                const oldBytes = JSON.stringify(beforeDoc.doc).length;
+                const shrink = oldBytes >= 16384 && JSON.stringify(r.doc ?? null).length * 2 < oldBytes;
+                const recent = snapshots.some((x) => x.whiteboard_id === r.id);
+                if (!recent || shrink) {
+                  snapshots.push({ id: snapshots.length + 1, whiteboard_id: r.id, user_id: r.user_id, version: beforeDoc.version, data: null, doc: beforeDoc.doc, doc_schema: beforeDoc.doc_schema, reason: shrink ? "pre_drop" : "interval" });
+                }
+              }
+            }
+          }
           for (const r of visible) {
             const dataChanged = "data" in body && JSON.stringify(body.data) !== JSON.stringify(r.data);
             const before = { version: r.version, data: r.data };
-            Object.assign(r, body);
+            const { doc: _doc, ...rest } = body;
+            void _doc;
+            Object.assign(r, rest);
             if (dataChanged && !leak("noVersionBump")) {
               r.version = (r.version as number) + 1;
               // The history trigger: keep the replaced state when the board has no history row
@@ -719,7 +766,7 @@ function makeWorld(leaks: Leak[] = []) {
               const recent = snapshots.some((s) => s.whiteboard_id === r.id) && !leak("snapshotEveryWrite");
               const empty = JSON.stringify(before.data) === "{}";
               if (!leak("noSnapshotHistory") && !empty && (!recent || shrink)) {
-                snapshots.push({ id: snapshots.length + 1, whiteboard_id: r.id, user_id: r.user_id, version: before.version, data: before.data });
+                snapshots.push({ id: snapshots.length + 1, whiteboard_id: r.id, user_id: r.user_id, version: before.version, data: before.data, reason: shrink ? "pre_drop" : "interval" });
               }
             }
           }
@@ -1250,6 +1297,8 @@ describe("rlsChecks detect individual leaks", () => {
     ["snapshotOwnerInsert", checkSnapshots, "whiteboard_snapshots: A cannot insert history for own board either (only the trigger writes it)"],
     ["snapshotPruneCallable", checkSnapshots, "prune_whiteboard_snapshots: A cannot call it"],
     ["snapshotPruneCallable", checkSnapshots, "whiteboard_snapshots: A's history unchanged by the attempts"],
+    ["docDataOverwrite", checkAgathonDoc, "agathon doc: a data-only write to a board with a doc is refused (board_edited_on_ipad), nothing changes"],
+    ["docVersionForgeable", checkAgathonDoc, "agathon doc: doc_version and doc_schema are the trigger's, not the client's"],
     // accounts & billing
     ["anonSelect", checkAnonDenied, "anon: select profiles denied"],
     ["anonInsert", checkAnonDenied, "anon: insert credit_grants denied"],

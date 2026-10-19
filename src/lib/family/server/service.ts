@@ -7,10 +7,15 @@
  * Who may do what:
  *  - anyone signed in reads their own family (GET /api/family); a grown-up gets their kids' numbers;
  *  - only a grown-up (never a kid profile) sets the PIN, adds kids, edits or removes their OWN kids;
- *  - a kid is added only while the grown-up's plan gives Unlimited (kids have no ink of their own:
- *    supabase/migrations/20261009040000_family_hardening.sql), once the PIN is set, while the family
- *    has fewer than MAX_KIDS, and within KID_ADDS a day (so removing and re-adding cannot churn
- *    accounts);
+ *  - a kid is added once the PIN is set, while the family has fewer than MAX_KIDS, and within
+ *    KID_ADDS a day (so removing and re-adding cannot churn accounts). The FIRST kid needs no plan
+ *    ("Not now" on the iPad's trial, docs/ONBOARDING.md): without the family's Unlimited a kid spends
+ *    the grown-up's own ink, never ink of their own and never new ink
+ *    (supabase/migrations/20261017210000_ipad_onboarding.sql), so a family without the plan is
+ *    bounded by its one starter grant however many kids come and go. Every kid after the first
+ *    needs the grown-up's plan to give Unlimited (409 `plan_required`). Two adds racing for the
+ *    first kid could both pass; that costs nothing (they share the same ink) and the next add
+ *    still needs the plan;
  *  - switching follows `decideSwitch`, and to the grown-up only with their PIN, checked here against
  *    the hash with every try counted per family first (PIN_ATTEMPTS, PIN_DAILY_LIMIT). The day's last
  *    wrong PIN locks switching to the grown-up until they sign in with their password, and is
@@ -99,11 +104,12 @@ export async function setFamilyPin(store: FamilyStore, caller: AuthedUser, pin: 
 export async function addKid(store: FamilyStore, caller: AuthedUser, input: AddKidInput): Promise<Outcome<FamilyMember>> {
   const links = await store.links(caller.id);
   if (isKid(caller, links)) return refuse(403, "invalid_request", FAMILY_ERRORS.kid, "kid");
-  // Kids share the grown-up's plan and have no ink of their own: without it a kid could do nothing.
-  if (!(await store.hasPlan(caller.id))) return refuse(409, "invalid_request", FAMILY_ERRORS.planRequired, "plan_required");
+  // The first kid needs no plan (their free board spends the grown-up's ink); every other kid does.
+  const kids = links?.kids.length ?? 0;
+  if (kids > 0 && !(await store.hasPlan(caller.id))) return refuse(409, "invalid_request", FAMILY_ERRORS.planRequired, "plan_required");
   const family = await store.family(caller.id);
   if (!family?.pinHash) return refuse(409, "invalid_request", FAMILY_ERRORS.setPinFirst, "pin_required");
-  if ((links?.kids.length ?? 0) >= MAX_KIDS) return refuse(409, "invalid_request", FAMILY_ERRORS.tooMany, "too_many");
+  if (kids >= MAX_KIDS) return refuse(409, "invalid_request", FAMILY_ERRORS.tooMany, "too_many");
   // Counted last, so only an add that would happen spends the day's budget.
   const budget = await store.kidAddAttempt(caller.id);
   if (!budget.ok) {

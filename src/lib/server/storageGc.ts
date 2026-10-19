@@ -97,7 +97,7 @@ export type RunStorageGcOptions = {
 
 /** Run one GC pass with the service role. Throws when references or listings cannot be loaded. */
 export async function runStorageGc(opts: RunStorageGcOptions): Promise<GcSummary> {
-  const client = opts.client ?? createGcClient({ url: opts.url, serviceKey: opts.serviceKey, fetchImpl: opts.fetchImpl });
+  const client = opts.client ?? createGcClient({ url: opts.url, serviceKey: opts.serviceKey, fetchImpl: opts.fetchImpl, log: (line) => gcLogger.warn(line) });
   return runGc(client, {
     apply: !opts.dryRun,
     minAgeMs: opts.minAgeMs ?? DEFAULT_MIN_AGE_MS,

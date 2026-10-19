@@ -209,6 +209,17 @@ describe("offloadBoards", () => {
   });
 });
 
+describe("boards the iPad app keeps", () => {
+  it("are skipped: their tldraw data is the frozen original (the database refuses a write to it)", async () => {
+    const ipadRow: BoardRow = { ...structuredClone(inlineRow), id: "cccccccc-0000-4000-8000-000000000003", doc_version: 7 };
+    const { client, uploads, updates } = makeFake([ipadRow]);
+    const summary = await offloadBoards(client, {});
+    expect(summary).toMatchObject({ scanned: 1, offloaded: 0, skipped: 1, failed: 0 });
+    expect(uploads).toHaveLength(0);
+    expect(updates).toHaveLength(0);
+  });
+});
+
 describe("offloadBoard / planBoard", () => {
   it("fails a board whose data URL cannot be decoded instead of writing garbage", async () => {
     const fake = makeFake([]);
@@ -286,7 +297,7 @@ describe("createAdminClient (fetch-level)", () => {
 
     const rows = await client.listBoards({ offset: 20, limit: 10, boardId: null });
     expect(rows).toHaveLength(1);
-    expect(calls[0].url).toBe("https://p.supabase.co/rest/v1/whiteboards?select=id%2Cuser_id%2Cversion%2Cdata&order=id.asc&limit=10&offset=20");
+    expect(calls[0].url).toBe("https://p.supabase.co/rest/v1/whiteboards?select=id%2Cuser_id%2Cversion%2Cdata%2Cdoc_version&order=id.asc&limit=10&offset=20");
     expect((calls[0].init.headers as Record<string, string>).Authorization).toBe("Bearer svc");
     expect((calls[0].init.headers as Record<string, string>).apikey).toBe("svc");
 
@@ -313,6 +324,17 @@ describe("createAdminClient (fetch-level)", () => {
     expect(calls[5].url).toContain("version=eq.1");
     expect(calls[5].init.method).toBe("PATCH");
     expect(JSON.parse(String(calls[5].init.body))).toEqual({ data: { x: 1 } });
+  });
+
+  it("reads without doc_version on a database before the iPad migration (42703), once", async () => {
+    const { fetchImpl, calls } = fakeFetch((url) => {
+      if (url.includes("doc_version")) return { status: 400, body: { code: "42703", message: "column whiteboards.doc_version does not exist" } };
+      return { status: 200, body: [{ id: "b", user_id: "u", version: 1, data: {} }] };
+    });
+    const client = createAdminClient({ url: "https://p.supabase.co", serviceKey: "svc", fetchImpl });
+    expect(await client.listBoards({ offset: 0, limit: 5 })).toHaveLength(1);
+    expect(await client.getBoard("b")).toMatchObject({ id: "b" });
+    expect(calls.map((c) => c.url.includes("doc_version"))).toEqual([true, false, false]);
   });
 
   it("reports zero-row updates as not updated and surfaces HTTP errors", async () => {

@@ -53,6 +53,9 @@ const envSchema = z.object({
   LIVE_MODEL_ASK: optionalString,
   LIVE_MODEL_LECTURE: optionalString,
   LIVE_MODEL_SKETCH: optionalString,
+  // The crop reader of /api/live/recognize: unset (or "vision") is the vision model; "mathpix-text"
+  // tries Mathpix v3/text first (a prototype, off by default: docs/eval/mpx-supernet.md).
+  RECOGNIZE_CROP_READER: optionalString,
 
   // ElevenLabs: lecture mode's realtime speech-to-text (Scribe) and read aloud's voice
   // (POST /api/live/speak). Unset: the browser's own recognizer and voice.
@@ -70,6 +73,12 @@ const envSchema = z.object({
   // Agathon Unlimited: its Payment Link and the customer portal's login page (src/lib/billing/unlimited.ts).
   NEXT_PUBLIC_UNLIMITED_LINK: optionalString,
   NEXT_PUBLIC_BILLING_PORTAL_URL: optionalString,
+  // Agathon Unlimited through Apple in-app purchase, the iPad app (src/lib/server/apple/config.ts).
+  // Unset APPLE_ENVIRONMENT: the two /api/billing/apple routes answer 503.
+  APPLE_ENVIRONMENT: optionalString,
+  APPLE_BUNDLE_ID: optionalString,
+  APPLE_APP_APPLE_ID: optionalString,
+  APPLE_XCODE_CERT: optionalString,
 
   // Rate limiting: 'db' (default; shared counters via rate_limit_hit RPC) or 'memory' (per instance).
   RATE_LIMIT_BACKEND: optionalString,
@@ -169,6 +178,18 @@ export function hasElevenLabs(): boolean {
 export function hasMathpix(): boolean {
   const env = getServerEnv();
   return Boolean(env.MATHPIX_APP_ID && env.MATHPIX_APP_KEY);
+}
+
+/** Which reader reads a line's crop in /api/live/recognize when the strokes read produced nothing. */
+export type CropReader = "vision" | "mathpix-text";
+
+/**
+ * `RECOGNIZE_CROP_READER`: only the literal `mathpix-text` turns on Mathpix v3/text as the first crop
+ * reader (the vision model stays the fallback); anything else, including unset, is `vision` (today's
+ * behaviour). A prototype measured in docs/eval/mpx-supernet.md.
+ */
+export function getCropReader(): CropReader {
+  return getServerEnv().RECOGNIZE_CROP_READER?.trim().toLowerCase() === "mathpix-text" ? "mathpix-text" : "vision";
 }
 
 /**

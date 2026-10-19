@@ -85,7 +85,7 @@ if (isMain) {
       `Target: ${url} ${args.apply ? "(APPLY: orphans will be deleted)" : "(dry run, no deletes)"} buckets=${args.buckets.join(",")} min-age=${args.minAgeMs / 3600_000}h`,
     );
   }
-  const client = createGcClient({ url, serviceKey });
+  const client = createGcClient({ url, serviceKey, log: (line) => console.error(line) });
   let summary;
   try {
     summary = await runGc(client, { apply: args.apply, buckets: args.buckets, minAgeMs: args.minAgeMs, log: args.json ? undefined : (line) => console.log(line) });

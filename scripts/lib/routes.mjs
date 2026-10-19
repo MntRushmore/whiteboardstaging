@@ -26,6 +26,9 @@ export const PUBLIC_ROUTES = Object.freeze([
   "src/app/api/config/status/route.ts",
   // Billing provider webhook: no user JWT exists; the Stripe-Signature HMAC is the auth.
   "src/app/api/billing/webhook/route.ts",
+  // App Store Server Notifications V2: Apple has no user JWT; the payload's JWS, chained to Apple's
+  // root (Apple's library: OCSP, bundle id, environment, app Apple ID), is the auth.
+  "src/app/api/billing/apple/notifications/route.ts",
   // Storage GC cron: no user JWT exists; the shared CRON_SECRET bearer token is the auth.
   "src/app/api/admin/gc/route.ts",
   // Health checks: pg_cron has no user JWT, so the CRON_SECRET bearer (from Supabase Vault) is the
@@ -54,6 +57,12 @@ export const PUBLIC_ROUTES = Object.freeze([
   // The handwriting /start shows (STATIC_ROUTES): written once at build time and served from the
   // CDN; it reads nothing from a request and holds nothing but public example problems.
   "src/app/api/start/ink/route.ts",
+  // App Attest for the iPad app before its account (src/lib/server/appAttest): a one-time challenge,
+  // then the attestation that registers a key. The app has no account yet; Apple's certificate
+  // chain (pinned root) is the proof, per-IP limits hold a script back, and nothing about a person
+  // is stored. The key then signs the app's calls to try/check, try/help and start/step.
+  "src/app/api/app/attest/challenge/route.ts",
+  "src/app/api/app/attest/register/route.ts",
 ]);
 
 /**
@@ -67,6 +76,7 @@ export const STATIC_ROUTES = Object.freeze(["src/app/api/start/ink/route.ts"]);
 export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/config/status/route.ts": "booleans-only setup status",
   "src/app/api/billing/webhook/route.ts": "signature-verified provider webhook",
+  "src/app/api/billing/apple/notifications/route.ts": "signature-verified provider webhook (App Store Server Notifications V2: a JWS chained to Apple's root)",
   "src/app/api/admin/gc/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
   "src/app/api/admin/health/route.ts": "pg_cron health checks; requires Authorization: Bearer CRON_SECRET or an admin's token (requireAdmin)",
   "src/app/api/client-errors/route.ts": "browser error reports, sent signed out too; per-IP limit, 16 KB body cap, zod; logs only",
@@ -77,6 +87,8 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/try/help/route.ts": "the try board's next step, for visitors with no account; same-origin only, 16 KB body cap, zod, per-IP limit; the local engine only, no read, no model",
   "src/app/api/start/step/route.ts": "anonymous onboarding step counts before the account; same-origin only, per-visitor and daily limits, 2 KB body cap, zod; answers 204 with no body",
   "src/app/api/start/ink/route.ts": "static JSON built at build time (force-static, GET only, no request read): the public example problems /start shows in the tutor's hand",
+  "src/app/api/app/attest/challenge/route.ts": "App Attest's one-time challenge for the iPad app before its account; no body, per-IP limit, 5-minute expiry, service role only",
+  "src/app/api/app/attest/register/route.ts": "App Attest registration for the iPad app before its account; the attestation verified to Apple's pinned root, per-IP limit, 64 KB body cap, zod",
 });
 
 /** Routes whose handlers legitimately have no zod body schema. */
@@ -86,6 +98,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/admin/gc/route.ts", // GET (Vercel cron) or POST with an empty body; options are query params
   "src/app/api/admin/health/route.ts", // GET only (pg_cron, or an admin's "check now")
   "src/app/api/start/ink/route.ts", // GET only, static
+  "src/app/api/app/attest/challenge/route.ts", // POST with an empty body: mints a one-time challenge
   "src/app/api/live/lecture/token/route.ts", // POST with an empty body: mints a speech-to-text token for the caller
   "src/app/api/health/route.ts", // GET only
   "src/app/api/cron/trial-reminders/route.ts", // GET only (Vercel cron); ?dryRun=1 is a query param
@@ -110,6 +123,30 @@ export const NO_BODY_ROUTES = Object.freeze([
 ]);
 
 export const API_ROUTES = Object.freeze([
+  {
+    path: "/api/app/attest/challenge",
+    file: "src/app/api/app/attest/challenge/route.ts",
+    methods: ["POST"],
+    auth: "public",
+    limit: "ip:appAttestChallenge",
+    body: "none",
+    // 503 without the service role (the challenge cannot be kept).
+    withoutTokenStatus: [200, 503],
+    purpose: "App Attest for the iPad app before its account: a one-time challenge (5 minutes) for DCAppAttestService.attestKey",
+    status: "active",
+  },
+  {
+    path: "/api/app/attest/register",
+    file: "src/app/api/app/attest/register/route.ts",
+    methods: ["POST"],
+    auth: "public",
+    limit: "ip:appAttestRegister",
+    body: "zod",
+    // The smoke probe's empty body is not the schema.
+    withoutTokenStatus: [400],
+    purpose: "App Attest for the iPad app before its account: the attestation verified to Apple's root, the key kept (app_attest_keys) to sign try/check, try/help and start/step",
+    status: "active",
+  },
   {
     path: "/api/admin/gc",
     file: "src/app/api/admin/gc/route.ts",
@@ -290,6 +327,28 @@ export const API_ROUTES = Object.freeze([
     // Without a valid Stripe-Signature it answers 400; without the secrets, 503.
     withoutTokenStatus: [400, 503],
     purpose: "Stripe-compatible billing webhook: ink pack purchases and refunds via the service role (other apps' events on the shared account are ignored)",
+    status: "active",
+  },
+  {
+    path: "/api/billing/apple/transaction",
+    file: "src/app/api/billing/apple/transaction/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "appleTransaction",
+    body: "zod",
+    purpose: "The iPad app hands over a StoreKit 2 transaction: verified with Apple's library, recorded as the caller's family's Agathon Unlimited (apply_apple_subscription, service role)",
+    status: "active",
+  },
+  {
+    path: "/api/billing/apple/notifications",
+    file: "src/app/api/billing/apple/notifications/route.ts",
+    methods: ["POST"],
+    auth: "public",
+    limit: "ip:appleNotifications",
+    body: "zod",
+    // Without Apple's setup it answers 503 before reading the body; with it, the probe's empty body is 400.
+    withoutTokenStatus: [400, 503],
+    purpose: "App Store Server Notifications V2: Agathon Unlimited bought in the iPad app (renewals, failed charges, expiry, refunds), verified with Apple's library",
     status: "active",
   },
   {

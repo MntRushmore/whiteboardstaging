@@ -30,6 +30,7 @@
  * (`color-scheme: light`; clients that force dark mode invert it themselves). No images: they are
  * blocked by default in many clients, and the wordmark is text.
  */
+import { APPLE_CANCEL_STEPS } from "@/lib/billing/apple";
 
 /** A rendered email. `text` is the plain-text alternative sent beside the HTML. */
 export type RenderedEmail = { subject: string; html: string; text: string };
@@ -280,7 +281,28 @@ export type TrialReminderInput = {
   /** what the family did during the trial (src/lib/email/activity.ts, familyProgress); shown when not empty */
   progress?: readonly LearnerProgress[];
   timeZone?: string;
+  /**
+   * A plan bought in the iPad app: Apple charges the Apple Account, in the buyer's own currency, and
+   * the plan is cancelled in the iPad's Settings, not on Stripe's page. `price` is Apple's next
+   * charge as the buyer will see it ("$24.99", "€24,99"), or null when Apple has not said yet (the
+   * email then names no amount rather than guess one).
+   */
+  apple?: { price: string | null };
 };
+
+/**
+ * Apple's next charge in its currency ("$24.99"), from milliunits (what Apple's payloads carry); null
+ * when either part is missing or not a price.
+ */
+export function formatApplePrice(milliunits: number | null | undefined, currency: string | null | undefined): string | null {
+  if (typeof milliunits !== "number" || !Number.isFinite(milliunits) || milliunits <= 0) return null;
+  if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) return null;
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(milliunits / 1000);
+  } catch {
+    return null;
+  }
+}
 
 /** "$25", or "$12.50" for a price with cents. */
 export function formatUsd(amount: number): string {
@@ -295,6 +317,7 @@ export function formatUsd(amount: number): string {
  * chargeback. Plain facts first; the cancel link is in the body, not hidden in the footer.
  */
 export function trialReminderEmail(input: TrialReminderInput): RenderedEmail {
+  if (input.apple) return appleTrialReminderEmail(input, input.apple);
   const { day, time } = formatEmailDate(input.trialEnd, input.timeZone);
   const price = formatUsd(input.monthlyUsd);
   const manage = emailHref(input.manageUrl);
@@ -336,6 +359,58 @@ export function trialReminderEmail(input: TrialReminderInput): RenderedEmail {
     ...(soFar ? [soFar, progressText(progress)] : []),
     `To cancel, use Manage or cancel: ${manage}`,
     cancelTail,
+    "--",
+    footer,
+    `Agathon: ${site}`,
+  ]);
+  return { subject, html, text };
+}
+
+/**
+ * The same reminder for a plan bought in the iPad app: Apple, not a card at checkout, is charged, and
+ * the way to cancel is the iPad's Settings (Apple's page for it is linked too). No Stripe link: the
+ * Stripe portal knows nothing of this plan.
+ */
+function appleTrialReminderEmail(input: TrialReminderInput, apple: { price: string | null }): RenderedEmail {
+  const { day, time } = formatEmailDate(input.trialEnd, input.timeZone);
+  const manage = emailHref(input.manageUrl);
+  const site = siteLink(input.siteUrl, "/");
+  const plan = input.planName;
+  const amount = apple.price ? ` ${apple.price}` : "";
+
+  const subject = `Your free trial of ${plan} ends on ${day}`;
+  const preheader = apple.price
+    ? `On ${day}, Apple will charge ${apple.price} to your Apple Account. Nothing to do if you'd like to keep it.`
+    : `On ${day}, Apple will start charging for ${plan}. Nothing to do if you'd like to keep it.`;
+  const ends = `Your free trial ends on ${day}, at ${time}.`;
+  const charge = apple.price
+    ? `On ${day}, Apple will charge${amount} for ${plan} to the payment method on your Apple Account. After that it's ${apple.price} a month until you cancel.`
+    : `On ${day}, Apple will charge the monthly price you agreed to in the App Store for ${plan}, to the payment method on your Apple Account, and every month after that until you cancel.`;
+  const keep = "Nothing to do if you'd like to keep it.";
+  const how = `To cancel, ${APPLE_CANCEL_STEPS}. Cancel at least a day before the free trial ends and you won't be charged.`;
+  const footer = `You're getting this email because ${plan} was started with a free trial in the Agathon iPad app, on your Agathon account. Apple handles the billing.`;
+  const progress = (input.progress ?? []).filter((p) => progressLines(p).length > 0);
+  const soFar = progress.length ? soFarLead(progress) : null;
+
+  const card = [
+    heading("Your free trial is almost over"),
+    paragraph(escapeHtml(ends)),
+    paragraph(escapeHtml(charge)),
+    paragraph(escapeHtml(keep)),
+    ...(soFar ? [paragraph(escapeHtml(soFar)), progressBlocks(progress)] : []),
+    paragraph(escapeHtml(how)),
+    button("Manage subscriptions", manage),
+  ].join("\n");
+
+  const html = layout({ title: subject, preheader, card, footer: `${escapeHtml(footer)} ${link("Open Agathon", site)}` });
+  const text = textBody([
+    "Your free trial is almost over",
+    ends,
+    charge,
+    keep,
+    ...(soFar ? [soFar, progressText(progress)] : []),
+    how,
+    `Manage subscriptions: ${manage}`,
     "--",
     footer,
     `Agathon: ${site}`,

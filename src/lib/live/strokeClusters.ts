@@ -851,13 +851,14 @@ export function assignColumns(lines: InkLine[], opts: ColumnOptions = {}): InkLi
  * columns with the rest. `opts.zoom`: the board's fit zoom (`inkScale`); none is a desktop.
  * `opts.columns`: what the columns know besides the lines (`ColumnOptions`). `opts.apart`: a group
  * the clusterer made, as the lines it really is (the loop's: ink under two of the chat's problems,
- * `splitAcrossProblems`), before ids are given.
+ * `splitAcrossProblems`), before ids are given. `opts.newId`: where a new line's id comes from
+ * (none: `newLineId`, random; the native app's brain passes a seeded one for its parity tests).
  */
 export function clusterLines(
   strokes: InkStroke[],
   previous: InkLine[] = [],
   fixed: ReadonlyArray<readonly InkStroke[]> = [],
-  opts: { zoom?: number; columns?: ColumnOptions; apart?: (group: InkStroke[]) => InkStroke[][] } = {},
+  opts: { zoom?: number; columns?: ColumnOptions; apart?: (group: InkStroke[]) => InkStroke[][]; newId?: () => string } = {},
 ): InkLine[] {
   const medianH = medianStrokeHeight(strokes);
   // two problems' rows cut apart first: an operation row joins pieces under ONE line above them
@@ -901,8 +902,9 @@ export function clusterLines(
   }
   for (const line of lines) {
     if (!line.id) {
-      let id = newLineId();
-      while (usedIds.has(id)) id = newLineId();
+      const next = opts.newId ?? newLineId;
+      let id = next();
+      while (usedIds.has(id)) id = next();
       line.id = id;
       usedIds.add(id);
     }

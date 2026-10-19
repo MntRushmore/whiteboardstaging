@@ -11,7 +11,9 @@ import { FAMILY_COPY } from "./copy";
 /**
  * What stops the grown-up adding a kid right now, the first that applies, or null:
  *  - `plan`: no plan (or a cancelled one). Kids share the grown-up's Agathon Unlimited and have no
- *    ink of their own, so the server refuses a kid without it (409 `plan_required`);
+ *    ink of their own. The server refuses a second kid without it (409 `plan_required`); it lets a
+ *    first kid in for the iPad's "Not now" (that kid spends the grown-up's ink), but this page still
+ *    asks for the plan first;
  *  - `active_plan`: a plan that is not giving Unlimited right now (a second trial waiting for its
  *    first charge, a payment to fix, one still being set up): refused the same way;
  *  - `pin`: no PIN yet; `full`: MAX_KIDS already.

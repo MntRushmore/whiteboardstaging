@@ -994,3 +994,96 @@ migration also repairs old rows once: a `paid` referral whose friend has no acti
 to `trialing`, and a `ref` with no live referral behind it is removed. Then
 `node scripts/verify-rls.mjs` runs the "referrals" checks. Nothing needs the referral link: without
 it the friend gets the usual trial.
+
+## 16. Agathon Unlimited through Apple (the iPad app, StoreKit 2)
+
+Built 2026-10-17 on `feat/ipad-billing` (not deployed). The iPad app sells the same plan with Apple
+in-app purchase; Stripe subscribers keep their plan. Schema and rules:
+`supabase/migrations/20261017200000_apple_subscriptions.sql`; server: `src/lib/server/apple`,
+`src/app/api/billing/apple/{transaction,notifications}`; app: `ios/Packages/AgathonStore`,
+`ios/Agathon/Billing`, `ios/Agathon/Agathon.storekit`.
+
+- **One table.** An Apple subscription is a row of `unlimited_subscriptions` with `provider = 'apple'`
+  and `stripe_subscription_id = 'apple:<originalTransactionId>'` (a CHECK keeps the two in step), so
+  `has_unlimited()`, ink, fair use, the family plan, referrals, emails and the admin read it unchanged.
+  `apply_apple_subscription()` (service role) orders states by the App Store's `signedDate` (an older
+  payload never overwrites a newer one; `canceled` is not final: a resubscribe keeps its original id),
+  links by the purchase's `appAccountToken` = the buyer's `profiles.checkout_ref` through
+  `plan_owner_of()` (a kid's token lands on the grown-up), and refuses another account's purchase.
+- **States:** active -> `active` (`trialing` in the intro free week); billing retry and billing grace
+  period -> `past_due` (help uses ink; leave Billing Grace Period OFF in App Store Connect); expired ->
+  `canceled`; refund / revoke -> `canceled` with `ended_at`; auto-renew off -> `cancel_at_period_end`.
+- **Deletion:** an Apple plan never blocks `delete_own_account()` (only the person can cancel it); the
+  app and the web's dialog tell the grown-up to cancel in Settings first.
+- **Emails:** the trial reminder says Apple charges the Apple Account (Apple's price, from the renewal
+  info) and how to cancel in Settings, linking https://apps.apple.com/account/subscriptions; no
+  "has started" email (Apple sends the subscription confirmation); nudges link Apple's page.
+- **Admin:** Apple plans count in the MRR at the plan's price ("N through Apple"); Sandbox/Xcode rows
+  (`livemode = false`: App Review, TestFlight) are left out. `admin_funnel()`'s `active_subscriptions`
+  still counts them (follow-up).
+- **Sandbox on production:** `APPLE_ENVIRONMENT=Production` accepts Production AND Sandbox payloads,
+  because App Review and TestFlight buy in the Sandbox against the production server.
+- **Xcode payloads** (Agathon.storekit) are not signed by Apple: accepted only with
+  `APPLE_ENVIRONMENT=Xcode` on a dev server; refused when NODE_ENV or VERCEL_ENV is production.
+
+### Trying it locally
+
+1. Server: `.env.local` with the local stack's keys and `APPLE_ENVIRONMENT=Xcode`, then
+   `npx next dev -p 3401` (never with production keys).
+2. **StoreKit purchases (Xcode only).** Open `ios/Agathon.xcodeproj`, tick AGATHON_API_URL
+   (`http://127.0.0.1:3401`), SUPABASE_URL and SUPABASE_ANON_KEY in the scheme, Run on a simulator
+   (the scheme's StoreKit configuration is `Agathon.storekit`: $24.99 a month, 7 days free), sign in
+   as a grown-up, Labs > Billing Lab > Open the plan: pass the gate, Start your free week, Subscribe.
+   The Lab shows the server's answer (status trialing, provider apple) and its log. Then Debug >
+   StoreKit > Manage Transactions: turn auto-renew off, expire, refund or renew; each reaches the
+   server through the app's listeners (`Transaction.updates`, `Product.SubscriptionInfo.Status.updates`).
+   `AgathonTests/StoreKitFlowTests` automates exactly that from Xcode (set AGATHON_STOREKIT=1 and
+   AGATHON_INTEGRATION=1 in the test action). **`xcodebuild` cannot run it:** the command line does not
+   sync a StoreKit configuration to the simulator and SKTestSession answers SKInternalErrorDomain 3
+   (Xcode 26.6, 2026-10-18), so Xcode's Run (or Product > Test) is required for real StoreKit purchases.
+3. **From the command line** (no StoreKit; the app's server client, the route, the database):
+   `TEST_RUNNER_AGATHON_INTEGRATION=1 TEST_RUNNER_AGATHON_API_URL=http://127.0.0.1:3401
+   TEST_RUNNER_SUPABASE_URL=http://127.0.0.1:54321 TEST_RUNNER_SUPABASE_ANON_KEY=<anon>
+   xcodebuild test … -only-testing:AgathonTests/ServerFlowTests` posts StoreKit-shaped Xcode payloads
+   through every state (trial, another account refused, a kid covered, auto-renew off, a late payload,
+   expiry, resubscribe, refund, deletion). `TEST_RUNNER_AGATHON_SHOTS=1 … -only-testing:AgathonTests/BillingScreenshotTests`
+   rewrites `docs/qa-screenshots/ipad-billing-*.png`.
+4. Server tests: `npx vitest run src/lib/server/apple src/lib/billing/__tests__/applePlan.test.ts`;
+   with the local stack, `RUN_DB_TESTS=1 npx vitest run src/lib/server/apple/__tests__/apple.integration.test.ts
+   src/lib/billing/__tests__/appleSubscriptions.integration.test.ts`; `swift test` in `ios/Packages/AgathonStore`.
+5. Optional pinning: Xcode's StoreKit test certificate (open Agathon.storekit in Xcode, Editor > Save
+   Public Certificate) as `APPLE_XCODE_CERT`; then the dev server checks the Xcode payloads' signature.
+
+### Owner checklist (App Store Connect), before launch
+
+1. **Agreements, Tax, and Banking:** accept the Paid Apps Agreement; add the bank account and the tax
+   forms (W-9). Nothing sells until this is Active.
+2. **App Store Small Business Program:** enroll (15% commission instead of 30%).
+3. **The app record** for bundle id `app.agathon.Agathon` (team SG4YJW2K5Z). Note its numeric
+   **Apple ID** (App Information) for `APPLE_APP_APPLE_ID`.
+4. **Subscription group** "Agathon Unlimited" with one auto-renewable subscription:
+   product id **`app.agathon.unlimited.monthly`**, duration 1 month, price point **$24.99** (or $25.00
+   to match the web exactly; other storefronts follow Apple's equalization), display name and
+   description, a review screenshot of the plan screen. **Family Sharing: OFF.**
+5. **Introductory offer:** Free, 1 week, all territories, new subscribers (first time in the group).
+6. **Billing Grace Period: OFF** (the server treats grace as a failed payment, like the web).
+7. **App Store Server Notifications V2:** Production Server URL and Sandbox Server URL both
+   `https://www.agathon.app/api/billing/apple/notifications`, version 2. Then "Send test
+   notification": `select id, type from billing_events where type = 'apple.TEST';` shows it.
+8. **In-App Purchase key** (Users and Access > Integrations > In-App Purchase): generate one, keep the
+   .p8 safe; Vercel only: `APPLE_ISSUER_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (not read by the code
+   yet; for later status lookups).
+9. **Sandbox testers** (Users and Access > Sandbox) for the owner's own tests on a device.
+10. **App Privacy / metadata:** add "Purchases" to the privacy labels; the App Store description links
+    the Terms of Use (EULA) and Privacy Policy; the Terms gain an App Store billing paragraph
+    (`/terms#unlimited`: renews monthly through Apple, cancel in Settings, refunds through Apple).
+11. **Review notes:** a demo grown-up account; say the plan is behind a parental gate (type the number
+    shown in words) and that purchases work in the Sandbox.
+
+### Production, in order (owner OK needed for each)
+
+1. Back up, then apply `20261017200000_apple_subscriptions.sql` (psql `--single-transaction`, then
+   `supabase migration repair --status applied 20261017200000`). Additive; the deployed code is fine on it.
+2. Deploy the code (merge). Vercel Production env: `APPLE_ENVIRONMENT=Production`,
+   `APPLE_APP_APPLE_ID=<the app's Apple ID>` (and `APPLE_BUNDLE_ID` only if it ever changes).
+3. App Store Connect steps 7 (notification URL + test) and a Sandbox purchase from a TestFlight build.

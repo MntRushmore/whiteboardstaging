@@ -171,6 +171,18 @@ const START_IMPLIES: Readonly<Partial<Record<StartEvent, StartStage>>> = {
   start_account_shown: "start_account_shown",
   start_handoff: "start_account_shown",
   start_account: "start_account",
+  // the iPad's own steps (docs/ONBOARDING.md): the hand-off to the kid comes after the grade, the
+  // hand-back and the grown-up check after the plan, and everything from the trial on after the account
+  start_handoff_kid: "start_grade",
+  start_handoff_grownup: "start_plan",
+  start_gate: "start_plan",
+  start_trial_shown: "start_account",
+  start_trial_started: "start_account",
+  start_trial_pending: "start_account",
+  start_trial_declined: "start_account",
+  start_pin_set: "start_account",
+  start_kid_added: "start_account",
+  start_first_board: "start_account",
 };
 
 /**

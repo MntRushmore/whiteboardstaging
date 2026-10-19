@@ -681,6 +681,95 @@ export async function checkStorage({ a, b, anon }) {
   return out;
 }
 
+/**
+ * An Agathon board document (docs/BOARD-FORMAT.md): the envelope, with `n` throwaway records.
+ * @param {number} [n]
+ */
+export function agathonDoc(n = 1) {
+  /** @type {Record<string, unknown>} */
+  const records = { "screen:a": { id: "screen:a", type: "screen", order: "a0", rect: { x: 0, y: 0, w: 1600, h: 900 } } };
+  for (let i = 0; i < n; i++) {
+    const id = `stroke:${uuid()}`;
+    records[id] = { id, type: "stroke", screen: "screen:a", order: `a${i + 1}`, author: "kid", color: "black", width: 6, pressure: "real", x: i, y: i, points: "AQUDAACAADA//wQyAEAF", start: 1760000000000 + i };
+  }
+  return { format: "agathon.board", schema: 1, records };
+}
+
+/**
+ * The iPad app's document (20261017000000_agathon_doc.sql): `doc` lives in the board's own row, so
+ * the row's RLS covers it; a doc write bumps `version` and stamps `doc_version` / `doc_schema`
+ * (never what the client sends); once a board has a doc its tldraw `data` is read-only (the web
+ * never overwrites an iPad board); the doc's history follows the data's rule.
+ * @param {CheckContext} ctx
+ */
+export async function checkAgathonDoc({ a, b }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const board = await createBoard(a, "rls-verify agathon doc");
+  try {
+    const q = { id: `eq.${board.id}` };
+    const select = "version,doc_version,doc_schema";
+    const first = await a.rest("PATCH", "whiteboards", { query: { ...q, version: "eq.1" }, body: { doc: agathonDoc(1) }, prefer: "return=representation" });
+    const r1 = rows(first)[0];
+    out.push(result("agathon doc: A writes a doc (version-checked) -> version 2, doc_version 2, doc_schema 1", isOk(first) && r1?.version === 2 && r1?.doc_version === 2 && r1?.doc_schema === 1, describe(first)));
+
+    const forged = await a.rest("PATCH", "whiteboards", { query: q, body: { doc_version: 99, doc_schema: 7 }, prefer: "return=representation" });
+    const r2 = rows(forged)[0];
+    out.push(result("agathon doc: doc_version and doc_schema are the trigger's, not the client's", isOk(forged) && r2?.doc_version === 2 && r2?.doc_schema === 1 && r2?.version === 2, describe(forged)));
+
+    const web = await a.rest("PATCH", "whiteboards", { query: { ...q, version: "eq.2" }, body: { data: { web: true } }, prefer: "return=representation" });
+    const afterWeb = await a.rest("GET", "whiteboards", { query: { ...q, select: `${select},data` } });
+    out.push(
+      result(
+        "agathon doc: a data-only write to a board with a doc is refused (board_edited_on_ipad), nothing changes",
+        !isOk(web) && /board_edited_on_ipad/.test(describe(web)) && rows(afterWeb)[0]?.version === 2 && JSON.stringify(rows(afterWeb)[0]?.data) === "{}",
+        `${describe(web)} / ${describe(afterWeb)}`,
+      ),
+    );
+
+    const bad = await a.rest("PATCH", "whiteboards", { query: q, body: { doc: { format: "tldraw", records: {} } }, prefer: "return=representation" });
+    out.push(result("agathon doc: a doc that is not an agathon.board envelope is refused (23514)", bad.status === 400 && /23514/.test(describe(bad)), describe(bad)));
+
+    const bSel = await b.rest("GET", "whiteboards", { query: { ...q, select: "id,doc" } });
+    out.push(result("agathon doc: B cannot read A's doc", affectedNoRows(bSel), describe(bSel)));
+    const bUpd = await b.rest("PATCH", "whiteboards", { query: q, body: { doc: agathonDoc(1) }, prefer: "return=representation" });
+    out.push(result("agathon doc: B cannot write A's doc (0 rows)", deniedOrEmpty(bUpd), describe(bUpd)));
+
+    // History: the first doc replaced nothing; the next doc within 10 minutes keeps nothing; a doc
+    // that drops more than half of a big one keeps the one before it, doc only (data null).
+    const history = async () => {
+      const snaps = await a.rest("GET", "whiteboard_snapshots", { query: { whiteboard_id: `eq.${board.id}`, select: "version,reason,data,doc_schema", order: "version.asc" } });
+      return { snaps, list: rows(snaps) };
+    };
+    const big = await a.rest("PATCH", "whiteboards", { query: { ...q, version: "eq.2" }, body: { doc: agathonDoc(400) }, prefer: "return=representation" });
+    const h1 = await history();
+    out.push(
+      result(
+        "agathon doc: the next doc write keeps the doc it replaced (version 2) as history, doc only",
+        isOk(big) && rows(big)[0]?.version === 3 && h1.list.length === 1 && Number(h1.list[0].version) === 2 && h1.list[0].data === null && h1.list[0].doc_schema === 1,
+        `${describe(big)} / ${describe(h1.snaps)}`,
+      ),
+    );
+    const wipe = await a.rest("PATCH", "whiteboards", { query: { ...q, version: "eq.3" }, body: { doc: agathonDoc(0) }, prefer: "return=representation" });
+    const h2 = await history();
+    out.push(
+      result(
+        "agathon doc: a doc write that drops more than half the board keeps the doc before it ('pre_drop')",
+        isOk(wipe) && rows(wipe)[0]?.version === 4 && h2.list.map((r) => `${r.version}:${r.reason}`).join(",") === "2:interval,3:pre_drop",
+        `${describe(wipe)} / ${describe(h2.snaps)}`,
+      ),
+    );
+
+    const ins = await a.rest("POST", "whiteboards", { body: { title: "rls-verify doc insert", data: {}, doc: agathonDoc(1), doc_version: 42, user_id: a.userId }, prefer: "return=representation" });
+    const ri = rows(ins)[0];
+    out.push(result("agathon doc: a board inserted with a doc gets doc_version 1, doc_schema 1 (not the client's)", isOk(ins) && ri?.version === 1 && ri?.doc_version === 1 && ri?.doc_schema === 1, describe(ins)));
+    if (ri?.id) await deleteBoard(a, ri.id);
+  } finally {
+    await deleteBoard(a, board.id);
+  }
+  return out;
+}
+
 /** @param {CheckContext} ctx */
 export async function checkVersionTrigger({ a }) {
   /** @type {CheckResult[]} */
@@ -1927,6 +2016,7 @@ export const ALL_CHECKS = [
   { name: "board_assets are isolated", run: checkBoardAssets },
   { name: "storage bucket policies", run: checkStorage },
   { name: "version trigger, optimistic concurrency and history retention", run: checkVersionTrigger },
+  { name: "the iPad app's doc: same row and RLS, version and history, the web never overwrites it", run: checkAgathonDoc },
   { name: "accounts & billing tables (plans, profiles, ledgers, billing_events)", run: checkBillingTables },
   { name: "credits: consume_credits / credit_summary spend only the caller's balance", run: checkCreditsConsumption },
   { name: "refunds of failed calls: service role only (refund_ink_for), never by the user", run: checkRefunds },
@@ -2540,8 +2630,8 @@ export const FAMILY_FUNCTIONS = [
  * Users: nobody but the service role writes `families` or `family_members`, and nobody reads
  * `families` (the PIN's hash) at all. A family's grown-up P and kid K read their own family_members
  * row; anyone else (A) reads none. No user may call FAMILY_FUNCTIONS. With the service role (P and K
- * are made with `newUser`): a kid never spends ink of their own (refused, plan_required, while P has
- * no plan); the kid shares the grown-up's plan (ink_summary().unlimited, consume_credits() through
+ * are made with `newUser`): a kid never spends ink of their own (while P has no plan, K's call spends
+ * P's ink: 20261017210000_ipad_onboarding.sql); the kid shares the grown-up's plan (ink_summary().unlimited, consume_credits() through
  * the Unlimited path, counted on the GROWN-UP's fair-use rows: one allowance per family) while A does
  * not, the kid keeps their own checkout_ref; the PIN's budgets are per family (5 per 15 minutes, then
  * refused; a forgiven try comes back; the day's 10th try locks, a new PIN unlocks); adding kids has
@@ -2622,15 +2712,17 @@ export async function checkFamily({ anon, a, service, newUser }) {
     const refK = rows(kRef)[0]?.checkout_ref ?? null;
     const before = asObject((await rpc(k, "ink_summary")).body);
     out.push(result("family: K has no plan while P has none", before?.unlimited?.status === "none" && before?.unlimited?.unlimited === false, JSON.stringify(before?.unlimited ?? null).slice(0, 200)));
-    // K was made as an ordinary account (newUser), so K HAS ink: a kid still never spends it.
+    // K was made as an ordinary account (newUser), so K HAS ink: a kid still never spends it. Without
+    // the plan, K's call spends P's ink ("Not now" on the iPad's trial).
     const kidSpend = await rpc(k, "consume_credits", { p_route: "rls-verify-family", p_units: 1, p_request_id: `rls-verify-family-noplan-${tag}` });
     const kidSpent = asObject(kidSpend.body);
     const kidUsage = await service.rest("GET", "usage_events", { query: { user_id: `eq.${k.userId}`, select: "id" } });
+    const parentUsage = await service.rest("GET", "usage_events", { query: { request_id: `eq.rls-verify-family-noplan-${tag}`, select: "user_id" } });
     out.push(
       result(
-        "family: K cannot spend ink of their own while P has no plan (insufficient_credits, plan_required, nothing written)",
-        isOk(kidSpend) && kidSpent?.ok === false && kidSpent?.reason === "insufficient_credits" && kidSpent?.plan_required === true && affectedNoRows(kidUsage),
-        `${describe(kidSpend)} / ${describe(kidUsage)}`,
+        "family: K never spends ink of their own; while P has no plan K's call spends P's ink (the row is on P)",
+        isOk(kidSpend) && kidSpent?.ok === true && affectedNoRows(kidUsage) && rows(parentUsage).length === 1 && rows(parentUsage)[0]?.user_id === p.userId,
+        `${describe(kidSpend)} / ${describe(kidUsage)} / ${describe(parentUsage)}`,
       ),
     );
     const planned = await service.rest("POST", "unlimited_subscriptions", {
@@ -3769,11 +3861,73 @@ export async function checkStartSteps({ anon, a, b, service }) {
 }
 
 /**
+ * The iPad onboarding (supabase/migrations/20261017210000_ipad_onboarding.sql). App Attest's tables,
+ * app_attest_keys and app_attest_challenges, have no client grants at all: anon and a signed-in
+ * user can neither read nor write them (A: 42501). The service role writes and removes a challenge.
+ * record_start_step() takes the iPad's own steps (start_handoff_kid ... start_first_board, here
+ * start_trial_declined with { client: "ipad" }). Without the service role only the refusals run.
+ * Removes the rows it wrote.
+ * @param {CheckContext} ctx
+ */
+export async function checkIpadOnboarding({ anon, a, service }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const refusedWith = (/** @type {HttpResult} */ res, /** @type {string} */ want) => !isOk(res) && code(res) === want;
+  const challenge = `rlsverify${uuid().replace(/-/g, "")}${uuid().replace(/-/g, "")}`.slice(0, 43);
+  const journey = uuid();
+  /** a row each table would take, so only the missing grant can refuse it */
+  const rowFor = (/** @type {string} */ table) =>
+    table === "app_attest_keys"
+      ? { key_id: `${Buffer.alloc(32, 7).toString("base64")}`, public_key: "-----BEGIN PUBLIC KEY-----\nrls\n-----END PUBLIC KEY-----", environment: "development" }
+      : { challenge, expires_at: new Date().toISOString() };
+  try {
+    for (const table of ["app_attest_keys", "app_attest_challenges"]) {
+      const anonSel = await anon.rest("GET", table, { query: { select: "*", limit: "1" } });
+      out.push(result(`ipad: anon cannot select ${table}`, isDenied(anonSel), describe(anonSel)));
+      const anonIns = await anon.rest("POST", table, { body: rowFor(table), prefer: "return=minimal" });
+      out.push(result(`ipad: anon cannot insert into ${table}`, isDenied(anonIns), describe(anonIns)));
+      const aSel = await a.rest("GET", table, { query: { select: "*", limit: "1" } });
+      out.push(result(`ipad: A cannot select ${table} (42501)`, refusedWith(aSel, "42501"), describe(aSel)));
+      const aIns = await a.rest("POST", table, { body: rowFor(table), prefer: "return=minimal" });
+      out.push(result(`ipad: A cannot insert into ${table} (42501)`, refusedWith(aIns, "42501"), describe(aIns)));
+      const aUpd = await a.rest("PATCH", table, { query: { created_at: "lt.2000-01-01" }, body: { created_at: new Date().toISOString() }, prefer: "return=representation" });
+      out.push(result(`ipad: A cannot update ${table} (42501)`, refusedWith(aUpd, "42501"), describe(aUpd)));
+      const aDel = await a.rest("DELETE", table, { query: { created_at: "lt.2000-01-01" }, prefer: "return=representation" });
+      out.push(result(`ipad: A cannot delete from ${table} (42501)`, refusedWith(aDel, "42501"), describe(aDel)));
+    }
+    if (!service) {
+      out.push(result("ipad: the service role's half (skipped: no service role client)", true));
+      return out;
+    }
+    const made = await service.rest("POST", "app_attest_challenges", { body: { challenge, expires_at: new Date(Date.now() + 300_000).toISOString() }, prefer: "return=minimal" });
+    const used = await service.rest("DELETE", "app_attest_challenges", { query: { challenge: `eq.${challenge}` }, prefer: "return=representation" });
+    out.push(result("ipad: the service role keeps a challenge and uses it up once", isOk(made) && rows(used).length === 1, `${describe(made)} / ${describe(used)}`));
+    const step = await rpc(service, "record_start_step", { p_journey: journey, p_event: "start_trial_declined", p_meta: { client: "ipad" } });
+    const kept = rows(await service.rest("GET", "start_steps", { query: { journey_id: `eq.${journey}`, select: "event,meta" } }));
+    out.push(
+      result(
+        "ipad: record_start_step() takes the iPad's steps (start_trial_declined, client ipad)",
+        isOk(step) && kept.length === 1 && kept[0]?.event === "start_trial_declined" && kept[0]?.meta?.client === "ipad",
+        `${describe(step)} / ${JSON.stringify(kept)}`,
+      ),
+    );
+  } finally {
+    if (service) {
+      await service.rest("DELETE", "app_attest_challenges", { query: { challenge: `eq.${challenge}` } });
+      await service.rest("DELETE", "start_steps", { query: { journey_id: `eq.${journey}` } });
+    }
+  }
+  return out;
+}
+
+/**
  * The steps before the account's checks, run after FUNNEL_STEP_CHECKS by scripts/verify-rls.mjs and src/__tests__/db-rls.integration.test.ts.
  * @type {CheckDef[]}
  */
 export const START_STEP_CHECKS = [
   { name: "start steps: start_steps out of every client's reach; record_start_step() the service role's; link_start_journey() links only an unlinked journey to the caller; admin_funnel's start has no ids and no admins", run: checkStartSteps },
+  { name: "ipad onboarding: app_attest_keys and app_attest_challenges the service role's alone; record_start_step() takes the iPad's steps", run: checkIpadOnboarding },
 ];
 
 /**

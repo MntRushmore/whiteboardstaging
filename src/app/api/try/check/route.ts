@@ -6,6 +6,7 @@ import { checkRateLimit } from "@/lib/server/rate-limit";
 import { RECOGNIZER_FAILED_STATUS } from "@/lib/server/recognizeHints";
 import { errorResponse } from "@/lib/server/request";
 import { spendTryRead } from "@/lib/server/try/dailyCap";
+import { appClaimOf, appRefusal, pathOf, verifyAppClaim } from "@/lib/server/appAttest/guard";
 import { isSameOrigin, parseJson, readCapped, TRY_CHECK_MAX_BYTES, tryError, tryLogger, visitorIp } from "@/lib/server/try/http";
 import { judgeTryLine } from "@/lib/server/try/judge";
 import { TRY_LIMITS, TryCheckRequestSchema, TryCheckResponseSchema, type TryCheckResponse } from "@/lib/try/contracts";
@@ -20,22 +21,33 @@ export const maxDuration = 20;
  * signed-out visitor wrote under a try problem, read and checked. One Mathpix strokes read (no vision
  * fallback, no model), then the board's own engine judges it on the server (`judgeTryLine`).
  *
- * PUBLIC BY DESIGN (allow-listed in scripts/lib/routes.mjs): the visitor has no account. In order:
+ * PUBLIC BY DESIGN (allow-listed in scripts/lib/routes.mjs): the visitor has no account. Two ways
+ * in: our own web page, or the iPad app before its account (docs/ONBOARDING.md), which proves itself
+ * with an App Attest assertion over the body (src/lib/server/appAttest/guard.ts). In order:
  *  1. `TRY_ENABLED=0` -> 503 `unavailable`;
- *  2. not from our own page (`isSameOrigin`: `Sec-Fetch-Site`, else `Origin`) -> 403 `invalid_request`;
- *  3. a body over 1 MB -> 413 `invalid_request`; not the schema, or a problem id we do not have ->
- *     400 `invalid_request` (the problem's lines are ours, looked up by id, never the page's);
- *  4. no reader configured -> 503 `unavailable` (before anything is counted);
- *  5. this visitor's reads (`TRY_LIMITS.read`, by `cf-connecting-ip`, else x-forwarded-for; in
- *     memory) -> 429 `rate_limited` with `retryAfterMs`;
- *  6. everyone's reads today (`TRY_DAILY_READS`, in the database; fails open: `dailyCap.ts`) -> 429;
- *  7. the read: Mathpix answering that it could not read the ink is a 200 `unread`; Mathpix failing
+ *  2. the web: not from our own page (`isSameOrigin`: `Sec-Fetch-Site`, else `Origin`) -> 403
+ *     `invalid_request`. The app (a request with the X-Agathon-App-* headers takes this path
+ *     whatever else it says): headers that are not a key and an assertion (or, off production only,
+ *     a debug uuid) -> 403 `invalid_request` with `reason` `attest_required` / `attest_invalid`;
+ *  3. a body over 1 MB -> 413 `invalid_request`;
+ *  4. the app only, on the body's exact bytes: too many verifications from this IP -> 429; the key
+ *     unknown -> 403 `attest_unknown_key` (the app attests a new one and retries once); the assertion
+ *     bad or replayed -> 403 `attest_invalid`; the key store unreachable -> 503 `unavailable`;
+ *  5. not the schema, or a problem id we do not have -> 400 `invalid_request` (the problem's lines
+ *     are ours, looked up by id, never the page's);
+ *  6. no reader configured -> 503 `unavailable` (before anything is counted);
+ *  7. this visitor's reads (`TRY_LIMITS.read`, by `cf-connecting-ip`, else x-forwarded-for; in
+ *     memory) -> 429 `rate_limited` with `retryAfterMs`; for the app also the same limit per
+ *     attested key (or debug device);
+ *  8. everyone's reads today (`TRY_DAILY_READS`, in the database; fails open: `dailyCap.ts`) -> 429;
+ *  9. the read: Mathpix answering that it could not read the ink is a 200 `unread`; Mathpix failing
  *     (credentials, HTTP, timeout, network) is `upstream_error` — with status 503, not the contract's
  *     502, because Cloudflare in front of www swaps every 502 for its own HTML page
  *     (`RECOGNIZER_FAILED_STATUS`) and the page would never see the JSON;
- *  8. 200 `{ latex, verdict, note }`.
+ * 10. 200 `{ latex, verdict, note }`.
  *
- * One info line per read (verdict, band, problem, times; never strokes, never an IP). Nothing about
+ * One info line per read (verdict, band, problem, times, and which `path`: web, app or debug; never
+ * strokes, never an IP, never a key id). Nothing about
  * the visitor is stored: the strokes go to Mathpix (which keeps nothing: `improve_mathpix: false`)
  * and are dropped.
  */
@@ -46,24 +58,40 @@ export async function POST(req: Request) {
   const done = (res: Response) => withRequestId(res, requestId);
   try {
     if (!tryEnabled()) return done(tryError(503, "unavailable"));
-    if (!isSameOrigin(req)) {
+    const app = appClaimOf(req);
+    const path = pathOf(app);
+    if (app?.kind === "refused") {
+      log.info({ path, reason: app.reason }, "try check refused: the app's headers");
+      return done(appRefusal(app.reason));
+    }
+    if (!app && !isSameOrigin(req)) {
       log.info({ site: req.headers.get("sec-fetch-site"), origin: Boolean(req.headers.get("origin")) }, "try check refused: not from our page");
       return done(tryError(403, "invalid_request"));
     }
 
-    const text = await readCapped(req, TRY_CHECK_MAX_BYTES);
-    if (text === null) return done(tryError(413, "invalid_request"));
-    const parsed = TryCheckRequestSchema.safeParse(parseJson(text));
+    const raw = await readCapped(req, TRY_CHECK_MAX_BYTES, "bytes");
+    if (raw === null) return done(tryError(413, "invalid_request"));
+    const ip = visitorIp(req);
+    const pass = app ? await verifyAppClaim(app, raw, ip) : null;
+    if (pass && !pass.ok) return done(pass.response);
+    const parsed = TryCheckRequestSchema.safeParse(parseJson(raw.toString("utf8")));
     if (!parsed.success) return done(tryError(400, "invalid_request"));
     const { problemId, work, strokes, bounds } = parsed.data;
     const problem = tryProblem(problemId);
     if (!problem) return done(tryError(400, "invalid_request"));
     if (!isMathpixConfigured()) return done(tryError(503, "unavailable"));
 
-    const mine = checkRateLimit(`ip:${visitorIp(req)}:tryCheck`, TRY_LIMITS.read);
+    const mine = checkRateLimit(`ip:${ip}:tryCheck`, TRY_LIMITS.read);
     if (!mine.ok) {
-      log.info({ band: problem.band, retryAfterMs: mine.retryAfterMs }, "try check: visitor's reads spent");
+      log.info({ path, band: problem.band, retryAfterMs: mine.retryAfterMs }, "try check: visitor's reads spent");
       return done(tryError(429, "rate_limited", mine.retryAfterMs));
+    }
+    if (pass) {
+      const device = checkRateLimit(`${pass.who}:tryCheck`, TRY_LIMITS.read);
+      if (!device.ok) {
+        log.info({ path, band: problem.band, retryAfterMs: device.retryAfterMs }, "try check: the device's reads spent");
+        return done(tryError(429, "rate_limited", device.retryAfterMs));
+      }
     }
     const day = await spendTryRead();
     if (!day.ok) {
@@ -91,6 +119,7 @@ export async function POST(req: Request) {
 
     log.info(
       {
+        path,
         verdict: body.verdict,
         band: problem.band,
         problem: problem.id,

@@ -117,7 +117,7 @@ describe("startedSubscription", () => {
     });
     expect(calls).toEqual([
       ["from", "unlimited_subscriptions"],
-      ["select", "id,stripe_subscription_id,user_id,status,trial_end,cancel_at_period_end,cancel_at,payer_email"],
+      ["select", "id,stripe_subscription_id,user_id,status,trial_end,cancel_at_period_end,cancel_at,payer_email,provider"],
       ["eq", "stripe_subscription_id", "sub_1"],
       ["maybeSingle"],
       ["from", "unlimited_subscriptions"],

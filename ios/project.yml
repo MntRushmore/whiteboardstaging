@@ -1,0 +1,193 @@
+# The Agathon iPad app. Agathon.xcodeproj is generated from this file:
+#   cd ios && xcodegen
+# Sources are synced folders, so files added under Agathon/ or AgathonTests/ (in Xcode or on disk)
+# are picked up without regenerating. Change targets, settings or Info.plist keys here, not in
+# Xcode's editor, or the next `xcodegen` run drops them.
+name: Agathon
+options:
+  bundleIdPrefix: app.agathon
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+packages:
+  # The board's logic, bundled TypeScript run in JavaScriptCore (docs/IPAD-NATIVE.md, "The brain").
+  AgathonBrain:
+    path: Packages/AgathonBrain
+  # The backend layer (docs/IPAD-NATIVE.md, "AgathonKit"): auth, API, SSE, models. Local, so edits
+  # to it build with the app.
+  AgathonKit:
+    path: Packages/AgathonKit
+  # Agathon's own whiteboard engine (docs/BOARD-FORMAT.md).
+  AgathonBoard:
+    path: Packages/AgathonBoard
+  # The design system (docs/DESIGN-SYSTEM.md): Blocks tokens, the bundled fonts, components, the
+  # mark and the shapes. Local, so edits to it build with the app.
+  AgathonDesign:
+    path: Packages/AgathonDesign
+  # The tutor on the board (docs/IPAD-NATIVE.md, Phase 2): the Live loop and its SwiftUI pieces.
+  AgathonLive:
+    path: Packages/AgathonLive
+  # Saving boards (docs/IPAD-NATIVE.md, Phase 1): open / convert / autosave / backup / thumbnails /
+  # pictures in board-assets, on AgathonBoard + AgathonKit.
+  AgathonSync:
+    path: Packages/AgathonSync
+  # The board editor in Blocks (the canvas, the kid dock, pages, pictures, typeset maths), on
+  # AgathonBoard and AgathonDesign; it brings the vendored SwiftMath (Packages/SwiftMath).
+  AgathonBoardUI:
+    path: Packages/AgathonBoardUI
+  # Agathon Unlimited through Apple in-app purchase (StoreKit 2; docs/IPAD-NATIVE.md "Money").
+  AgathonStore:
+    path: Packages/AgathonStore
+  # Ask (docs/IPAD-NATIVE.md, Phase 3; docs/ASK-V2.md): the chat panel, streaming, the screen's
+  # picture, the tutor's board actions (the brain's desk), hold-to-talk and read aloud.
+  AgathonAsk:
+    path: Packages/AgathonAsk
+  # The first run (docs/ONBOARDING.md): OnboardingFlow, its state, and the seams for the try's
+  # checker, Apple's trial and the parental gate.
+  AgathonOnboarding:
+    path: Packages/AgathonOnboarding
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    # The owner's Apple Developer team (individual, "Rushil Chopra"); signs device builds.
+    DEVELOPMENT_TEAM: SG4YJW2K5Z
+    CODE_SIGN_STYLE: Automatic
+targets:
+  Agathon:
+    type: application
+    platform: iOS
+    sources:
+      - path: Agathon
+        type: syncedFolder
+        # The StoreKit test configuration is the scheme's (below), not an app resource.
+        excludes:
+          - Agathon.storekit
+    dependencies:
+      - package: AgathonBrain
+      - package: AgathonKit
+      - package: AgathonBoard
+      - package: AgathonDesign
+      - package: AgathonLive
+      - package: AgathonSync
+      - package: AgathonBoardUI
+      - package: AgathonStore
+      - package: AgathonAsk
+      - package: AgathonOnboarding
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon
+        PRODUCT_NAME: Agathon
+        TARGETED_DEVICE_FAMILY: "2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Support/Info.plist
+        SUPPORTS_MACCATALYST: NO
+        ENABLE_PREVIEWS: YES
+      # App Attest (the onboarding's pre-account routes): Apple's development environment for Debug,
+      # production for Release. The App ID needs the App Attest capability (automatic signing adds it).
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Support/Agathon-Debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Support/Agathon.entitlements
+    info:
+      path: Support/Info.plist
+      properties:
+        CFBundleDisplayName: Agathon
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIRequiresFullScreen: false
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # localhost only, for a Debug run pointed at `npm run dev` (AGATHON_API_URL in the scheme).
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # Ask's hold-to-talk mic and Lecture mode.
+        NSMicrophoneUsageDescription: Agathon listens while you hold the mic to ask a question out loud, and during Lecture mode.
+        # Ask's mic when its speech service is resting (on-device recognition), and Lecture mode.
+        NSSpeechRecognitionUsageDescription: Agathon turns what you say into words when you talk to Ask, and what the teacher says into notes during Lecture mode.
+        # The picture button's "Take Photo" (a file input accepting images offers the camera).
+        NSCameraUsageDescription: Take a photo of a worksheet or a drawing to put it on your board.
+        # "Save Video" / "Save Image" from the share sheet after saving a replay or a picture.
+        NSPhotoLibraryAddUsageDescription: Agathon saves your board replays and pictures to your photo library.
+    scheme:
+      # Xcode's local StoreKit testing: the plan, its price and the 7-day free trial without App Store
+      # Connect (Debug > StoreKit > Manage Transactions to renew, expire or refund). Payloads it signs are
+      # not Apple's: the server takes them only with APPLE_ENVIRONMENT=Xcode on a dev server.
+      storeKitConfiguration: Agathon/Agathon.storekit
+      testTargets:
+        - AgathonTests
+        - package: AgathonKit/AgathonKitTests
+        # The live flows skip unless TEST_RUNNER_AGATHON_INTEGRATION=1 (local stack only), so a plain
+        # `xcodebuild test` passes with no backend. See AgathonUITests/KitFlowUITests.swift.
+        - AgathonUITests
+        - package: AgathonBoard/AgathonBoardTests
+        - package: AgathonSync/AgathonSyncTests
+        - package: AgathonBoardUI/AgathonBoardUITests
+        - package: AgathonLive/AgathonLiveTests
+        - package: AgathonDesign/AgathonDesignTests
+        # Runs the brain's benchmarks only with BRAIN_BENCH=1; parity tests always.
+        - package: AgathonBrain/AgathonBrainTests
+        - package: AgathonStore/AgathonStoreTests
+        - package: AgathonAsk/AgathonAskTests
+        - package: AgathonOnboarding/AgathonOnboardingTests
+      gatherCoverageData: false
+      environmentVariables:
+        # Tick in Product > Scheme > Edit Scheme > Run > Arguments to call a local `npm run dev`.
+        - variable: AGATHON_API_URL
+          value: http://localhost:3000
+          isEnabled: false
+        # The local Supabase stack (`npm run db:start`). Tick both or neither: a Debug run with one
+        # and not the other stops at launch (AgathonEnvironment). Paste the ANON_KEY that
+        # `npx supabase status -o env` prints (a public key, but not committed: secret scanners).
+        - variable: SUPABASE_URL
+          value: http://127.0.0.1:54321
+          isEnabled: false
+        - variable: SUPABASE_ANON_KEY
+          value: paste ANON_KEY from npx supabase status -o env
+          isEnabled: false
+  AgathonTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: AgathonTests
+        type: syncedFolder
+    dependencies:
+      - target: Agathon
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.agathon.AgathonTests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "2"
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Agathon.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Agathon
+        BUNDLE_LOADER: $(TEST_HOST)
+  AgathonUITests:
+    # Drives the app's screens (Phase 0: AgathonKit's debug screens) against the local stack.
+    # Note: iOS's Password AutoFill sheets get in the way of automation; the tests turn AutoFill off
+    # in the simulator's Settings first (it stays off on that simulator).
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AgathonUITests
+        type: syncedFolder
+    dependencies:
+      - target: Agathon
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.agathon.AgathonUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "2"
+        TEST_TARGET_NAME: Agathon

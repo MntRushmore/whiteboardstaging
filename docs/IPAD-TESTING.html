@@ -1,0 +1,255 @@
+<title>Agathon iPad Testing</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Lexend:wght@400;500;600&display=swap">
+<style>
+/* Layout: one readable column; steps as numbered blocks, checks as tickable rows, a status board at the end. Blocks brand: flat fills, the logo's ring/dot/bar. */
+:root {
+  --paper: #FFFFFF;
+  --chalk: #F1F2F6;
+  --ink: #14151F;
+  --ink-2: #4A4D5E;
+  --line: #DFE1E8;
+  --sunny: #FFD12E;
+  --tomato: #FF5A36;
+  --cobalt: #2D5BFF;
+  --green: #12A150;
+  --on-sunny: #14151F;
+  --code-bg: #14151F;
+  --code-fg: #F1F2F6;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "Lexend", "Avenir Next", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #14151F; --chalk: #1E2030; --ink: #F1F2F6; --ink-2: #B4B8C8; --line: #2E3146;
+    --sunny: #FFD12E; --tomato: #FF7A5C; --cobalt: #6C8CFF; --green: #3CCB7F; --on-sunny: #14151F;
+    --code-bg: #0B0C14; --code-fg: #F1F2F6; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #14151F; --chalk: #1E2030; --ink: #F1F2F6; --ink-2: #B4B8C8; --line: #2E3146;
+  --sunny: #FFD12E; --tomato: #FF7A5C; --cobalt: #6C8CFF; --green: #3CCB7F; --on-sunny: #14151F;
+  --code-bg: #0B0C14; --code-fg: #F1F2F6; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 48px; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.1; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.4rem); font-weight: 800; letter-spacing: -0.02em; }
+h2 { font-size: 1.6rem; font-weight: 800; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+p { margin: 0; max-width: 65ch; }
+section { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.mark { display: inline-flex; align-items: center; gap: 4px; }
+.mark .ring { width: 28px; height: 28px; border-radius: 50%; border: 7px solid var(--cobalt); position: relative; }
+.mark .ring::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--sunny); }
+.mark .bar { width: 8px; height: 30px; border-radius: 3px; background: var(--tomato); }
+.top { display: flex; flex-direction: column; gap: 14px; }
+.eyebrow { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.lede { font-size: 1.1rem; color: var(--ink-2); }
+.callout { background: var(--sunny); color: var(--on-sunny); border-radius: 22px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
+.callout strong { font-family: var(--display); font-size: 1.15rem; }
+.callout.warn { background: var(--chalk); color: var(--ink); border-left: 8px solid var(--tomato); border-radius: 14px; }
+ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; counter-reset: s; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 40px 1fr; gap: 14px; align-items: start; background: var(--chalk); border-radius: 18px; padding: 14px 16px; }
+ol.steps li::before { content: counter(s); width: 36px; height: 36px; border-radius: 50%; background: var(--ink); color: var(--paper); font-family: var(--display); font-weight: 800; display: grid; place-items: center; }
+ol.steps li > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.muted { color: var(--ink-2); font-size: 0.95rem; }
+code, .kbd { font-family: var(--mono); font-size: 0.88em; background: var(--chalk); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; overflow-wrap: anywhere; }
+ol.steps code { background: var(--paper); }
+.cmd { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
+.cmd pre { flex: 1; min-width: 0; margin: 0; background: var(--code-bg); color: var(--code-fg); border-radius: 12px; padding: 12px 14px; font-family: var(--mono); font-size: 0.85rem; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+button.copy { font-family: var(--body); font-weight: 600; font-size: 0.85rem; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); padding: 0 16px; cursor: pointer; min-height: 44px; }
+button.copy:focus-visible, input:focus-visible + span, a:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+.group { display: flex; flex-direction: column; gap: 10px; }
+.group h3 { display: flex; align-items: center; gap: 10px; }
+.tag { font-family: var(--body); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 999px; padding: 3px 10px; background: var(--chalk); color: var(--ink-2); }
+ul.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+ul.checks label { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; padding: 12px 14px; border: 2px solid var(--line); border-radius: 14px; cursor: pointer; }
+ul.checks input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+ul.checks .box { width: 26px; height: 26px; border-radius: 8px; border: 3px solid var(--ink); display: grid; place-items: center; margin-top: 1px; }
+ul.checks input:checked + .box { background: var(--green); border-color: var(--green); }
+ul.checks input:checked + .box::after { content: ""; width: 11px; height: 6px; border-left: 3px solid #fff; border-bottom: 3px solid #fff; transform: rotate(-45deg) translate(1px, -1px); }
+ul.checks input:focus-visible + .box { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+ul.checks .txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+ul.checks .txt b { font-weight: 600; }
+.progress { font-size: 0.9rem; color: var(--ink-2); }
+dl.trouble { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+dl.trouble div { border-top: 2px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+dt { font-weight: 600; }
+dd { margin: 0; color: var(--ink-2); }
+.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.lane { border-radius: 18px; padding: 14px 16px; background: var(--chalk); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pill { align-self: flex-start; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 999px; padding: 3px 10px; color: #fff; }
+.pill.done { background: var(--green); }
+.pill.wrap { background: var(--cobalt); }
+.pill.next { background: var(--ink-2); }
+.lane p { font-size: 0.92rem; color: var(--ink-2); }
+footer { color: var(--ink-2); font-size: 0.85rem; }
+@media (prefers-reduced-motion: no-preference) { ul.checks .box { transition: background .12s ease, border-color .12s ease; } }
+</style>
+
+<main>
+  <header class="top">
+    <span class="mark" aria-hidden="true"><span class="ring"></span><span class="bar"></span></span>
+    <span class="eyebrow">Agathon for iPad · first device build · Oct 17, 2026</span>
+    <h1>Agathon iPad Testing</h1>
+    <p class="lede">How to put tonight's build on your iPad, what to try with the Apple Pencil, and what to send back. The build is the native app with our own board engine, the maths brain and the Blocks design system. The tutor, Ask and the real screens come next.</p>
+  </header>
+
+  <div class="callout">
+    <strong>You're already set up for this.</strong>
+    <span>Your paid Apple Developer team (Rushil Chopra, <code>SG4YJW2K5Z</code>) is signed in to Xcode and set on the project. A signed build for real iPads already compiled. Your iPad has been paired with this Mac before.</span>
+  </div>
+
+  <section aria-labelledby="run">
+    <h2 id="run">Run it on your iPad</h2>
+    <ol class="steps">
+      <li><div><h3>Open the project in Xcode</h3>
+        <p class="muted">It's on branch <code>feat/ipad-app</code>. If Xcode says the project changed on disk, choose to reload it.</p>
+        <div class="cmd"><pre id="cmd-open">open ~/whiteboardstaging/ipad-app/ios/Agathon.xcodeproj</pre><button class="copy" data-copy="cmd-open">Copy</button></div>
+      </div></li>
+      <li><div><h3>Plug in the iPad and unlock it</h3>
+        <p class="muted">Tap <b>Trust</b> if it asks. It needs iPadOS 17 or later.</p></div></li>
+      <li><div><h3>Pick the iPad as the destination</h3>
+        <p class="muted">In the bar at the top of Xcode, the scheme is <b>Agathon</b>. Click the device next to it and choose your iPad instead of a simulator.</p></div></li>
+      <li><div><h3>Press Run (⌘R)</h3>
+        <p class="muted">The first build takes a few minutes; later ones are quick.</p></div></li>
+      <li><div><h3>Allow it on the iPad, first time only</h3>
+        <p class="muted">If it asks for <b>Developer Mode</b>: Settings › Privacy &amp; Security › Developer Mode › On, then let it restart and press Run again. If it says <b>Untrusted Developer</b>: Settings › General › VPN &amp; Device Management › trust "Apple Development: Rushil Chopra".</p></div></li>
+      <li><div><h3>Open the Labs</h3>
+        <p class="muted">The app opens on a plain sign-in screen. You don't need to sign in: tap <b>Labs</b> in the bottom-right corner and pick a lab. <b>Close</b> (bottom-right) brings you back.</p></div></li>
+    </ol>
+    <div class="callout warn">
+      <strong>Careful with sign-in</strong>
+      <span>Sign-in on the iPad uses your real production account. The plain boards list after sign-in can rename and delete real boards. The Labs never touch the server.</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="try">
+    <h2 id="try">What to try</h2>
+    <p class="progress" id="progress" aria-live="polite">0 of 13 checked</p>
+
+    <div class="group">
+      <h3>Board Lab <span class="tag">the big one</span></h3>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c1"><span class="box"></span><span class="txt"><b>Write with the Pencil, fast and slow</b><span class="muted">Does the ink stay right under the tip? The stats box at the bottom shows touch→commit times.</span></span></label></li>
+        <li><label><input type="checkbox" id="c2"><span class="box"></span><span class="txt"><b>Rest your palm while writing</b><span class="muted">No stray marks. The stats box should say "Pencil seen: yes" and "finger draws: no" once the Pencil has touched the screen.</span></span></label></li>
+        <li><label><input type="checkbox" id="c3"><span class="box"></span><span class="txt"><b>Pan with one finger, pinch with two</b><span class="muted">Smooth, and the page stays put while you write.</span></span></label></li>
+        <li><label><input type="checkbox" id="c4"><span class="box"></span><span class="txt"><b>Press harder</b><span class="muted">The line should get thicker, like a real pen.</span></span></label></li>
+        <li><label><input type="checkbox" id="c5"><span class="box"></span><span class="txt"><b>Eraser, Undo, Redo, colours, Regular/Fine</b></span></label></li>
+        <li><label><input type="checkbox" id="c6"><span class="box"></span><span class="txt"><b>New screen and ‹ ›</b><span class="muted">Screens are 16:9 pages, like the web.</span></span></label></li>
+        <li><label><input type="checkbox" id="c7"><span class="box"></span><span class="txt"><b>Load fixture</b><span class="muted">An old web board, converted. Ticks, rings and the tutor's blue writing should look like the web.</span></span></label></li>
+        <li><label><input type="checkbox" id="c8"><span class="box"></span><span class="txt"><b>Demo writing and Tutor marks</b><span class="muted">The tutor writes at handwriting pace. Does the pace feel right?</span></span></label></li>
+        <li><label><input type="checkbox" id="c9"><span class="box"></span><span class="txt"><b>Zoom to 4×</b><span class="muted">Ink should turn sharp a moment after you stop.</span></span></label></li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <h3>Brain Lab <span class="tag">real-device numbers</span></h3>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c10"><span class="box"></span><span class="txt"><b>Run it and screenshot the timings</b><span class="muted">These are the maths engine's speeds on a real iPad; so far we only have simulator estimates.</span></span></label></li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <h3>Design Gallery <span class="tag">Blocks</span></h3>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c11"><span class="box"></span><span class="txt"><b>Flip through every page</b><span class="muted">Colour, Type, Shape, Controls, Feedback, Brand (the shapes' poses), Stickers. Does it feel like Agathon for kids?</span></span></label></li>
+        <li><label><input type="checkbox" id="c12"><span class="box"></span><span class="txt"><b>Press the buttons</b><span class="muted">They should squish a little.</span></span></label></li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <h3>Everything else</h3>
+      <ul class="checks">
+        <li><label><input type="checkbox" id="c13"><span class="box"></span><span class="txt"><b>Turn the iPad to portrait and back</b><span class="muted">Nothing should get cut off.</span></span></label></li>
+      </ul>
+    </div>
+  </section>
+
+  <section aria-labelledby="send">
+    <h2 id="send">What to send back</h2>
+    <p>A few lines in the chat are enough: anything that felt laggy, too thin or too thick, palm marks, the pace of the tutor's writing, and the Brain Lab screenshot. Screenshots of anything that looks off help most.</p>
+  </section>
+
+  <section aria-labelledby="fix">
+    <h2 id="fix">If something goes wrong</h2>
+    <dl class="trouble">
+      <div><dt>The iPad isn't in the device list</dt><dd>Unlock it, check the cable, and look in Window › Devices and Simulators. Tap Trust on the iPad if it asks again.</dd></div>
+      <div><dt>"Signing for Agathon requires a development team"</dt><dd>Click the Agathon project › Signing &amp; Capabilities › Team › Rushil Chopra. It's already set in the project, so this should only happen if Xcode lost the account.</dd></div>
+      <div><dt>Package or "missing module" errors</dt><dd>File › Packages › Reset Package Caches, then build again.</dd></div>
+      <div><dt>"Could not launch" or Developer Mode errors</dt><dd>Turn on Developer Mode (step 5) and restart the iPad.</dd></div>
+      <div><dt>Want to skip the cable next time</dt><dd>After the first run, Window › Devices and Simulators › your iPad › Connect via network. Then it runs over Wi-Fi.</dd></div>
+    </dl>
+  </section>
+
+  <section aria-labelledby="where">
+    <h2 id="where">Where the build stands</h2>
+    <div class="board">
+      <div class="lane"><span class="pill done">Merged</span><h3>Sign-in and backend</h3><p>Accounts, family profiles with PIN, boards list, API and streaming. 103 tests.</p></div>
+      <div class="lane"><span class="pill done">Merged</span><h3>Maths brain</h3><p>The web's board logic in the app. 3,412 of 3,430 cases byte-identical.</p></div>
+      <div class="lane"><span class="pill done">Merged</span><h3>Board engine</h3><p>Our own whiteboard. About 1 ms per stroke on 5,000 strokes. 74 tests.</p></div>
+      <div class="lane"><span class="pill done">Merged</span><h3>Blocks design</h3><p>Colours, fonts, components, the shapes. 47 tests.</p></div>
+      <div class="lane"><span class="pill wrap">Wrapping up tonight</span><h3>Board tools</h3><p>Select, shapes, pictures, PDF, maths and graphs, the kid dock. Branch <code>feat/ipad-tools</code>.</p></div>
+      <div class="lane"><span class="pill wrap">Wrapping up tonight</span><h3>Saving and old boards</h3><p>Autosave, the full converter, web read-only view. Branch <code>feat/ipad-sync</code>.</p></div>
+      <div class="lane"><span class="pill wrap">Wrapping up tonight</span><h3>Tutor on the board</h3><p>Reading, ticks, rings, hints, Solve, Now you try. Branch <code>feat/ipad-live</code>.</p></div>
+      <div class="lane"><span class="pill wrap">Wrapping up tonight</span><h3>In-app purchase</h3><p>Apple trial and plan, server receipts, parent check. Branch <code>feat/ipad-billing</code>.</p></div>
+      <div class="lane"><span class="pill next">Next session</span><h3>Onboarding</h3><p>Spec ready in <code>docs/ONBOARDING.md</code>. Trial right after the account; "Not now" still gets the free board.</p></div>
+      <div class="lane"><span class="pill next">Next session</span><h3>Screens, then Ask</h3><p>Home, progress, account, family, reports. Then the Ask chat with voice.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="resume">
+    <h2 id="resume">Pick up next session</h2>
+    <p>Paste this into Claude Code to continue where we stopped:</p>
+    <div class="cmd"><pre id="cmd-resume">Continue building the Agathon iPad app in ~/whiteboardstaging/ipad-app (branch feat/ipad-app). Read docs/IPAD-NATIVE.md and docs/ONBOARDING.md and your memory notes on the iPad app. First merge the lanes that wrapped up last night (feat/ipad-tools, feat/ipad-sync, feat/ipad-live, feat/ipad-billing) and finish anything on their "left to do" lists, then start the onboarding and screens lanes.</pre><button class="copy" data-copy="cmd-resume">Copy</button></div>
+  </section>
+
+  <footer>Nothing from tonight is pushed or deployed; everything is local on branches in ~/whiteboardstaging.</footer>
+</main>
+
+<script>
+(function () {
+  var KEY = "agathon-ipad-checks";
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { saved = {}; }
+  var boxes = Array.prototype.slice.call(document.querySelectorAll("ul.checks input"));
+  var progress = document.getElementById("progress");
+  function update() {
+    var n = boxes.filter(function (b) { return b.checked; }).length;
+    progress.textContent = n + " of " + boxes.length + " checked";
+  }
+  boxes.forEach(function (b) {
+    if (saved[b.id]) b.checked = true;
+    b.addEventListener("change", function () {
+      saved[b.id] = b.checked;
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {}
+      update();
+    });
+  });
+  update();
+  document.querySelectorAll("button.copy").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var el = document.getElementById(btn.getAttribute("data-copy"));
+      var text = el.textContent;
+      function selectIt() {
+        var r = document.createRange(); r.selectNodeContents(el);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        btn.textContent = "Selected";
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { btn.textContent = "Copied"; }, selectIt);
+      } else { selectIt(); }
+      setTimeout(function () { btn.textContent = "Copy"; }, 1800);
+    });
+  });
+})();
+</script>

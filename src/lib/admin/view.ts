@@ -776,7 +776,7 @@ export function moneyTiles(money: AdminOverview["money"], signups7d: number, clo
       hint:
         money.paying === 0
           ? "Nobody paying yet"
-          : `${plural(money.paying, "paying plan")} × ${formatDollars(money.priceUsd)}${money.payingCancelling ? `, ${formatCount(money.payingCancelling)} set to cancel` : ""}`,
+          : `${plural(money.paying, "paying plan")} × ${formatDollars(money.priceUsd)}${money.apple?.paying ? `, ${formatCount(money.apple.paying)} through Apple` : ""}${money.payingCancelling ? `, ${formatCount(money.payingCancelling)} set to cancel` : ""}`,
     },
     {
       key: "trials",

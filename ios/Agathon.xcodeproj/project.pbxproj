@@ -1,0 +1,722 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0109CEB84F9F6D8D69087838 /* AgathonStore in Frameworks */ = {isa = PBXBuildFile; productRef = 0A88AEAB98272D9FC51B26E0 /* AgathonStore */; };
+		2E48E6AE82AC7FE028DA3904 /* AgathonKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2EBB9398B5E77B93B1939A1D /* AgathonKit */; };
+		569333189A76680A35C74B67 /* AgathonBoard in Frameworks */ = {isa = PBXBuildFile; productRef = 473BF604BAF84ABCD8CE679D /* AgathonBoard */; };
+		6CC073C52FF8D7A3F808FEFA /* AgathonBrain in Frameworks */ = {isa = PBXBuildFile; productRef = 065FF0609EBF448976CCA0A0 /* AgathonBrain */; };
+		C9BEC5E41A4B39FBF7AEFF4E /* AgathonAsk in Frameworks */ = {isa = PBXBuildFile; productRef = B0B4A7F5C5ECA3E081660D3B /* AgathonAsk */; };
+		D90B9D902DA588E3BE977FB4 /* AgathonBoardUI in Frameworks */ = {isa = PBXBuildFile; productRef = 8C7A1BCF2E0A9C00B1F7AA8E /* AgathonBoardUI */; };
+		EB7573BE79ED12E4BD60CA60 /* AgathonOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = 43C1740DD3E8938BA7BABDC9 /* AgathonOnboarding */; };
+		F28EF159DB2854E0678843BB /* AgathonDesign in Frameworks */ = {isa = PBXBuildFile; productRef = B99AD4C37DA95662CA301E92 /* AgathonDesign */; };
+		FD94A2F724915696EB7C975A /* AgathonSync in Frameworks */ = {isa = PBXBuildFile; productRef = 5E858D0444B89A09E5EB5B60 /* AgathonSync */; };
+		FED5ADC4A7F6590D178DDFA3 /* AgathonLive in Frameworks */ = {isa = PBXBuildFile; productRef = E48185E5D2DBCE33B0703C64 /* AgathonLive */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		49778BB39C52570AFA2B2634 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F403C734716951916C986C28 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C180FF0FD1320B8A4FFA1307;
+			remoteInfo = Agathon;
+		};
+		CD033DB4F9CC21C9F408B719 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F403C734716951916C986C28 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C180FF0FD1320B8A4FFA1307;
+			remoteInfo = Agathon;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		20DA749408029D9321D33673 /* AgathonUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AgathonUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2F12BF8AD1DEF01F2D9518BA /* AgathonSync */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonSync; path = Packages/AgathonSync; sourceTree = SOURCE_ROOT; };
+		4D33C03C523F7A51E528AB79 /* AgathonBoard */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonBoard; path = Packages/AgathonBoard; sourceTree = SOURCE_ROOT; };
+		52F39C285070ACC0A0DDBD65 /* AgathonKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonKit; path = Packages/AgathonKit; sourceTree = SOURCE_ROOT; };
+		5E5AA883F66340B900CB6ACA /* AgathonBrain */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonBrain; path = Packages/AgathonBrain; sourceTree = SOURCE_ROOT; };
+		62E57576A31112B07E977591 /* AgathonTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AgathonTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		73B45906A59F544D6AB84716 /* Agathon.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Agathon.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		83AA98089527320E9E04F403 /* AgathonBoardUI */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonBoardUI; path = Packages/AgathonBoardUI; sourceTree = SOURCE_ROOT; };
+		8AAE7675262C42BE5C7C2F98 /* AgathonAsk */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonAsk; path = Packages/AgathonAsk; sourceTree = SOURCE_ROOT; };
+		9D638D0D1FC47406A44F456F /* AgathonStore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonStore; path = Packages/AgathonStore; sourceTree = SOURCE_ROOT; };
+		A46533837B7C9C2DDA13FE58 /* AgathonOnboarding */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonOnboarding; path = Packages/AgathonOnboarding; sourceTree = SOURCE_ROOT; };
+		B01D1E6F2042A25FBFFD6CCE /* AgathonDesign */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonDesign; path = Packages/AgathonDesign; sourceTree = SOURCE_ROOT; };
+		DE349BD35DF38F4B559CC448 /* AgathonLive */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonLive; path = Packages/AgathonLive; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		20C886851984B5A29D8A6DD8 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Agathon.storekit,
+			);
+			target = C180FF0FD1320B8A4FFA1307 /* Agathon */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		1C6AD33D2419FA9A7CDDF686 /* AgathonTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = AgathonTests;
+			sourceTree = "<group>";
+		};
+		382F2F759C8DC98399A3BF42 /* Agathon */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				20C886851984B5A29D8A6DD8 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = Agathon;
+			sourceTree = "<group>";
+		};
+		4E84E0D3451671B9EC6DD8F8 /* AgathonUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = AgathonUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9093A3D5D667E2B52637B74A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6CC073C52FF8D7A3F808FEFA /* AgathonBrain in Frameworks */,
+				2E48E6AE82AC7FE028DA3904 /* AgathonKit in Frameworks */,
+				569333189A76680A35C74B67 /* AgathonBoard in Frameworks */,
+				F28EF159DB2854E0678843BB /* AgathonDesign in Frameworks */,
+				FED5ADC4A7F6590D178DDFA3 /* AgathonLive in Frameworks */,
+				FD94A2F724915696EB7C975A /* AgathonSync in Frameworks */,
+				D90B9D902DA588E3BE977FB4 /* AgathonBoardUI in Frameworks */,
+				0109CEB84F9F6D8D69087838 /* AgathonStore in Frameworks */,
+				C9BEC5E41A4B39FBF7AEFF4E /* AgathonAsk in Frameworks */,
+				EB7573BE79ED12E4BD60CA60 /* AgathonOnboarding in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		42282519D0B88BE08E234730 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				8AAE7675262C42BE5C7C2F98 /* AgathonAsk */,
+				4D33C03C523F7A51E528AB79 /* AgathonBoard */,
+				83AA98089527320E9E04F403 /* AgathonBoardUI */,
+				5E5AA883F66340B900CB6ACA /* AgathonBrain */,
+				B01D1E6F2042A25FBFFD6CCE /* AgathonDesign */,
+				52F39C285070ACC0A0DDBD65 /* AgathonKit */,
+				DE349BD35DF38F4B559CC448 /* AgathonLive */,
+				A46533837B7C9C2DDA13FE58 /* AgathonOnboarding */,
+				9D638D0D1FC47406A44F456F /* AgathonStore */,
+				2F12BF8AD1DEF01F2D9518BA /* AgathonSync */,
+			);
+			path = Packages;
+			sourceTree = "<group>";
+		};
+		6F5D81931FF58E462342C46C = {
+			isa = PBXGroup;
+			children = (
+				382F2F759C8DC98399A3BF42 /* Agathon */,
+				1C6AD33D2419FA9A7CDDF686 /* AgathonTests */,
+				4E84E0D3451671B9EC6DD8F8 /* AgathonUITests */,
+				42282519D0B88BE08E234730 /* Packages */,
+				91050FF09E3453A6A60CF333 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		91050FF09E3453A6A60CF333 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				73B45906A59F544D6AB84716 /* Agathon.app */,
+				62E57576A31112B07E977591 /* AgathonTests.xctest */,
+				20DA749408029D9321D33673 /* AgathonUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		079F10D83CA890A63E82B09A /* AgathonTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 15A5DC105238086FCA363DA2 /* Build configuration list for PBXNativeTarget "AgathonTests" */;
+			buildPhases = (
+				C814AE1548642F6734C4DDCB /* Sources */,
+				25A50FCCE4285F4C6C1A5B8C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4B876B923999B47FF4C205AD /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				1C6AD33D2419FA9A7CDDF686 /* AgathonTests */,
+			);
+			name = AgathonTests;
+			packageProductDependencies = (
+			);
+			productName = AgathonTests;
+			productReference = 62E57576A31112B07E977591 /* AgathonTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		5A7A65D0B8EC4E75807160F9 /* AgathonUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1C798A62550A62CAD662173D /* Build configuration list for PBXNativeTarget "AgathonUITests" */;
+			buildPhases = (
+				6772210168E72E925303B4D0 /* Sources */,
+				6E3B0CC0563E2C22096B869E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AFF4DFE7EBC095E2C75D6842 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4E84E0D3451671B9EC6DD8F8 /* AgathonUITests */,
+			);
+			name = AgathonUITests;
+			packageProductDependencies = (
+			);
+			productName = AgathonUITests;
+			productReference = 20DA749408029D9321D33673 /* AgathonUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		C180FF0FD1320B8A4FFA1307 /* Agathon */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0CEC0E527B0BAB0F35E2E877 /* Build configuration list for PBXNativeTarget "Agathon" */;
+			buildPhases = (
+				AB93DE89234AACDEA63A4AFB /* Sources */,
+				D050C597F829EA1279D6D16C /* Resources */,
+				9093A3D5D667E2B52637B74A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				382F2F759C8DC98399A3BF42 /* Agathon */,
+			);
+			name = Agathon;
+			packageProductDependencies = (
+				065FF0609EBF448976CCA0A0 /* AgathonBrain */,
+				2EBB9398B5E77B93B1939A1D /* AgathonKit */,
+				473BF604BAF84ABCD8CE679D /* AgathonBoard */,
+				B99AD4C37DA95662CA301E92 /* AgathonDesign */,
+				E48185E5D2DBCE33B0703C64 /* AgathonLive */,
+				5E858D0444B89A09E5EB5B60 /* AgathonSync */,
+				8C7A1BCF2E0A9C00B1F7AA8E /* AgathonBoardUI */,
+				0A88AEAB98272D9FC51B26E0 /* AgathonStore */,
+				B0B4A7F5C5ECA3E081660D3B /* AgathonAsk */,
+				43C1740DD3E8938BA7BABDC9 /* AgathonOnboarding */,
+			);
+			productName = Agathon;
+			productReference = 73B45906A59F544D6AB84716 /* Agathon.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F403C734716951916C986C28 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					079F10D83CA890A63E82B09A = {
+						DevelopmentTeam = SG4YJW2K5Z;
+						ProvisioningStyle = Automatic;
+					};
+					5A7A65D0B8EC4E75807160F9 = {
+						DevelopmentTeam = SG4YJW2K5Z;
+						ProvisioningStyle = Automatic;
+						TestTargetID = C180FF0FD1320B8A4FFA1307;
+					};
+					C180FF0FD1320B8A4FFA1307 = {
+						DevelopmentTeam = SG4YJW2K5Z;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 94FE928CD30938183D96474D /* Build configuration list for PBXProject "Agathon" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 6F5D81931FF58E462342C46C;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				25BC3C21DF73F9281DBC83A2 /* XCLocalSwiftPackageReference "Packages/AgathonAsk" */,
+				4F454A6B7B8D68BD80A08401 /* XCLocalSwiftPackageReference "Packages/AgathonBoard" */,
+				061272D9303EDD58DAB446E1 /* XCLocalSwiftPackageReference "Packages/AgathonBoardUI" */,
+				CBD6CF59DC8B1285F2C460CF /* XCLocalSwiftPackageReference "Packages/AgathonBrain" */,
+				48317AF34E3FBADC02B7CFC5 /* XCLocalSwiftPackageReference "Packages/AgathonDesign" */,
+				F912F11CC2BAD2680486BC66 /* XCLocalSwiftPackageReference "Packages/AgathonKit" */,
+				9106872B2EA9CF9CC1B4BFD8 /* XCLocalSwiftPackageReference "Packages/AgathonLive" */,
+				E21FF80F4B376E5F4DF3CD33 /* XCLocalSwiftPackageReference "Packages/AgathonOnboarding" */,
+				8A43253F3FEEA7A30D570593 /* XCLocalSwiftPackageReference "Packages/AgathonStore" */,
+				540592564D62EA46FEC0F6C4 /* XCLocalSwiftPackageReference "Packages/AgathonSync" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 91050FF09E3453A6A60CF333 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C180FF0FD1320B8A4FFA1307 /* Agathon */,
+				079F10D83CA890A63E82B09A /* AgathonTests */,
+				5A7A65D0B8EC4E75807160F9 /* AgathonUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		25A50FCCE4285F4C6C1A5B8C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6E3B0CC0563E2C22096B869E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D050C597F829EA1279D6D16C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6772210168E72E925303B4D0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB93DE89234AACDEA63A4AFB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C814AE1548642F6734C4DDCB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4B876B923999B47FF4C205AD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C180FF0FD1320B8A4FFA1307 /* Agathon */;
+			targetProxy = 49778BB39C52570AFA2B2634 /* PBXContainerItemProxy */;
+		};
+		AFF4DFE7EBC095E2C75D6842 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C180FF0FD1320B8A4FFA1307 /* Agathon */;
+			targetProxy = CD033DB4F9CC21C9F408B719 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0DD22A344C35C4A162CCD3FE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = SG4YJW2K5Z;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		240D86316BEC80435006E268 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.agathon.AgathonUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = Agathon;
+			};
+			name = Debug;
+		};
+		2B91A718B3655CB02AB98B6D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Support/Agathon-Debug.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Support/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.agathon.Agathon;
+				PRODUCT_NAME = Agathon;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Debug;
+		};
+		316E68527A1BE5301B90FB46 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Support/Agathon.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Support/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.agathon.Agathon;
+				PRODUCT_NAME = Agathon;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+		3D475888CE48B0FC5E3B2F82 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.agathon.AgathonTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agathon.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Agathon";
+			};
+			name = Release;
+		};
+		B237A3EA2DF4EB14408FFA51 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.agathon.AgathonTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agathon.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Agathon";
+			};
+			name = Debug;
+		};
+		B54B4C049EEEEA3E3ED5E0B9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = SG4YJW2K5Z;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		F93145EC571954B6E0518AA9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.agathon.AgathonUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = Agathon;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0CEC0E527B0BAB0F35E2E877 /* Build configuration list for PBXNativeTarget "Agathon" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2B91A718B3655CB02AB98B6D /* Debug */,
+				316E68527A1BE5301B90FB46 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		15A5DC105238086FCA363DA2 /* Build configuration list for PBXNativeTarget "AgathonTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B237A3EA2DF4EB14408FFA51 /* Debug */,
+				3D475888CE48B0FC5E3B2F82 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		1C798A62550A62CAD662173D /* Build configuration list for PBXNativeTarget "AgathonUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				240D86316BEC80435006E268 /* Debug */,
+				F93145EC571954B6E0518AA9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		94FE928CD30938183D96474D /* Build configuration list for PBXProject "Agathon" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0DD22A344C35C4A162CCD3FE /* Debug */,
+				B54B4C049EEEEA3E3ED5E0B9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		061272D9303EDD58DAB446E1 /* XCLocalSwiftPackageReference "Packages/AgathonBoardUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonBoardUI;
+		};
+		25BC3C21DF73F9281DBC83A2 /* XCLocalSwiftPackageReference "Packages/AgathonAsk" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonAsk;
+		};
+		48317AF34E3FBADC02B7CFC5 /* XCLocalSwiftPackageReference "Packages/AgathonDesign" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonDesign;
+		};
+		4F454A6B7B8D68BD80A08401 /* XCLocalSwiftPackageReference "Packages/AgathonBoard" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonBoard;
+		};
+		540592564D62EA46FEC0F6C4 /* XCLocalSwiftPackageReference "Packages/AgathonSync" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonSync;
+		};
+		8A43253F3FEEA7A30D570593 /* XCLocalSwiftPackageReference "Packages/AgathonStore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonStore;
+		};
+		9106872B2EA9CF9CC1B4BFD8 /* XCLocalSwiftPackageReference "Packages/AgathonLive" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonLive;
+		};
+		CBD6CF59DC8B1285F2C460CF /* XCLocalSwiftPackageReference "Packages/AgathonBrain" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonBrain;
+		};
+		E21FF80F4B376E5F4DF3CD33 /* XCLocalSwiftPackageReference "Packages/AgathonOnboarding" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonOnboarding;
+		};
+		F912F11CC2BAD2680486BC66 /* XCLocalSwiftPackageReference "Packages/AgathonKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		065FF0609EBF448976CCA0A0 /* AgathonBrain */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonBrain;
+		};
+		0A88AEAB98272D9FC51B26E0 /* AgathonStore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonStore;
+		};
+		2EBB9398B5E77B93B1939A1D /* AgathonKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonKit;
+		};
+		43C1740DD3E8938BA7BABDC9 /* AgathonOnboarding */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonOnboarding;
+		};
+		473BF604BAF84ABCD8CE679D /* AgathonBoard */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonBoard;
+		};
+		5E858D0444B89A09E5EB5B60 /* AgathonSync */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonSync;
+		};
+		8C7A1BCF2E0A9C00B1F7AA8E /* AgathonBoardUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonBoardUI;
+		};
+		B0B4A7F5C5ECA3E081660D3B /* AgathonAsk */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonAsk;
+		};
+		B99AD4C37DA95662CA301E92 /* AgathonDesign */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonDesign;
+		};
+		E48185E5D2DBCE33B0703C64 /* AgathonLive */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonLive;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F403C734716951916C986C28 /* Project object */;
+}

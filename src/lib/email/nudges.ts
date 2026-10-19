@@ -42,7 +42,7 @@ import { sendOnce, type EmailLogKey } from "@/lib/email/log";
 import { billingRecipient } from "@/lib/email/payer";
 import type { EmailDeps, EmailEnv } from "@/lib/email/server";
 import { firstPracticeEmail, trialProgressEmail, type RenderedEmail } from "@/lib/email/templates";
-import { SEND_SPACING_MS, SUBSCRIPTIONS, sendWithOneRetry, toTrialRow, type TrialRow } from "@/lib/email/trialReminders";
+import { SEND_SPACING_MS, SUBSCRIPTIONS, manageUrlFor, sendWithOneRetry, toTrialRow, type TrialRow } from "@/lib/email/trialReminders";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -174,7 +174,7 @@ export function renderNudge(
         problems: DAILY_GOAL,
         minutes: DAILY_GOAL * MINUTES_PER_PROBLEM,
         siteUrl: env.siteUrl,
-        manageUrl: env.manageUrl,
+        manageUrl: manageUrlFor(row, env),
         planName: UNLIMITED_PLAN.name,
       }),
     };
@@ -183,7 +183,7 @@ export function renderNudge(
   const progress = familyProgress(activity, new Date(row.createdAt ?? now.toISOString()), now);
   if (progress.length === 0 || !row.trialEnd) return { skip: "quiet" };
   return {
-    email: trialProgressEmail({ progress, trialEnd: new Date(row.trialEnd), siteUrl: env.siteUrl, manageUrl: env.manageUrl, planName: UNLIMITED_PLAN.name }),
+    email: trialProgressEmail({ progress, trialEnd: new Date(row.trialEnd), siteUrl: env.siteUrl, manageUrl: manageUrlFor(row, env), planName: UNLIMITED_PLAN.name }),
   };
 }
 
