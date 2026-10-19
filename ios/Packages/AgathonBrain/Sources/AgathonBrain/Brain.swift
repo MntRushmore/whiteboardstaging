@@ -150,6 +150,17 @@ public actor Brain {
         try call("analyzeLine", AnalyzeLineArgs(latex: latex, context: context))
     }
 
+    /// A line of the student's working judged in its column, as the web's loop judges it
+    /// (`judgeLine`, src/lib/live/engine/columnWork.ts): `analyzeLine` against the column, and in
+    /// arithmetic (`problem` with no letters: the tutor's problem heading the column, else its first
+    /// line) against the PROBLEM — a lone number is the answer (`14` under `18 + 15 - 19`), a side
+    /// calculation no slip; a step that follows from the ringed step right above it (`slip`) is
+    /// carried on from it, with no mark of its own.
+    public func judgeLine(_ latex: String, context: AnalyzeContext = AnalyzeContext(), problem: [String]? = nil, above: [String] = [],
+                          slip: LineAnalysis? = nil) throws -> LineAnalysis {
+        try call("judgeLine", JudgeLineArgs(latex: latex, context: context, problem: problem, above: above, slip: slip))
+    }
+
     /// Every line of a column analysed as the board holds them (each against the lines above it).
     public func analyzeColumn(_ lines: [String], mode: HelpMode = .answer) throws -> [LineAnalysis?] {
         try call("analyzeColumn", ColumnArgs(lines: lines, mode: mode))
@@ -278,6 +289,13 @@ public actor Brain {
         var error: Detail
     }
     private struct AnalyzeLineArgs: Encodable { var latex: String; var context: AnalyzeContext }
+    private struct JudgeLineArgs: Encodable {
+        var latex: String
+        var context: AnalyzeContext
+        var problem: [String]?
+        var above: [String]
+        var slip: LineAnalysis?
+    }
     private struct ColumnArgs: Encodable { var lines: [String]; var mode: HelpMode }
     private struct ClassifyArgs: Encodable { var lines: [String]; var course: String? }
     private struct LocalSolveArgs: Encodable {

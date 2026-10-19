@@ -29,12 +29,15 @@ extension LiveLoop {
         reanchorLines()
     }
 
-    /// One problem written in the tutor's strokes: its key, LaTeX lines and where its ink is.
+    /// One problem written in the tutor's strokes: its key, LaTeX lines and where its ink is, and the
+    /// id its record takes (a chat problem's is its hand block, so the learning record's key for it,
+    /// `<screen>#cell:<block>`, is the same whether it comes from the strokes or the record).
     struct StrokeProblem: Equatable {
         var key: String
         var lines: [String]
         var head: BrainRect
         var origin: String
+        var recordId: RecordID?
     }
 
     /// The problems in the tutor's strokes on `screen`, top to bottom.
@@ -42,23 +45,26 @@ extension LiveLoop {
         var byKey: [String: StrokeProblem] = [:]
         for record in store.drawables(on: screen) {
             guard case .stroke(let s) = record, s.author == .tutor, !s.points.isEmpty else { continue }
-            let found: (key: String, lines: [String], origin: String)?
-            if let p = s.meta["chatProblem"], let lines = p["lines"]?.arrayValue?.compactMap(\.stringValue).filter({ !$0.isEmpty }), !lines.isEmpty {
-                let n = p["n"]?.numberValue.map { Int($0) } ?? 0
-                found = ("chat:\(n):\(lines.joined(separator: ";"))", lines, "chat")
+            let found: (key: String, lines: [String], origin: String, id: RecordID?)?
+            let b = StrokeBounds.of(s)
+            if let cell = Self.chatProblem(s.meta, bounds: b) {
+                // the learning record's own key for a chat problem (its hand block); without a block,
+                // the screen keeps two alike problems on two screens apart
+                let block = s.meta.string(HandPace.blockMeta)
+                let id = RecordID("problem:\(block.isEmpty ? "\(screen.key)-\(cell.key)" : cell.key)")
+                found = ("chat:\(cell.key)", cell.lines, "chat", id)
             } else if s.meta["problem"]?.boolValue == true, let latex = s.meta[HandPace.lineMeta]?.stringValue, !latex.isEmpty {
-                found = ("first:\(latex)", [latex], "practice")
+                found = ("first:\(latex)", [latex], "practice", nil)
             } else {
                 found = nil
             }
             guard let found else { continue }
-            let b = StrokeBounds.of(s)
             if var cur = byKey[found.key] {
                 let x0 = min(cur.head.x, b.x), y0 = min(cur.head.y, b.y)
                 cur.head = BrainRect(x: x0, y: y0, w: max(cur.head.maxX, b.maxX) - x0, h: max(cur.head.maxY, b.maxY) - y0)
                 byKey[found.key] = cur
             } else {
-                byKey[found.key] = StrokeProblem(key: found.key, lines: found.lines, head: b, origin: found.origin)
+                byKey[found.key] = StrokeProblem(key: found.key, lines: found.lines, head: b, origin: found.origin, recordId: found.id)
             }
         }
         return byKey.values.sorted { ($0.head.y, $0.head.x) < ($1.head.y, $1.head.x) }
@@ -84,7 +90,7 @@ extension LiveLoop {
                 p.meta[LiveMeta.rect] = rect
                 store.put(.problem(p), origin: .tutor)
             } else {
-                let record = ProblemRecord(screen: screen, latex: latex, origin: w.origin,
+                let record = ProblemRecord(id: w.recordId ?? .make(.problem), screen: screen, latex: latex, origin: w.origin,
                                            meta: [LiveMeta.rect: rect, Self.problemKeyMeta: .string(w.key)])
                 store.put(.problem(record), origin: .tutor)
             }

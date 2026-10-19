@@ -103,10 +103,36 @@ struct ChatProblemTests {
         await h.idle()
         await h.pass(4_000)
         #expect(h.services.recognizeRequests.isEmpty, "the carried answer was read again")
+        let line = try #require(h.loop.lines.values.first { $0.latex == "42" }, "the carried line isn't one of the loop's")
+        #expect(LiveMarks.key(.check, line.bounds) == key, "the loop's box \(line.bounds) vs the carried \(box)")
+        let a = line.analysis
+        #expect(a?.verdict == "ok" || a?.solved == true,
+                "analysis kind \(a?.kind ?? "nil") verdict \(a?.verdict ?? "nil") bare \(String(describing: a?.bareAnswer)) solved \(String(describing: a?.solved)) head \(String(describing: h.loop.head(for: line.column)?.lines)) heads \(h.loop.heads.count) problems \(h.board.problems.map { $0.latex ?? "" })")
         #expect(h.board.mark(on: "42") == .tick, "the carried tick is gone: \(h.board.marks.map(\.kind))")
         #expect(tickIds.allSatisfy { h.board.store[$0] != nil }, "the carried tick's strokes were rubbed out")
         let marks = h.board.tutorStrokes.filter { !($0.meta["mark"]?.stringValue ?? "").isEmpty }
         #expect(Set(marks.map(\.id)) == Set(tickIds), "a second tick was written: \(marks.count) mark strokes")
+    }
+
+    /// A young student's answer to a practice sum is the number alone (the web's
+    /// liveLoop.problems.test "no silent lines under a problem"): right, it is ticked and the problem
+    /// solved; wrong, even one digit, it is ringed — never silent.
+    @Test func aBareAnswerUnderASumIsJudged() async throws {
+        let h = Harness()
+        await h.start()
+        tutorProblem(h, box: Box(x: 200, y: 100, w: 320, h: 60),
+                     meta: Self.chatMeta(["18 + 15 - 19"], n: 1, cell: Box(x: 180, y: 80, w: 600, h: 300)))
+        tutorProblem(h, box: Box(x: 900, y: 100, w: 200, h: 60),
+                     meta: Self.chatMeta(["2 + 2"], n: 2, cell: Box(x: 880, y: 80, w: 600, h: 300)))
+        h.loop.problemsChanged()
+        await h.write("x = 4", at: Vec2(200, 220), reads: "14")
+        await h.write("x = 3", at: Vec2(900, 220), reads: "5")
+        await h.pass(4_000)
+        let fourteen = try #require(h.loop.lines.values.first { $0.latex == "14" })
+        #expect(fourteen.analysis?.verdict == "ok" && fourteen.analysis?.solved == true && fourteen.analysis?.bareAnswer == true,
+                "\(String(describing: fourteen.analysis))")
+        #expect(h.board.mark(on: "14") == .tick)
+        #expect(h.board.mark(on: "5") == .ring)
     }
 
     @Test func theFirstBoardsProblemsHeadTheirColumnsToo() async throws {
