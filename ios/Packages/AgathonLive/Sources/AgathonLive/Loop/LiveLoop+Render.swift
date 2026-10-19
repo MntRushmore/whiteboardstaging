@@ -66,12 +66,15 @@ extension LiveLoop {
                 let ctx = AnalyzeContext(mode: lineMode, previous: previous, original: original)
                 let key = "\(lineMode.rawValue)|\(judged ?? "quiet:" + st.latex)|\(previous?.math ?? "")|\(previous?.kind ?? "")|\(original?.math ?? "")"
                     + "|\(problem.joined(separator: ";"))|\(above.joined(separator: ";"))|\(slip?.math ?? "")"
-                let raw: LineAnalysis
+                var raw: LineAnalysis
                 if let hit = analysisCache[key] {
                     raw = hit
                 } else if let judged {
                     do {
-                        raw = try await brain.judgeLine(judged, context: ctx, problem: problem, above: above, slip: slip)
+                        // on a one-line problem's row, after it: the problem's end written again,
+                        // then the answer (`3 = 7` after the tutor's `4 +`, the web's `answerBeside`)
+                        let beside = columnHead.map { $0.lines.count == 1 && Self.besideProblem(st.bounds, $0.rect) } ?? false
+                        raw = try await brain.judgeLine(judged, context: ctx, problem: problem, above: above, slip: slip, beside: beside)
                     } catch {
                         raw = LineAnalysis.unknown
                     }
@@ -80,13 +83,24 @@ extension LiveLoop {
                     raw = LineAnalysis.quiet
                     analysisCache[key] = raw
                 }
+                // never ring a correct line: a true relation of plain numbers (`=431` going on from
+                // `767-336` above it too) is at worst quiet, whatever problem the column was judged
+                // against (`ArithmeticTruth`)
+                if raw.verdict == "mismatch", ArithmeticTruth.holds(judged ?? st.latex, above: above.last) == true {
+                    raw.verdict = "none"
+                    raw.carried = nil
+                }
                 // the page's rules before anything is marked (docs/PROBLEM-PAGES.md; off until they ship)
                 let review = await reviewOnPage(st, raw, judged: judged ?? st.latex, solvedAbove: solvedAbove, problem: problem, original: original)
                 let a = review.analysis
                 if review.ownHead { pages.ownHeads.insert(st.id) } else { pages.ownHeads.remove(st.id) }
                 above.append(judged ?? st.latex)
                 running = judged.flatMap(ContinuationLine.result(of:))
-                slip = a.verdict == "mismatch" || a.carried == true ? a : nil
+                // the step right above that is a slip: a label, an operation line, a half-written
+                // or unread one in between is no step, and leaves it as it was (the web's `slipAbove`)
+                if !["label", "incomplete", "unknown", "operation", "continuation"].contains(a.kind) {
+                    slip = a.verdict == "mismatch" || a.carried == true ? a : nil
+                }
                 guard gen == generation, var cur = lines[st.id], cur.latex == st.latex else {
                     // the line changed while it was analysed: its own read analyses the column again
                     analyzeAgain.insert(column)

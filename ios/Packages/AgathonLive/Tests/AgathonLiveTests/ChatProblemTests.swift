@@ -193,6 +193,148 @@ struct ChatProblemTests {
         #expect(h.board.mark(on: "+3=767") == nil)
     }
 
+    /// The owner's iPad, 2026-10-19, the same board: `767-336` then `=431` on the next line (the
+    /// answer) was ringed, and `764+3=767` left unmarked. Under the tutor's problem: every step ticked,
+    /// `=431` the answer.
+    @Test func anAnswerStartedWithEqualsGoesOnFromTheLineAbove() async throws {
+        let h = Harness()
+        await h.start()
+        tutorProblem(h, box: Box(x: 200, y: 100, w: 420, h: 60),
+                     meta: Self.chatMeta(["403 + 364 - 336"], n: 1, cell: Box(x: 180, y: 80, w: 760, h: 620)))
+        h.loop.problemsChanged()
+        await h.write("x = 4", at: Vec2(200, 220), reads: "400+364=764")
+        await h.write("x = 3", at: Vec2(200, 320), reads: "764+3=767")
+        await h.write("2x = 8", at: Vec2(200, 420), reads: "767-336")
+        await h.write("x = 5", at: Vec2(200, 520), reads: "=431")
+        await h.pass(6_000)
+        #expect(h.board.mark(on: "400+364=764") == .tick)
+        #expect(h.board.mark(on: "764+3=767") == .tick, "\(String(describing: h.loop.lines.values.first { $0.latex == "764+3=767" }?.analysis))")
+        #expect(h.board.mark(on: "767-336") != .ring)
+        #expect(h.board.mark(on: "=431") == .tick, "\(String(describing: h.loop.lines.values.first { $0.latex == "=431" }?.analysis))")
+    }
+
+    /// The same working with no problem of the tutor's over it (a column the loop could not put
+    /// under one): judged against the kid's own first line, a true line is still never ringed.
+    @Test func aTrueLineIsNeverRingedWhateverTheColumnIsJudgedAgainst() async throws {
+        let h = Harness()
+        await h.start()
+        await h.write("x = 4", at: Vec2(200, 220), reads: "400+364=764")
+        await h.write("x = 3", at: Vec2(200, 320), reads: "764+3=767")
+        await h.write("2x = 8", at: Vec2(200, 420), reads: "767-336")
+        await h.write("x = 5", at: Vec2(200, 520), reads: "=431")
+        await h.pass(6_000)
+        for line in ["400+364=764", "764+3=767", "767-336", "=431"] {
+            #expect(h.board.mark(on: line) != .ring, "\(line): \(String(describing: h.loop.lines.values.first { $0.latex == line }?.analysis))")
+        }
+    }
+
+    /// The owner's board as the desk lays it out (`chat/layout.ts`: three problems side by side in
+    /// cells across a 1600 × 900 screen, the problem 14 in from its cell's corner) and a kid's hand at
+    /// iPad size: a wide line under problem 1 reaches past problem 2's ink. By the cell its middle is
+    /// in (the web's `cellOf`) it is problem 1's work: ticks, and `=431` the answer — never problem 2's.
+    @Test func wideLinesUnderAProblemAreItsWorkByTheCell() async throws {
+        let h = Harness()
+        await h.start()
+        let w = (1600.0 - 96) / 3
+        for (n, problem) in ["403 + 364 - 336", "512 - 287", "6 \\times 7"].enumerated() {
+            let cell = Box(x: 48 + Double(n) * w, y: 72, w: w, h: 800)
+            tutorProblem(h, box: Box(x: cell.x + 14, y: 86, w: 300, h: 60), meta: Self.chatMeta([problem], n: n + 1, cell: cell))
+        }
+        h.loop.problemsChanged()
+        await h.write("2x + 3 = 11", at: Vec2(120, 200), reads: "400+364=764", scale: 3)
+        await h.write("5x + 2 = 17", at: Vec2(120, 360), reads: "764+3=767", scale: 3)
+        await h.write("3x - 5 = 10", at: Vec2(120, 520), reads: "767-336", scale: 3)
+        await h.write("x = 5", at: Vec2(120, 680), reads: "=431", scale: 3)
+        await h.pass(6_000)
+        let wide = try #require(h.loop.lines.values.first { $0.latex == "764+3=767" })
+        #expect(wide.bounds.maxX > 549 + 14 + 40, "the line reaches past problem 2's ink: \(wide.bounds)")
+        #expect(h.board.mark(on: "400+364=764") == .tick)
+        #expect(h.board.mark(on: "764+3=767") == .tick, "\(String(describing: wide.analysis))")
+        #expect(h.board.mark(on: "767-336") != .ring)
+        #expect(h.board.mark(on: "=431") == .tick, "\(String(describing: h.loop.lines.values.first { $0.latex == "=431" }?.analysis))")
+    }
+
+    /// A line in between that is no step (an operation line, a label) leaves the slip above it the
+    /// slip: the next line carried on from it gets no second ring (the web's `slipAbove`).
+    @Test func aSlipStaysTheSlipPastALineThatIsNoStep() async throws {
+        let h = Harness()
+        await h.start()
+        tutorProblem(h, box: Box(x: 200, y: 100, w: 420, h: 60),
+                     meta: Self.chatMeta(["3x - 5 = 10"], n: 1, cell: Box(x: 180, y: 80, w: 760, h: 620)))
+        h.loop.problemsChanged()
+        await h.write("x = 4", at: Vec2(200, 220), reads: "3x=5")
+        await h.write("x = 3", at: Vec2(200, 320), reads: "\\div 3")
+        await h.write("2x = 8", at: Vec2(200, 420), reads: "x=\\frac{5}{3}")
+        await h.pass(6_000)
+        #expect(h.board.mark(on: "3x=5") == .ring)
+        #expect(h.board.mark(on: "x=\\frac{5}{3}") != .ring, "\(String(describing: h.loop.lines.values.first { $0.latex == "x=\\frac{5}{3}" }?.analysis))")
+    }
+
+    /// A young hand's wobbly `=` (read `\\asymp`, `\\smile`) is an `=`: the answer is ticked, never
+    /// a "?" (the web's `youngRead`, `liveLoop.youngInk.test`).
+    @Test func aWobblyEqualsIsAnEquals() async throws {
+        let h = Harness()
+        await h.start()
+        tutorProblem(h, box: Box(x: 200, y: 100, w: 320, h: 60), meta: Self.chatMeta(["5 + 6"], n: 1, cell: Box(x: 180, y: 80, w: 600, h: 400)))
+        tutorProblem(h, box: Box(x: 900, y: 100, w: 320, h: 60), meta: Self.chatMeta(["4 + 5"], n: 2, cell: Box(x: 880, y: 80, w: 600, h: 400)))
+        h.loop.problemsChanged()
+        await h.write("x = 4", at: Vec2(200, 220), reads: "\\asymp 11")
+        await h.write("x = 3", at: Vec2(900, 220), reads: "\\smile 9")
+        await h.pass(5_000)
+        let eleven = try #require(h.loop.lines.values.first { $0.latex.contains("11") })
+        #expect(eleven.latex.contains("="), "read put right: \(eleven.latex)")
+        #expect(h.board.mark(on: eleven.latex) == .tick, "\(String(describing: eleven.analysis))")
+        let nine = try #require(h.loop.lines.values.first { $0.latex.contains("9") })
+        #expect(h.board.mark(on: nine.latex) == .tick, "\(nine.latex): \(String(describing: nine.analysis))")
+    }
+
+    /// On a one-line problem's row, after it: the end of the problem written again, then the answer
+    /// (`3 = 7` after the tutor's `4 + 3`) is the answer `= 7` (the web's `answerBeside`).
+    @Test func theProblemsEndWrittenAgainThenTheAnswer() async throws {
+        let h = Harness()
+        await h.start()
+        tutorProblem(h, box: Box(x: 200, y: 100, w: 200, h: 60), meta: Self.chatMeta(["4 + 3"], n: 1, cell: Box(x: 180, y: 80, w: 600, h: 400)))
+        tutorProblem(h, box: Box(x: 900, y: 100, w: 200, h: 60), meta: Self.chatMeta(["4 + 3"], n: 2, cell: Box(x: 880, y: 80, w: 600, h: 400)))
+        h.loop.problemsChanged()
+        await h.write("x = 4", at: Vec2(330, 95), reads: "3=7")
+        await h.write("x = 3", at: Vec2(1030, 95), reads: "3=8")
+        await h.pass(5_000)
+        #expect(h.board.mark(on: "3=7") == .tick, "\(String(describing: h.loop.lines.values.first { $0.latex == "3=7" }?.analysis))")
+        #expect(h.board.mark(on: "3=8") == .ring, "\(String(describing: h.loop.lines.values.first { $0.latex == "3=8" }?.analysis))")
+    }
+
+    /// The tutor's hand switched off: the problems are typeset, and still head their columns.
+    @Test func aTypesetProblemHeadsItsColumnToo() async throws {
+        let h = Harness()
+        await h.start()
+        let screen = h.board.currentScreenID
+        h.board.store.put(.math(MathRecord(screen: screen, order: h.board.store.nextOrder(on: screen), author: .tutor, role: .answer,
+                                           latex: "18 + 15 - 19", x: 200, y: 100, w: 320, h: 60, fontSize: 24,
+                                           meta: Self.chatMeta(["18 + 15 - 19"], n: 1, cell: Box(x: 180, y: 80, w: 600, h: 300)))), origin: .tutor)
+        h.loop.problemsChanged()
+        #expect(h.board.problems.contains { $0.latex == "18 + 15 - 19" })
+        await h.write("x = 4", at: Vec2(200, 220), reads: "14")
+        await h.pass(4_000)
+        #expect(h.board.mark(on: "14") == .tick, "\(String(describing: h.loop.lines.values.first { $0.latex == "14" }?.analysis))")
+    }
+
+    @Test func whatIsTrueByItsOwnNumbers() {
+        #expect(ArithmeticTruth.holds("767-336=431") == true)
+        #expect(ArithmeticTruth.holds("=431", above: "767-336") == true)
+        #expect(ArithmeticTruth.holds("=431", above: "767-336=") == true)
+        #expect(ArithmeticTruth.holds("=432", above: "767-336") == false)
+        // under a finished line a lone `= 78` claims the answer: the judge's to decide
+        #expect(ArithmeticTruth.holds("=78", above: "70+8=78") == nil)
+        #expect(ArithmeticTruth.holds("20+10=30+12=42") == true) // `=` as "then", link by link
+        #expect(ArithmeticTruth.holds("20+10=31+12=43") == false)
+        #expect(ArithmeticTruth.holds("6\\times 4=24") == true)
+        #expect(ArithmeticTruth.holds("24\\div 3=8") == true)
+        #expect(ArithmeticTruth.holds("3=767") == false)
+        #expect(ArithmeticTruth.holds("2x=8") == nil)
+        #expect(ArithmeticTruth.holds("\\frac{3}{4}=0.75") == nil)
+        #expect(ArithmeticTruth.holds("431") == nil)
+    }
+
     @Test func theRunningTotalsShape() {
         #expect(ContinuationLine.parse("+3=767") == .init(op: "+", operand: "3", result: "767"))
         #expect(ContinuationLine.parse("\u{2212}336 = 431") == .init(op: "-", operand: "336", result: "431"))

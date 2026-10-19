@@ -156,9 +156,19 @@ public actor Brain {
     /// line) against the PROBLEM — a lone number is the answer (`14` under `18 + 15 - 19`), a side
     /// calculation no slip; a step that follows from the ringed step right above it (`slip`) is
     /// carried on from it, with no mark of its own.
+    /// `beside`: the line is on a one-line problem's row, after it (`3 = 7` after the tutor's `4 +`):
+    /// the problem's end written again, then the answer, judged as `= 7`.
     public func judgeLine(_ latex: String, context: AnalyzeContext = AnalyzeContext(), problem: [String]? = nil, above: [String] = [],
-                          slip: LineAnalysis? = nil) throws -> LineAnalysis {
-        try call("judgeLine", JudgeLineArgs(latex: latex, context: context, problem: problem, above: above, slip: slip))
+                          slip: LineAnalysis? = nil, beside: Bool = false) throws -> LineAnalysis {
+        try call("judgeLine", JudgeLineArgs(latex: latex, context: context, problem: problem, above: above, slip: slip, beside: beside ? true : nil))
+    }
+
+    /// A young hand's read put right (the web's `LiveLoop.youngRead`): a wobbly `=` read as
+    /// `\smile`, `\asymp`, `\approx` is an `=`; under a problem of plain numbers the signs an answer
+    /// starts with are the ink's (`-54` from a wobbly `=` is `= 54`) and a tick drawn after it is dropped.
+    public func youngRead(_ latex: String, problem: [String], strokes: [BrainStroke]) throws -> String {
+        let r: YoungRead = try call("youngRead", YoungReadArgs(latex: latex, problem: problem, strokes: strokes))
+        return r.latex
     }
 
     /// Every line of a column analysed as the board holds them (each against the lines above it).
@@ -295,7 +305,10 @@ public actor Brain {
         var problem: [String]?
         var above: [String]
         var slip: LineAnalysis?
+        var beside: Bool?
     }
+    private struct YoungReadArgs: Encodable { var latex: String; var problem: [String]; var strokes: [BrainStroke] }
+    private struct YoungRead: Decodable { var latex: String }
     private struct ColumnArgs: Encodable { var lines: [String]; var mode: HelpMode }
     private struct ClassifyArgs: Encodable { var lines: [String]; var course: String? }
     private struct LocalSolveArgs: Encodable {

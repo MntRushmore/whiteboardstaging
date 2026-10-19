@@ -438,12 +438,22 @@ extension LiveLoop {
     // MARK: - a read in
 
     func applyRecognition(_ id: String, _ res: RecognizeResponse, reread: String?) async {
+        guard let before = lines[id] else { return }
+        // a young hand's read put right (the web's `youngRead`): a wobbly `=` is an `=`, and under a
+        // problem of plain numbers an answer's signs are its ink's (`-54` from a wobbly `=` is `= 54`)
+        let raw = reread ?? res.latex
+        var read = raw
+        if !raw.isEmpty {
+            let ids = Set(before.ink.strokeIds)
+            let ink = board.store.kidStrokes(on: board.currentScreenID).filter { ids.contains($0.id) }
+            read = (try? await brain.youngRead(raw, problem: head(for: before.column)?.lines ?? [], strokes: ink)) ?? raw
+        }
         guard var st = lines[id] else { return }
         // ink read in this session: new work for the learning record
         learnFresh(id)
         // the kid's own reading of this ink stands over any read of it ("Fix what I read")
         let fixed = fixedReading(id, hash: st.ink.hash)
-        st.latex = fixed ?? reread ?? res.latex
+        st.latex = fixed ?? read
         st.confidence = fixed != nil ? 1 : reread == nil ? res.confidence : max(res.confidence, LiveLimits.minConfidence)
         st.provider = fixed != nil ? .fixed : reread == nil ? (res.provider == "vision" ? .vision : .mathpix) : .reread
         noteSecondOpinion(id, res, read: st.latex)

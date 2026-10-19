@@ -26,6 +26,7 @@ import { all, create, version as mathjsVersion } from "mathjs";
 import type { TLShapeId } from "tldraw";
 import { createEngine } from "@/lib/live/engine";
 import { isArithmetic, judgeLine } from "@/lib/live/engine/columnWork";
+import { answerAfterRestatedEnd, leadingSigns, readYoungHand } from "@/lib/live/youngHand";
 import type { AnalyzeContext, GraphForOptions, HelpMode, InkLine, InkStroke, LineAnalysis, LiveEngine, Rect } from "@/lib/live/contracts";
 import { barGroups, splitInk, type Diagram, type StrokeVerdict } from "@/lib/live/diagrams";
 import { stackGroups } from "@/lib/live/stackedSums";
@@ -173,6 +174,12 @@ export interface JudgeLineArgs {
   above?: string[];
   /** the step right above it when that step is a slip (ringed, or carried on from one) */
   slip?: LineAnalysis;
+  /**
+   * A line on a one-line problem's row, after it, that writes the problem's end again and then its
+   * answer (`3 = 7` after the tutor's `4 +`, `LiveLoop.answerBeside`): set `beside: true` and the
+   * answer is judged as a line of its own (`= 7`, `answerAfterRestatedEnd`).
+   */
+  beside?: boolean;
 }
 
 /** `judgeLine` (engine/columnWork.ts): a line of the student's working judged in its column, as `LiveLoop.judge` does. */
@@ -182,7 +189,22 @@ export function judgeLineOf(args: JudgeLineArgs): LineAnalysis {
   const problem = Array.isArray(args.problem) ? args.problem.filter((l) => typeof l === "string" && l.trim().length > 0) : [];
   const arithmetic = problem.length > 0 && problem.every(isArithmetic) ? problem : null;
   const above = Array.isArray(args.above) ? args.above.filter((l) => typeof l === "string") : [];
-  return judgeLine(engine(), args.latex, { ctx, arithmetic, above, slip: args.slip });
+  const beside = args.beside && arithmetic && arithmetic.length === 1 ? answerAfterRestatedEnd(args.latex, arithmetic[0]) : null;
+  return judgeLine(engine(), args.latex, { ctx, arithmetic, above, slip: args.slip, beside });
+}
+
+/**
+ * A young hand's read put right (`LiveLoop.youngRead`): a wobbly `=` read as `\smile`, `\asymp`,
+ * `\approx` is an `=`; in arithmetic the signs an answer starts with are the INK's (`leadingSigns`:
+ * `-54` from a wobbly `=` is `= 54`), and her own tick after the answer is dropped.
+ */
+export function youngReadOf(args: { latex: string; problem?: string[] | null; strokes?: BrainStroke[] }): { latex: string } {
+  need(typeof args.latex === "string", "latex is a string");
+  // the problem the line is part of has no letters (`LiveLoop.arithmeticProblem`)
+  const problem = Array.isArray(args.problem) ? args.problem.filter((l) => typeof l === "string" && l.trim().length > 0) : [];
+  const arithmetic = problem.length > 0 && problem.every(isArithmetic);
+  const signs = arithmetic && Array.isArray(args.strokes) && args.strokes.length > 0 ? leadingSigns(args.strokes.map(toInkStroke)) : null;
+  return { latex: readYoungHand(args.latex, { arithmetic, signs }) };
 }
 
 /** Each line of a column analysed as the loop holds it (`analyzeColumn` in localSolve.ts). */
@@ -573,6 +595,7 @@ export const METHODS: Readonly<Record<string, Method>> = {
   verifyExpected: { run: verifyExpected },
   clusterStrokes: { run: clusterStrokes },
   recognizerPayload: { run: recognizerPayload, plain: true },
+  youngRead: { run: youngReadOf, plain: true },
   layoutHandwriting: { run: layoutHandwriting, plain: true },
   layoutMath: { run: layoutMathOf, plain: true },
   writeText: { run: writeText, plain: true },
