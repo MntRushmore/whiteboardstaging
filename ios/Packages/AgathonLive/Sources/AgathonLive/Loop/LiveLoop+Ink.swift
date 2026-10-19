@@ -344,7 +344,8 @@ extension LiveLoop {
             guard let latex = p.latex, !latex.isEmpty, let rect = p.meta[LiveMeta.rect].flatMap(BrainRect.init(meta:)) else { continue }
             let old = heads.first { $0.id == p.id }
             let lines = latex.components(separatedBy: "\n").filter { !$0.isEmpty }
-            next.append(ProblemHead(id: p.id, lines: lines, rect: rect, analyses: old?.lines == lines ? old?.analyses ?? [] : []))
+            let cell = p.meta[Self.problemCellMeta].flatMap(BrainRect.init(meta:))
+            next.append(ProblemHead(id: p.id, lines: lines, rect: rect, analyses: old?.lines == lines ? old?.analyses ?? [] : [], cell: cell))
         }
         heads = next
     }
@@ -370,7 +371,8 @@ extension LiveLoop {
         guard homes.contains(where: { $0 != nil }) else { return input }
         // work under a problem but far below it is not its work (the column keeps its own)
         for (i, l) in input.enumerated() {
-            guard let home = homes[i], let head = heads.first(where: { $0.id == home }), !Self.besideProblem(l.bounds, head.rect) else { continue }
+            // (a chat problem's cell says where its work is, however far down: the web's `cellOf`)
+            guard let home = homes[i], let head = heads.first(where: { $0.id == home }), head.cell == nil, !Self.besideProblem(l.bounds, head.rect) else { continue }
             let top = input.indices.filter { input[$0].column == l.column && homes[$0] == home }.map { input[$0].bounds.y }.min() ?? l.bounds.y
             if top - head.rect.maxY >= 360 { homes[i] = nil }
         }
@@ -400,9 +402,20 @@ extension LiveLoop {
     /// The tutor's problem a line of the kid's belongs to: the one it is beside, on its row (an
     /// answer after it), else the nearest one above it over the same stretch of the page.
     func problemHome(for b: BrainRect) -> RecordID? {
-        if let beside = heads.first(where: { Self.besideProblem(b, $0.rect) }) { return beside.id }
+        // a chat problem in its grid cell (practice, Ask's problems): the cell the line's middle is
+        // in, level with the problem or below it, or beside it on its row — the web's `cellOf`. By
+        // the ink's own box, a kid's wide line under problem 1 reached past problem 2's ink and was
+        // judged as problem 2's work (the owner's iPad, 2026-10-19)
+        let cx = b.x + b.w / 2, cy = b.y + b.h / 2
+        for h in heads {
+            guard let r = h.cell else { continue }
+            if cx < r.x || cx > r.maxX || cy > r.maxY { continue }
+            if (cy < r.y || cy < h.rect.y) && !Self.besideProblem(b, h.rect) { continue }
+            return h.id
+        }
+        if let beside = heads.first(where: { $0.cell == nil && Self.besideProblem(b, $0.rect) }) { return beside.id }
         return heads
-            .filter { $0.rect.maxY <= b.y + b.h * 0.5 && $0.rect.x < b.maxX + 40 && $0.rect.maxX > b.x - 40 }
+            .filter { $0.cell == nil && $0.rect.maxY <= b.y + b.h * 0.5 && $0.rect.x < b.maxX + 40 && $0.rect.maxX > b.x - 40 }
             .max { $0.rect.maxY < $1.rect.maxY }?.id
     }
 

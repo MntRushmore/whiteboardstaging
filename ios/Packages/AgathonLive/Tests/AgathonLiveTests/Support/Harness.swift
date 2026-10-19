@@ -325,8 +325,8 @@ final class Harness {
 
     /// The kid writes `latex` (fixture ink) at `at`; the fake recognizer will read it as `reads`.
     @discardableResult
-    func write(_ latex: String, at: Vec2, hand: String = "clean", reads: String? = nil, confidence: Double = 0.98) async -> [RecordID] {
-        let ink = KidHands.strokes(latex, hand: hand, at: at)
+    func write(_ latex: String, at: Vec2, hand: String = "clean", reads: String? = nil, confidence: Double = 0.98, scale: Double = 1.4) async -> [RecordID] {
+        let ink = KidHands.strokes(latex, hand: hand, at: at, scale: scale)
         let ids = board.kidWrites(ink)
         await register(ids, reads: reads ?? latex, confidence: confidence)
         written[latex] = ids

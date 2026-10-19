@@ -68,7 +68,10 @@ extension LiveLoop {
                     a = hit
                 } else if let judged {
                     do {
-                        a = try await brain.judgeLine(judged, context: ctx, problem: problem, above: above, slip: slip)
+                        // on a one-line problem's row, after it: the problem's end written again,
+                        // then the answer (`3 = 7` after the tutor's `4 +`, the web's `answerBeside`)
+                        let beside = columnHead.map { $0.lines.count == 1 && Self.besideProblem(st.bounds, $0.rect) } ?? false
+                        a = try await brain.judgeLine(judged, context: ctx, problem: problem, above: above, slip: slip, beside: beside)
                     } catch {
                         a = LineAnalysis.unknown
                     }
@@ -86,7 +89,11 @@ extension LiveLoop {
                 }
                 above.append(judged ?? st.latex)
                 running = judged.flatMap(ContinuationLine.result(of:))
-                slip = a.verdict == "mismatch" || a.carried == true ? a : nil
+                // the step right above that is a slip: a label, an operation line, a half-written
+                // or unread one in between is no step, and leaves it as it was (the web's `slipAbove`)
+                if !["label", "incomplete", "unknown", "operation", "continuation"].contains(a.kind) {
+                    slip = a.verdict == "mismatch" || a.carried == true ? a : nil
+                }
                 guard gen == generation, var cur = lines[st.id], cur.latex == st.latex else {
                     // the line changed while it was analysed: its own read analyses the column again
                     analyzeAgain.insert(column)

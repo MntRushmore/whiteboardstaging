@@ -17,7 +17,9 @@ enum ArithmeticTruth {
         var line = tidy(latex)
         if line.hasPrefix("="), let above {
             let up = tidy(above)
-            guard !up.isEmpty else { return nil }
+            // only onto an expression (`767-336`, or `767-336=`): under a finished line (`70+8=78`)
+            // a lone `= 78` claims the answer, which the column's judge decides
+            guard !up.isEmpty, !up.dropLast().contains("=") else { return nil }
             // `767-336` then `=431`; `767-336=` then `=431` too
             line = up.hasSuffix("=") ? up + String(line.dropFirst()) : up + line
         }
