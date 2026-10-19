@@ -162,6 +162,27 @@ extension LiveLoop {
         refreshPage()
     }
 
+    /// For the Debug probe: why work is unchecked (the pen, the timers, the reads, each held line and
+    /// what would keep it out of a check now).
+    public var checkDiagnosis: String {
+        let now = scheduler.now
+        // tenths of a second since `t` (never: "-")
+        func ago(_ t: Double) -> String { t.isFinite ? "\(Int((now - t) / 100))ds" : "-" }
+        let timers = [pages.pauseTimer != nil ? "pause" : nil, pages.answerTimer != nil ? "answer" : nil,
+                      pages.pendingCheck.map { "pending:\($0)" }].compactMap { $0 }.joined(separator: ",")
+        let held = lines.values.filter { !$0.latex.isEmpty && isHeld($0) }.map { st -> String in
+            var why: [String] = []
+            if reading.contains(st.id) { why.append("reading") }
+            if pages.applying.contains(st.id) { why.append("applying") }
+            if st.analysis == nil { why.append("noAnalysis") } else if st.analysis?.kind == "incomplete" { why.append("incomplete") }
+            if (penDown || board.isPenDown) && penLineId == st.id { why.append("penOn") }
+            let last = st.ink.strokeIds.compactMap { pages.strokeAt[$0] }.max() ?? -.infinity
+            why.append("ink\(ago(last))")
+            return "\(st.latex)[\(why.joined(separator: ","))]"
+        }.joined(separator: " ")
+        return "pen \(penDown ? "d" : "u")\(board.isPenDown ? "D" : "U") timers \(timers.isEmpty ? "-" : timers) reading \(reading.count) applying \(pages.applying.count) dirty \(dirtyStrokes.count) lastInk \(ago(pages.lastInkAt)) held \(held.isEmpty ? "-" : held)"
+    }
+
     // MARK: - triggers
 
     /// The kid's ink on the page changed (`storeChanged`): the long pause starts again, a stroke in the

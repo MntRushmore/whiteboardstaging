@@ -42,6 +42,12 @@ struct ProblemPagesLoopTests {
         return h
     }
 
+    /// The tutor's mark on this page's line that reads `latex`.
+    func markHere(_ h: Harness, _ latex: String) -> AgathonBoard.MarkKind? {
+        guard let l = h.board.lineRecords.first(where: { $0.latex == latex && $0.screen == h.board.currentScreenID }) else { return nil }
+        return h.board.marks.first { $0.target == l.id }?.kind
+    }
+
     func line(_ h: Harness, _ latex: String) -> LiveLine? {
         h.loop.lines.values.first { $0.latex == latex }
     }
@@ -446,6 +452,41 @@ struct ProblemPagesLoopTests {
     }
 
     // MARK: - Next
+
+    /// The journey's pages 2 and 3: a misread fixed, a slip in the answer spot, then on the next page
+    /// the same answer written in the same place (read from the cache): checked by the answer spot.
+    @Test func theSameAnswerOnTheNextPageIsCheckedByTheAnswerSpot() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        let two = h.board.currentScreenID
+        problemPage(h, ["3x - 5 = 10"], index: 2, count: 3)
+        let three = try #require(h.board.insertScreen(after: two, meta: [:], go: false))
+        await h.write("3x = 15", at: Vec2(200, 280), reads: "3 \\times = 15")
+        await h.pass(1_000)
+        await h.write("x = 3", at: Vec2(300, 768))
+        await h.pass(2_500)
+        #expect(h.board.mark(on: "x = 3") == .ring)
+        let misread = try #require(line(h, "3 \\times = 15"))
+        h.loop.openFix(misread.id)
+        await h.pass(200)
+        h.loop.useReading(misread.id, latex: "3x = 15")
+        await h.pass(500)
+        #expect(h.board.mark(on: "3x = 15") == .tick)
+        // page 3, by the dock's arrow (page 2 is not solved)
+        h.board.goToScreen(three)
+        await h.pass(300)
+        problemPage(h, ["5x + 2 = 17"], index: 3, count: 3)
+        await h.pass(300)
+        await h.write("5x = 15", at: Vec2(200, 280))
+        await h.pass(1_000)
+        let reads = h.services.recognizeRequests.count
+        await h.write("x = 3", at: Vec2(300, 768))
+        await h.pass(2_500)
+        #expect(h.services.recognizeRequests.count == reads, "the same ink is read from the cache")
+        #expect(markHere(h, "5x = 15") == .tick && markHere(h, "x = 3") == .tick,
+                "\(h.loop.lines.values.map { "\($0.latex) held \(h.loop.isHeld($0))" }) \(h.board.marks.map(\.kind))")
+        #expect(h.loop.pages.action == .next(last: true))
+    }
 
     @Test func nextGoesToTheNextPage() async throws {
         let h = Harness()

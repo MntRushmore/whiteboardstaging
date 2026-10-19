@@ -178,7 +178,7 @@ struct BoardDebugProbe: View {
         case nil: action = "none"
         }
         let read = pages.readings.map { "\($0.latex)=\($0.state.rawValue)" }.joined(separator: "; ")
-        return "lines: \(lines.joined(separator: "; ")) | hints \(tutor.loop.hints.count) | chat \(chat) | problems \(problems) | activity \(tutor.loop.activity) | page \(page) | action \(action) | checking \(tutor.loop.settings.checking.rawValue) | read \(read) | screens \(store.screenIDs.count) | save \(save)"
+        return "lines: \(lines.joined(separator: "; ")) | hints \(tutor.loop.hints.count) | chat \(chat) | problems \(problems) | activity \(tutor.loop.activity) | page \(page) | action \(action) | checking \(tutor.loop.settings.checking.rawValue) | why \(tutor.loop.checkDiagnosis) | read \(read) | screens \(store.screenIDs.count) | save \(save)"
     }
 }
 #endif
