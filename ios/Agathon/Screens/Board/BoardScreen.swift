@@ -120,8 +120,6 @@ private struct BoardRoom: View {
         .overlay(alignment: .top) { noticeBanner }
         #if DEBUG
         .overlay(alignment: .bottomLeading) { BoardDebugProbe(model: model) }
-        // under the top bar, in the middle: clear of the bar's buttons and the board's ink
-        .overlay(alignment: .top) { BoardAutowriteButton(model: model).padding(.top, 96) }
         #endif
     }
 
@@ -155,10 +153,16 @@ private struct BoardTopTrailing: View {
     @ObservedObject var session: BoardSession
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            row(words: true)
-            row(words: false)
-            compact
+        HStack(spacing: DS.Space.xs) {
+            #if DEBUG
+            // in the editor's own bar (an overlay over the board took no XCUITest taps: see the report)
+            BoardAutowriteButton(model: model)
+            #endif
+            ViewThatFits(in: .horizontal) {
+                row(words: true)
+                row(words: false)
+                compact
+            }
         }
     }
 
