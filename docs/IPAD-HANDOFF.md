@@ -141,6 +141,17 @@ the dev server's routes first, since a cold `next dev` compiles a route slower t
 
 Use your own `-derivedDataPath` (`DD=`): two worktrees building into one DerivedData mix products.
 
+**State at the hand-off (2026-10-18, 21:20):** `test1Journey` passes from a fresh install through the
+whole first run (the real try check, the app's gate, a real account, the PIN, the kid) into the real
+board (saved, the tutor and Ask on it): `docs/qa-screenshots/ipad-integrate-journey-0*.png`. It then
+stopped at its first Debug autowrite: a tap on the autowrite button (then an overlay over the board)
+never reached it under XCUITest (twice, on clean builds). The button now sits in the editor's own top
+bar, where the Ask Lab's UI test taps `ask.open` fine; rerun `journey` first. The later steps (tick,
+ring, hint, Ask writing, thumbnail, Progress), `family`, `ink`, `resilience`, `a11y` and `design` have
+not run yet, nor the unit suites on the final tree. On the first board the carried try's tick was
+gone on open and its answer read again (one recognize): the loop didn't restore the carried `line`
+(`ChatProblemTests.aCarriedTickStaysOneTick` checks this; run it first).
+
 ## Production
 
 - **Supabase migrations: APPLIED 2026-10-18 18:33 ET with the owner's OK** ("yes u can do everything to
