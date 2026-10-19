@@ -149,4 +149,6 @@ enum PageMeta {
     /// the second opinion's read, and whether it agreed
     static let second = "second"
     static let agree = "agree"
+    /// the kid kept their own problem on this page ("Keep it here"): the offer does not come back
+    static let keptHere = "keptHere"
 }

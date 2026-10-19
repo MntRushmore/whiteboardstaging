@@ -8,16 +8,21 @@
 
 The owner, on the iPad: "we need 1 question per screen or some way to not leak one handwriting into
 another" (Today's practice had written five problems on one page; #1's work ran into #2). So the
-pages ship first, alone:
+pages shipped first, alone, and the second part followed the same day:
 
-- **On now:** every problem the tutor gives on its own page (the problem at the top in the tutor's
+- **The pages:** every problem the tutor gives on its own page (the problem at the top in the tutor's
   hand, the work area under it), "Problem n of N", Next once solved, the dock's ‹ › as before, All
   done at the end (Back to my boards, More like these), and the tutor judging a page's ink against
   that page's problem only.
-- **Built, off** (`ProblemPagesRollout.secondPart = false`; the tests turn it on where they test it):
-  check when done (the default stays "as I go"; the grown-ups' switch is hidden), the answer spot,
-  "I read" and tap to fix, the page's own judging rules (true steps, partial answers, the kid's own
-  problem, never ringing a read in doubt) and "New page for this one".
+- **The second part, on** (`ProblemPagesRollout.secondPart = true`, Release too; Debug
+  `-pagesFirstPartOnly` turns it off for a run): check when done is the default, with the grown-ups'
+  switch back to "As they go" (per board); the answer spot; "I read" and tap to fix; the page's own
+  judging rules (true steps, partial answers, the kid's own problem, never ringing a read in doubt) and
+  "New page for this one". The owner had decided each of these; the switch was flipped once the
+  three-page journey passed on the local stack.
+- **The second opinion stays off** (it doubles Mathpix's calls per line; the owner's call): the
+  server's `RECOGNIZE_SECOND_OPINION` and, for this iPad in a Debug build, the Live Lab's "Second
+  opinion" switch.
 - **Continuation rules** (`+3 = 767` under `400 + 364 = 764`, trailing equals, chains…) are the
   integration's (`ContinuationLine`, the web's rules ported with their tests); the page review sits on
   top of them and adds none of its own.
@@ -407,24 +412,40 @@ broken in its own eval) keeps working as today. Sending the page's letters to th
 |---|---|---|
 | Check the work: When they're done · As they go | grown-ups' settings (`LiveSettings.checking`) | When they're done (old saved settings too) |
 | Show what the tutor read | grown-ups' settings (`LiveSettings.showReadings`) | on |
-| the second opinion (client) | `LiveLoop.pages.secondOpinion` | off |
+| the second opinion (client) | `LiveLoop.pages.secondOpinion`; Debug: the Live Lab's "Second opinion" switch (`LivePages.secondOpinionDebug`, this iPad's boards) | off |
 | the second opinion (server) | `RECOGNIZE_SECOND_OPINION=mathpix-text` | off |
+| the second part itself | `ProblemPagesRollout.secondPart`; Debug `-pagesFirstPartOnly` turns it off | on |
 | problem pages for Ask's `write_problems` | `AskBoardDriver.problemPages` (on in `AskParts.live`) | on in the app, off in the Labs and tests |
 | `-practiceProblems "a\|b\|c"` | Debug: Home's Today's practice is these problems, on a fresh board | — |
 | `-boardAutowrite "…\|answer:x = 4"` | Debug: `answer:` writes a line in the answer spot | — |
 | `-liveMisread "3x = 15=>3 \times = 15"` | Debug: a read (and the second reader's) rewritten, to show a misread on purpose | — |
-| `debug.live` | Debug probe: `page 2/3`, `action check/next/alldone`, `read <latex>=<state>`, `screens n` | — |
+| `debug.live` | Debug probe: `page 2/3`, `action check/next/alldone`, `checking whenDone/asIGo`, `read <latex>=<state>`, `screens n` | — |
 
 ## Calls budget
 
-The tests use the fake services; the journey and the local-stack checks stay under 25 real
-recognize/check calls (reads of moved ink and fixed readings are cache hits).
+The tests use the fake services; the journeys run against the local stack. A three-page journey is
+about 6–7 recognize calls and 1–3 checks (reads of moved ink and fixed readings are cache hits).
 
 ## Open
 
 - The page's letters for the recognizer on the server (needs a web change).
 - Turning the second opinion on (both flags) once the owner OKs doubling Mathpix's cost per line;
   measure "asked" and "fixed" in the admin console first.
-- "More room" for a long problem (a continuation page judged against the same problem).
+- **"More room"** for a long problem (a page that continues the same problem). What it takes:
+  - the page: `ProblemPage` gains `continues: <the first page's screen id>` (meta only, no schema
+    bump), and `kind: .problem` with the same `set`/`index`, so "Problem 2 of 5" and Next stay right;
+    `BoardTopBar`'s `whereAmI` says "Problem 2 of 5 (more room)";
+  - making it: a quiet "More room" in the action corner once the work area's last guide line has ink
+    (or the kid's lines reach the answer spot), `BoardController.insertScreen(after:meta:go:)` with the
+    template but no problem at the top (the first page's problem is shown small, in the tutor's hand,
+    as a reminder); one kid undo step;
+  - judging: `pageHead()` reads the problem from the page it continues (its `problem` records, or
+    `ProblemPage.problem`), and the first line on the new page continues the last line of the page
+    before (`lastGoodLineAbove` across the two pages, the way columns continue today); the answer
+    spot moves to the last page of the problem, and Next waits for it;
+  - tests: a loop test (a step on page 2 judged against page 1's problem and its last line) and the
+    journey's long division. About a day.
+- **"Keep it here"** is remembered (`meta.keptHere` on the line's record, 2026-10-19): a board opened
+  again does not offer that problem a page again.
 - An answer spot for problems whose answer is a drawing (a graph, a shape): none yet; those pages have
   no answer spot (`page.answer: false`).

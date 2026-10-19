@@ -193,6 +193,7 @@ extension LiveLoop {
             meta[PageMeta.second] = .string(s.latex)
             meta[PageMeta.agree] = .bool(s.agree)
         }
+        if pages.keptHere.contains(id) { meta[PageMeta.keptHere] = .bool(true) }
     }
 
     /// A board opened (or a page shown again): what its line records say of problem pages comes back.
@@ -206,5 +207,6 @@ extension LiveLoop {
         if let f = l.meta[PageMeta.fixed]?.stringValue, let h = l.meta[PageMeta.fixedHash]?.stringValue { pages.fixed[key] = (h, f) }
         if let c = l.meta[PageMeta.confirmed]?.stringValue { pages.confirmed[key] = c }
         if let s = l.meta[PageMeta.second]?.stringValue, let agree = l.meta[PageMeta.agree]?.boolValue { pages.second[key] = (s, agree, latex) }
+        if l.meta[PageMeta.keptHere]?.boolValue == true { pages.keptHere.insert(key) }
     }
 }

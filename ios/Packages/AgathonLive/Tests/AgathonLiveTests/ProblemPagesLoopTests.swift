@@ -308,11 +308,20 @@ struct ProblemPagesLoopTests {
         await h.pass(3_500)
         #expect(h.board.mark(on: "5y + 2 = 17") == nil)
         #expect(h.loop.pages.offer?.id == line(h, "5y + 2 = 17")?.id)
+        // the board opened again before the kid answered: the offer is still there
+        h.board.store.load(h.board.store.document)
+        await h.pass(1_000)
+        #expect(h.loop.pages.offer?.id == line(h, "5y + 2 = 17")?.id, "the offer comes back with the page")
         // "Keep it here": no offer again for it
         h.loop.keepHere()
         await h.pass(500)
         #expect(h.loop.pages.offer == nil)
         #expect(h.board.mark(on: "5y + 2 = 17") == nil, "kept, it heads its own work")
+        // the board opened again: still kept, no offer
+        h.board.store.load(h.board.store.document)
+        await h.pass(1_000)
+        #expect(line(h, "5y + 2 = 17") != nil)
+        #expect(h.loop.pages.offer == nil, "Keep it here is remembered on the line's record")
     }
 
     // MARK: - I read
