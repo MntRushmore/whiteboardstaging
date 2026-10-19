@@ -46,11 +46,12 @@ extension LiveLoop {
     }
 
     /// Where a line's chip goes (page units: its left edge and middle): in a problem page's margin lane,
-    /// or after the line's mark when the line runs long; elsewhere just after the mark.
+    /// or after the line's mark when the line runs long; elsewhere just after the mark. In the answer
+    /// spot, just after the mark too: the lane's end of that row is the action corner (Check, Next).
     func chipPoint(_ st: LiveLine) -> AgathonBrain.Point {
         let end = max(st.bounds.maxX, LiveMarks.markRect(.check, st.bounds).maxX) + 16
         var x = end
-        if let page = board.currentProblemPage, page.kind == .problem {
+        if let page = board.currentProblemPage, page.kind == .problem, !inAnswerSpot(st.bounds) {
             let lane = ProblemPageLayout.place(Vec2(ProblemPageLayout.laneX, 0), on: board.screenRect.box).x
             x = max(end, lane)
         }

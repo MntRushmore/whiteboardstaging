@@ -118,6 +118,9 @@ struct ProblemPagesLoopTests {
         #expect(h.board.mark(on: "2x = 8") == .tick && h.board.mark(on: "x = 4") == .tick)
         #expect(h.loop.pages.solved)
         #expect(h.loop.pages.action == .next(last: false), "solved, in a set: Next")
+        // the answer's "I read" stays clear of the action corner (Next sits there)
+        let chip = try #require(h.loop.pages.readings.first { $0.id == answer.id })
+        #expect(chip.at.x < ProblemPageLayout.actions.x, "\(chip.at)")
     }
 
     @Test func aReadThatLandsAfterTheAnswerSpotsCheckIsCheckedByThePause() async throws {
