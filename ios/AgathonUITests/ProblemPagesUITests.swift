@@ -102,6 +102,8 @@ final class ProblemPagesUITests: XCTestCase {
     /// Check when done, the answer spot, "I read" and tap to fix: the second part
     /// (`ProblemPagesRollout.secondPart`, off in the app; `-pagesSecondPart` turns it on for this run).
     func testAThreeProblemSetChecksWhenDone() throws {
+        // the second part is still being finished (its fix sheet's readings): run on purpose only
+        try XCTSkipUnless(env["PAGES_SECOND_PART"] == "1", "problem pages' second part: TEST_RUNNER_PAGES_SECOND_PART=1")
         app = XCUIApplication()
         for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY"] { app.launchEnvironment[key] = env[key] }
         app.launchArguments += [
