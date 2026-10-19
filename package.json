@@ -27,6 +27,7 @@
     "eval:lecture": "RUN_LECTURE_EVAL=1 EVAL_WRITE=1 vitest run src/__eval__/lecture/lecture.test.ts",
     "eval:sketch": "RUN_SKETCH_EVAL=1 EVAL_WRITE=1 vitest run src/__eval__/sketch/sketch.test.ts",
     "eval:privacy": "RUN_PRIVACY_EVAL=1 EVAL_WRITE=1 vitest run src/__eval__/privacy/providers.test.ts",
+    "eval:mpx-text": "RUN_MPX_TEXT_EVAL=1 EVAL_WRITE=1 vitest run src/__eval__/mpx-text/mpx-text.test.ts",
     "env:check": "node scripts/check-vercel-env.mjs",
     "bundle:check": "node scripts/check-bundle.mjs",
     "dead-code": "node scripts/find-dead-code.mjs",
