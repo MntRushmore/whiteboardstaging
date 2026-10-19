@@ -82,6 +82,7 @@ struct BoardScreen: View {
             OutOfInkView(audience: model.audience?.isKid == false ? .grownUp : .kid,
                          onSeePlan: { model.money = .plan },
                          onClose: { model.money = nil })
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("board.outOfInk")
         case .plan:
             GrownUpPlanFlow { model.money = nil }

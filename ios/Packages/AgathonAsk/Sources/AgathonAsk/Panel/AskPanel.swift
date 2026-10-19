@@ -44,6 +44,8 @@ public struct AskPanel: View {
             speech.stop()
             mic.cancel()
         }
+        // a container of its own, so its controls keep their own identifiers (ask.input, ask.send…)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ask.panel")
     }
 
