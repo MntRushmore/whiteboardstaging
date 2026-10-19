@@ -206,6 +206,12 @@ Use your own `-derivedDataPath` (`DD=`): two worktrees building into one Derived
   viewer.
 - **Billing:** the admin funnel counts sandbox rows, and Apple has no equivalent of the Stripe referral
   month.
+- **Integration (2026-10-18):**
+  - Progress shows the onboarding's try only: the board's own work is recorded once the LEARNING
+    lane's `learning_attempts` recording in AgathonLive lands (call it from `BoardTutor`).
+  - The Debug Labs button sits over the Help level chooser at the bottom right (Debug only).
+  - Offline was tested by cutting connections through a proxy (the simulator's network path stays
+    "online"); real airplane mode (NWPathMonitor → "Offline · kept on this iPad") needs the iPad.
 - **Onboarding:**
   - no avatar art yet
   - App Attest on a real device: the entitlement is in; confirm on the owner's iPad (Debug = Apple's
