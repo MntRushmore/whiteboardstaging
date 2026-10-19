@@ -160,9 +160,9 @@ struct PagesLayer: View {
             if pages.page?.kind == .done { allDone }
         }
         .onReceive(cameraChanges) { _ in cameraTick &+= 1 }
-        .sheet(item: Binding(get: { pages.fixing }, set: { if $0 == nil { loop.closeFix() } })) { fix in
-            FixReadingSheet(fix: fix, onUse: { loop.useReading(fix.id, latex: $0) }, onConfirm: { loop.confirmReading(fix.id) },
-                            onCancel: { loop.closeFix() })
+        .sheet(item: Binding(get: { pages.fixing.map { FixID(id: $0.id) } }, set: { if $0 == nil { loop.closeFix() } })) { _ in
+            // the sheet watches the pages itself: the readings it may have been arrive after it opens
+            FixSheetHost(pages: pages, loop: loop)
                 .presentationDetents([.large])
                 .presentationCornerRadius(DS.Radius.card)
         }
@@ -234,6 +234,26 @@ struct PagesLayer: View {
             .frame(width: max(320, page.width - 40))
             .alignmentGuide(.leading) { _ in -(page.minX + 20) }
             .alignmentGuide(.top) { d in -(page.midY - d.height / 2) }
+    }
+}
+
+/// The sheet's identity: one line's fix (its readings change under it without a new sheet).
+struct FixID: Identifiable, Equatable {
+    let id: String
+}
+
+/// "Fix what I read" for the line being fixed, kept up to date as its other readings arrive.
+struct FixSheetHost: View {
+    @ObservedObject var pages: LivePages
+    let loop: LiveLoop
+
+    var body: some View {
+        if let fix = pages.fixing {
+            FixReadingSheet(fix: fix, onUse: { loop.useReading(fix.id, latex: $0) }, onConfirm: { loop.confirmReading(fix.id) },
+                            onCancel: { loop.closeFix() })
+                // a new line's fix starts its own typing
+                .id(fix.id)
+        }
     }
 }
 
