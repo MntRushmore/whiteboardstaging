@@ -96,6 +96,8 @@ public struct PillButtonStyle: ButtonStyle {
             configuration.label
                 .dsFont(.button, size: size == .large ? 21 : 19)
                 .lineLimit(1)
+                // too long for its room (the largest text sizes): a little smaller before it is cut
+                .minimumScaleFactor(0.7)
                 .foregroundStyle(isEnabled ? fill.foreground.color : DS.Color.inkSecondary)
                 .padding(.leading, hasBadge ? 6 : 26)
                 .padding(.trailing, 26)

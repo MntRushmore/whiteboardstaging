@@ -66,6 +66,10 @@ public final class AskBoardDriver: AskBoardContext {
     private var running = false
     /// the pens writing a block now (held: a pen let go stops)
     private var pens: [TutorPen] = []
+    /// the board closed (`stop()`): nothing more is written
+    private var stopped = false
+    /// The board closed: nothing more is written (the problem pages' writer asks too).
+    var isStopped: Bool { stopped }
 
     /// `screenChanges`: the board's current screen as it changes (the canvas board's controller);
     /// without it the session is told by `screenChanged()`.
@@ -81,6 +85,15 @@ public final class AskBoardDriver: AskBoardContext {
     /// The board on the canvas: its controller says when the screen changes.
     public convenience init(canvasBoard: CanvasLiveBoard, brain: Brain = .shared, helper: AskBoardHelper? = nil) {
         self.init(board: canvasBoard, brain: brain, helper: helper, screenChanges: canvasBoard.controller.$currentScreenID.eraseToAnyPublisher())
+    }
+
+    /// The board is closing: the pen stops (lines begun finish whole, as a Stop does) and the rest
+    /// of a reply is not written, so nothing keeps the closed board, its chat or its canvas.
+    public func stop() {
+        stopped = true
+        let writing = pens
+        pens.removeAll()
+        for pen in writing { pen.cancel() }
     }
 
     /// Tells the session the board is on another screen.
@@ -177,7 +190,8 @@ public final class AskBoardDriver: AskBoardContext {
 
     public func run(_ actions: [AgathonKit.JSONValue], onTutorScreen: @escaping @MainActor (AskScreenRef) -> Void) async -> AskRunReport {
         // one reply's writing at a time, as the desk's `exclusive`
-        while running { try? await Task.sleep(for: .milliseconds(50)) }
+        while running, !stopped { try? await Task.sleep(for: .milliseconds(50)) }
+        guard !stopped else { return AskRunReport() }
         running = true
         defer { running = false }
         if problemPages, actions.contains(where: Self.isWriteProblems) {
@@ -270,6 +284,7 @@ public final class AskBoardDriver: AskBoardContext {
                 continue
             }
             await waitForTutor()
+            if stopped { break }
             if board.currentScreenID != expected {
                 report.outcomes.append(AskActionOutcome(type: "stopped", ok: false, note: Self.movedNote))
                 break
@@ -321,7 +336,7 @@ public final class AskBoardDriver: AskBoardContext {
     /// Waits for the loop's own writing (a worked solution, an answer) before the next block.
     func waitForTutor() async {
         var waited = 0
-        while helper?.tutorWriting == true, waited < 30_000 {
+        while helper?.tutorWriting == true, waited < 30_000, !stopped {
             try? await Task.sleep(for: .milliseconds(150))
             waited += 150
         }
@@ -369,6 +384,7 @@ public final class AskBoardDriver: AskBoardContext {
     }
 
     func write(_ plan: HandPlan, meta: Meta) async {
+        guard !stopped else { return }
         let lines = Self.tutorLines(plan)
         await withCheckedContinuation { (k: CheckedContinuation<Void, Never>) in
             var resumed = false

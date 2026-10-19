@@ -20,6 +20,7 @@ public struct GrownUpLiveButton: View {
                 GrownUpLiveSettings(loop: loop) { open = false }
                     .presentationCompactAdaptation(.popover)
             }
+            .preference(key: LivePopoverOpenKey.self, value: open)
     }
 }
 
@@ -36,7 +37,20 @@ public struct GrownUpLiveSettings: View {
         self.close = close
     }
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     public var body: some View {
+        // scrolls when it is taller than the popover can be (the largest text sizes): squeezed,
+        // its rows were drawn over one another
+        ScrollView {
+            settings
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(width: typeSize.isAccessibilitySize ? 560 : 480)
+        .background(DS.Color.surface)
+    }
+
+    private var settings: some View {
         VStack(alignment: .leading, spacing: DS.Space.l) {
             SheetHeader(LiveCopy.GrownUps.title, onClose: close)
             VStack(alignment: .leading, spacing: DS.Space.xs) {
@@ -49,6 +63,7 @@ public struct GrownUpLiveSettings: View {
                 ], onPaper: true)
                 .accessibilityIdentifier("live.dial")
             }
+            if ProblemPagesRollout.secondPart {
             VStack(alignment: .leading, spacing: DS.Space.xs) {
                 Text(LiveCopy.GrownUps.checking).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
                 SegmentedPicker(selection: $loop.settings.checking, options: [
@@ -60,22 +75,23 @@ public struct GrownUpLiveSettings: View {
                     .dsFont(.caption).foregroundStyle(DS.Color.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            }
             VStack(spacing: DS.Space.xs) {
                 LiveSwitch(LiveCopy.GrownUps.auto, detail: loop.settings.auto ? LiveCopy.GrownUps.autoOn : LiveCopy.GrownUps.autoOff, isOn: $loop.settings.auto)
                     .accessibilityIdentifier("live.auto")
                 LiveSwitch(LiveCopy.GrownUps.handwriting, isOn: $loop.settings.handwriting)
                 LiveSwitch(LiveCopy.GrownUps.celebrations, isOn: $loop.settings.celebrations)
                 LiveSwitch(LiveCopy.GrownUps.live, isOn: $loop.settings.enabled)
-                LiveSwitch(LiveCopy.GrownUps.showReadings, detail: LiveCopy.GrownUps.showReadingsDetail, isOn: $loop.settings.showReadings)
-                    .accessibilityIdentifier("live.showReadings")
+                if ProblemPagesRollout.secondPart {
+                    LiveSwitch(LiveCopy.GrownUps.showReadings, detail: LiveCopy.GrownUps.showReadingsDetail, isOn: $loop.settings.showReadings)
+                        .accessibilityIdentifier("live.showReadings")
+                }
                 LiveSwitch(LiveCopy.GrownUps.answerOnEquals, detail: LiveCopy.GrownUps.answerOnEqualsDetail, isOn: $loop.settings.answerOnEquals)
                     .accessibilityIdentifier("live.answerOnEquals")
             }
             PillButton(LiveCopy.GrownUps.clearMarks, icon: .delete, kind: .secondaryOnPaper) { loop.clearMarks() }
         }
         .padding(DS.Space.xl)
-        .frame(width: 480)
-        .background(DS.Color.surface)
     }
 }
 
@@ -99,6 +115,7 @@ struct LiveSwitch: View {
             HStack(spacing: DS.Space.s) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).dsFont(.button, size: 17).foregroundStyle(DS.Color.ink)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let detail {
                         Text(detail).dsFont(.caption).foregroundStyle(DS.Color.inkSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -111,14 +128,18 @@ struct LiveSwitch: View {
                 }
             }
             .padding(.horizontal, DS.Space.m)
+            // a row whose words wrap keeps a margin above and below them
+            .padding(.vertical, 10)
             .frame(minHeight: DS.Size.minTarget)
             .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(DS.Color.surfaceSunken))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
+        // one element a row (the button itself): its name, On or Off, and what it does as the hint
+        // (a wrapper element over the button read every row twice)
         .accessibilityLabel(title)
         .accessibilityValue(isOn ? "On" : "Off")
-        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(detail ?? "")
+        .accessibilityAddTraits(.isToggle)
     }
 }

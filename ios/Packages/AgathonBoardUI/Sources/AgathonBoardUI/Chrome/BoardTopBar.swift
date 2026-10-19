@@ -27,6 +27,8 @@ struct BoardTopBar<Trailing: View>: View {
                         .tracking(-0.03 * 24)
                         .foregroundStyle(DS.Color.ink)
                         .lineLimit(1)
+                        // a narrow window (Split View) shrinks the name a little before cutting it
+                        .minimumScaleFactor(0.75)
                     Text(whereAmI)
                         .font(DS.Font.fixed(.caption, size: 14))
                         .foregroundStyle(DS.Color.inkSecondary)
@@ -57,6 +59,7 @@ struct BoardTopBar<Trailing: View>: View {
                     .contentShape(Circle())
             }
             .accessibilityLabel(DS.Icon.more.label)
+            .accessibilityHint(DockCopy.boardMoreHint)
             .accessibilityIdentifier("board.more")
         }
         .frame(height: DS.Size.round)

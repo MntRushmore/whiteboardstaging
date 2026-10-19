@@ -29,6 +29,10 @@ public final class LivePages: ObservableObject {
     /// Ask the server for a second opinion on every line (a crop with each read; the route's
     /// `RECOGNIZE_SECOND_OPINION` flag decides). Off by default: it doubles Mathpix's calls.
     public var secondOpinion = false
+    /// The second part of problem pages (`ProblemPagesRollout`): the page's judging rules (a true step,
+    /// one answer of several, the kid's own problem), never ringing a read in doubt, "New page for this
+    /// one". Off: the pages alone, judged as the loop judges (scoped to the page's problem).
+    public var extras = ProblemPagesRollout.secondPart
 
     // MARK: what the loop remembers (the page on show)
 

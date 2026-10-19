@@ -23,7 +23,7 @@ extension LiveLoop {
             var previous: LineAnalysis?
             var original: LineAnalysis?
             func take(_ a: LineAnalysis?) {
-                guard let a, !["label", "incomplete", "unknown", "operation"].contains(a.kind) else { return }
+                guard let a, !["label", "incomplete", "unknown", "operation", "continuation"].contains(a.kind) else { return }
                 previous = a
                 if original == nil && (a.kind == "equation" || a.kind == "inequality") { original = a }
             }
@@ -46,34 +46,46 @@ extension LiveLoop {
             var changed: [String] = []
             // a line solved the problem above it: a new relation after it starts the kid's own (pages)
             var solvedAbove = false
+            // what the student's line above ended in (`400 + 364 = 764` → 764), for a line that goes
+            // on from it (`+3 = 767`: `ContinuationLine`)
+            var running: String?
             for st in columnLines(column) {
                 guard !st.latex.isEmpty else { continue }
+                // a running total (`+3 = 767`) is judged as the child means it, `764 + 3 = 767`; with
+                // nothing above to go on from it is never judged (read alone it is `3 = 767`, false)
+                let judged: String?
+                if let c = ContinuationLine.parse(st.latex) {
+                    judged = running.map { ContinuationLine.rewritten(c, after: $0) }
+                } else {
+                    // a bare number in a problem page's answer spot answers the problem's letter (`LiveLoop+Pages`)
+                    judged = judgedForm(st)
+                }
                 // the grown-ups want answers after `=`: the engine works a sum ended with one out
                 // as in Solve (the policy still decides what is shown)
                 let lineMode = settings.answerOnEquals && LivePolicy.endsWithRelation(st.latex) ? LiveMode.answer : mode
                 let ctx = AnalyzeContext(mode: lineMode, previous: previous, original: original)
-                // a bare number in a problem page's answer spot answers the problem's letter (`LiveLoop+Pages`)
-                let judged = judgedForm(st)
-                let key = "\(lineMode.rawValue)|\(judged)|\(previous?.math ?? "")|\(previous?.kind ?? "")|\(original?.math ?? "")"
+                let key = "\(lineMode.rawValue)|\(judged ?? "quiet:" + st.latex)|\(previous?.math ?? "")|\(previous?.kind ?? "")|\(original?.math ?? "")"
                     + "|\(problem.joined(separator: ";"))|\(above.joined(separator: ";"))|\(slip?.math ?? "")"
                 let raw: LineAnalysis
                 if let hit = analysisCache[key] {
                     raw = hit
-                } else {
+                } else if let judged {
                     do {
                         raw = try await brain.judgeLine(judged, context: ctx, problem: problem, above: above, slip: slip)
                     } catch {
                         raw = LineAnalysis.unknown
                     }
                     analysisCache[key] = raw
+                } else {
+                    raw = LineAnalysis.quiet
+                    analysisCache[key] = raw
                 }
-                // the page's rules before anything is marked: a true step, one answer of several, a
-                // problem of the kid's own are no slips (docs/PROBLEM-PAGES.md)
-                let review = await reviewOnPage(st, raw, judged: judged, solvedAbove: solvedAbove, problem: problem, original: original,
-                                                above: above.last)
+                // the page's rules before anything is marked (docs/PROBLEM-PAGES.md; off until they ship)
+                let review = await reviewOnPage(st, raw, judged: judged ?? st.latex, solvedAbove: solvedAbove, problem: problem, original: original)
                 let a = review.analysis
                 if review.ownHead { pages.ownHeads.insert(st.id) } else { pages.ownHeads.remove(st.id) }
-                above.append(st.latex)
+                above.append(judged ?? st.latex)
+                running = judged.flatMap(ContinuationLine.result(of:))
                 slip = a.verdict == "mismatch" || a.carried == true ? a : nil
                 guard gen == generation, var cur = lines[st.id], cur.latex == st.latex else {
                     // the line changed while it was analysed: its own read analyses the column again
@@ -96,7 +108,7 @@ extension LiveLoop {
                     above = []
                     slip = nil
                     solvedAbove = false
-                    take(try? await brain.analyzeLine(judged, context: AnalyzeContext(mode: mode)))
+                    take(try? await brain.analyzeLine(judged ?? st.latex, context: AnalyzeContext(mode: mode)))
                 } else if !(a.verdict == "mismatch" || a.carried == true || cur.isModelFlagged || review.side) {
                     // a slip is not what the next line follows from, nor side work (a sum beside the
                     // problem, an identity, one root of two)
@@ -207,7 +219,7 @@ extension LiveLoop {
         if marked == "warn" && unsureOfProblem(st) { marked = "none" }
         // nor a read the tutor is not sure of (it asks first: "Is this right?"), nor a problem of the
         // kid's own (docs/PROBLEM-PAGES.md)
-        let doubt = readingInDoubt(st) || pages.ownHeads.contains(st.id)
+        let doubt = pages.extras && (readingInDoubt(st) || pages.ownHeads.contains(st.id))
         if marked == "warn" && doubt { marked = "none" }
         let ring = marked == "warn" || (marked != "ok" && marked != "solved" && st.isModelFlagged && !unsureOfProblem(st) && !doubt)
         let tick = marked == "ok" || marked == "solved"

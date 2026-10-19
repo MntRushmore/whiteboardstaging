@@ -61,11 +61,11 @@ struct PagesSheet: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: DS.Space.l) {
+                        // (adding a page is the New page button under the strip: one way, not two)
                         ForEach(strip.items) { item in
                             cell(item)
                                 .id(item.id)
                         }
-                        if strip.canAdd { addCell }
                     }
                     .padding(.vertical, 6)
                     .padding(.horizontal, 4)
@@ -128,23 +128,5 @@ struct PagesSheet: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(DockCopy.pageOf(item.number, controller.strip.count))
         .accessibilityAddTraits(item.isCurrent ? [.isSelected, .isButton] : .isButton)
-    }
-
-    private var addCell: some View {
-        Button {
-            controller.addScreen()
-        } label: {
-            VStack(spacing: DS.Space.xs) {
-                RoundedRectangle(cornerRadius: DS.Radius.thumb, style: .continuous)
-                    .fill(DS.Color.surfaceSunken)
-                    .frame(width: 220, height: 220 * 9 / 16)
-                    .overlay(IconCircle(.plus, fill: .ink, diameter: 56))
-                Text(DockCopy.newPage)
-                    .font(DS.Font.fixed(.button, size: 15))
-                    .foregroundStyle(DS.Color.inkSecondary)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(DockCopy.newPage)
     }
 }

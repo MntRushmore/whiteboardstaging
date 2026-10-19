@@ -40,6 +40,7 @@ struct AccountArea: View {
     @Environment(AgathonBackend.self) private var backend
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var page: Page
     @State private var signOutProblem: String?
 
@@ -54,15 +55,35 @@ struct AccountArea: View {
         isKid ? [.progress, .account, .bugs] : [.progress, .account, .family, .report, .bugs]
     }
 
+    /// Tabs on top instead of the sidebar: a narrow window, or the largest text sizes (the sidebar's
+    /// names were cut to "Progr…").
+    private var tabsOnTop: Bool { sizeClass == .compact || typeSize.isAccessibilitySize }
+
     var body: some View {
         ZStack {
             DS.Color.ground.ignoresSafeArea()
-            if sizeClass == .compact {
+            if tabsOnTop {
                 VStack(alignment: .leading, spacing: DS.Space.m) {
                     HStack {
                         RoundButton(.close, label: "Back to Home") { dismiss() }
                             .accessibilityIdentifier("area.close")
                         Spacer()
+                        // the sidebar's Sign out, here too
+                        Button(action: signOut) {
+                            HStack(spacing: DS.Space.s) {
+                                DSIcon(.signOut, size: 20)
+                                Text("Sign out").dsFont(.button, size: 17).lineLimit(1)
+                            }
+                            .foregroundStyle(DS.Color.ink)
+                            .padding(.horizontal, DS.Space.m)
+                            .frame(minHeight: DS.Size.minTarget)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("area.signOut")
+                    }
+                    if let signOutProblem {
+                        Text(signOutProblem).dsFont(.caption).foregroundStyle(DS.Color.ink)
                     }
                     SegmentedPicker(selection: $page, options: pages.map { ($0, $0.title) })
                     detail
@@ -183,6 +204,7 @@ struct AreaPage<Content: View>: View {
     let subtitle: String?
     let content: Content
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(_ title: String, subtitle: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
@@ -210,8 +232,9 @@ struct AreaPage<Content: View>: View {
                 content
             }
             .frame(maxWidth: 820, alignment: .leading)
-            .padding(.horizontal, sizeClass == .compact ? 0 : DS.Space.xxl)
-            .padding(.top, sizeClass == .compact ? DS.Space.s : 84)
+            // under the tabs (a narrow window, the largest text): no sidebar margins to line up with
+            .padding(.horizontal, sizeClass == .compact || typeSize.isAccessibilitySize ? 0 : DS.Space.xxl)
+            .padding(.top, sizeClass == .compact || typeSize.isAccessibilitySize ? DS.Space.s : 84)
             .padding(.bottom, DS.Space.xxxl)
             .frame(maxWidth: .infinity, alignment: .leading)
         }

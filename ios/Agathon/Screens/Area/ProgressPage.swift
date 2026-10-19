@@ -9,6 +9,7 @@ struct ProgressPage: View {
     let practice: (String) -> Void
 
     @Environment(AgathonBackend.self) private var backend
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var summary: LearningSummary?
     @State private var grade: Int?
     @State private var loading = true
@@ -55,16 +56,24 @@ struct ProgressPage: View {
         }
     }
 
+    /// Whole minutes of `ms`, rounded, as the web's Progress page counts them: any practice is at
+    /// least 1 (a 40-second day is 1 minute; a kid who worked never reads "0 minutes").
+    static func wholeMinutes(_ ms: Double) -> Int {
+        guard ms > 0 else { return 0 }
+        return max(1, Int((ms / 60_000).rounded()))
+    }
+
     // MARK: this week
 
     private func thisWeek(_ summary: LearningSummary) -> some View {
         let week = summary.days.suffix(7)
-        let minutes = Int((week.map(\.activeMs).reduce(0, +) / 60_000).rounded())
+        let minutes = Self.wholeMinutes(week.map(\.activeMs).reduce(0, +))
         let problems = week.map(\.problems).reduce(0, +)
         let weekStart = week.first?.date ?? ""
         let independent = summary.recent.filter { $0.startedAt >= weekStart && ["first_try", "self_corrected"].contains($0.outcome) }.count
         return AreaCard("This week") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: DS.Space.s)], spacing: DS.Space.s) {
+            // two to a row at the largest text sizes (four narrow ones broke "minutes" mid-word)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 300 : 150), spacing: DS.Space.s)], spacing: DS.Space.s) {
                 StatTile(value: "\(minutes)", label: minutes == 1 ? "minute" : "minutes")
                 StatTile(value: "\(problems)", label: "problems worked on")
                 StatTile(value: "\(min(independent, problems))", label: "solved on your own")
@@ -95,7 +104,7 @@ struct ProgressPage: View {
                     }
                     .frame(maxWidth: .infinity)
                     .accessibilityElement()
-                    .accessibilityLabel("\(day.date): \(Int(value.rounded())) minutes")
+                    .accessibilityLabel("\(day.date): \(Self.wholeMinutes(day.activeMs)) \(Self.wholeMinutes(day.activeMs) == 1 ? "minute" : "minutes")")
                 }
             }
             .frame(height: 150)

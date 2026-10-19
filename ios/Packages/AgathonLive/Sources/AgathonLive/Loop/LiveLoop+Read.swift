@@ -544,4 +544,10 @@ extension LineAnalysis {
     static var unknown: LineAnalysis {
         try! JSONDecoder().decode(LineAnalysis.self, from: Data(#"{"kind":"unknown","math":"","resultLatex":"","verdict":"unknown","note":""}"#.utf8))
     }
+
+    /// A line the loop leaves alone, never judged and never a "?" (`ContinuationLine` with nothing
+    /// above to go on from).
+    static var quiet: LineAnalysis {
+        try! JSONDecoder().decode(LineAnalysis.self, from: Data(#"{"kind":"continuation","math":"","resultLatex":"","verdict":"none","note":""}"#.utf8))
+    }
 }

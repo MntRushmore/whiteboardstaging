@@ -34,6 +34,14 @@ struct ProblemPagesLoopTests {
         return ids
     }
 
+    /// A harness with problem pages' second part on (check when done, "I read", the page's rules).
+    func harness(mode: LiveMode = .feedback, auto: Bool = true, checking: CheckTiming = .whenDone) -> Harness {
+        let h = Harness(mode: mode, auto: auto, checking: checking)
+        h.loop.pages.extras = true
+        h.loop.settings.showReadings = true
+        return h
+    }
+
     func line(_ h: Harness, _ latex: String) -> LiveLine? {
         h.loop.lines.values.first { $0.latex == latex }
     }
@@ -41,7 +49,7 @@ struct ProblemPagesLoopTests {
     // MARK: - check when done
 
     @Test func heldLinesWriteNoMarksAndTellTheRecordNothingUntilCheck() async throws {
-        let h = Harness(checking: .whenDone)
+        let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
         await h.write("2x = 8", at: Vec2(200, 280))
@@ -69,7 +77,7 @@ struct ProblemPagesLoopTests {
     }
 
     @Test func theLongPauseChecksWithAutoOnAndNotOff() async throws {
-        let h = Harness(checking: .whenDone)
+        let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
         await h.write("x = 5", at: Vec2(200, 280))
@@ -78,7 +86,7 @@ struct ProblemPagesLoopTests {
         await h.pass(2_000)
         #expect(h.board.mark(on: "x = 5") == .ring, "a long pause (9 s from the last stroke) checks")
 
-        let off = Harness(auto: false, checking: .whenDone)
+        let off = harness(auto: false, checking: .whenDone)
         await off.start()
         problemPage(off, ["2x + 3 = 11"])
         await off.write("x = 5", at: Vec2(200, 280))
@@ -90,7 +98,7 @@ struct ProblemPagesLoopTests {
     }
 
     @Test func theAnswerSpotChecksAfterItsQuiet() async throws {
-        let h = Harness(checking: .whenDone)
+        let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
         await h.write("2x = 8", at: Vec2(200, 280))
@@ -107,7 +115,7 @@ struct ProblemPagesLoopTests {
     }
 
     @Test func anUnfinishedLineIsNeverJudged() async throws {
-        let h = Harness(checking: .whenDone)
+        let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
         await h.write("2x = 8", at: Vec2(200, 280), reads: "2x =")
@@ -119,7 +127,7 @@ struct ProblemPagesLoopTests {
         #expect(h.board.mark(on: "x = 5") == .ring)
         #expect(h.loop.isHeld(try #require(line(h, "2x ="))))
         // the pause never judges the line the pen is on: a stroke in it a moment ago
-        let p = Harness(checking: .whenDone)
+        let p = harness(checking: .whenDone)
         await p.start()
         problemPage(p, ["2x + 3 = 11"])
         let ids = await p.write("x = 5", at: Vec2(200, 360))
@@ -132,7 +140,7 @@ struct ProblemPagesLoopTests {
     }
 
     @Test func helpMeChecksItsColumnFirst() async throws {
-        let h = Harness(checking: .whenDone)
+        let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
         await h.write("x = 5", at: Vec2(200, 280))
@@ -145,7 +153,7 @@ struct ProblemPagesLoopTests {
     }
 
     @Test func checkedLinesSurviveAReopenAndNewInkHoldsALineAgain() async throws {
-        let h = Harness(checking: .whenDone)
+        let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
         await h.write("2x = 8", at: Vec2(200, 280))
@@ -163,7 +171,7 @@ struct ProblemPagesLoopTests {
     }
 
     @Test func switchingToWhenDoneKeepsWhatIsMarked() async throws {
-        let h = Harness()
+        let h = harness(checking: .asIGo)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
         await h.write("2x = 8", at: Vec2(200, 280))
@@ -178,7 +186,7 @@ struct ProblemPagesLoopTests {
 
     @Test func aTrueIntermediateStepIsNeverRinged() async throws {
         for checking in [CheckTiming.asIGo, .whenDone] {
-            let h = Harness(checking: checking)
+            let h = harness(checking: checking)
             await h.start()
             problemPage(h, ["4x - 5 = 7"])
             await h.write("2x = 8", at: Vec2(200, 280), reads: "4x = 7 + 5")
@@ -195,10 +203,11 @@ struct ProblemPagesLoopTests {
     }
 
     /// The owner's iPad (2026-10-19): on `403 + 364 − 336` the kid wrote `400+364=764`, then `+3=767` —
-    /// an operation line going on from the line above — and the tutor circled it.
+    /// an operation line going on from the line above — and the tutor circled it. The rule is the
+    /// integration's (`ContinuationLine`, judged in `analyze`); this checks it holds on a problem page.
     @Test func anOperationLineContinuesTheLineAbove() async throws {
         for checking in [CheckTiming.asIGo, .whenDone] {
-            let h = Harness(checking: checking)
+            let h = harness(checking: checking)
             await h.start()
             problemPage(h, ["403 + 364 - 336"])
             await h.write("2x = 8", at: Vec2(200, 280), reads: "400+364=764")
@@ -211,12 +220,10 @@ struct ProblemPagesLoopTests {
             #expect(h.loop.lines.values.first { $0.latex == "-336=431" }?.analysis?.solved == true, "\(checking): the running total is the answer")
             #expect(!h.board.marks.contains { $0.kind == .ring }, "\(checking): never a ring on a true step")
         }
-        #expect(LiveLoop.continued("+3=767", above: "400+364=764")?.form == "764 + 3 = 767")
-        #expect(LiveLoop.continued("x = 3", above: "4x = 12") == nil)
     }
 
     @Test func oneAnswerOfSeveralIsNoSlip() async throws {
-        let h = Harness(checking: .whenDone)
+        let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["x^{2} - 5x + 6 = 0"])
         await h.write("x = 3", at: Vec2(200, 280), reads: "x = 2")
@@ -231,7 +238,7 @@ struct ProblemPagesLoopTests {
     }
 
     @Test func aBareNumberInTheAnswerSpotAnswersTheLetter() async throws {
-        let h = Harness(checking: .whenDone)
+        let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["4x - 5 = 7"])
         await h.write("x = 3", at: Vec2(300, 768), reads: "3")
@@ -243,6 +250,7 @@ struct ProblemPagesLoopTests {
     // MARK: - one page, one problem
 
     @Test func thePagesProblemHeadsEveryColumnOnIt() async throws {
+        // the first part: the pages alone, as they ship
         let h = Harness()
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
@@ -257,7 +265,7 @@ struct ProblemPagesLoopTests {
     }
 
     @Test func aSecondProblemIsOfferedAPageAndMovesAsOneUndoStep() async throws {
-        let h = Harness()
+        let h = harness(checking: .asIGo)
         await h.start()
         let first = h.board.currentScreenID
         problemPage(h, ["2x + 3 = 11"])
@@ -292,7 +300,7 @@ struct ProblemPagesLoopTests {
     }
 
     @Test func otherLettersStartAProblemOfTheirOwn() async throws {
-        let h = Harness()
+        let h = harness(checking: .asIGo)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
         await h.write("2x = 8", at: Vec2(200, 280))
@@ -310,7 +318,7 @@ struct ProblemPagesLoopTests {
     // MARK: - I read
 
     @Test func aReadTheTutorDoubtsIsAskedAboutNotRinged() async throws {
-        let h = Harness(checking: .whenDone)
+        let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
         await h.write("x = 5", at: Vec2(200, 280), confidence: 0.95)
@@ -329,7 +337,7 @@ struct ProblemPagesLoopTests {
     }
 
     @Test func aLookAlikeOfThePagesLetterAsksAndAFixStands() async throws {
-        let h = Harness(checking: .whenDone)
+        let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
         await h.write("2x = 8", at: Vec2(200, 280), reads: "2 \\times = 8")
@@ -356,7 +364,7 @@ struct ProblemPagesLoopTests {
     }
 
     @Test func readingsAreQuietAndOffWithTheSwitch() async throws {
-        let h = Harness(checking: .whenDone)
+        let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
         await h.write("2x = 8", at: Vec2(200, 280))

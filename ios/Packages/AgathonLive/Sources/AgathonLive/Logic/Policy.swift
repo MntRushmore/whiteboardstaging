@@ -62,7 +62,8 @@ public enum LivePolicy {
         public var capped: Bool
     }
 
-    static let silentKinds: Set<String> = ["label", "incomplete", "text"]
+    /// `continuation`: a running total (`+3 = 767`) with nothing above to go on from (`ContinuationLine`)
+    static let silentKinds: Set<String> = ["label", "incomplete", "text", "continuation"]
     static let checkableKinds: Set<String> = ["equation", "expression", "inequality", "assignment"]
     static let unjudgedKinds: Set<String> = ["label", "incomplete", "text", "unknown"]
 

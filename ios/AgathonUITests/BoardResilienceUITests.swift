@@ -66,7 +66,7 @@ final class BoardResilienceUITests: XCTestCase {
         button.tap()
         // the line is down and backed up (0.5 s after the last stroke); the save (2 s after it) hasn't run
         usleep(500_000)
-        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != 'busy'"), object: button)], timeout: 30)
+        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false OR value != 'busy'"), object: button)], timeout: 30)
         usleep(1_000_000)
         app.terminate()
         launch([])
@@ -142,7 +142,7 @@ final class BoardResilienceUITests: XCTestCase {
             if let api = env["NETCUT_API_URL"] { app.launchEnvironment["AGATHON_API_URL"] = api }
             if let supabase = env["NETCUT_SUPABASE_URL"] { app.launchEnvironment["SUPABASE_URL"] = supabase }
         }
-        app.launchArguments = arguments
+        app.launchArguments = ["-noLabs"] + arguments
         app.launch()
     }
 
@@ -194,7 +194,7 @@ final class BoardResilienceUITests: XCTestCase {
         XCTAssertTrue(button.label.contains(expected), "the autowrite's next line is \(button.label), not \(expected)")
         button.tap()
         sleep(1)
-        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != 'busy'"), object: button)], timeout: 30)
+        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false OR value != 'busy'"), object: button)], timeout: 30)
         sleep(1)
     }
 

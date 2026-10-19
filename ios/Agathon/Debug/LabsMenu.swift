@@ -16,10 +16,13 @@ private struct LabsButton: ViewModifier {
     /// `-liveLab` opens the Live Lab straight away (screenshots and recordings on the simulator); `-lab <name>` any lab.
     @State private var open: Lab? = ProcessInfo.processInfo.arguments.contains("-liveLab") ? .live : Lab.fromLaunch
 
+    /// `-noLabs`: no button at all (the QA shots and UI tests: it sat over Ask's Send at the corner)
+    private static let noLabs = ProcessInfo.processInfo.arguments.contains("-noLabs")
+
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .bottomTrailing) {
-                if !hidden { Menu {
+                if !hidden, !Self.noLabs { Menu {
                     ForEach(Lab.allCases) { lab in
                         Button(lab.title, systemImage: lab.symbol) { open = lab }
                     }
@@ -30,6 +33,8 @@ private struct LabsButton: ViewModifier {
                         .padding(.vertical, 8)
                         .background(.thinMaterial, in: Capsule())
                 }
+                // a developer's button: it never grows with the text size over the screen's own controls
+                .dynamicTypeSize(.large)
                 .padding(16) }
             }
             .fullScreenCover(item: $open) { lab in

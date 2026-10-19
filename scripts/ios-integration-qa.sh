@@ -5,7 +5,9 @@
 # save, background, turning while Ask streams), the VoiceOver audit, and the design pass's shots.
 #
 # Needs: the local Supabase (`npm run db:start`; never reset it, it is shared), a dev server on
-# $PORT (`npx next dev -p 3901`), and ~/whiteboardstaging/sim-run.sh (one simulator at a time).
+# $PORT (`APPLE_ENVIRONMENT=Xcode npx next dev -p 3901`: the app tests post Xcode-signed Apple
+# purchases, which only a dev server with that setting takes), and ~/whiteboardstaging/sim-run.sh
+# (one simulator at a time).
 # Never touches production: the tests refuse any SUPABASE_URL that isn't the local stack.
 #
 #   scripts/ios-integration-qa.sh [steps…]     steps: build journey family ink resilience a11y design
@@ -77,7 +79,7 @@ for step in $STEPS; do
       ~/whiteboardstaging/sim-run.sh "$SIM" -- bash -c 'run resilience -only-testing:AgathonUITests/BoardResilienceUITests'
     kill $PROXY; rm -f "$OUT/netcut.flag" ;;
   a11y)
-    ~/whiteboardstaging/sim-run.sh "$SIM" -- bash -c 'run a11y -only-testing:AgathonUITests/BoardAccessibilityUITests' ;;
+    ~/whiteboardstaging/sim-run.sh "$SIM" -- bash -c 'run a11y -only-testing:AgathonUITests/BoardAccessibilityUITests -only-testing:AgathonUITests/BoardPopoverUITests' ;;
   design)
     for variant in landscape portrait split ax; do
       case $variant in

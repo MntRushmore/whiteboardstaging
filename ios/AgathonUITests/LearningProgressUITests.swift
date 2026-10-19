@@ -49,7 +49,8 @@ final class LearningProgressUITests: XCTestCase {
         // 2. a Live Lab session: the slip (2x + 3 = 11, 2x = 8 ticked, x = 5 ringed), then the fix
         app = launch(extra: ["-liveLab", "-liveLabDemo", "slip"])
         // the demo writes for ~15 s and waits for the tutor; the record saves 5 s after its last change
-        let read = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "x = 5 [")).firstMatch
+        // the recognizer's spacing varies ("x = 5" or "x=5"): match either
+        let read = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", #".*x ?= ?5 \[.*"#)).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 90), "the Lab never read the kid's last line")
         Thread.sleep(forTimeInterval: 12)
         snap("live-lab")

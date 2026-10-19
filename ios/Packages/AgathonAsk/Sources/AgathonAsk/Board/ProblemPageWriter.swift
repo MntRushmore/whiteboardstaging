@@ -99,7 +99,7 @@ public final class ProblemPageWriter {
         for (i, p) in planned.enumerated() {
             let bottom = p.plan.map { $0.bounds.y + $0.bounds.h } ?? (ProblemPageLayout.problemOrigin.y + 48)
             let page = ProblemPage(kind: .problem, setId: request.setId, index: i + 1, count: count, origin: request.origin,
-                                   workTop: ProblemPageLayout.workTop(problemBottom: bottom))
+                                   workTop: ProblemPageLayout.workTop(problemBottom: bottom), answer: ProblemPagesRollout.secondPart)
             let id: RecordID?
             if first, isBlank(board.currentScreenID) {
                 id = board.currentScreenID
@@ -130,7 +130,8 @@ public final class ProblemPageWriter {
         if request.allDone, report.pages.count >= 2, let last = report.pages.last {
             report.allDone = board.insertScreen(after: last, meta: [ProblemPage.metaKey: ProblemPage(kind: .done, setId: request.setId).json], go: false)
         }
-        // 5. the others written at once; the first by hand, as the kid watches
+        // 5. the others written at once; the first by hand, as the kid watches (unless the board closed)
+        guard !driver.isStopped else { return report }
         for (i, id) in report.pages.enumerated() where i > 0 {
             writeNow(planned[i], on: id)
         }

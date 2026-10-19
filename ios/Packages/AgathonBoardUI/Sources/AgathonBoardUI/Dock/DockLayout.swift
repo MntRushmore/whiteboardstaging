@@ -24,6 +24,9 @@ public enum DockCopy {
     public static let undo = "Undo"
     public static let redo = "Redo"
     public static let more = "More"
+    /// VoiceOver: the dock's More and the top bar's More are told apart by what they hold
+    public static let moreHint = "The other tools: shapes, pictures and redo"
+    public static let boardMoreHint = "Pages, and drawing with your finger"
     public static let color = "Color"
     public static let colors = "Colors"
     public static let newPage = "New page"
@@ -66,11 +69,13 @@ public enum DockCopy {
 ///  - `row`: everything (Select, Pen, Eraser, Shapes, Picture | Undo, Redo | five pens | pages);
 ///  - `fold`: Shapes, Picture and Redo behind More (an upright iPad, a split view);
 ///  - `foldColors`: the pens behind one Color button too;
-///  - `compact`: New page behind More too.
+///  - `compact`: New page behind More too;
+///  - `tiny`: no page arrows (the top bar's "Page 2 of 3" opens the pages): a split view;
+///  - `micro`: Select behind More too: the narrowest windows.
 /// When even that is too wide, Help me goes above the dock (`helpAbove`). It never wraps.
 public struct DockLayout: Equatable, Sendable {
     public enum Fit: Int, CaseIterable, Sendable {
-        case row, fold, foldColors, compact
+        case row, fold, foldColors, compact, tiny, micro
     }
 
     public var fit: Fit
@@ -78,8 +83,11 @@ public struct DockLayout: Equatable, Sendable {
 
     public var shapesInMore: Bool { fit != .row }
     public var redoInMore: Bool { fit != .row }
-    public var colorsInButton: Bool { fit == .foldColors || fit == .compact }
-    public var newPageInMore: Bool { fit == .compact }
+    public var colorsInButton: Bool { fit.rawValue >= Fit.foldColors.rawValue }
+    public var newPageInMore: Bool { fit.rawValue >= Fit.compact.rawValue }
+    /// the ‹ n/N › arrows in the dock (else the top bar's page line opens the pages)
+    public var pageArrows: Bool { fit.rawValue < Fit.tiny.rawValue }
+    public var selectInMore: Bool { fit == .micro }
 
     /// The dock's measures, in points (the view draws with the same numbers).
     public enum Size {
@@ -100,11 +108,11 @@ public struct DockLayout: Equatable, Sendable {
 
     /// The dock's width at `fit` (several pages: the arrows show).
     public static func width(_ fit: Fit, pages: Int) -> CGFloat {
-        let tools = CGFloat(fit == .row ? 5 : 3) * Size.tool
+        let tools = CGFloat(fit == .row ? 5 : fit == .micro ? 2 : 3) * Size.tool
         let edits = 2 * Size.tool // Undo and Redo, or Undo and More
-        let colors = fit == .foldColors || fit == .compact ? Size.tool : 5 * Size.swatch
-        let arrows = pages > 1 ? 2 * Size.arrow + Size.pageLabel : 0
-        let newPage = fit == .compact ? 0 : Size.newPage
+        let colors = fit.rawValue >= Fit.foldColors.rawValue ? Size.tool : 5 * Size.swatch
+        let arrows = pages > 1 && fit.rawValue < Fit.tiny.rawValue ? 2 * Size.arrow + Size.pageLabel : 0
+        let newPage = fit.rawValue >= Fit.compact.rawValue ? 0 : Size.newPage
         let pagesPart = arrows + newPage
         let groups = pagesPart > 0 ? 3 : 2
         return 2 * Size.padding + tools + edits + colors + pagesPart + CGFloat(groups) * Size.separator
@@ -113,12 +121,14 @@ public struct DockLayout: Equatable, Sendable {
     /// The most of the dock that fits `width` points with Help me (`helpWidth`) beside it.
     public static func fitting(width: CGFloat, helpWidth: CGFloat, pages: Int) -> DockLayout {
         let beside = width - (helpWidth > 0 ? helpWidth + Size.helpGap : 0)
-        for fit in Fit.allCases where Self.width(fit, pages: pages) <= beside {
+        // Help me beside the dock only while the dock keeps its page arrows; narrower, Help me goes
+        // above first and the dock folds only as far as the window needs
+        for fit in Fit.allCases where fit.rawValue <= Fit.compact.rawValue && Self.width(fit, pages: pages) <= beside {
             return DockLayout(fit: fit, helpAbove: false)
         }
         for fit in Fit.allCases where Self.width(fit, pages: pages) <= width {
             return DockLayout(fit: fit, helpAbove: helpWidth > 0)
         }
-        return DockLayout(fit: .compact, helpAbove: helpWidth > 0)
+        return DockLayout(fit: .micro, helpAbove: helpWidth > 0)
     }
 }

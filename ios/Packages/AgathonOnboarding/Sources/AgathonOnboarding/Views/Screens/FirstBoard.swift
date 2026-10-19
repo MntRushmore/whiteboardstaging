@@ -15,6 +15,8 @@ enum FirstBoardMaker {
     /// The document, and the first practice problem left for the tutor to write live on screen 1.
     /// `boardId`: the row it goes into, so the first screen's id is the one the board session uses.
     static func make(answers a: OnboardingAnswers, seed: Int, boardId: String? = nil) async -> Made {
+        // the tutor's hand is the brain's: loaded here too (once; the try usually loaded it)
+        _ = try? await Brain.shared.load()
         let store = BoardStore(document: boardId.map(BoardSession.blankDocument(boardId:)) ?? .blank())
         guard let first = store.screenIDs.first else { return Made(document: .blank(), liveProblem: nil, liveX: nil, liveY: 300) }
         var bottom = 140.0

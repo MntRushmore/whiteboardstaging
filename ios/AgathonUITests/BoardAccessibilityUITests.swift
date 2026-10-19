@@ -17,6 +17,8 @@ final class BoardAccessibilityUITests: XCTestCase {
         for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY"] {
             if let v = env[key] { app.launchEnvironment[key] = v }
         }
+        // the controls a Release build has (Debug's Labs button off)
+        app.launchArguments = ["-noLabs"]
         app.launch()
         let greeting = app.descendants(matching: .any).matching(identifier: "home.greeting").firstMatch
         XCTAssertTrue(greeting.waitForExistence(timeout: 40), "not on Home (run the kid journey first)")

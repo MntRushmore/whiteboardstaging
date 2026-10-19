@@ -17,6 +17,7 @@ struct HomeView: View {
     @Environment(\.boardOpening) private var opening
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @State private var model = HomeModel()
     @State private var query = ""
@@ -271,7 +272,9 @@ struct HomeView: View {
     // MARK: Today's practice and the path
 
     @ViewBuilder private var practiceRow: some View {
-        if contentWidth >= 940 {
+        // side by side on a wide screen; one above the other at the largest text sizes (half a
+        // screen each cut the path's skill to "3-digit adding an…")
+        if contentWidth >= 940 && !typeSize.isAccessibilitySize {
             HStack(alignment: .top, spacing: DS.Space.l) {
                 today.frame(width: (contentWidth - DS.Space.l) * 0.56)
                 path
@@ -359,7 +362,9 @@ struct HomeView: View {
     }
 
     private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: 220, maximum: 420), spacing: DS.Space.l, alignment: .top)]
+        // wider tiles at the accessibility text sizes: their names get room to be read
+        [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 380 : 220, maximum: typeSize.isAccessibilitySize ? 640 : 420),
+                  spacing: DS.Space.l, alignment: .top)]
     }
 
     @ViewBuilder private var boardsBody: some View {

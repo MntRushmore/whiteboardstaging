@@ -152,7 +152,8 @@ public struct LiveSettings: Equatable, Sendable, Codable {
     public var showReadings: Bool
 
     public init(enabled: Bool = true, mode: LiveMode = .feedback, auto: Bool = true, handwriting: Bool = true, celebrations: Bool = true,
-                answerOnEquals: Bool = false, checking: CheckTiming = .whenDone, showReadings: Bool = true) {
+                answerOnEquals: Bool = false, checking: CheckTiming = ProblemPagesRollout.secondPart ? .whenDone : .asIGo,
+                showReadings: Bool = ProblemPagesRollout.secondPart) {
         self.enabled = enabled
         self.mode = mode
         self.auto = auto
@@ -177,7 +178,7 @@ public struct LiveSettings: Equatable, Sendable, Codable {
         handwriting = try c.decodeIfPresent(Bool.self, forKey: .handwriting) ?? d.handwriting
         celebrations = try c.decodeIfPresent(Bool.self, forKey: .celebrations) ?? d.celebrations
         answerOnEquals = try c.decodeIfPresent(Bool.self, forKey: .answerOnEquals) ?? d.answerOnEquals
-        // settings saved before 2026-10-19 take the new default (the owner's: check when done)
+        // settings saved before 2026-10-19 take the new default (the owner's: check when done, once it ships)
         checking = (try? c.decodeIfPresent(CheckTiming.self, forKey: .checking)) ?? d.checking
         showReadings = try c.decodeIfPresent(Bool.self, forKey: .showReadings) ?? d.showReadings
     }

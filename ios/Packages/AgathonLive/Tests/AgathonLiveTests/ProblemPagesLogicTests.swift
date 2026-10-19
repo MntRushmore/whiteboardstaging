@@ -32,12 +32,14 @@ struct ProblemPagesLogicTests {
         #expect(homework.showResult && homework.badge == "none")
     }
 
-    @Test func checkWhenDoneIsTheDefaultForOldSettingsToo() throws {
-        #expect(LiveSettings.default.checking == .whenDone)
-        #expect(LiveSettings.default.showReadings)
+    @Test func checkWhenDoneIsTheDefaultForOldSettingsTooOnceItShips() throws {
+        // the pages ship first; check when done and "I read" with the second part
+        let expected: CheckTiming = ProblemPagesRollout.secondPart ? .whenDone : .asIGo
+        #expect(LiveSettings.default.checking == expected)
+        #expect(LiveSettings.default.showReadings == ProblemPagesRollout.secondPart)
         // saved before the setting existed
         let old = try JSONDecoder().decode(LiveSettings.self, from: Data(#"{"enabled":true,"mode":"suggest","auto":false,"handwriting":true,"celebrations":true}"#.utf8))
-        #expect(old.checking == .whenDone && old.mode == .suggest && !old.auto && old.showReadings)
+        #expect(old.checking == expected && old.mode == .suggest && !old.auto && old.showReadings == ProblemPagesRollout.secondPart)
         // a grown-up's switch back to as-they-go is kept
         var s = LiveSettings.default
         s.checking = .asIGo
@@ -46,7 +48,7 @@ struct ProblemPagesLogicTests {
         #expect(back.checking == .asIGo && !back.showReadings)
         // an unknown value (a newer app's) reads as the default
         let newer = try JSONDecoder().decode(LiveSettings.self, from: Data(#"{"checking":"someday"}"#.utf8))
-        #expect(newer.checking == .whenDone)
+        #expect(newer.checking == expected)
     }
 
     @Test func aTimesWhereNoProductCanBeIsThePagesLetter() {

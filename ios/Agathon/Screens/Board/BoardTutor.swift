@@ -97,6 +97,8 @@ final class BoardTutor {
         started = false
         watches.removeAll()
         ask.session.stop()
+        // the tutor's pen too: a reply still writing would keep the closed board until it finished
+        driver.stop()
         ask.speech.stop()
         ask.mic.cancel()
         ask.session.onFailure = nil

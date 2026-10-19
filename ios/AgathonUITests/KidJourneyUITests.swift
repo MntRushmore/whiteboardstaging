@@ -241,6 +241,11 @@ final class KidJourneyUITests: XCTestCase {
         sleep(3)
         snap("17-plan")
         tap("plan.close")
+        // the iPad back to Sam (the design pass and the next runs start on the kid's Home)
+        if element("board.back").waitForExistence(timeout: 10) { tap("board.back") }
+        tap("boards.switchProfile", wait: 30)
+        tap("switcher.member.Sam", wait: 20)
+        waitFor("home.greeting", label: "Sam", timeout: 30)
     }
 
     // MARK: - helpers
@@ -253,7 +258,8 @@ final class KidJourneyUITests: XCTestCase {
         let lines = arguments.contains("-boardAutowrite") ? [] : ["-boardAutowrite", "newpage|2x + 3 = 11|2x = 8|x = 5"]
         // a variant's extra arguments (the design pass: the largest text, a narrow window)
         let extra = (env["JOURNEY_ARGS"] ?? "").split(separator: " ").map(String.init)
-        app.launchArguments = arguments + lines + extra
+        // -noLabs: the screens as a Release build shows them (Debug's Labs button off)
+        app.launchArguments = ["-noLabs"] + arguments + lines + extra
         app.launch()
     }
 
@@ -277,7 +283,7 @@ final class KidJourneyUITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 30), "no autowrite button (Debug build with -boardAutowrite)")
         XCTAssertTrue(button.label.contains(expected), "the autowrite's next line is \(button.label), not \(expected)")
         button.tap()
-        let idle = NSPredicate(format: "value != 'busy'")
+        let idle = NSPredicate(format: "exists == false OR value != 'busy'")
         sleep(1)
         _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: idle, object: button)], timeout: 30)
         sleep(1)

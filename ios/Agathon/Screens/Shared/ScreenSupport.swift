@@ -31,6 +31,17 @@ func attempt<T: Sendable>(_ operation: @Sendable () async throws -> T) async -> 
 }
 
 enum HomeFormat {
+    /// A new board's name: its day ("Monday’s board"), numbered when the kid has one by that name
+    /// already ("Monday’s board 2"), so a day's boards are told apart on Home.
+    static func newBoardTitle(day: String, existing: [String] = []) -> String {
+        let name = "\(LocalDay.weekdayName(day))’s board"
+        let taken = Set(existing.map { $0.trimmingCharacters(in: .whitespaces) })
+        guard taken.contains(name) else { return name }
+        var n = 2
+        while taken.contains("\(name) \(n)") { n += 1 }
+        return "\(name) \(n)"
+    }
+
     private static let relative: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full

@@ -40,7 +40,67 @@ final class ProblemPagesUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
     }
 
+    /// The pages as they ship first (the owner, 2026-10-19: "1 question per screen"): a 3-problem set is
+    /// three pages and All done; "Problem n of 3"; each page's lines judged against its own problem
+    /// (`3x = 15` is right under `3x - 5 = 10`, and would be a slip under page 1's `2x + 3 = 11`); Next
+    /// once solved; All done at the end. About 6 recognize calls.
+    func testAThreeProblemSetIsAPageAProblem() throws {
+        app = XCUIApplication()
+        for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY"] { app.launchEnvironment[key] = env[key] }
+        app.launchArguments += [
+            "-agathon.onboarding.finished", "YES",
+            "-practiceProblems", "2x + 3 = 11|3x - 5 = 10|5x + 2 = 17",
+            "-boardAutowrite", "2x = 8|x = 4|3x = 15|x = 5|5x = 15|x = 3",
+        ]
+        app.launch()
+        signInIfNeeded(email: env["AGATHON_TEST_EMAIL"] ?? "qa-student@example.com", password: env["AGATHON_TEST_PASSWORD"] ?? "password123")
+        tap("home.startPractice", wait: 40)
+        XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 40))
+        waitFor("debug.live", matching: #"page 1/3 .*screens 4"#, timeout: 90)
+        waitFor("board.title", matching: "Problem 1 of 3", timeout: 10)
+        snap("L1-page-1")
+        // page 1: a step and the answer, ticked as they go; solved: Next
+        write("2x = 8")
+        waitFor("debug.live", matching: #"2 ?x ?= ?8=tick"#, timeout: 40)
+        write("x = 4")
+        waitFor("debug.live", matching: #"x ?= ?4=tick.*action next"#, timeout: 40)
+        snap("L2-page-1-solved-next")
+        tap("live.next")
+        // page 2: its own problem; page 1's lines are not here
+        waitFor("debug.live", matching: #"page 2/3"#, timeout: 20)
+        waitFor("board.title", matching: "Problem 2 of 3", timeout: 10)
+        let fresh = element("debug.live").label
+        XCTAssertFalse(fresh.contains("=tick"), "page 1's work came along to page 2: \(fresh)")
+        write("3x = 15")
+        waitFor("debug.live", matching: #"3 ?x ?= ?15=tick"#, timeout: 40)
+        write("x = 5")
+        waitFor("debug.live", matching: #"x ?= ?5=tick.*action next"#, timeout: 40)
+        snap("L3-page-2-solved")
+        tap("live.next")
+        // page 3, then All done
+        waitFor("debug.live", matching: #"page 3/3"#, timeout: 20)
+        write("5x = 15")
+        waitFor("debug.live", matching: #"5 ?x ?= ?15=tick"#, timeout: 40)
+        write("x = 3")
+        waitFor("debug.live", matching: #"x ?= ?3=tick.*action alldone"#, timeout: 40)
+        snap("L4-page-3-solved")
+        tap("live.next")
+        XCTAssertTrue(element("live.allDone").waitForExistence(timeout: 20), "no All done")
+        waitFor("board.title", matching: "All done", timeout: 10)
+        sleep(2)
+        snap("L5-all-done")
+        // back to page 1: its ticks are still there, on its own page
+        app.buttons["Page before"].firstMatch.tap()
+        app.buttons["Page before"].firstMatch.tap()
+        app.buttons["Page before"].firstMatch.tap()
+        waitFor("debug.live", matching: #"page 1/3"#, timeout: 20)
+        waitFor("debug.live", matching: #"2 ?x ?= ?8=tick.*x ?= ?4=tick"#, timeout: 20)
+    }
+
+    /// Check when done, the answer spot, "I read" and tap to fix: the second part
+    /// (`ProblemPagesRollout.secondPart`; run with TEST_RUNNER_PAGES_SECOND_PART=1 once it is on).
     func testAThreeProblemSetChecksWhenDone() throws {
+        try XCTSkipUnless(env["PAGES_SECOND_PART"] == "1", "problem pages' second part is not on yet")
         app = XCUIApplication()
         for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY"] { app.launchEnvironment[key] = env[key] }
         app.launchArguments += [

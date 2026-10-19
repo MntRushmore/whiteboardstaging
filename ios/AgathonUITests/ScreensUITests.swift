@@ -81,7 +81,7 @@ final class ScreensUITests: XCTestCase {
         XCTAssertEqual(boardCount(app), before + 1)
 
         let first = app.buttons.matching(identifier: "boards.row").firstMatch
-        wait(first, "Untitled Whiteboard")
+        wait(first, "’s board")
         app.buttons.matching(identifier: "boards.more").firstMatch.tap()
         app.buttons["Rename"].tap()
         let field = app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Untitled board")).firstMatch

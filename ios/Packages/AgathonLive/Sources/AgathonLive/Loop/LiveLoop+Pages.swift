@@ -60,24 +60,11 @@ extension LiveLoop {
     /// `side`: the line is true on its own but no step of the problem's chain (a side fact in an
     /// algebra problem, an identity): the next line is not judged against it.
     func reviewOnPage(_ st: LiveLine, _ a: LineAnalysis, judged: String, solvedAbove: Bool, problem: [String],
-                      original: LineAnalysis?, above: String? = nil) async -> (analysis: LineAnalysis, ownHead: Bool, side: Bool) {
+                      original: LineAnalysis?) async -> (analysis: LineAnalysis, ownHead: Bool, side: Bool) {
         pages.partial.remove(st.id)
+        // the pages alone (the first part): judged as the loop judges
+        guard pages.extras else { return (a, false, false) }
         var a = a
-        // an operation line continuing the line above (`+3=767` under `400+364=764`, the web's
-        // operation line): true, it is a right step; the running total reaching the problem's value
-        // solves it (the owner's iPad, 2026-10-19: it was ringed)
-        if a.verdict != "ok", let cont = Self.continued(judged, above: above),
-           let check = try? await brain.analyzeLine(cont.form, context: AnalyzeContext(mode: .answer)), check.verdict == "ok" {
-            var r = a
-            r.verdict = "ok"
-            r.note = ""
-            r.kind = "equation"
-            if problem.count == 1, !problem[0].contains("="),
-               let total = try? await brain.analyzeLine("\(problem[0]) = \(cont.result)", context: AnalyzeContext(mode: .answer)), total.verdict == "ok" {
-                r.solved = true
-            }
-            return (r, false, false)
-        }
         // a bare number answering the letter is the answer, not a lone symbol to keep quiet about
         if judged != st.latex { a.bareAnswer = true }
         // a sum of numbers in a problem with letters (`3 × 4 = 12` beside `4x - 5 = 7`) is side work,
@@ -116,28 +103,15 @@ extension LiveLoop {
         return (r, false, sideWork)
     }
 
-    /// `+3=767` under `400+364=764`: the line above's result, this line's operation, its result, as
-    /// one line (`764 + 3 = 767`). Nil when the line starts with no operator or the line above has no
-    /// result.
-    static func continued(_ latex: String, above: String?) -> (form: String, result: String)? {
-        guard let above, let eq = above.range(of: "=", options: .backwards) else { return nil }
-        let previous = above[eq.upperBound...].trimmingCharacters(in: .whitespaces)
-        guard !previous.isEmpty, previous.range(of: #"[=<>]"#, options: .regularExpression) == nil else { return nil }
-        let pattern = #"^\s*(\+|-|−|\\times|\\div|\\cdot)\s*([^=]+?)\s*=\s*([^=]+?)\s*$"#
-        guard let re = try? NSRegularExpression(pattern: pattern),
-              let m = re.firstMatch(in: latex, range: NSRange(location: 0, length: (latex as NSString).length)), m.numberOfRanges == 4 else { return nil }
-        let ns = latex as NSString
-        let op = ns.substring(with: m.range(at: 1)) == "−" ? "-" : ns.substring(with: m.range(at: 1))
-        let operand = ns.substring(with: m.range(at: 2))
-        let result = ns.substring(with: m.range(at: 3))
-        return ("\(previous) \(op) \(operand) = \(result)", result)
-    }
-
     // MARK: - a second problem: "New page for this one"
 
     /// The offer, for the newest problem of the kid's own on the page (a line that started one, or on a
     /// page with no problem of the tutor's, a second column of their own work), unless they kept it here.
     func refreshOffer() {
+        guard pages.extras else {
+            if pages.offer != nil { pages.offer = nil }
+            return
+        }
         var candidate: LiveLine?
         for id in pages.ownHeads {
             guard let st = lines[id], !pages.keptHere.contains(id), !st.latex.isEmpty else { continue }
@@ -195,7 +169,7 @@ extension LiveLoop {
         let origin = ProblemPageLayout.place(ProblemPageLayout.problemOrigin, on: rect.box)
         let offset = Vec2(origin.x - head.bounds.x, origin.y - head.bounds.y)
         let headBottom = (head.bounds.maxY - head.bounds.y) / k + ProblemPageLayout.problemOrigin.y
-        let page = ProblemPage(kind: .problem, origin: "student", workTop: ProblemPageLayout.workTop(problemBottom: headBottom))
+        let page = ProblemPage(kind: .problem, origin: "student", workTop: ProblemPageLayout.workTop(problemBottom: headBottom), answer: ProblemPagesRollout.secondPart)
         pages.offer = nil
         guard board.moveToNewScreen(strokes, offset: offset, meta: [ProblemPage.metaKey: page.json], alsoRemove: gone) != nil else { return }
         // the loop takes the new page in now (not when the board's notice arrives)
@@ -279,7 +253,7 @@ extension LiveLoop {
     /// Now you try's problem goes on a page of its own, right after this one (a problem page, origin
     /// `nowYouTry`): the board shows it, and the problem is written at its top. Nil at the page cap.
     func ownPageForProblem(origin: String) -> AgathonBrain.Point? {
-        let page = ProblemPage(kind: .problem, origin: origin)
+        let page = ProblemPage(kind: .problem, origin: origin, answer: ProblemPagesRollout.secondPart)
         guard board.insertScreen(after: nil, meta: [ProblemPage.metaKey: page.json], go: true) != nil else { return nil }
         if board.currentScreenID != screenSeen { switchScreen() }
         let o = ProblemPageLayout.place(ProblemPageLayout.problemOrigin, on: board.screenRect.box)

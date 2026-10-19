@@ -103,6 +103,8 @@ private struct BoardRoom: View {
     @ObservedObject var controller: BoardController
     let title: String
     let close: () -> Void
+    /// a Live popover is open (the help chooser, the grown-ups' settings)
+    @State private var popoverOpen = false
 
     var body: some View {
         AskPanelContainer(isOpen: $model.askOpen, ask: model.tutor?.ask) {
@@ -117,6 +119,20 @@ private struct BoardRoom: View {
             )
             // the keyboard (typing to Ask) never squeezes the board; Ask's panel keeps its box above it
             .ignoresSafeArea(.keyboard)
+            // the board's chrome (its bars, the dock, Help me, the tutor's cards) grows with the text
+            // size up to the largest standard one: at the accessibility sizes the cards and buttons
+            // would leave the screen. Ask's panel, where the reading is, keeps every size.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .onPreferenceChange(LivePopoverOpenKey.self) { popoverOpen = $0 }
+            // iPadOS passes the tap that closes a popover on to what is under it: while one is
+            // open the board is covered, so closing the help chooser never writes a dot on it
+            .overlay {
+                if popoverOpen {
+                    Color.clear.contentShape(Rectangle()).ignoresSafeArea()
+                        .onTapGesture {}
+                        .accessibilityHidden(true)
+                }
+            }
         }
         .overlay(alignment: .top) { noticeBanner }
         #if DEBUG
@@ -163,7 +179,25 @@ private struct BoardTopTrailing: View {
                 row(words: true)
                 row(words: false)
                 compact
+                // the narrowest windows: two buttons and Ask. The save state while something is
+                // wrong (offline, couldn't save, full); otherwise the grown-ups' settings
+                HStack(spacing: DS.Space.xs) {
+                    if Self.saveNeedsSaying(session.sync.status) || model.tutor == nil {
+                        BoardSaveStatus(session: session, showsWords: false)
+                    } else if let loop = model.tutor?.loop {
+                        GrownUpLiveButton(loop: loop)
+                    }
+                    askButton(words: false)
+                }
             }
+        }
+    }
+
+    /// The save states a kid must see even in the narrowest window (the routine ones can wait).
+    static func saveNeedsSaying(_ status: SyncState.Status) -> Bool {
+        switch status {
+        case .offline, .error, .refused, .localOnly: true
+        case .saved, .dirty, .saving, .merging: false
         }
     }
 
