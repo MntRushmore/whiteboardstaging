@@ -47,6 +47,7 @@ struct BoardAutowriteButton: View {
                     .padding(.horizontal, 10)
                     .frame(minHeight: 32)
                     .background(Capsule().strokeBorder(DS.Color.line))
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("debug.autowrite")

@@ -35,11 +35,10 @@ struct RootView: View {
             BoardLabView()
         } else if ProcessInfo.processInfo.arguments.contains("-debugScreens") {
             DebugScreens().labsButton()
-        } else if onboarding == true {
-            // no Labs over the first run's buttons (Labs › Onboarding has it)
-            app
         } else {
-            app.labsButton()
+            // no Labs over the first run's buttons (Labs › Onboarding has it); one view either way,
+            // so finishing the first run never makes Home (and the board it opens) twice
+            app.labsButton(hidden: onboarding == true)
         }
         #else
         app

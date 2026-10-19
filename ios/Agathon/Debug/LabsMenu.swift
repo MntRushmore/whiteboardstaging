@@ -5,19 +5,21 @@ import SwiftUI
 /// A small "Labs" button over every screen of a Debug build, so the developer screens open on a
 /// real iPad without editing the scheme's launch arguments. Release builds never have it.
 extension View {
-    func labsButton() -> some View {
-        modifier(LabsButton())
+    /// `hidden`: no button for now (the first run), without changing the view's identity.
+    func labsButton(hidden: Bool = false) -> some View {
+        modifier(LabsButton(hidden: hidden))
     }
 }
 
 private struct LabsButton: ViewModifier {
+    var hidden = false
     /// `-liveLab` opens the Live Lab straight away (screenshots and recordings on the simulator); `-lab <name>` any lab.
     @State private var open: Lab? = ProcessInfo.processInfo.arguments.contains("-liveLab") ? .live : Lab.fromLaunch
 
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .bottomTrailing) {
-                Menu {
+                if !hidden { Menu {
                     ForEach(Lab.allCases) { lab in
                         Button(lab.title, systemImage: lab.symbol) { open = lab }
                     }
@@ -28,7 +30,7 @@ private struct LabsButton: ViewModifier {
                         .padding(.vertical, 8)
                         .background(.thinMaterial, in: Capsule())
                 }
-                .padding(16)
+                .padding(16) }
             }
             .fullScreenCover(item: $open) { lab in
                 LabScreen(lab: lab) { open = nil }
