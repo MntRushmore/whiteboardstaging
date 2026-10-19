@@ -142,7 +142,7 @@ final class BoardResilienceUITests: XCTestCase {
             if let api = env["NETCUT_API_URL"] { app.launchEnvironment["AGATHON_API_URL"] = api }
             if let supabase = env["NETCUT_SUPABASE_URL"] { app.launchEnvironment["SUPABASE_URL"] = supabase }
         }
-        app.launchArguments = arguments
+        app.launchArguments = ["-noLabs"] + arguments
         app.launch()
     }
 

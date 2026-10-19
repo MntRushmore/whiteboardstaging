@@ -368,9 +368,9 @@ public struct AskPanelContainer<Board: View>: View {
     }
 
     /// The sheet's height with the keyboard up, covering `overlap` of `height`: the composer and some
-    /// of the thread above the keyboard (62 % of what is left), the board keeping the rest.
+    /// of the thread above the keyboard (half of what is left), the top of the board the other half.
     public static func sheetHeight(_ height: CGFloat, keyboard overlap: CGFloat) -> CGFloat {
-        max(260, (height - overlap) * 0.62) + overlap
+        max(260, (height - overlap) * 0.5) + overlap
     }
 
     public var body: some View {
@@ -394,9 +394,12 @@ public struct AskPanelContainer<Board: View>: View {
                             .frame(width: Self.dockedWidth + DS.Space.m)
                             .transition(.move(edge: .trailing))
                     } else {
-                        let h = overlap > 0
-                            ? Self.sheetHeight(geo.size.height, keyboard: overlap) + geo.safeAreaInsets.bottom
-                            : Self.sheetHeight(geo.size.height + geo.safeAreaInsets.bottom, tall: tall)
+                        // resting (or pulled up tall): the board above keeps this height, keyboard or not
+                        let rest = Self.sheetHeight(geo.size.height + geo.safeAreaInsets.bottom, tall: tall)
+                        // with the keyboard up the sheet rises over the board's foot (the dock and Help
+                        // me, unused while typing) instead of squeezing the board: the work at the top
+                        // of the page stays in sight above the chat
+                        let h = overlap > 0 ? max(rest, Self.sheetHeight(geo.size.height, keyboard: overlap) + geo.safeAreaInsets.bottom) : rest
                         VStack(spacing: 0) {
                             grabber
                             panel
@@ -406,6 +409,9 @@ public struct AskPanelContainer<Board: View>: View {
                         .background(DS.Color.surface)
                         .clipShape(UnevenRoundedRectangle(topLeadingRadius: DS.Radius.card, topTrailingRadius: DS.Radius.card, style: .continuous))
                         .frame(height: max(260, h - drag))
+                        // laid out at its resting height, drawn up over the board when taller
+                        .frame(height: max(260, rest - drag), alignment: .bottom)
+                        .zIndex(1)
                         .transition(.move(edge: .bottom))
                         .ignoresSafeArea(.container, edges: .bottom)
                     }

@@ -1,6 +1,14 @@
 import AgathonDesign
 import SwiftUI
 
+/// True while one of the Live controls' popovers is open (the help chooser, the grown-ups'
+/// settings). iPadOS hands the tap that closes a popover on to what is under it: the screen holding
+/// the board covers the board while this is true (`BoardScreen`), so that tap never writes a dot.
+public struct LivePopoverOpenKey: PreferenceKey {
+    public static let defaultValue = false
+    public static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
 /// The kid's ask, for the board's `helpButton` slot: the big sunny Help me, and beside it how much
 /// help it gives (Hint, Next step, Solve it: the help dial in a kid's words). Off is not a kid's
 /// choice: it stays in the grown-ups' panel, and with help off there is no Help me.
@@ -58,6 +66,7 @@ public struct LiveHelpBar: View {
             }
             .presentationCompactAdaptation(.popover)
         }
+        .preference(key: LivePopoverOpenKey.self, value: choosing)
     }
 }
 

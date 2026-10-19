@@ -79,7 +79,7 @@ for step in $STEPS; do
       ~/whiteboardstaging/sim-run.sh "$SIM" -- bash -c 'run resilience -only-testing:AgathonUITests/BoardResilienceUITests'
     kill $PROXY; rm -f "$OUT/netcut.flag" ;;
   a11y)
-    ~/whiteboardstaging/sim-run.sh "$SIM" -- bash -c 'run a11y -only-testing:AgathonUITests/BoardAccessibilityUITests' ;;
+    ~/whiteboardstaging/sim-run.sh "$SIM" -- bash -c 'run a11y -only-testing:AgathonUITests/BoardAccessibilityUITests -only-testing:AgathonUITests/BoardPopoverUITests' ;;
   design)
     for variant in landscape portrait split ax; do
       case $variant in

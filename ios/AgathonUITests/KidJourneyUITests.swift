@@ -253,7 +253,8 @@ final class KidJourneyUITests: XCTestCase {
         let lines = arguments.contains("-boardAutowrite") ? [] : ["-boardAutowrite", "newpage|2x + 3 = 11|2x = 8|x = 5"]
         // a variant's extra arguments (the design pass: the largest text, a narrow window)
         let extra = (env["JOURNEY_ARGS"] ?? "").split(separator: " ").map(String.init)
-        app.launchArguments = arguments + lines + extra
+        // -noLabs: the screens as a Release build shows them (Debug's Labs button off)
+        app.launchArguments = ["-noLabs"] + arguments + lines + extra
         app.launch()
     }
 

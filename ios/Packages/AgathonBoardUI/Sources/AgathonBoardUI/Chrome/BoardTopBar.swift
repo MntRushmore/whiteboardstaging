@@ -26,6 +26,8 @@ struct BoardTopBar<Trailing: View>: View {
                         .tracking(-0.03 * 24)
                         .foregroundStyle(DS.Color.ink)
                         .lineLimit(1)
+                        // a narrow window (Split View) shrinks the name a little before cutting it
+                        .minimumScaleFactor(0.75)
                     Text(DockCopy.pageOf(controller.screenIndex, controller.screenCount))
                         .font(DS.Font.fixed(.caption, size: 14))
                         .foregroundStyle(DS.Color.inkSecondary)
