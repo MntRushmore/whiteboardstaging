@@ -72,6 +72,9 @@ struct LiveLabView: View {
                 Toggle("Read early", isOn: Binding(get: { lab.loop?.readsEarly ?? true }, set: { lab.loop?.readsEarly = $0; lab.objectWillChange.send() }))
                     .fixedSize()
                 Toggle("iPad hint words", isOn: $lab.onDeviceHints).fixedSize()
+                // Mathpix v3/text on each line's crop too (the server's RECOGNIZE_SECOND_OPINION must be on)
+                Toggle("Second opinion", isOn: $lab.secondOpinion).fixedSize()
+                    .accessibilityIdentifier("lab.secondOpinion")
                 Button("Hint words: iPad vs server") { lab.showHintEval = true }
                 ForEach(LiveLabModel.scenarios, id: \.name) { s in
                     Button(s.name) { Task { await lab.play(s.lines) } }
@@ -140,6 +143,15 @@ final class LiveLabModel: ObservableObject {
             HintWording.debugEnabled = onDeviceHints
             loop?.hintWriter = onDeviceHints ? HintWording.onDevice() : nil
             status = onDeviceHints ? (HintWording.unavailableReason ?? "iPad hint words on") : "iPad hint words off"
+        }
+    }
+    /// a second reader on every line, this iPad's boards and the Lab's (docs/PROBLEM-PAGES.md, "The
+    /// second opinion"); the readers disagreeing is a reason to ask "Is this right?"
+    @Published var secondOpinion = LivePages.secondOpinionDebug {
+        didSet {
+            LivePages.secondOpinionDebug = secondOpinion
+            loop?.pages.secondOpinion = secondOpinion
+            status = secondOpinion ? "second opinion on (the server's RECOGNIZE_SECOND_OPINION too)" : "second opinion off"
         }
     }
     private var paceRng = SplitMix(seed: 7)

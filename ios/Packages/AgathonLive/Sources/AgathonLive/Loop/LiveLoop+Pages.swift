@@ -176,11 +176,13 @@ extension LiveLoop {
         switchScreen()
     }
 
-    /// "Keep it here": the problem stays, judged as its own; the offer does not come back for it.
+    /// "Keep it here": the problem stays, judged as its own; the offer does not come back for it (nor
+    /// when the board is opened again: it is on the line's record).
     public func keepHere() {
         guard let offer = pages.offer else { return }
         pages.keptHere.insert(offer.id)
         pages.offer = nil
+        persistLine(offer.id)
         refreshPage()
     }
 

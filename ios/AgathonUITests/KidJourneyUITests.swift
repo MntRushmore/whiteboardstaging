@@ -3,8 +3,8 @@ import XCTest
 /// The kid's journey through the whole app against the LOCAL stack (docs/IPAD-HANDOFF.md, the
 /// integration's QA): a fresh install → the first run (the grown-up's path, the trial's stand-in) →
 /// the kid's first board in the real board screen → a line written (Debug's autowrite, through the
-/// canvas's own touch path: the simulator has no Pencil) → the tutor's tick → a slip ringed → Help me
-/// → a hint → Ask a question → the tutor writes on the board → back Home with the board's thumbnail
+/// canvas's own touch path: the simulator has no Pencil) → the tutor's tick → a slip ringed with its
+/// hint (checked when done; Help me asks for it when checked as they go) → Ask a question → the tutor writes on the board → back Home with the board's thumbnail
 /// → Progress shows the work. Then the family switch (the grown-up's PIN and back), and out of ink
 /// for the kid (sent to a grown-up) and for the grown-up (the plan, behind the gate).
 ///
@@ -97,9 +97,10 @@ final class KidJourneyUITests: XCTestCase {
         waitFor("debug.live", matching: #"x ?= ?5=ring"#, timeout: 40)
         snap("06-ringed")
 
-        // Help me: a hint beside the slip
-        tap("live.helpMe")
+        // a hint beside the slip: checked when done (the default since 2026-10-19), the check brings
+        // the first slip's hint with its ring; checked as they go, Help me asks for it
         let hint = element("live.hint")
+        if !hint.waitForExistence(timeout: 10) { tap("live.helpMe") }
         XCTAssertTrue(hint.waitForExistence(timeout: 45), "no hint card")
         sleep(1)
         snap("07-hint")

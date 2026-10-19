@@ -452,6 +452,13 @@ export const RecognizeRequestSchema = z.object({
    * client waits). Ignored without a crop; an older server ignores it altogether.
    */
   cropOnly: z.boolean().optional(),
+  /**
+   * With `crop`: a second opinion on the line (docs/PROBLEM-PAGES.md, "The second opinion"). With the
+   * route's `RECOGNIZE_SECOND_OPINION` flag on, Mathpix v3/text reads the crop beside the strokes read
+   * and the answer carries `second` and `agree`. Never the line's reading. Ignored with `cropOnly`, the
+   * flag off, or an older server.
+   */
+  secondOpinion: z.boolean().optional(),
 });
 export type RecognizeRequest = z.infer<typeof RecognizeRequestSchema>;
 export const RecognizeResponseSchema = z.object({
@@ -466,6 +473,13 @@ export const RecognizeResponseSchema = z.object({
    * recognizer's raw output, so the Live debug panel can show what Mathpix actually said.
    */
   debug: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * The second opinion's read of the line's crop (only when asked for, the flag on, and the strokes
+   * read worked). Never `latex`: a reason for the board to ask, not a swap.
+   */
+  second: z.object({ latex: z.string(), confidence: z.number().min(0).max(1).optional() }).optional(),
+  /** `second` is the same maths as `latex` (`sameRead`); present with `second`. */
+  agree: z.boolean().optional(),
 });
 export type RecognizeResponse = z.infer<typeof RecognizeResponseSchema>;
 export const CapabilitiesResponseSchema = z.object({

@@ -268,6 +268,7 @@ public final class LiveLoop: ObservableObject {
         subscription = board.store.observe { [weak self] change in self?.storeChanged(change) }
         screenSeen = board.currentScreenID
         if hintWriter == nil && HintWording.debugEnabled { hintWriter = HintWording.onDevice() }
+        if LivePages.secondOpinionDebug { pages.secondOpinion = true }
         // the learning record: the signed-in student's, when the services know the backend
         if learning.connectsAutomatically, learning.recorder == nil, let backend = (services as? LiveAPIServices)?.backend {
             learning.connect(backend: backend)

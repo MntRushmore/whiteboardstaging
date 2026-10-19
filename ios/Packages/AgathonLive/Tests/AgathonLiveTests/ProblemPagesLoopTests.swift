@@ -42,6 +42,12 @@ struct ProblemPagesLoopTests {
         return h
     }
 
+    /// The tutor's mark on this page's line that reads `latex`.
+    func markHere(_ h: Harness, _ latex: String) -> AgathonBoard.MarkKind? {
+        guard let l = h.board.lineRecords.first(where: { $0.latex == latex && $0.screen == h.board.currentScreenID }) else { return nil }
+        return h.board.marks.first { $0.target == l.id }?.kind
+    }
+
     func line(_ h: Harness, _ latex: String) -> LiveLine? {
         h.loop.lines.values.first { $0.latex == latex }
     }
@@ -112,6 +118,32 @@ struct ProblemPagesLoopTests {
         #expect(h.board.mark(on: "2x = 8") == .tick && h.board.mark(on: "x = 4") == .tick)
         #expect(h.loop.pages.solved)
         #expect(h.loop.pages.action == .next(last: false), "solved, in a set: Next")
+        // the answer's "I read" stays clear of the action corner (Next sits there)
+        let chip = try #require(h.loop.pages.readings.first { $0.id == answer.id })
+        #expect(chip.at.x < ProblemPageLayout.actions.x, "\(chip.at)")
+    }
+
+    @Test func aReadThatLandsAfterTheAnswerSpotsCheckIsCheckedByThePause() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        // a slow network: the reads have not landed when the answer spot's check runs
+        h.services.holdReadsNow()
+        h.idleTimeout = .milliseconds(100)
+        await h.write("2x = 8", at: Vec2(200, 280))
+        await h.write("x = 4", at: Vec2(300, 768))
+        await h.pass(1_600)
+        // the check waits for the reads, then goes without them (the lines are still being read)
+        await h.pass(PageTiming.readWaitMs)
+        #expect(h.board.marks.isEmpty)
+        h.idleTimeout = .seconds(20)
+        h.services.releaseReads()
+        await h.pass(200)
+        #expect(line(h, "x = 4") != nil, "read")
+        // the long pause after the last ink (9 s) checks what the answer spot's check could not
+        await h.pass(1_000)
+        #expect(h.board.mark(on: "2x = 8") == .tick && h.board.mark(on: "x = 4") == .tick, "\(h.board.marks.map(\.kind))")
+        #expect(h.loop.pages.action == .next(last: false))
     }
 
     @Test func anUnfinishedLineIsNeverJudged() async throws {
@@ -308,11 +340,20 @@ struct ProblemPagesLoopTests {
         await h.pass(3_500)
         #expect(h.board.mark(on: "5y + 2 = 17") == nil)
         #expect(h.loop.pages.offer?.id == line(h, "5y + 2 = 17")?.id)
+        // the board opened again before the kid answered: the offer is still there
+        h.board.store.load(h.board.store.document)
+        await h.pass(1_000)
+        #expect(h.loop.pages.offer?.id == line(h, "5y + 2 = 17")?.id, "the offer comes back with the page")
         // "Keep it here": no offer again for it
         h.loop.keepHere()
         await h.pass(500)
         #expect(h.loop.pages.offer == nil)
         #expect(h.board.mark(on: "5y + 2 = 17") == nil, "kept, it heads its own work")
+        // the board opened again: still kept, no offer
+        h.board.store.load(h.board.store.document)
+        await h.pass(1_000)
+        #expect(line(h, "5y + 2 = 17") != nil)
+        #expect(h.loop.pages.offer == nil, "Keep it here is remembered on the line's record")
     }
 
     // MARK: - I read
@@ -363,6 +404,42 @@ struct ProblemPagesLoopTests {
         #expect(rec.meta[PageMeta.fixed]?.stringValue == "2x = 8")
     }
 
+    @Test func theSecondOpinionDisagreeingAsksAndOffersItsRead() async throws {
+        let h = harness(checking: .whenDone)
+        h.loop.pages.secondOpinion = true
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        // the kid wrote 2x = 8; the strokes read 2x = 6, sure of it; the crop's read says 2x = 8
+        await h.write("2x = 8", at: Vec2(200, 280), reads: "2x = 6", second: ("2x = 8", false))
+        await h.pass(1_000)
+        #expect(h.services.recognizeRequests.last?.secondOpinion == true, "the board asked, with the line's crop")
+        #expect(h.services.recognizeRequests.last?.crop != nil)
+        let st = try #require(line(h, "2x = 6"))
+        #expect(h.loop.pages.readings.first { $0.id == st.id }?.state == .asking, "the readers disagree: Is this right?")
+        h.loop.checkPage()
+        await h.pass(500)
+        #expect(h.board.mark(on: "2x = 6") == nil, "a read the readers disagree on is never ringed")
+        // never swapped: the kid picks the second read from Fix what I read
+        #expect(h.loop.lines[st.id]?.latex == "2x = 6")
+        h.loop.openFix(st.id)
+        await h.pass(200)
+        #expect(h.loop.pages.fixing?.alternatives.first == "2x = 8", "\(String(describing: h.loop.pages.fixing))")
+        h.loop.useReading(st.id, latex: "2x = 8")
+        await h.pass(500)
+        #expect(h.board.mark(on: "2x = 8") == .tick)
+    }
+
+    @Test func readersThatAgreeAskNothing() async throws {
+        let h = harness(checking: .whenDone)
+        h.loop.pages.secondOpinion = true
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        await h.write("2x = 8", at: Vec2(200, 280), second: ("2 x=8", true))
+        await h.pass(1_000)
+        let st = try #require(line(h, "2x = 8"))
+        #expect(h.loop.pages.readings.first { $0.id == st.id }?.state == .read)
+    }
+
     @Test func readingsAreQuietAndOffWithTheSwitch() async throws {
         let h = harness(checking: .whenDone)
         await h.start()
@@ -378,6 +455,104 @@ struct ProblemPagesLoopTests {
     }
 
     // MARK: - Next
+
+    /// The journey's pages 2 and 3: a misread fixed, a slip in the answer spot, then on the next page
+    /// the same answer written in the same place (read from the cache): checked by the answer spot.
+    @Test func theSameAnswerOnTheNextPageIsCheckedByTheAnswerSpot() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        let two = h.board.currentScreenID
+        problemPage(h, ["3x - 5 = 10"], index: 2, count: 3)
+        let three = try #require(h.board.insertScreen(after: two, meta: [:], go: false))
+        await h.write("3x = 15", at: Vec2(200, 280), reads: "3 \\times = 15")
+        await h.pass(1_000)
+        await h.write("x = 3", at: Vec2(300, 768))
+        await h.pass(2_500)
+        #expect(h.board.mark(on: "x = 3") == .ring)
+        let misread = try #require(line(h, "3 \\times = 15"))
+        h.loop.openFix(misread.id)
+        await h.pass(200)
+        h.loop.useReading(misread.id, latex: "3x = 15")
+        await h.pass(500)
+        #expect(h.board.mark(on: "3x = 15") == .tick)
+        // page 3, by the dock's arrow (page 2 is not solved)
+        h.board.goToScreen(three)
+        await h.pass(300)
+        problemPage(h, ["5x + 2 = 17"], index: 3, count: 3)
+        await h.pass(300)
+        await h.write("5x = 15", at: Vec2(200, 280))
+        await h.pass(1_000)
+        let reads = h.services.recognizeRequests.count
+        await h.write("x = 3", at: Vec2(300, 768))
+        await h.pass(2_500)
+        #expect(h.services.recognizeRequests.count == reads, "the same ink is read from the cache")
+        #expect(markHere(h, "5x = 15") == .tick && markHere(h, "x = 3") == .tick,
+                "\(h.loop.lines.values.map { "\($0.latex) held \(h.loop.isHeld($0))" }) \(h.board.marks.map(\.kind))")
+        #expect(h.loop.pages.action == .next(last: true))
+    }
+
+    /// The journey's page 3 (a step, then the answer in the answer spot) under many timings, on the fake
+    /// services: reads quick or slow (landing before, during or long after the answer spot's check),
+    /// reading early on or off, the loop's async work cut short between clock steps (so a timer can
+    /// fire while a read is being put on its line), and sometimes a touch left on the board once the
+    /// line has gone to be read (a resting palm: the pen reads as down for good; before that, the loop
+    /// reads nothing, as ever). The answer is always checked: by the answer spot, the long pause, or
+    /// the safety net.
+    @Test func theAnswerIsAlwaysCheckedWhateverTheTimings() async throws {
+        var failures: [String] = []
+        for seed in 1...30 {
+            var rng = SplitMix(seed: UInt64(seed) &* 7_919)
+            let h = harness(checking: .whenDone)
+            h.loop.readsEarly = Bool.random(using: &rng)
+            await h.start()
+            problemPage(h, ["5x + 2 = 17"], index: 3, count: 3)
+            await h.pass(300)
+            h.idleTimeout = .milliseconds(Int.random(in: 2...40, using: &rng))
+            await h.write("5x = 15", at: Vec2(200, 280))
+            await h.pass(Double(Int.random(in: 100...3_000, using: &rng)))
+            let slow = Bool.random(using: &rng)
+            if slow { h.services.holdReadsNow() }
+            await h.write("x = 3", at: Vec2(300, 768))
+            if slow {
+                await h.pass(Double(Int.random(in: 0...10_000, using: &rng)))
+                h.services.releaseReads()
+            }
+            // (past the quiet gate: the loop never reads a line while the pen is down)
+            await h.pass(Double(Int.random(in: 700...2_000, using: &rng)))
+            // a touch left on the board from here on (sometimes)
+            let palm = Int.random(in: 0..<3, using: &rng) == 0
+            if palm {
+                h.board.isPenDown = true
+                h.board.onPen?(true)
+            }
+            h.idleTimeout = .seconds(20)
+            await h.pass(14_000)
+            let step = markHere(h, "5x = 15"), answer = markHere(h, "x = 3")
+            if step != .tick || answer != .tick || h.loop.pages.action != .next(last: true) {
+                failures.append("seed \(seed) (early \(h.loop.readsEarly), slow \(slow), palm \(palm)): 5x = 15 \(String(describing: step)), "
+                                + "x = 3 \(String(describing: answer)), action \(String(describing: h.loop.pages.action)); \(h.loop.checkDiagnosis)")
+            }
+            h.board.isPenDown = false
+        }
+        #expect(failures.isEmpty, "\(failures.count) of 30:\n\(failures.joined(separator: "\n"))")
+    }
+
+    @Test func theSafetyNetChecksWorkHeldByATouchLeftOnTheBoard() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        await h.write("2x = 8", at: Vec2(200, 280))
+        await h.pass(1_000)
+        // a palm comes to rest on the board: the long pause waits for the pen, and waits
+        h.board.isPenDown = true
+        h.board.onPen?(true)
+        await h.pass(10_000)
+        #expect(h.board.marks.isEmpty, "the long pause waits while the pen is down")
+        await h.pass(2_500)
+        #expect(h.board.mark(on: "2x = 8") == .tick, "the safety net checked it")
+        #expect(h.loop.pages.lastSafetyNet?.contains("2x = 8") == true, "and noted why it was held: \(h.loop.pages.lastSafetyNet ?? "nil")")
+        h.board.isPenDown = false
+    }
 
     @Test func nextGoesToTheNextPage() async throws {
         let h = Harness()

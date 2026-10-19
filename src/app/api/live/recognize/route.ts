@@ -8,7 +8,7 @@ import {
   type RecognizeResponse,
   type StrokePayload,
 } from "@/lib/live/contracts";
-import { getCropReader, getLiveModels } from "@/lib/env";
+import { getCropReader, getLiveModels, getSecondOpinion } from "@/lib/env";
 import { json, requireUser } from "@/lib/server/auth";
 import { enforceInk, runCharged } from "@/lib/server/billing";
 import { errorResponse, recordRouteEvent } from "@/lib/server/request";
@@ -18,6 +18,7 @@ import { chatJson, UpstreamError } from "@/lib/server/openrouter";
 import { buildVisionMessages, VisionTranscriptionSchema } from "@/lib/server/prompts/recognizeVision";
 import { liveDebugEnabled, liveLogger, livePreamble, withRequestId } from "@/lib/server/live-route";
 import { classifyKind } from "@/lib/server/live-rules";
+import { sameRead } from "@/lib/live/sameRead";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +43,11 @@ const VISION_MIN_MS = 1_500;
 const CLIENT_GAVE_UP_MS = LIVE_TIMING.recognizeTimeoutMs - 2_000;
 /** Less time than this left for Mathpix v3/text (after the vision reader's own minimum): straight to vision. */
 const TEXT_MIN_MS = 500;
+/**
+ * The second opinion's own deadline. It runs beside the strokes read (≈0.45 s; v3/text ≈0.2 s), so
+ * it seldom adds anything; a slow one holds a good strokes read back at most this long.
+ */
+const SECOND_OPINION_MS = 1_500;
 
 /**
  * The strokes read failed in a way that says Mathpix itself (or the way to it) is in trouble, not
@@ -111,6 +117,16 @@ export async function POST(req: Request) {
 
     // The crop retry (`cropOnly`): Mathpix already read nothing from these very strokes.
     const skipStrokes = Boolean(data.cropOnly && data.crop);
+
+    // The second opinion (RECOGNIZE_SECOND_OPINION=mathpix-text, off by default; docs/PROBLEM-PAGES.md):
+    // when the board asks, Mathpix v3/text reads the line's crop beside the strokes read. Whether
+    // the two agree is the board's best reason to ask the kid "Is this right?" (docs/eval/mpx-supernet.md);
+    // the second read never becomes the line's reading.
+    const secondRead =
+      data.secondOpinion && data.crop && !skipStrokes && getSecondOpinion() === "mathpix-text" && isMathpixConfigured()
+        ? recognizeImage(data.crop, req.signal, { requestId, log, timeoutMs: SECOND_OPINION_MS }).catch(() => null)
+        : null;
+
     if (isMathpixConfigured() && !skipStrokes) {
       const mp = await recognizeStrokes(payload, req.signal, { requestId, log });
       if (mp.ok) {
@@ -123,6 +139,11 @@ export async function POST(req: Request) {
           ms: Date.now() - startedAt,
           ...(liveDebugEnabled() ? { debug: { mathpix: mp.raw } } : {}),
         };
+        const second = secondRead ? await secondRead : null;
+        if (second?.ok && second.latex) {
+          result.second = { latex: second.latex, confidence: Math.min(1, Math.max(0, second.confidence)) };
+          result.agree = sameRead(mp.latex, second.latex);
+        }
       } else {
         mathpixFailure = mp;
         log.warn({ reason: mp.reason, status: mp.status, hadCrop: Boolean(data.crop) }, "mathpix returned nothing; trying vision fallback");
@@ -140,7 +161,8 @@ export async function POST(req: Request) {
       const textMs = Math.min(MATHPIX_TEXT_TIMEOUT_MS, VISION_DEADLINE_MS - (Date.now() - startedAt) - VISION_MIN_MS);
       if (textMs >= TEXT_MIN_MS) {
         stage = "mathpix-text";
-        const mt = await recognizeImage(data.crop, req.signal, { requestId, log, timeoutMs: textMs });
+        // the second opinion already asked v3/text about this crop: its answer, not a second call
+        const mt = (secondRead ? await secondRead : null) ?? (await recognizeImage(data.crop, req.signal, { requestId, log, timeoutMs: textMs }));
         if (mt.ok && mt.latex) {
           result = {
             latex: mt.latex,
@@ -239,7 +261,17 @@ export async function POST(req: Request) {
     }
 
     const body = RecognizeResponseSchema.parse(result);
-    log.info({ provider: body.provider, ms: body.ms, confidence: body.confidence, kind: body.kind, ...(stage === "mathpix-text" ? { cropReader: "mathpix-text" } : {}) }, "recognized");
+    log.info(
+      {
+        provider: body.provider,
+        ms: body.ms,
+        confidence: body.confidence,
+        kind: body.kind,
+        ...(stage === "mathpix-text" ? { cropReader: "mathpix-text" } : {}),
+        ...(body.agree !== undefined ? { agree: body.agree } : {}),
+      },
+      "recognized",
+    );
     return withRequestId(Response.json(body), requestId);
   }, (err) => {
     if (req.signal.aborted) clientGone();
