@@ -63,7 +63,7 @@ extension LiveLoop {
                 let ctx = AnalyzeContext(mode: lineMode, previous: previous, original: original)
                 let key = "\(lineMode.rawValue)|\(judged ?? "quiet:" + st.latex)|\(previous?.math ?? "")|\(previous?.kind ?? "")|\(original?.math ?? "")"
                     + "|\(problem.joined(separator: ";"))|\(above.joined(separator: ";"))|\(slip?.math ?? "")"
-                let a: LineAnalysis
+                var a: LineAnalysis
                 if let hit = analysisCache[key] {
                     a = hit
                 } else if let judged {
@@ -76,6 +76,13 @@ extension LiveLoop {
                 } else {
                     a = LineAnalysis.quiet
                     analysisCache[key] = a
+                }
+                // never ring a correct line: a true relation of plain numbers (`=431` going on from
+                // `767-336` above it too) is at worst quiet, whatever problem the column was judged
+                // against (`ArithmeticTruth`)
+                if a.verdict == "mismatch", ArithmeticTruth.holds(judged ?? st.latex, above: above.last) == true {
+                    a.verdict = "none"
+                    a.carried = nil
                 }
                 above.append(judged ?? st.latex)
                 running = judged.flatMap(ContinuationLine.result(of:))

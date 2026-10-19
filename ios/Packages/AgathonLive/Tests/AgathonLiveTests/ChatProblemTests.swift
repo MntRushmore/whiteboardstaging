@@ -193,6 +193,56 @@ struct ChatProblemTests {
         #expect(h.board.mark(on: "+3=767") == nil)
     }
 
+    /// The owner's iPad, 2026-10-19, the same board: `767-336` then `=431` on the next line (the
+    /// answer) was ringed, and `764+3=767` left unmarked. Under the tutor's problem: every step ticked,
+    /// `=431` the answer.
+    @Test func anAnswerStartedWithEqualsGoesOnFromTheLineAbove() async throws {
+        let h = Harness()
+        await h.start()
+        tutorProblem(h, box: Box(x: 200, y: 100, w: 420, h: 60),
+                     meta: Self.chatMeta(["403 + 364 - 336"], n: 1, cell: Box(x: 180, y: 80, w: 760, h: 620)))
+        h.loop.problemsChanged()
+        await h.write("x = 4", at: Vec2(200, 220), reads: "400+364=764")
+        await h.write("x = 3", at: Vec2(200, 320), reads: "764+3=767")
+        await h.write("2x = 8", at: Vec2(200, 420), reads: "767-336")
+        await h.write("x = 5", at: Vec2(200, 520), reads: "=431")
+        await h.pass(6_000)
+        #expect(h.board.mark(on: "400+364=764") == .tick)
+        #expect(h.board.mark(on: "764+3=767") == .tick, "\(String(describing: h.loop.lines.values.first { $0.latex == "764+3=767" }?.analysis))")
+        #expect(h.board.mark(on: "767-336") != .ring)
+        #expect(h.board.mark(on: "=431") == .tick, "\(String(describing: h.loop.lines.values.first { $0.latex == "=431" }?.analysis))")
+    }
+
+    /// The same working with no problem of the tutor's over it (a column the loop could not put
+    /// under one): judged against the kid's own first line, a true line is still never ringed.
+    @Test func aTrueLineIsNeverRingedWhateverTheColumnIsJudgedAgainst() async throws {
+        let h = Harness()
+        await h.start()
+        await h.write("x = 4", at: Vec2(200, 220), reads: "400+364=764")
+        await h.write("x = 3", at: Vec2(200, 320), reads: "764+3=767")
+        await h.write("2x = 8", at: Vec2(200, 420), reads: "767-336")
+        await h.write("x = 5", at: Vec2(200, 520), reads: "=431")
+        await h.pass(6_000)
+        for line in ["400+364=764", "764+3=767", "767-336", "=431"] {
+            #expect(h.board.mark(on: line) != .ring, "\(line): \(String(describing: h.loop.lines.values.first { $0.latex == line }?.analysis))")
+        }
+    }
+
+    @Test func whatIsTrueByItsOwnNumbers() {
+        #expect(ArithmeticTruth.holds("767-336=431") == true)
+        #expect(ArithmeticTruth.holds("=431", above: "767-336") == true)
+        #expect(ArithmeticTruth.holds("=431", above: "767-336=") == true)
+        #expect(ArithmeticTruth.holds("=432", above: "767-336") == false)
+        #expect(ArithmeticTruth.holds("20+10=30+12=42") == true) // `=` as "then", link by link
+        #expect(ArithmeticTruth.holds("20+10=31+12=43") == false)
+        #expect(ArithmeticTruth.holds("6\\times 4=24") == true)
+        #expect(ArithmeticTruth.holds("24\\div 3=8") == true)
+        #expect(ArithmeticTruth.holds("3=767") == false)
+        #expect(ArithmeticTruth.holds("2x=8") == nil)
+        #expect(ArithmeticTruth.holds("\\frac{3}{4}=0.75") == nil)
+        #expect(ArithmeticTruth.holds("431") == nil)
+    }
+
     @Test func theRunningTotalsShape() {
         #expect(ContinuationLine.parse("+3=767") == .init(op: "+", operand: "3", result: "767"))
         #expect(ContinuationLine.parse("\u{2212}336 = 431") == .init(op: "-", operand: "336", result: "431"))
