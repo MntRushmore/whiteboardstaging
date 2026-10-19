@@ -114,9 +114,15 @@ private struct BoardRoom: View {
                 },
                 overlay: { _ in overlay }
             )
+            // the keyboard (typing to Ask) never squeezes the board; Ask's panel keeps its box above it
+            .ignoresSafeArea(.keyboard)
         }
-        .ignoresSafeArea(.keyboard)
         .overlay(alignment: .top) { noticeBanner }
+        #if DEBUG
+        .overlay(alignment: .bottomLeading) { BoardDebugProbe(model: model) }
+        // under the top bar, in the middle: clear of the bar's buttons and the board's ink
+        .overlay(alignment: .top) { BoardAutowriteButton(model: model).padding(.top, 96) }
+        #endif
     }
 
     @ViewBuilder private var overlay: some View {
@@ -158,9 +164,6 @@ private struct BoardTopTrailing: View {
 
     private func row(words: Bool) -> some View {
         HStack(spacing: DS.Space.xs) {
-            #if DEBUG
-            BoardAutowriteButton(model: model)
-            #endif
             BoardSaveStatus(session: session, showsWords: words)
             if let loop = model.tutor?.loop {
                 LiveStatusView(loop: loop).fixedSize()
@@ -173,9 +176,6 @@ private struct BoardTopTrailing: View {
     /// The narrowest: the save dot, the tutor's status and Ask.
     private var compact: some View {
         HStack(spacing: DS.Space.xs) {
-            #if DEBUG
-            BoardAutowriteButton(model: model)
-            #endif
             BoardSaveStatus(session: session, showsWords: false)
             if let loop = model.tutor?.loop { GrownUpLiveButton(loop: loop) }
             askButton(words: false)
@@ -216,38 +216,49 @@ struct BoardSaveStatus: View {
     var body: some View {
         let look = Self.look(shown, message: session.sync.message)
         HStack(spacing: 8) {
-            Group {
-                if let icon = look.icon {
-                    DSIcon(icon, size: 15)
-                } else {
-                    Circle().frame(width: 9, height: 9)
+            HStack(spacing: 8) {
+                Group {
+                    if let icon = look.icon {
+                        DSIcon(icon, size: 15)
+                    } else {
+                        Circle().frame(width: 9, height: 9)
+                    }
+                }
+                .foregroundStyle(look.tint)
+                .frame(width: 18, height: 18)
+                if showsWords || look.alwaysWords {
+                    Text(look.words)
+                        .dsFont(.button, size: 15)
+                        .foregroundStyle(DS.Color.ink)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
             }
-            .foregroundStyle(look.tint)
-            .frame(width: 18, height: 18)
-            if showsWords || look.alwaysWords {
-                Text(look.words)
-                    .dsFont(.button, size: 15)
-                    .foregroundStyle(DS.Color.ink)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(look.spoken)
+            .accessibilityValue(Self.detail(session))
+            .accessibilityIdentifier("board.status")
             if look.retry {
-                Button("Try now") { Task { await session.retry() } }
-                    .dsFont(.button, size: 15)
-                    .foregroundStyle(DS.Color.ink)
-                    .frame(minHeight: DS.Size.minTarget)
-                    .accessibilityIdentifier("board.retry")
+                Button { Task { await session.retry() } } label: {
+                    Text("Try now")
+                        .dsFont(.button, size: 15)
+                        .foregroundStyle(DS.Color.onInk)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 32)
+                        .background(Capsule().fill(DS.Color.ink))
+                        .frame(minHeight: DS.Size.minTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Try saving now")
+                .accessibilityIdentifier("board.retry")
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.leading, 14)
+        .padding(.trailing, look.retry ? 4 : 14)
         .frame(minHeight: 40)
         .background(Capsule().fill(DS.Color.surface))
         .fixedSize()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(look.spoken)
-        .accessibilityValue(Self.detail(session))
-        .accessibilityIdentifier("board.status")
         .onAppear { shown = session.sync.status }
         .onChange(of: session.sync.status) { _, now in update(now) }
     }

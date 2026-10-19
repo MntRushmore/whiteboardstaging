@@ -34,12 +34,14 @@ enum FirstBoardMaker {
                 left = o.x
             }
             var inkBox: Box?
+            var kidIds: [RecordID] = []
             for pts in (t.answerStrokes ?? t.strokes) where pts.count >= 2 {
                 guard let o = pts.first, o.count >= 2 else { continue }
                 let s = StrokeRecord(screen: first, order: store.nextOrder(on: first), author: .kid, color: .black, width: 6,
                                      pressure: .real, x: o[0], y: o[1],
                                      points: pts.map { InkPoint(x: $0[0] - o[0], y: $0[1] - o[1], pressure: $0.count > 2 ? $0[2] : 0.5) })
                 store.put(.stroke(s), origin: .system)
+                kidIds.append(s.id)
                 for q in pts {
                     let r = Box(x: q[0], y: q[1], w: 0, h: 0)
                     inkBox = inkBox.map { Box(x: min($0.x, r.x), y: min($0.y, r.y), w: max($0.maxX, r.x) - min($0.x, r.x), h: max($0.maxY, r.y) - min($0.y, r.y)) } ?? r
@@ -47,7 +49,7 @@ enum FirstBoardMaker {
             }
             if let box = inkBox {
                 if t.checked {
-                    put([TutorLine(strokes: TutorMarks.strokes(.tick, line: box, seed: 11), latex: "\\checkmark")], on: first, in: store, meta: [:])
+                    carryTick(on: first, in: store, kid: kidIds, box: box, latex: t.latex ?? "")
                 }
                 bottom = max(bottom, box.maxY)
             }
@@ -100,7 +102,28 @@ enum FirstBoardMaker {
         var liveY: Double
     }
 
-    static func put(_ lines: [TutorLine], on screen: RecordID, in store: BoardStore, meta: Meta) {
+    /// The ticked answer carried from the try as the board's tutor keeps its work: the kid's ink as a
+    /// read `line` (no second read when the board opens), the tick as its `mark`, and the tick's
+    /// strokes stamped as the Live loop stamps its own (`lineId`, `mark` key: the web's
+    /// `check:x,y,w,h` in quarters), so the loop finds the tick already on the page and never writes a
+    /// second one.
+    static func carryTick(on screen: RecordID, in store: BoardStore, kid: [RecordID], box: Box, latex: String) {
+        let lineId = RecordID.make(.line)
+        let key = String(lineId.key)
+        func r(_ n: Double) -> Int { Int(floor(n / 4 + 0.5)) }
+        let markKey = "check:\(r(box.x)),\(r(box.y)),\(r(box.w)),\(r(box.h))"
+        let ticks = put([TutorLine(strokes: TutorMarks.strokes(.tick, line: box, seed: 11), latex: "\\checkmark")], on: screen, in: store,
+                        meta: ["live": .bool(true), "source": .string("ai"), "lineId": .string(key), "mark": .string(markKey)])
+        guard !latex.isEmpty, !kid.isEmpty else { return }
+        store.put(.line(LineRecord(id: lineId, screen: screen, strokes: kid, latex: latex, verdict: .ok,
+                                   meta: ["confidence": .number(1), "provider": .string("mathpix")])), origin: .system)
+        store.put(.mark(MarkRecord(screen: screen, kind: .tick, target: lineId, strokes: ticks,
+                                   meta: ["mark": .string(markKey), "lineId": .string(key)])), origin: .system)
+    }
+
+    @discardableResult
+    static func put(_ lines: [TutorLine], on screen: RecordID, in store: BoardStore, meta: Meta) -> [RecordID] {
+        var ids: [RecordID] = []
         for line in lines {
             for s in line.strokes where s.points.count >= 2 {
                 let o = s.points[0].p
@@ -111,8 +134,10 @@ enum FirstBoardMaker {
                                      points: s.points.map { InkPoint(x: $0.p.x - o.x, y: $0.p.y - o.y, pressure: $0.pressure) },
                                      meta: m)
                 store.put(.stroke(r), origin: .system)
+                ids.append(r.id)
             }
         }
+        return ids
     }
 }
 
@@ -127,26 +152,35 @@ struct FirstBoardScreen: View {
     @State private var controller: BoardController?
     @State private var live: String?
     @State private var shapes = true
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let c = model.copy
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
-                if shapes {
-                    TheShapes(.hello).frame(width: 84).transition(.scale(scale: 0.6).combined(with: .opacity))
-                        .accessibilityHidden(true)
+            // the largest text sizes: the welcome wraps over the full width and Let's go sits under it
+            // (side by side they would not fit, and Let's go was pushed off: the onboarding's AX failure)
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 12) {
+                        welcome(c)
+                        HStack {
+                            Spacer()
+                            letsGo(c)
+                        }
+                    }
+                } else {
+                    HStack(spacing: 14) {
+                        if shapes {
+                            TheShapes(.hello).frame(width: 84).transition(.scale(scale: 0.6).combined(with: .opacity))
+                                .accessibilityHidden(true)
+                        }
+                        welcome(c)
+                        Spacer(minLength: 12)
+                        letsGo(c)
+                    }
+                    .frame(minHeight: 76)
                 }
-                Text(c.welcome)
-                    .dsFont(.headline, size: 26)
-                    .foregroundStyle(DS.Color.onInk)
-                    .padding(.horizontal, 22).padding(.vertical, 14)
-                    .background(BubbleShape(tail: .leading).fill(DS.Color.tutorInk))
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                PillButton(c.letsGo, icon: .forward, kind: .sunny, size: .large) { finish() }
-                    .accessibilityIdentifier("onboarding.firstBoard.go")
             }
-            .frame(height: 76)
             .reveal(0)
             ZStack {
                 if let controller {
@@ -178,6 +212,22 @@ struct FirstBoardScreen: View {
             try? await Task.sleep(for: .seconds(2))
             withAnimation(DS.Motion.fade) { shapes = false }
         }
+    }
+
+    private func welcome(_ c: OnboardingCopy) -> some View {
+        Text(c.welcome)
+            .dsFont(.headline, size: 26)
+            .foregroundStyle(DS.Color.onInk)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 22).padding(.vertical, 14)
+            .background(BubbleShape(tail: .leading).fill(DS.Color.tutorInk))
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func letsGo(_ c: OnboardingCopy) -> some View {
+        PillButton(c.letsGo, icon: .forward, kind: .sunny, size: .large) { finish() }
+            .fixedSize()
+            .accessibilityIdentifier("onboarding.firstBoard.go")
     }
 
     private func writeLive(_ w: TutorWriter) {

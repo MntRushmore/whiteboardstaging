@@ -12,8 +12,15 @@ import SwiftUI
 /// `newpage` as a line adds a page and goes to it. Never in a Release build.
 struct BoardAutowriteButton: View {
     @ObservedObject var model: BoardScreenModel
-    @State private var next = 0
-    @State private var busy = false
+    @ObservedObject private var progress = BoardAutowriter.progress
+    private var next: Int {
+        get { progress.next }
+        nonmutating set { progress.next = newValue }
+    }
+    private var busy: Bool {
+        get { progress.busy }
+        nonmutating set { progress.busy = newValue }
+    }
 
     static var lines: [String]? {
         let args = ProcessInfo.processInfo.arguments
@@ -50,6 +57,14 @@ struct BoardAutowriteButton: View {
 
 @MainActor
 enum BoardAutowriter {
+    /// Where the script is (one per launch: the button may be laid out again, a board reopened).
+    final class Progress: ObservableObject {
+        @Published var next = 0
+        @Published var busy = false
+    }
+
+    static let progress = Progress()
+
     /// latex → strokes as [x0, y0, x1, y1, …] (the clean hand)
     static let hand: [String: [[Double]]] = {
         guard let data = try? Data(contentsOf: LiveLabModel.fixtureURL),
@@ -106,6 +121,44 @@ enum BoardAutowriter {
             for k in 1...n { out.append(a.lerp(b, Double(k) / Double(n))) }
         }
         return out
+    }
+}
+#endif
+
+#if DEBUG
+/// Debug only: what the tutor made of the board, as one line VoiceOver could read, for the UI tests
+/// (marks are ink on the canvas, which XCUITest cannot see). Refreshed twice a second.
+/// `debug.live` = "lines: 2x + 3 = 11=tick; 2x = 8=tick; x = 5=ring | hints 1 | chat 14 | problems 2 | save saved v4"
+struct BoardDebugProbe: View {
+    @ObservedObject var model: BoardScreenModel
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+            Color.clear
+                .frame(width: 2, height: 2)
+                .accessibilityElement()
+                .accessibilityLabel(summary)
+                .accessibilityIdentifier("debug.live")
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var summary: String {
+        guard let tutor = model.tutor else { return "no tutor" }
+        let store = tutor.liveBoard.controller.store
+        let screen = tutor.liveBoard.controller.currentScreenID
+        var marks: [RecordID: String] = [:]
+        var problems = 0
+        for record in store.records.values {
+            if case .mark(let m) = record, m.screen == screen, let target = m.target { marks[target] = m.kind.rawValue }
+            if case .problem(let p) = record, p.screen == screen { problems += 1 }
+        }
+        let lines = tutor.loop.lines.values.sorted { ($0.column, $0.row) < ($1.column, $1.row) }.map { line in
+            "\(line.latex.isEmpty ? "…" : line.latex)=\(marks[RecordID("line:\(line.id)")] ?? "none")"
+        }
+        let chat = store.drawables(on: screen).filter { $0.meta["lineId"]?.stringValue == "chat" }.count
+        let save = model.phase.session.map { BoardSaveStatus.detail($0) } ?? "-"
+        return "lines: \(lines.joined(separator: "; ")) | hints \(tutor.loop.hints.count) | chat \(chat) | problems \(problems) | activity \(tutor.loop.activity) | save \(save)"
     }
 }
 #endif

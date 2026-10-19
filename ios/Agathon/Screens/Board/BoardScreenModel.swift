@@ -66,7 +66,12 @@ final class BoardScreenModel: ObservableObject {
         self.backend = backend
         audience = request.audience
         await openSession()
-        if audience == nil { audience = await Self.readAudience(backend) }
+        if audience == nil {
+            let read = await Self.readAudience(backend)
+            audience = read
+            // the tutor may have joined first: Ask's first chips follow the grade
+            if tutor?.ask.session.grade == nil { tutor?.ask.session.grade = read.grade }
+        }
     }
 
     /// Opens (or opens again, after a failure) the board's session.

@@ -35,6 +35,9 @@ struct RootView: View {
             BoardLabView()
         } else if ProcessInfo.processInfo.arguments.contains("-debugScreens") {
             DebugScreens().labsButton()
+        } else if onboarding == true {
+            // no Labs over the first run's buttons (Labs › Onboarding has it)
+            app
         } else {
             app.labsButton()
         }
@@ -49,7 +52,6 @@ struct RootView: View {
                 SplashView()
             } else if onboarding == true {
                 OnboardingFlow(trial: trialOffering, gate: gate) { outcome in finish(outcome) }
-                    .accessibilityIdentifier("onboarding")
             } else if backend.auth.phase == .signedIn {
                 // A new profile (sign-in, a family switch) starts Home over: nothing read as the last
                 // one carries over.

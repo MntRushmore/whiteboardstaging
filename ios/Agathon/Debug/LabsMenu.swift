@@ -92,7 +92,7 @@ private struct LabScreen: View {
             case .ask: AskLabView()
             case .debugScreens: DebugScreens()
             case .billing: BillingLabView()
-            case .onboarding: OnboardingLab(close: close)
+            case .onboarding: OnboardingLab(gate: AppParentalGate(), close: close)
             }
             if lab != .onboarding { Button(action: close) {
                 Label("Close", systemImage: "xmark")

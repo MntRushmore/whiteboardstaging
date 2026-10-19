@@ -12,19 +12,22 @@ import SwiftUI
 ///  - `-onboardingTrial started|pending|cancelled` what the stand-in trial answers;
 ///  - `-onboardingMute` no sound.
 public struct OnboardingLab: View {
+    let gate: any ParentalGate
     let close: () -> Void
     @Environment(AgathonBackend.self) private var backend
     @State private var ready = false
     @MainActor private static var didReset = false
 
-    public init(close: @escaping () -> Void) {
+    /// `gate`: the app passes its own (the one gate it uses everywhere).
+    public init(gate: any ParentalGate = BirthYearGate(), close: @escaping () -> Void) {
+        self.gate = gate
         self.close = close
     }
 
     public var body: some View {
         Group {
             if ready {
-                OnboardingFlow(trial: StubTrialOffering(outcome: Self.trialOutcome)) { _ in close() }
+                OnboardingFlow(trial: StubTrialOffering(outcome: Self.trialOutcome), gate: gate) { _ in close() }
             } else {
                 DS.Color.ground.ignoresSafeArea()
             }

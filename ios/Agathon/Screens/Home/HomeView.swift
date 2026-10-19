@@ -103,12 +103,20 @@ struct HomeView: View {
                 area = AreaRequest(page: .account)
             }
         }
-        .fullScreenCover(item: $openBoard, onDismiss: { Task { await model.refreshQuietly(backend) } }) { request in
+        .fullScreenCover(item: $openBoard, onDismiss: {
+            Task {
+                await model.refreshQuietly(backend)
+                // the board's last save (and its thumbnail) lands a moment after it closes
+                try? await Task.sleep(for: .seconds(2))
+                await model.refreshQuietly(backend)
+            }
+        }) { request in
             opening.makeView(request)
                 .environment(backend)
                 .environment(planStore)
                 #if DEBUG
                 .labsButton()
+                .debugWindow()
                 #endif
         }
         .fullScreenCover(isPresented: $showsPlan, onDismiss: { Task { await model.load(backend) } }) {
@@ -144,6 +152,7 @@ struct HomeView: View {
             .environment(planStore)
             #if DEBUG
             .labsButton()
+            .debugWindow()
             #endif
         }
     }

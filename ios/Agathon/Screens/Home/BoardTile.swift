@@ -5,6 +5,15 @@ import SwiftUI
 /// A board on Home: its thumbnail, its name and when it was edited, on a paper tile (the Blocks
 /// Home's `.a-tile`). Tap to open; the round "more" button (or a long press) renames or deletes.
 struct BoardTile: View {
+    /// Debug builds tell the UI tests whether the tile shows the board's thumbnail.
+    static func debugValue(_ thumbnail: UIImage?) -> String {
+        #if DEBUG
+        thumbnail == nil ? "" : "thumbnail"
+        #else
+        ""
+        #endif
+    }
+
     let board: BoardSummary
     let thumbnail: UIImage?
     let open: () -> Void
@@ -38,6 +47,7 @@ struct BoardTile: View {
         }
         .buttonStyle(TileStyle())
         .accessibilityLabel("\(board.title). \(HomeFormat.edited(board.updatedAt))")
+        .accessibilityValue(Self.debugValue(thumbnail))
         .accessibilityHint("Opens the board")
         .accessibilityAction(named: "Rename", rename)
         .accessibilityAction(named: "Delete", delete)

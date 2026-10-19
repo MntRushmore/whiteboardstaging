@@ -18,19 +18,22 @@ struct GateScreen: View {
 
     var body: some View {
         let c = model.copy
+        // centred when it fits; scrolls at the largest text sizes
+        ScrollView {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             VStack(spacing: 20) {
                 SheetHeader(c.gateHeader, onClose: { model.go(.handBack) })
+                // a gate with its own words to type: the words are the big thing, the question a lead-in
                 Text(model.gate.question ?? c.gateQuestion)
-                    .dsFont(.title)
-                    .foregroundStyle(DS.Color.ink)
+                    .dsFont(prompt == nil ? .title : .body)
+                    .foregroundStyle(prompt == nil ? DS.Color.ink : DS.Color.inkSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                 if let words = prompt {
                     Text(words)
-                        .dsFont(.headline, size: 30)
+                        .dsFont(.title)
                         .foregroundStyle(DS.Color.ink)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -42,7 +45,9 @@ struct GateScreen: View {
                 Text(note ?? " ")
                     .dsFont(.callout)
                     .foregroundStyle(DS.Color.ink)
-                    .frame(height: 24)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(minHeight: 24)
                 PinPad(entry: $entry, length: model.gate.length) { answer in submit(answer) }
                     .disabled(paused != nil)
                     .opacity(paused != nil ? 0.4 : 1)
@@ -53,6 +58,11 @@ struct GateScreen: View {
             .reveal(0)
             Spacer(minLength: 0)
         }
+        .padding(.vertical, 16)
+        .frame(width: layout.size.width)
+        .frame(minHeight: layout.size.height)
+        }
+        .scrollBounceBehavior(.basedOnSize)
         .frame(width: layout.size.width, height: layout.size.height)
         .onAppear { prompt = model.gate.prompt }
         .task(id: paused) {
