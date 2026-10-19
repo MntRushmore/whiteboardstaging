@@ -111,6 +111,8 @@ public enum LiveCopy {
         public static let notYet = "Not yet"
         public static let backToBoards = "Back to my boards"
         public static let moreLikeThese = "More like these"
+        /// what "More like these" asks Ask for (it writes them on pages of their own)
+        public static let moreLikeTheseAsk = "Give me 3 more problems like these."
         public static func stickerLabel(_ n: Int, _ outcome: String) -> String { "Problem \(n): \(outcome)" }
         public static let onYourOwn = "done on your own"
         public static let withAHint = "done with a hint"

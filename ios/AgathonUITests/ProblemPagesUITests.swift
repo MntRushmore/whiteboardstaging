@@ -89,6 +89,8 @@ final class ProblemPagesUITests: XCTestCase {
         waitFor("board.title", matching: "All done", timeout: 10)
         sleep(2)
         snap("L5-all-done")
+        XCTAssertFalse(element("live.helpMe").exists, "nothing to help with on All done")
+        XCTAssertTrue(app.buttons["Back to my boards"].firstMatch.exists, "All done has its way home")
         // back to page 1: its ticks are still there, on its own page
         app.buttons["Page before"].firstMatch.tap()
         app.buttons["Page before"].firstMatch.tap()

@@ -22,12 +22,12 @@ public struct LiveHelpBar: View {
 
     public var body: some View {
         if loop.settings.enabled && loop.settings.mode != .off {
-            HStack(spacing: DS.Space.xs) {
+            OnProblemPages(pages: loop.pages) { HStack(spacing: DS.Space.xs) {
                 HelpMeButton(LiveCopy.Help.helpMe) { loop.helpMe() }
                     .accessibilityHint(hint)
                     .accessibilityIdentifier("live.helpMe")
                 chooser
-            }
+            } }
         }
     }
 
@@ -67,6 +67,16 @@ public struct LiveHelpBar: View {
             .presentationCompactAdaptation(.popover)
         }
         .preference(key: LivePopoverOpenKey.self, value: choosing)
+    }
+}
+
+/// Shows its content except on a set's All done page (docs/PROBLEM-PAGES.md: nothing there to help with).
+struct OnProblemPages<Content: View>: View {
+    @ObservedObject var pages: LivePages
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if pages.page?.kind != .done { content() }
     }
 }
 
