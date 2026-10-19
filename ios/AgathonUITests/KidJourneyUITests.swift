@@ -91,10 +91,10 @@ final class KidJourneyUITests: XCTestCase {
         write("newpage")
         write("2x + 3 = 11")
         write("2x = 8")
-        waitFor("debug.live", label: "2x = 8=tick", timeout: 40)
+        waitFor("debug.live", matching: #"2 ?x ?= ?8=tick"#, timeout: 40)
         snap("05-ticked")
         write("x = 5")
-        waitFor("debug.live", label: "x = 5=ring", timeout: 40)
+        waitFor("debug.live", matching: #"x ?= ?5=ring"#, timeout: 40)
         snap("06-ringed")
 
         // Help me: a hint beside the slip

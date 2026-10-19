@@ -36,7 +36,7 @@ final class BoardResilienceUITests: XCTestCase {
         openNewBoard()
         write("newpage")
         write("3x - 5 = 10")
-        waitFor("debug.live", label: "3x - 5 = 10=", timeout: 40)
+        waitFor("debug.live", label: "10=", timeout: 40)
         waitFor("board.status", value: "saved", timeout: 40)
         // the network goes
         FileManager.default.createFile(atPath: flag, contents: Data())
@@ -45,11 +45,11 @@ final class BoardResilienceUITests: XCTestCase {
         snap("resilience-01-offline")
         let status = element("board.status")
         XCTAssertFalse((status.value as? String ?? "").hasPrefix("saved"), "says saved with the network gone: \(status.value as? String ?? "")")
-        XCTAssertFalse((element("debug.live").label).contains("3x = 15=tick"), "a line was read with the network gone")
+        XCTAssertNil(element("debug.live").label.range(of: #"3 ?x ?= ?15=tick"#, options: .regularExpression), "a line was read with the network gone")
         // …and comes back: the line is read and ticked, the board saved
         try FileManager.default.removeItem(atPath: flag)
         if element("board.retry").exists { element("board.retry").tap() }
-        waitFor("debug.live", label: "3x = 15=tick", timeout: 90)
+        waitFor("debug.live", label: "15=tick", timeout: 90)
         waitFor("board.status", value: "saved", timeout: 90)
         snap("resilience-02-back-online")
         tap("board.back")

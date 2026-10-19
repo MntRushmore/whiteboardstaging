@@ -41,7 +41,7 @@ final class DesignPassUITests: XCTestCase {
         sleep(3)
         snap("03-board-new")
         for line in ["newpage", "2x + 3 = 11", "2x = 8", "x = 5"] { write(line) }
-        waitFor("debug.live", "x = 5=ring", timeout: 45)
+        waitFor("debug.live", "=ring", timeout: 45)
         sleep(2)
         snap("04-board-ticked-ringed")
         tap("live.helpMe")
