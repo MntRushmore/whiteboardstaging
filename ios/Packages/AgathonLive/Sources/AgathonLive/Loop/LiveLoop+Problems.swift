@@ -44,16 +44,28 @@ extension LiveLoop {
     static func strokeProblems(on screen: RecordID, in store: BoardStore) -> [StrokeProblem] {
         var byKey: [String: StrokeProblem] = [:]
         for record in store.drawables(on: screen) {
-            guard case .stroke(let s) = record, s.author == .tutor, !s.points.isEmpty else { continue }
+            // the tutor's hand, or its problems typeset (the grown-ups switched the hand off): both
+            // head the columns under them
+            let meta: Meta
+            let b: BrainRect
+            switch record {
+            case .stroke(let s) where s.author == .tutor && !s.points.isEmpty:
+                meta = s.meta
+                b = StrokeBounds.of(s)
+            case .math(let m) where m.author == .tutor && m.meta["chatProblem"] != nil && m.w > 0 && m.h > 0:
+                meta = m.meta
+                b = BrainRect(x: m.x, y: m.y, w: m.w, h: m.h)
+            default:
+                continue
+            }
             let found: (key: String, lines: [String], origin: String, id: RecordID?)?
-            let b = StrokeBounds.of(s)
-            if let cell = Self.chatProblem(s.meta, bounds: b) {
+            if let cell = Self.chatProblem(meta, bounds: b) {
                 // the learning record's own key for a chat problem (its hand block); without a block,
                 // the screen keeps two alike problems on two screens apart
-                let block = s.meta.string(HandPace.blockMeta)
+                let block = meta.string(HandPace.blockMeta)
                 let id = RecordID("problem:\(block.isEmpty ? "\(screen.key)-\(cell.key)" : cell.key)")
                 found = ("chat:\(cell.key)", cell.lines, "chat", id)
-            } else if s.meta["problem"]?.boolValue == true, let latex = s.meta[HandPace.lineMeta]?.stringValue, !latex.isEmpty {
+            } else if meta["problem"]?.boolValue == true, let latex = meta[HandPace.lineMeta]?.stringValue, !latex.isEmpty {
                 found = ("first:\(latex)", [latex], "practice", nil)
             } else {
                 found = nil

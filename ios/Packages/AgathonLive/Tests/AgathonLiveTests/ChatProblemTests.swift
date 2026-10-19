@@ -228,6 +228,21 @@ struct ChatProblemTests {
         }
     }
 
+    /// The tutor's hand switched off: the problems are typeset, and still head their columns.
+    @Test func aTypesetProblemHeadsItsColumnToo() async throws {
+        let h = Harness()
+        await h.start()
+        let screen = h.board.currentScreenID
+        h.board.store.put(.math(MathRecord(screen: screen, order: h.board.store.nextOrder(on: screen), author: .tutor, role: .answer,
+                                           latex: "18 + 15 - 19", x: 200, y: 100, w: 320, h: 60, fontSize: 24,
+                                           meta: Self.chatMeta(["18 + 15 - 19"], n: 1, cell: Box(x: 180, y: 80, w: 600, h: 300)))), origin: .tutor)
+        h.loop.problemsChanged()
+        #expect(h.board.problems.contains { $0.latex == "18 + 15 - 19" })
+        await h.write("x = 4", at: Vec2(200, 220), reads: "14")
+        await h.pass(4_000)
+        #expect(h.board.mark(on: "14") == .tick, "\(String(describing: h.loop.lines.values.first { $0.latex == "14" }?.analysis))")
+    }
+
     @Test func whatIsTrueByItsOwnNumbers() {
         #expect(ArithmeticTruth.holds("767-336=431") == true)
         #expect(ArithmeticTruth.holds("=431", above: "767-336") == true)
