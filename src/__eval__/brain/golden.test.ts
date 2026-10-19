@@ -19,11 +19,25 @@ import { parityCases } from "./cases";
 const GOLDEN = resolve(__dirname, "../../../ios/Packages/AgathonBrain/Tests/AgathonBrainTests/Resources/golden.ndjson");
 const WRITE = process.env.BRAIN_GOLDEN_WRITE === "1";
 
-/** One case per line: `args` and `result` are the exact JSON strings that cross the boundary. */
+/**
+ * An error envelope with its `stack` emptied (the code and the message kept). node's stack names
+ * this checkout's absolute paths and `src/lib/brain/index.ts`'s line numbers, so it would differ in
+ * every worktree and on CI; the Swift parity test ignores it (JavaScriptCore's stack is its own).
+ */
+function withoutStack(envelope: string): string {
+  if (!envelope.startsWith('{"ok":false')) return envelope;
+  const e = JSON.parse(envelope) as { ok: false; error: { code: string; message: string; stack: string } };
+  return encode({ ...e, error: { ...e.error, stack: "" } });
+}
+
+/**
+ * One case per line: `args` and `result` are the exact JSON strings that cross the boundary (an
+ * error's `stack` aside, see `withoutStack`).
+ */
 export function goldenLines(): string[] {
   return parityCases().map((c) => {
     const args = encode(c.args);
-    return JSON.stringify({ name: c.name, method: c.method, args, result: call(c.method, args) });
+    return JSON.stringify({ name: c.name, method: c.method, args, result: withoutStack(call(c.method, args)) });
   });
 }
 
