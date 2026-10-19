@@ -156,7 +156,14 @@ extension LiveLoop {
 
     func startEarlyRead(_ payload: RecognizerPayload, line: InkLine, seq: Int, trigger: EarlyTrigger) {
         let hash = payload.hash
-        let request = RecognizeRequest(boardId: boardId, lineId: line.id, payload: payload)
+        var request = RecognizeRequest(boardId: boardId, lineId: line.id, payload: payload)
+        // the second opinion (docs/PROBLEM-PAGES.md) rides on the early read: it is the line's read
+        // whenever the gate's read finds the same ink
+        if pages.secondOpinion,
+           let crop = InkCrop.dataURL(strokes: line.strokeIds.compactMap { board.store.stroke(RecordID($0)) }, bounds: line.bounds) {
+            request.crop = crop
+            request.secondOpinion = true
+        }
         let services = self.services
         readsInFlight += 1
         count("recognize")

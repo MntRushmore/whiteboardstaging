@@ -40,10 +40,11 @@ final class ProblemPagesUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
     }
 
-    /// The pages as they ship first (the owner, 2026-10-19: "1 question per screen"): a 3-problem set is
-    /// three pages and All done; "Problem n of 3"; each page's lines judged against its own problem
-    /// (`3x = 15` is right under `3x - 5 = 10`, and would be a slip under page 1's `2x + 3 = 11`); Next
-    /// once solved; All done at the end. About 6 recognize calls.
+    /// The pages with the grown-ups' switch back to "As they go" (the owner, 2026-10-19: "1 question per
+    /// screen"; check when done is the default, and a grown-up can switch a board back): a 3-problem set
+    /// is three pages and All done; "Problem n of 3"; each line ticked as soon as it is read; each page's
+    /// lines judged against its own problem (`3x = 15` is right under `3x - 5 = 10`, and would be a slip
+    /// under page 1's `2x + 3 = 11`); Next once solved; All done at the end. About 6 recognize calls.
     func testAThreeProblemSetIsAPageAProblem() throws {
         app = XCUIApplication()
         for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY"] { app.launchEnvironment[key] = env[key] }
@@ -58,6 +59,17 @@ final class ProblemPagesUITests: XCTestCase {
         XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 40))
         waitFor("debug.live", matching: #"page 1/3 .*screens 4"#, timeout: 90)
         waitFor("board.title", matching: "Problem 1 of 3", timeout: 10)
+        // the grown-ups' switch: this board checks as they go
+        waitFor("debug.live", matching: "checking whenDone", timeout: 10)
+        tap("live.grownUps")
+        let asTheyGo = app.buttons["As they go"].firstMatch
+        XCTAssertTrue(asTheyGo.waitForExistence(timeout: 10), "no As they go in the grown-ups' settings")
+        asTheyGo.tap()
+        waitFor("debug.live", matching: "checking asIGo", timeout: 10)
+        let close = app.popovers.buttons["Close"].firstMatch
+        (close.exists ? close : app.buttons["Close"].firstMatch).tap()
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: asTheyGo)
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 10), .completed, "the grown-ups' settings stayed open")
         snap("L1-page-1")
         // page 1: a step and the answer, ticked as they go; solved: Next
         write("2x = 8")
@@ -99,11 +111,9 @@ final class ProblemPagesUITests: XCTestCase {
         waitFor("debug.live", matching: #"2 ?x ?= ?8=tick.*x ?= ?4=tick"#, timeout: 20)
     }
 
-    /// Check when done, the answer spot, "I read" and tap to fix: the second part
-    /// (`ProblemPagesRollout.secondPart`, off in the app; `-pagesSecondPart` turns it on for this run).
+    /// Check when done (the default), the answer spot, "I read" and tap to fix: problem pages' second
+    /// part (`ProblemPagesRollout.secondPart`). About 6 recognize calls and one check (the hint).
     func testAThreeProblemSetChecksWhenDone() throws {
-        // the second part is still being finished (its fix sheet's readings): run on purpose only
-        try XCTSkipUnless(env["PAGES_SECOND_PART"] == "1", "problem pages' second part: TEST_RUNNER_PAGES_SECOND_PART=1")
         app = XCUIApplication()
         for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY"] { app.launchEnvironment[key] = env[key] }
         app.launchArguments += [
@@ -112,7 +122,6 @@ final class ProblemPagesUITests: XCTestCase {
             "-practiceProblems", "2x + 3 = 11|3x - 5 = 10|5x + 2 = 17",
             "-boardAutowrite", "2x = 8|answer:x = 4|3x = 15|answer:x = 3|5x = 15|answer:x = 3",
             "-liveMisread", "3x = 15=>3 \\times = 15",
-            "-pagesSecondPart",
         ]
         app.launch()
         signInIfNeeded(email: env["AGATHON_TEST_EMAIL"] ?? "qa-student@example.com", password: env["AGATHON_TEST_PASSWORD"] ?? "password123")
@@ -126,7 +135,8 @@ final class ProblemPagesUITests: XCTestCase {
         // 1 · an intermediate step: read, never marked while the kid works
         write("2x = 8")
         waitFor("debug.live", matching: #"read 2 ?x ?= ?8=read"#, timeout: 30)
-        sleep(3)
+        // well inside the 9 s pause that would check the page
+        sleep(2)
         waitFor("debug.live", matching: #"2 ?x ?= ?8=none.*action check"#, timeout: 5)
         snap("02-working-quiet")
         // the answer, in the answer spot: the page is checked
@@ -191,13 +201,19 @@ final class ProblemPagesUITests: XCTestCase {
         e.tap()
     }
 
-    /// The autowrite's next line, written and finished.
+    /// The autowrite's next line, written and finished. A tap that did not start it fails here (once a
+    /// missed tap went through to the board as a finger's dot, read as a line of its own).
     private func write(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
         let button = element("debug.autowrite")
         XCTAssertTrue(button.waitForExistence(timeout: 30), "no autowrite button", file: file, line: line)
         XCTAssertTrue(button.label.contains(expected), "the autowrite's next line is \(button.label), not \(expected)", file: file, line: line)
+        let end = Date().addingTimeInterval(10)
+        while !button.isHittable && Date() < end { usleep(100_000) }
+        let before = button.value as? String
         button.tap()
-        sleep(1)
+        let started = NSPredicate(format: "value == 'busy' OR value != %@", before ?? "")
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: started, object: button)], timeout: 5), .completed,
+                       "the tap on the autowrite did not start \(expected)", file: file, line: line)
         let idle = NSPredicate(format: "value != 'busy'")
         _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: idle, object: button)], timeout: 30)
         sleep(1)

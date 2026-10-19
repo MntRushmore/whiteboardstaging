@@ -46,11 +46,12 @@ extension LiveLoop {
     }
 
     /// Where a line's chip goes (page units: its left edge and middle): in a problem page's margin lane,
-    /// or after the line's mark when the line runs long; elsewhere just after the mark.
+    /// or after the line's mark when the line runs long; elsewhere just after the mark. In the answer
+    /// spot, just after the mark too: the lane's end of that row is the action corner (Check, Next).
     func chipPoint(_ st: LiveLine) -> AgathonBrain.Point {
         let end = max(st.bounds.maxX, LiveMarks.markRect(.check, st.bounds).maxX) + 16
         var x = end
-        if let page = board.currentProblemPage, page.kind == .problem {
+        if let page = board.currentProblemPage, page.kind == .problem, !inAnswerSpot(st.bounds) {
             let lane = ProblemPageLayout.place(Vec2(ProblemPageLayout.laneX, 0), on: board.screenRect.box).x
             x = max(end, lane)
         }
@@ -193,6 +194,7 @@ extension LiveLoop {
             meta[PageMeta.second] = .string(s.latex)
             meta[PageMeta.agree] = .bool(s.agree)
         }
+        if pages.keptHere.contains(id) { meta[PageMeta.keptHere] = .bool(true) }
     }
 
     /// A board opened (or a page shown again): what its line records say of problem pages comes back.
@@ -206,5 +208,6 @@ extension LiveLoop {
         if let f = l.meta[PageMeta.fixed]?.stringValue, let h = l.meta[PageMeta.fixedHash]?.stringValue { pages.fixed[key] = (h, f) }
         if let c = l.meta[PageMeta.confirmed]?.stringValue { pages.confirmed[key] = c }
         if let s = l.meta[PageMeta.second]?.stringValue, let agree = l.meta[PageMeta.agree]?.boolValue { pages.second[key] = (s, agree, latex) }
+        if l.meta[PageMeta.keptHere]?.boolValue == true { pages.keptHere.insert(key) }
     }
 }

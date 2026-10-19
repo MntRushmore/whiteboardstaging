@@ -30,7 +30,7 @@ extension LiveLoop {
     /// Work on the page not checked yet (or still being read).
     func hasUncheckedWork() -> Bool {
         guard checksWhenDone else { return false }
-        return lines.values.contains { !$0.latex.isEmpty && isHeld($0) } || !reading.isEmpty || !dirtyStrokes.isEmpty
+        return lines.values.contains { !$0.latex.isEmpty && isHeld($0) } || !reading.isEmpty || !pages.applying.isEmpty || !dirtyStrokes.isEmpty
     }
 
     // MARK: - checking
@@ -54,7 +54,7 @@ extension LiveLoop {
             if reason == .button { say(LiveCopy.Pages.nothingToCheck) }
             return
         }
-        if !reading.isEmpty || !dirtyStrokes.isEmpty || (rt.values.contains { $0.readRetryTimer != nil }) {
+        if !reading.isEmpty || !pages.applying.isEmpty || !dirtyStrokes.isEmpty || (rt.values.contains { $0.readRetryTimer != nil }) {
             // the strongest reason waits (a tap beats a pause)
             if pages.pendingCheck == nil || reason == .button { pages.pendingCheck = reason }
             if !dirtyStrokes.isEmpty && !penDown && !board.isPenDown {
@@ -76,7 +76,7 @@ extension LiveLoop {
     /// A check that waited for reads: run it once they are in (`force`: the wait ran out).
     func runPendingCheck(force: Bool = false) {
         guard let reason = pages.pendingCheck else { return }
-        guard force || (reading.isEmpty && dirtyStrokes.isEmpty && !(rt.values.contains { $0.readRetryTimer != nil })) else { return }
+        guard force || (reading.isEmpty && pages.applying.isEmpty && dirtyStrokes.isEmpty && !(rt.values.contains { $0.readRetryTimer != nil })) else { return }
         pages.pendingCheck = nil
         pages.pendingCheckTimer?.cancel()
         pages.pendingCheckTimer = nil
@@ -86,6 +86,12 @@ extension LiveLoop {
     /// Releases every finished line on the page and marks it.
     func runCheck(_ reason: CheckReason) {
         let now = scheduler.now
+        // what this check could not take (a line still being read or written) is taken by the long
+        // pause, which the check had stopped, or else by the safety net
+        defer {
+            pauseAgainAfterCheck()
+            armSafetyNet()
+        }
         var released: [LiveLine] = []
         for st in lines.values.sorted(by: { ($0.column, $0.row) < ($1.column, $1.row) }) where !st.latex.isEmpty {
             if unfinished(st, reason: reason, now: now) { continue }
@@ -129,7 +135,9 @@ extension LiveLoop {
         if st.analysis?.kind == "incomplete" || LivePolicy.isAnswerStart(st.latex) { return true }
         // `4x =`: the kid has not written its other side (Solve, or the grown-ups' answers, answer it)
         if LivePolicy.endsWithRelation(st.latex) && settings.mode != .answer && !settings.answerOnEquals { return true }
-        if (penDown || board.isPenDown) && penLineId == st.id { return true }
+        // (the safety net: no ink for longer than the long pause, so a pen still "down" is a touch
+        // left on the board, not the kid writing)
+        if reason != .idle && (penDown || board.isPenDown) && penLineId == st.id { return true }
         if reason == .pause || reason == .answer {
             let last = st.ink.strokeIds.compactMap { pages.strokeAt[$0] }.max() ?? -.infinity
             if now - last < PageTiming.unfinishedMs { return true }
@@ -151,12 +159,34 @@ extension LiveLoop {
             }
         } else if !pages.solved && released.contains(where: { pages.partial.contains($0.id) }) {
             say(LiveCopy.Pages.oneAnswer)
-        } else if !pages.solved && !released.contains(where: { $0.analysis?.solved == true }) && reason != .pause {
+        } else if !pages.solved && !released.contains(where: { $0.analysis?.solved == true }) && reason != .pause && reason != .idle {
             let answerSpot = board.currentProblemPage.map { $0.kind == .problem && $0.answer } ?? false
             say(answerSpot ? LiveCopy.Pages.keepGoingAnswer : LiveCopy.Pages.keepGoing)
         }
         autoChecks(column: nil, stopped: true)
         refreshPage()
+    }
+
+    /// For the Debug probe: why work is unchecked (the pen, the timers, the reads, each held line and
+    /// what would keep it out of a check now).
+    public var checkDiagnosis: String {
+        let now = scheduler.now
+        // tenths of a second since `t` (never: "-")
+        func ago(_ t: Double) -> String { t.isFinite ? "\(Int((now - t) / 100))ds" : "-" }
+        let timers = [pages.pauseTimer != nil ? "pause" : nil, pages.answerTimer != nil ? "answer" : nil, pages.netTimer != nil ? "net" : nil,
+                      pages.pendingCheck.map { "pending:\($0)" }].compactMap { $0 }.joined(separator: ",")
+        let held = lines.values.filter { !$0.latex.isEmpty && isHeld($0) }.map { st -> String in
+            var why: [String] = []
+            if reading.contains(st.id) { why.append("reading") }
+            if pages.applying.contains(st.id) { why.append("applying") }
+            if st.analysis == nil { why.append("noAnalysis") } else if st.analysis?.kind == "incomplete" { why.append("incomplete") }
+            if (penDown || board.isPenDown) && penLineId == st.id { why.append("penOn") }
+            let last = st.ink.strokeIds.compactMap { pages.strokeAt[$0] }.max() ?? -.infinity
+            why.append("ink\(ago(last))")
+            return "\(st.latex)[\(why.joined(separator: ","))]"
+        }.joined(separator: " ")
+        let net = pages.lastSafetyNet.map { " net[\($0)]" } ?? ""
+        return "pen \(penDown ? "d" : "u")\(board.isPenDown ? "D" : "U") timers \(timers.isEmpty ? "-" : timers) reading \(reading.count) applying \(pages.applying.count) dirty \(dirtyStrokes.count) lastInk \(ago(pages.lastInkAt)) held \(held.isEmpty ? "-" : held)\(net)"
     }
 
     // MARK: - triggers
@@ -171,11 +201,58 @@ extension LiveLoop {
         guard checksWhenDone, settings.enabled, settings.mode != .off else { return }
         pages.pauseTimer?.cancel()
         pages.pauseTimer = settings.auto ? scheduler.after(PageTiming.checkPauseMs) { [weak self] in self?.pauseCheck() } : nil
+        armSafetyNet()
         if let fresh, inAnswerSpot(StrokeBounds.of(fresh)) {
             pages.answerTimer?.cancel()
             pages.answerTimer = scheduler.after(PageTiming.answerQuietMs) { [weak self] in self?.answerCheck() }
         }
         refreshPage()
+    }
+
+    /// After a check that left work unchecked, the long pause after the last ink is still to come
+    /// (Auto on): a line read or finished just after the check is checked then, not left held.
+    func pauseAgainAfterCheck() {
+        guard checksWhenDone, settings.auto, settings.enabled, settings.mode != .off, pages.pauseTimer == nil, hasUncheckedWork() else { return }
+        let due = pages.lastInkAt + PageTiming.checkPauseMs - scheduler.now
+        guard due > 0 else { return }
+        pages.pauseTimer = scheduler.after(due) { [weak self] in self?.pauseCheck() }
+    }
+
+    // MARK: - the safety net
+
+    /// Work a kid could be left waiting on (Check showing, nothing happening) is checked anyway: the
+    /// long pause and a margin after the last ink, with Auto on, once per stretch of ink. Whatever
+    /// held it (a touch left on the board keeping the pen "down", a read put on its line just as a
+    /// check ran, a timer lost) is noted for the Debug probe and the log.
+    func armSafetyNet() {
+        guard checksWhenDone, settings.auto, settings.enabled, settings.mode != .off,
+              pages.lastInkAt.isFinite, pages.netFiredFor != pages.lastInkAt else { return }
+        let due = pages.lastInkAt + PageTiming.checkPauseMs + PageTiming.safetyMarginMs - scheduler.now
+        pages.netTimer?.cancel()
+        pages.netTimer = scheduler.after(max(due, 500)) { [weak self] in self?.safetyNetCheck() }
+    }
+
+    func safetyNetCheck() {
+        pages.netTimer = nil
+        guard started, checksWhenDone, settings.auto, settings.enabled, settings.mode != .off,
+              pages.lastInkAt.isFinite, pages.netFiredFor != pages.lastInkAt else { return }
+        let quiet = scheduler.now - pages.lastInkAt
+        let wait = PageTiming.checkPauseMs + PageTiming.safetyMarginMs
+        if quiet < wait {
+            pages.netTimer = scheduler.after(wait - quiet) { [weak self] in self?.safetyNetCheck() }
+            return
+        }
+        // a read in flight ends one way or another (its own timeouts): the net waits for it
+        if !reading.isEmpty || !pages.applying.isEmpty || !dirtyStrokes.isEmpty || rt.values.contains(where: { $0.readRetryTimer != nil }) {
+            pages.netTimer = scheduler.after(1_000) { [weak self] in self?.safetyNetCheck() }
+            return
+        }
+        guard hasUncheckedWork(), lines.values.contains(where: { !$0.latex.isEmpty && isHeld($0) }) else { return }
+        pages.netFiredFor = pages.lastInkAt
+        let why = checkDiagnosis
+        pages.lastSafetyNet = why
+        Self.log.notice("live: the safety net checked the page: \(why, privacy: .public)")
+        check(.idle)
     }
 
     /// A long pause with no ink.

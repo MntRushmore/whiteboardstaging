@@ -27,8 +27,24 @@ public final class LivePages: ObservableObject {
     @Published public internal(set) var chipsHidden = false
 
     /// Ask the server for a second opinion on every line (a crop with each read; the route's
-    /// `RECOGNIZE_SECOND_OPINION` flag decides). Off by default: it doubles Mathpix's calls.
+    /// `RECOGNIZE_SECOND_OPINION` flag decides). Off by default: it doubles Mathpix's calls. The Live
+    /// Lab's switch (`secondOpinionDebug`) turns it on for this iPad's boards in a Debug build.
     public var secondOpinion = false
+
+    /// The Live Lab's switch for the second opinion (UserDefaults, this iPad). Read only by Debug builds:
+    /// a Release build asks for it when the owner turns it on (a remote setting, later).
+    public static let secondOpinionDebugKey = "agathon.debug.secondOpinion"
+
+    public static var secondOpinionDebug: Bool {
+        get {
+            #if DEBUG
+            return UserDefaults.standard.bool(forKey: secondOpinionDebugKey)
+            #else
+            return false
+            #endif
+        }
+        set { UserDefaults.standard.set(newValue, forKey: secondOpinionDebugKey) }
+    }
     /// The second part of problem pages (`ProblemPagesRollout`): the page's judging rules (a true step,
     /// one answer of several, the kid's own problem), never ringing a read in doubt, "New page for this
     /// one". Off: the pages alone, judged as the loop judges (scoped to the page's problem).
@@ -38,12 +54,20 @@ public final class LivePages: ObservableObject {
 
     /// the reading each line was checked at (check when done): a line is held until then
     var released: [String: String] = [:]
+    /// lines whose read has landed but is still being put on them (`applyRecognition`'s awaits): to a
+    /// check they are still being read (one ran in that moment and skipped a just-read answer)
+    var applying = Set<String>()
     /// a check waiting for the reads in flight, and its watchdog
     var pendingCheck: CheckReason?
     var pendingCheckTimer: LiveTimer?
     var pauseTimer: LiveTimer?
     var answerTimer: LiveTimer?
     var chipsTimer: LiveTimer?
+    /// the safety net (`safetyNetCheck`): its timer, the ink it last checked after, and why the work
+    /// it checked had been held (the Debug probe shows it)
+    var netTimer: LiveTimer?
+    var netFiredFor = -Double.infinity
+    public internal(set) var lastSafetyNet: String?
     /// the kid's last stroke on the page (scheduler ms)
     var lastInkAt = -Double.infinity
     /// per stroke: when the kid last drew or changed it (the line the pen is on is never judged at a
@@ -67,13 +91,16 @@ public final class LivePages: ObservableObject {
 
     /// The page on show changed (or the loop stopped): what it remembered of the last goes.
     func reset() {
-        for t in [pendingCheckTimer, pauseTimer, answerTimer, chipsTimer] { t?.cancel() }
+        for t in [pendingCheckTimer, pauseTimer, answerTimer, chipsTimer, netTimer] { t?.cancel() }
         pendingCheckTimer = nil
         pauseTimer = nil
         answerTimer = nil
         chipsTimer = nil
+        netTimer = nil
+        netFiredFor = -.infinity
         pendingCheck = nil
         released = [:]
+        applying = []
         lastInkAt = -.infinity
         strokeAt = [:]
         fixed = [:]
@@ -103,6 +130,9 @@ public enum CheckReason: String, Sendable {
     case help
     /// a reading fixed or confirmed (that line)
     case fixed
+    /// the safety net: work still unchecked, nothing being read or written, and no ink for longer
+    /// than the long pause and a margin (whatever held it: a touch left on the board, a lost timer)
+    case idle
 }
 
 /// The clocks of check when done.
@@ -117,6 +147,8 @@ public enum PageTiming {
     public static let readWaitMs = 7_000.0
     /// the "I read" chips step aside this long after the pen lifts
     public static let chipsBackMs = 1_000.0
+    /// the safety net checks this long after the long pause, if the work is still unchecked
+    public static let safetyMarginMs = 3_000.0
     /// Mathpix's strokes confidence under this: "Is this right?" (the eval's threshold)
     public static let askBelowConfidence = 0.99
 }
@@ -133,4 +165,6 @@ enum PageMeta {
     /// the second opinion's read, and whether it agreed
     static let second = "second"
     static let agree = "agree"
+    /// the kid kept their own problem on this page ("Keep it here"): the offer does not come back
+    static let keptHere = "keptHere"
 }

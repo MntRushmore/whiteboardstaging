@@ -56,6 +56,10 @@ const envSchema = z.object({
   // The crop reader of /api/live/recognize: unset (or "vision") is the vision model; "mathpix-text"
   // tries Mathpix v3/text first (a prototype, off by default: docs/eval/mpx-supernet.md).
   RECOGNIZE_CROP_READER: optionalString,
+  // The recognize route's second opinion (docs/PROBLEM-PAGES.md): "mathpix-text" reads a line's crop
+  // with Mathpix v3/text beside the strokes read when the board asks (`secondOpinion`), and says
+  // whether the two agree. Off by default: one more Mathpix call per line.
+  RECOGNIZE_SECOND_OPINION: optionalString,
 
   // ElevenLabs: lecture mode's realtime speech-to-text (Scribe) and read aloud's voice
   // (POST /api/live/speak). Unset: the browser's own recognizer and voice.
@@ -190,6 +194,16 @@ export type CropReader = "vision" | "mathpix-text";
  */
 export function getCropReader(): CropReader {
   return getServerEnv().RECOGNIZE_CROP_READER?.trim().toLowerCase() === "mathpix-text" ? "mathpix-text" : "vision";
+}
+
+/**
+ * `RECOGNIZE_SECOND_OPINION`: only the literal `mathpix-text` turns on the recognize route's second
+ * opinion (Mathpix v3/text on the line's crop, beside the strokes read, when the board sends
+ * `secondOpinion: true`); anything else, including unset, is off. The second read is a reason for
+ * the board to ask the kid "Is this right?", never the line's reading (docs/PROBLEM-PAGES.md).
+ */
+export function getSecondOpinion(): "mathpix-text" | null {
+  return getServerEnv().RECOGNIZE_SECOND_OPINION?.trim().toLowerCase() === "mathpix-text" ? "mathpix-text" : null;
 }
 
 /**

@@ -144,6 +144,8 @@ public struct FixReadingSheet: View {
         .padding(DS.Space.xl)
         .frame(width: 560)
         .background(DS.Color.surface)
+        // a container: its controls keep their own ids (a container's id on its own overrides them)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live.fix")
     }
 }
