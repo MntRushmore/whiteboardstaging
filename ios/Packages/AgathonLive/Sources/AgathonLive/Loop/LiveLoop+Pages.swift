@@ -56,35 +56,40 @@ extension LiveLoop {
     ///    problem's letters) is no slip: it heads what follows (`ownHead`);
     ///  - a true statement on its own (`3 × 4 = 12`, `2(x+1) = 2x + 2`) is no slip;
     ///  - one answer of several (`x = 2` of `x² − 5x + 6 = 0`) is a right step, not solved.
+    ///
+    /// `side`: the line is true on its own but no step of the problem's chain (a side fact in an
+    /// algebra problem, an identity): the next line is not judged against it.
     func reviewOnPage(_ st: LiveLine, _ a: LineAnalysis, judged: String, solvedAbove: Bool, problem: [String],
-                      original: LineAnalysis?) async -> (analysis: LineAnalysis, ownHead: Bool) {
+                      original: LineAnalysis?) async -> (analysis: LineAnalysis, ownHead: Bool, side: Bool) {
         pages.partial.remove(st.id)
-        guard a.verdict == "mismatch", a.solved != true else { return (a, false) }
+        // a sum of numbers in a problem with letters (`3 × 4 = 12` beside `4x - 5 = 7`) is side work
+        let theirs = ReadingContext.letters(problem)
+        let mine = ReadingContext.letters([judged])
+        let sideWork = !theirs.isEmpty && mine.isEmpty && a.bareAnswer != true
+        guard a.verdict == "mismatch", a.solved != true else { return (a, false, sideWork) }
         var r = a
         if a.bareAnswer != true, a.kind == "equation" || a.kind == "inequality" {
-            let mine = ReadingContext.letters([st.latex])
-            let theirs = ReadingContext.letters(problem)
             let otherLetters = !mine.isEmpty && !theirs.isEmpty && mine.isDisjoint(with: theirs)
             if solvedAbove || otherLetters {
                 r.verdict = "none"
                 r.note = ""
-                return (r, true)
+                return (r, true, false)
             }
         }
         if let alone = try? await brain.analyzeLine(judged, context: AnalyzeContext(mode: .answer)), alone.verdict == "ok" {
             r.verdict = "none"
             r.note = ""
-            return (r, false)
+            return (r, false, true)
         }
         if let roots = original?.solutions, roots.count > 1, a.kind == "equation" || a.kind == "assignment" {
             for root in roots where (try? await brain.verifyExpected(root, latex: judged)) == .equal {
                 r.verdict = "ok"
                 r.note = ""
                 pages.partial.insert(st.id)
-                return (r, false)
+                return (r, false, true)
             }
         }
-        return (r, false)
+        return (r, false, sideWork)
     }
 
     // MARK: - a second problem: "New page for this one"

@@ -352,6 +352,8 @@ public final class LiveLoop: ObservableObject {
         settled = false
         cancelHandwriting()
         dropEarlyReads()
+        // problem pages: what the loop remembered of the page left (its records keep what matters)
+        pages.reset()
         for r in rt.values {
             r.checkTask?.cancel()
             r.solveTask?.cancel()
@@ -410,6 +412,14 @@ public final class LiveLoop: ObservableObject {
     func settingsChanged(from old: LiveSettings) {
         settings.save(boardId: boardId)
         guard started else { return }
+        if old.checking != settings.checking {
+            // into "when they're done": what is marked now stays (checked at its reading)
+            if settings.checking == .whenDone {
+                for st in lines.values where !st.latex.isEmpty && pages.released[st.id] == nil { pages.released[st.id] = st.latex }
+            }
+            reanalyzeAll()
+        }
+        if old.showReadings != settings.showReadings || old.checking != settings.checking { refreshPage() }
         if !settings.enabled || settings.mode == .off { withdrawGraphOffers() }
         if old.enabled != settings.enabled {
             if !settings.enabled {

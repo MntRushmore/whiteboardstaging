@@ -381,6 +381,20 @@ broken in its own eval) keeps working as today. Sending the page's letters to th
 - **Journey (UI):** a 3-problem practice set: page 1 solved with intermediate steps (no mark until
   Check); page 2 with a slip ringed only after Check, and a misread fixed by tap; page 3 → All done.
 
+## Switches and Debug flags
+
+| what | where | default |
+|---|---|---|
+| Check the work: When they're done · As they go | grown-ups' settings (`LiveSettings.checking`) | When they're done (old saved settings too) |
+| Show what the tutor read | grown-ups' settings (`LiveSettings.showReadings`) | on |
+| the second opinion (client) | `LiveLoop.pages.secondOpinion` | off |
+| the second opinion (server) | `RECOGNIZE_SECOND_OPINION=mathpix-text` | off |
+| problem pages for Ask's `write_problems` | `AskBoardDriver.problemPages` (on in `AskParts.live`) | on in the app, off in the Labs and tests |
+| `-practiceProblems "a\|b\|c"` | Debug: Home's Today's practice is these problems, on a fresh board | — |
+| `-boardAutowrite "…\|answer:x = 4"` | Debug: `answer:` writes a line in the answer spot | — |
+| `-liveMisread "3x = 15=>3 \times = 15"` | Debug: a read (and the second reader's) rewritten, to show a misread on purpose | — |
+| `debug.live` | Debug probe: `page 2/3`, `action check/next/alldone`, `read <latex>=<state>`, `screens n` | — |
+
 ## Calls budget
 
 The tests use the fake services; the journey and the local-stack checks stay under 25 real

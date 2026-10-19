@@ -99,6 +99,14 @@ final class HomeModel {
         startingPractice = true
         defer { startingPractice = false }
         let day = today
+        #if DEBUG
+        // the UI tests' own set, on a fresh board each time: `-practiceProblems "2x + 3 = 11|3x - 5 = 10"`
+        if let set = Self.debugPractice, let board = try? await backend.boards.create(title: "Practice") {
+            boards.insert(board, at: 0)
+            return OpenBoard(board: board, practice: PracticeSet(kind: .topic(skill: "debug-\(board.id.prefix(8))"), title: "Practice", problems: set),
+                             audience: audience)
+        }
+        #endif
         let problems = await PracticePlanner.daily(day: day, userId: backend.auth.userId ?? "", path: path, summary: summary)
         let set = PracticeSet(kind: .daily(day: day), title: "Today's practice", problems: problems)
         if let id = todayRow?.boardId, let board = boards.first(where: { $0.id == id }) {
@@ -120,6 +128,16 @@ final class HomeModel {
             return nil
         }
     }
+
+    #if DEBUG
+    /// `-practiceProblems "a|b|c"` (Debug, the UI tests): Today's practice is these problems.
+    static var debugPractice: [PracticePlanner.Problem]? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-practiceProblems"), i + 1 < args.count else { return nil }
+        let lines = args[i + 1].split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return lines.isEmpty ? nil : lines.enumerated().map { PracticePlanner.Problem(id: $0.offset, skill: "debug", lines: [$0.element]) }
+    }
+    #endif
 
     /// A topic's problems on a new board named for it.
     func startTopic(_ skill: String, backend: AgathonBackend) async -> OpenBoard? {

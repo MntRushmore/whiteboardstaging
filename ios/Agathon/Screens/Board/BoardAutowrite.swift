@@ -9,7 +9,8 @@ import SwiftUI
 /// `-boardAutowrite "2x + 3 = 11|2x = 8|x = 5"` shows a small button in the board's top bar; each tap
 /// writes the next line in a kid's hand (the web's handwriting scoreboard, the clean hand: the Live
 /// Lab's fixture on this Mac's disk) through the canvas's own touch path, under what is on the page.
-/// `newpage` as a line adds a page and goes to it. Never in a Release build.
+/// `newpage` as a line adds a page and goes to it; `answer:x = 4` writes `x = 4` in a problem page's
+/// answer spot. Never in a Release build.
 struct BoardAutowriteButton: View {
     @ObservedObject var model: BoardScreenModel
     @ObservedObject private var progress = BoardAutowriter.progress
@@ -84,19 +85,26 @@ enum BoardAutowriter {
             try? await Task.sleep(for: .milliseconds(600))
             return
         }
-        guard let strokes = hand[latex] else {
-            BoardScreenModel.log.error("autowrite: no ink for \(latex, privacy: .public)")
+        // `answer:…`: in the answer spot of a problem page (docs/PROBLEM-PAGES.md)
+        let inAnswer = latex.hasPrefix("answer:")
+        let ink = inAnswer ? String(latex.dropFirst("answer:".count)) : latex
+        guard let strokes = hand[ink] else {
+            BoardScreenModel.log.error("autowrite: no ink for \(ink, privacy: .public)")
             return
         }
-        // under what is on the page, at the left
+        // under what is on the page (the answer spot excepted), at the left
         let screen = controller.currentScreenID
         let rect = controller.currentScreen?.rect ?? .screen
+        let answer = ProblemPageLayout.place(ProblemPageLayout.answer, on: rect)
         let bottom = controller.store.drawables(on: screen).compactMap { r -> Double? in
             guard case .stroke(let s) = r else { return nil }
-            return s.points.map { s.pagePoint($0).y }.max()
+            let ys = s.points.map { s.pagePoint($0).y }
+            // what is in the answer spot is not where the work goes on
+            if let top = ys.min(), top >= answer.y { return nil }
+            return ys.max()
         }.max()
-        let x = rect.x + 140
-        let y = bottom.map { $0 + 60 } ?? rect.y + 140
+        let x = inAnswer ? answer.x + 220 : rect.x + 140
+        let y = inAnswer ? answer.y + 24 : (bottom.map { $0 + 60 } ?? rect.y + 140)
         let page: [[Vec2]] = strokes.map { flat in
             stride(from: 0, to: flat.count - 1, by: 2).map { i in Vec2(x + flat[i] * 1.6, y + flat[i + 1] * 1.6) }
         }
@@ -159,7 +167,17 @@ struct BoardDebugProbe: View {
         }
         let chat = store.drawables(on: screen).filter { $0.meta["lineId"]?.stringValue == "chat" }.count
         let save = model.phase.session.map { BoardSaveStatus.detail($0) } ?? "-"
-        return "lines: \(lines.joined(separator: "; ")) | hints \(tutor.loop.hints.count) | chat \(chat) | problems \(problems) | activity \(tutor.loop.activity) | save \(save)"
+        // problem pages: the page, its action corner, what the tutor read (and how sure it is)
+        let pages = tutor.loop.pages
+        let page = pages.page.map { p in p.kind == .done ? "done" : "\(p.index ?? 0)/\(p.count ?? 0)" } ?? "plain"
+        let action: String
+        switch pages.action {
+        case .check?: action = "check"
+        case .next(let last)?: action = last ? "alldone" : "next"
+        case nil: action = "none"
+        }
+        let read = pages.readings.map { "\($0.latex)=\($0.state.rawValue)" }.joined(separator: "; ")
+        return "lines: \(lines.joined(separator: "; ")) | hints \(tutor.loop.hints.count) | chat \(chat) | problems \(problems) | activity \(tutor.loop.activity) | page \(page) | action \(action) | read \(read) | screens \(store.screenIDs.count) | save \(save)"
     }
 }
 #endif

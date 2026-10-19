@@ -39,30 +39,39 @@ extension LiveLoop {
             // the problem the column works (`arithmeticLines`): the tutor's, else the column's first
             // line; in arithmetic a young student's working is judged against it (`judgeLine`: a lone
             // number is the answer, `14` under `18 + 15 - 19`)
-            let problem = columnHead?.lines ?? columnLines(column).first { !$0.latex.isEmpty }.map { [$0.latex] } ?? []
+            var problem = columnHead?.lines ?? columnLines(column).first { !$0.latex.isEmpty }.map { [$0.latex] } ?? []
             // the student's lines above, as read, and the step right above when it is a slip
             var above: [String] = []
             var slip: LineAnalysis?
             var changed: [String] = []
+            // a line solved the problem above it: a new relation after it starts the kid's own (pages)
+            var solvedAbove = false
             for st in columnLines(column) {
                 guard !st.latex.isEmpty else { continue }
                 // the grown-ups want answers after `=`: the engine works a sum ended with one out
                 // as in Solve (the policy still decides what is shown)
                 let lineMode = settings.answerOnEquals && LivePolicy.endsWithRelation(st.latex) ? LiveMode.answer : mode
                 let ctx = AnalyzeContext(mode: lineMode, previous: previous, original: original)
-                let key = "\(lineMode.rawValue)|\(st.latex)|\(previous?.math ?? "")|\(previous?.kind ?? "")|\(original?.math ?? "")"
+                // a bare number in a problem page's answer spot answers the problem's letter (`LiveLoop+Pages`)
+                let judged = judgedForm(st)
+                let key = "\(lineMode.rawValue)|\(judged)|\(previous?.math ?? "")|\(previous?.kind ?? "")|\(original?.math ?? "")"
                     + "|\(problem.joined(separator: ";"))|\(above.joined(separator: ";"))|\(slip?.math ?? "")"
-                let a: LineAnalysis
+                let raw: LineAnalysis
                 if let hit = analysisCache[key] {
-                    a = hit
+                    raw = hit
                 } else {
                     do {
-                        a = try await brain.judgeLine(st.latex, context: ctx, problem: problem, above: above, slip: slip)
+                        raw = try await brain.judgeLine(judged, context: ctx, problem: problem, above: above, slip: slip)
                     } catch {
-                        a = LineAnalysis.unknown
+                        raw = LineAnalysis.unknown
                     }
-                    analysisCache[key] = a
+                    analysisCache[key] = raw
                 }
+                // the page's rules before anything is marked: a true step, one answer of several, a
+                // problem of the kid's own are no slips (docs/PROBLEM-PAGES.md)
+                let review = await reviewOnPage(st, raw, judged: judged, solvedAbove: solvedAbove, problem: problem, original: original)
+                let a = review.analysis
+                if review.ownHead { pages.ownHeads.insert(st.id) } else { pages.ownHeads.remove(st.id) }
                 above.append(st.latex)
                 slip = a.verdict == "mismatch" || a.carried == true ? a : nil
                 guard gen == generation, var cur = lines[st.id], cur.latex == st.latex else {
@@ -78,8 +87,21 @@ extension LiveLoop {
                     lines[st.id] = cur
                     changed.append(st.id)
                 }
-                // a slip is not what the next line follows from
-                if !(a.verdict == "mismatch" || a.carried == true || cur.isModelFlagged) { take(a) }
+                if review.ownHead {
+                    // the kid's own problem: what follows is judged against it, not the page's
+                    previous = nil
+                    original = nil
+                    problem = [st.latex]
+                    above = []
+                    slip = nil
+                    solvedAbove = false
+                    take(try? await brain.analyzeLine(judged, context: AnalyzeContext(mode: mode)))
+                } else if !(a.verdict == "mismatch" || a.carried == true || cur.isModelFlagged || review.side) {
+                    // a slip is not what the next line follows from, nor side work (a sum beside the
+                    // problem, an identity, one root of two)
+                    take(a)
+                }
+                if a.solved == true { solvedAbove = true }
             }
             guard gen == generation else { return }
             for st in columnLines(column) where !st.latex.isEmpty {
@@ -109,7 +131,7 @@ extension LiveLoop {
             mode: settings.mode, analysis: st.analysis, confidence: st.confidence, settled: settled ?? self.settled,
             auto: autoFor(st), userAsked: userAsked, hintsShownForLine: st.hintsShown, openHintCount: hints.count,
             rewritesWithWarn: st.rewritesWithWarn, liveShapeCount: liveShapeCount(), latex: st.latex,
-            answerOnEquals: settings.answerOnEquals)
+            answerOnEquals: settings.answerOnEquals, held: isHeld(st))
     }
 
     func decision(_ st: LiveLine, userAsked: Bool = false, settled: Bool? = nil) -> LivePolicy.Decision {
@@ -139,6 +161,19 @@ extension LiveLoop {
     func render(_ id: String, userAsked: Bool = false, quiet: Bool = false) {
         guard settings.enabled, let st = lines[id] else { return }
         dropStale(st)
+        if isHeld(st) {
+            // check when done: quiet until the kid is done (the grown-ups' answers after `=` still come)
+            let d = decision(st)
+            if d.echo && inlineAnswer(st, d) {
+                syncMark(st, nil, learn: false)
+                updateVerdict(st, "none")
+                refreshPage()
+                return
+            }
+            renderHeld(st)
+            return
+        }
+        defer { refreshPage() }
         let d = decision(st, userAsked: userAsked)
         if !d.echo {
             if !quiet {
@@ -169,7 +204,11 @@ extension LiveLoop {
         var marked = auto || d.capped ? d.badge : LivePolicy.badge(settings.mode, st.analysis)
         // a line the loop cannot place for sure is never ringed: a right answer is never marked wrong
         if marked == "warn" && unsureOfProblem(st) { marked = "none" }
-        let ring = marked == "warn" || (marked != "ok" && marked != "solved" && st.isModelFlagged && !unsureOfProblem(st))
+        // nor a read the tutor is not sure of (it asks first: "Is this right?"), nor a problem of the
+        // kid's own (docs/PROBLEM-PAGES.md)
+        let doubt = readingInDoubt(st) || pages.ownHeads.contains(st.id)
+        if marked == "warn" && doubt { marked = "none" }
+        let ring = marked == "warn" || (marked != "ok" && marked != "solved" && st.isModelFlagged && !unsureOfProblem(st) && !doubt)
         let tick = marked == "ok" || marked == "solved"
         let why = ring || tick ? nil : questionNow(st)
         syncMark(st, ring ? .circle : tick ? .check : why != nil ? .question : nil, why)
@@ -338,6 +377,8 @@ extension LiveLoop {
         var meta: Meta = [LiveMeta.confidence: .number((st.confidence * 1000).rounded() / 1000), LiveMeta.provider: .string(st.provider.rawValue)]
         if !st.ink.hash.isEmpty { meta[LiveMeta.hash] = .string(st.ink.hash) }
         if let w = st.modelWarned { meta[LiveMeta.aiWarnLatex] = .string(w) }
+        // checked at, the kid's own reading, the second opinion (problem pages)
+        pageMeta(for: id, into: &meta)
         var record = LineRecord(id: rid, screen: board.currentScreenID, strokes: st.ink.strokeIds.map { RecordID($0) }, latex: st.latex,
                                 verdict: verdictOf(st), problem: nil, meta: meta)
         if case .line(let old)? = board.store[rid] {

@@ -113,9 +113,12 @@ struct ProblemPageWriterTests {
             action(#"{"type":"write_lines","lines":["x = 4"]}"#),
         ]) { _ in }
         #expect(report.outcomes.map(\.type) == ["write_problems", "write_lines"])
-        // the lines went on the page on show (the problem's), clear of the problem
-        let ink = tutorStrokes(board, on: board.currentScreenID)
-        #expect(ink.contains { $0.meta["chatProblem"] != nil } && ink.contains { $0.meta["chatProblem"] == nil })
+        // the problem page is the problem's (its cell is the whole page, where the kid works): the desk
+        // writes the reply's lines on a fresh page after it, as it does beside any full page
+        let ids = board.store.screenIDs
+        #expect(ids.count == 2)
+        #expect(tutorStrokes(board, on: ids[0]).allSatisfy { $0.meta["chatProblem"] != nil })
+        #expect(!tutorStrokes(board, on: ids[1]).isEmpty && tutorStrokes(board, on: ids[1]).allSatisfy { $0.meta["chatProblem"] == nil })
     }
 
     @Test func withoutPagesTheDesksGridStays() async throws {

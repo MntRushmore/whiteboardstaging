@@ -52,7 +52,16 @@ final class BoardTutor {
     static func live(backend: AgathonBackend, controller: BoardController, canvas: BoardCanvasView, boardId: String,
                      grade: Int?) -> BoardTutor {
         let userId = backend.auth.userId
-        return BoardTutor(controller: controller, canvas: canvas, boardId: boardId, services: LiveAPIServices(backend: backend)) { board, helper in
+        var misread: (from: String, to: String)?
+        #if DEBUG
+        // the UI tests' misread on purpose: `-liveMisread "3x = 15=>3 \\times = 15"` (docs/PROBLEM-PAGES.md)
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-liveMisread"), i + 1 < args.count {
+            let parts = args[i + 1].components(separatedBy: "=>")
+            if parts.count == 2 { misread = (parts[0], parts[1]) }
+        }
+        #endif
+        return BoardTutor(controller: controller, canvas: canvas, boardId: boardId, services: LiveAPIServices(backend: backend, misread: misread)) { board, helper in
             AskParts.live(backend: backend, boardId: boardId, board: board, helper: helper, userId: userId, grade: grade)
         }
     }
@@ -97,10 +106,10 @@ final class BoardTutor {
 
     // MARK: - practice
 
-    /// Writes a practice set's problems on the board in the tutor's hand (Ask's `write_problems`, the
-    /// web's desk in the brain: each problem checked by the engine, laid out in a grid, a new screen
-    /// when this one is full), unless they are on the board already (Today's practice opened again).
-    /// Each problem then heads the column the kid writes under it.
+    /// Writes a practice set's problems on the board in the tutor's hand, one problem per page
+    /// (docs/PROBLEM-PAGES.md: Ask's `write_problems` through `ProblemPageWriter`, each problem checked
+    /// by the desk in the brain; the set's pages, then All done), unless they are on the board already
+    /// (Today's practice opened again). Each page's problem heads all the work on it.
     /// Returns how many were written (0 when they were there already or none could be).
     @discardableResult
     func writePractice(_ problems: [[String]], key: String) async -> Int {
@@ -113,6 +122,9 @@ final class BoardTutor {
         let action = AgathonKit.JSONValue.object([
             "type": .string("write_problems"),
             "problems": .array(problems.map { .array($0.map { .string($0) }) }),
+            // the set's pages say which set they are ("Problem 2 of 5") and where it came from
+            "set": .string(key),
+            "origin": .string("practice"),
         ])
         // the problems it writes are a practice set's for the learning record (the web's
         // `runChatActions(actions, { origin: "practice" })`)

@@ -97,7 +97,7 @@ struct ReadEarlyBench {
         let board = TestBoard()
         let fake = FakeServices()
         let loop = LiveLoop(board: board, boardId: "ipad-fast-bench", services: real ?? fake,
-                            settings: LiveSettings(enabled: true, mode: .feedback, auto: true), brain: brain,
+                            settings: LiveSettings(enabled: true, mode: .feedback, auto: true, checking: .asIGo), brain: brain,
                             background: TestBrain.background, scheduler: MainScheduler(), connectivity: ManualConnectivity())
         loop.readsEarly = config.early
         loop.earlyDelayOverride = config.delay
@@ -180,7 +180,7 @@ struct ReadEarlyBench {
                 let cut = Int((Double(chars.count) * Double(k) / Double(ids.count)).rounded())
                 let read = String(chars.prefix(cut)).trimmingCharacters(in: .whitespaces)
                 if let payload = try? await brain.recognizerPayload(all.filter { set.contains($0.id) }) {
-                    services.register(payload, as: RecognizeResponse(latex: read, confidence: 0.98))
+                    services.register(payload, as: RecognizeResponse(latex: read, confidence: 0.995))
                 }
             }
         }
