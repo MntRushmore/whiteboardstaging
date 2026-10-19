@@ -1,13 +1,71 @@
 import Foundation
 
 /// Reading a line in its page's context (docs/PROBLEM-PAGES.md, "Letters in context"): a kid's `x`
-/// read as `×` where no multiplication can be, an `X` on an `x` page. The recognizer
+/// read as `×` where no multiplication can be, an `a` read as `0`, an `e` as `6`. The recognizer
 /// (`/api/live/recognize`) takes no letters to expect (its `hint` is `math | chem | physics`, for the
-/// vision reader's prompt only), so the page's letters are used here, on the read.
-///
-/// Pure: the loop takes a correction only when the engine reads it as maths and did not read the
-/// original (`LiveLoop+Fix`). No digit is ever changed, so a slip is never turned into a right step.
+/// vision reader's prompt only), so the page's letters are used here, on the read — to ASK the kid
+/// ("Is this right?") and to SUGGEST the reading in "Fix what I read". Never to swap a read without a
+/// tap (the Mathpix eval, docs/eval/mpx-supernet.md: swapping breaks right reads).
 public enum ReadingContext {
+    /// What a reader writes for a letter that looks like something else (the eval's misreads: `a` →
+    /// `0`, `e` → `6` / `\theta` / `\epsilon` / `\in`, `i` → `;`, `u` → `U`; and the board's own: `x` →
+    /// `\times`, `X`, `\chi`). Digits only stand alone here (`0=5`, never the `0` of `10`) when deciding
+    /// to ask; a suggestion may try any one place.
+    static let lookAlikes: [Character: [String]] = [
+        "x": [#"\\times(?![a-zA-Z])"#, #"(?<![\\a-zA-Z])X(?![a-zA-Z])"#, #"\\chi(?![a-zA-Z])"#],
+        "a": [#"(?<![0-9.\\a-zA-Z])0(?![0-9.])"#, #"\\alpha(?![a-zA-Z])"#, #"(?<![\\a-zA-Z])o(?![a-zA-Z])"#],
+        "e": [#"(?<![0-9.\\a-zA-Z])6(?![0-9.])"#, #"\\(?:theta|epsilon|varepsilon|in)(?![a-zA-Z])"#],
+        "i": [#";"#],
+        "u": [#"(?<![\\a-zA-Z])U(?![a-zA-Z])"#, #"\\mu(?![a-zA-Z])"#],
+        "b": [#"(?<![0-9.\\a-zA-Z])6(?![0-9.])"#],
+        "l": [#"(?<![0-9.\\a-zA-Z])1(?![0-9.])"#, #"\|"#],
+        "o": [#"(?<![0-9.\\a-zA-Z])0(?![0-9.])"#],
+        "z": [#"(?<![0-9.\\a-zA-Z])2(?![0-9.])"#],
+        "s": [#"(?<![0-9.\\a-zA-Z])5(?![0-9.])"#],
+        "n": [#"\\eta(?![a-zA-Z])"#],
+        "w": [#"\\omega(?![a-zA-Z])"#],
+        "v": [#"\\nu(?![a-zA-Z])"#],
+    ]
+
+    /// The same look-alikes anywhere (a digit inside a number too: `20 - 3` for `2a - 3`), for the
+    /// sheet's suggestions only.
+    static func anywhere(_ pattern: String) -> String {
+        pattern.replacingOccurrences(of: #"(?<![0-9.\\a-zA-Z])"#, with: #"(?<![.\\a-zA-Z])"#)
+            .replacingOccurrences(of: #"(?![0-9.])"#, with: #"(?![.])"#)
+    }
+
+    /// A reason to ask about this read on a page whose problem uses `letters`: a letter of the
+    /// problem missing from the read, and one of its look-alikes in it (standing alone, for a digit);
+    /// or a `\times` where no product can be.
+    public static func asks(_ latex: String, letters: Set<Character>) -> Bool {
+        if correct(latex, letters: letters) != nil { return true }
+        let readLetters = Self.letters([latex])
+        for letter in letters where !readLetters.contains(letter) {
+            for pattern in lookAlikes[letter] ?? [] where latex.range(of: pattern, options: .regularExpression) != nil {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Readings the page's letters make likely, best first: the `\times` rule, then each look-alike
+    /// of a letter the read lacks, one place at a time.
+    public static func suggestions(_ latex: String, letters: Set<Character>) -> [String] {
+        var out: [String] = []
+        if let c = correct(latex, letters: letters) { out.append(c) }
+        let readLetters = Self.letters([latex])
+        let ns = latex as NSString
+        for letter in letters.sorted() where !readLetters.contains(letter) {
+            for pattern in lookAlikes[letter] ?? [] {
+                guard let re = try? NSRegularExpression(pattern: anywhere(pattern)) else { continue }
+                for m in re.matches(in: latex, range: NSRange(location: 0, length: ns.length)) {
+                    let one = ns.replacingCharacters(in: m.range, with: String(letter))
+                    if !out.contains(one) { out.append(one) }
+                }
+            }
+        }
+        return out
+    }
     /// The letters a problem uses as unknowns: single Latin letters outside commands and `\text{…}`
     /// (`2x + 3 = 11` → x; `\frac{a}{b} = 3y` → a, b, y). Empty for arithmetic.
     public static func letters(_ lines: [String]) -> Set<Character> {
@@ -20,7 +78,7 @@ public enum ReadingContext {
         return out
     }
 
-    /// What `latex` reads as on a page whose problem uses `letters`, or nil when nothing changes.
+    /// The strongest suggestion: what `latex` likely says on a page whose problem uses `letters`, or nil.
     ///
     ///  - a `\times` where no product can be — at the start, after `(`, `=` or another operator,
     ///    before `=`, `+`, `-`, `)`, `^`, a relation or the end (`2 \times + 3 = 11`, `4 \times = 12`,
@@ -127,16 +185,18 @@ public enum ReadingAlternatives {
         ]
     }
 
-    /// Readings other than `latex`, best first, at most `limit`: the context's correction, then one
-    /// swap at a time (letters the page uses are kept as letters: on an `s` page an `s` stays).
-    public static func candidates(_ latex: String, letters: Set<Character>, also extra: [String] = [], limit: Int = 6) -> [String] {
+    /// Readings other than `latex`, best first, at most `limit`: `prior` (the second opinion's read,
+    /// when it disagreed), the page's context, `also` (the second reader's), then one swap at a time
+    /// (letters the page uses are kept as letters: on an `s` page an `s` stays).
+    public static func candidates(_ latex: String, letters: Set<Character>, prior: [String] = [], also extra: [String] = [], limit: Int = 6) -> [String] {
         var out: [String] = []
         func add(_ c: String) {
             let t = c.trimmingCharacters(in: .whitespaces)
             guard !t.isEmpty, flat(t) != flat(latex), !out.contains(where: { flat($0) == flat(t) }) else { return }
             out.append(t)
         }
-        if let c = ReadingContext.correct(latex, letters: letters) { add(c) }
+        prior.forEach(add)
+        ReadingContext.suggestions(latex, letters: letters).forEach(add)
         extra.forEach(add)
         let letter = letters.count == 1 ? String(letters.first!) : (letters.contains("x") || letters.isEmpty ? "x" : String(letters.sorted().first!))
         for swap in swaps(letter: letter) {

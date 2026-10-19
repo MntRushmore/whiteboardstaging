@@ -22,6 +22,10 @@ public struct RecognizeRequest: Encodable, Sendable, Equatable {
     public var crop: String?
     /// the crop retry: the route goes straight to the vision reader
     public var cropOnly: Bool?
+    /// with `crop`: a second opinion on the line (docs/PROBLEM-PAGES.md, "The second opinion"): the
+    /// route reads the crop too (Mathpix v3/text, behind its `RECOGNIZE_SECOND_OPINION` flag) and says
+    /// whether the two reads agree. Never the line's reading. A route without it ignores the key.
+    public var secondOpinion: Bool?
 
     public init(boardId: String, lineId: String, payload: RecognizerPayload, crop: String? = nil, cropOnly: Bool? = nil) {
         self.boardId = boardId
@@ -42,14 +46,32 @@ public struct RecognizeResponse: Codable, Sendable, Equatable {
     /// mathpix, vision
     public var provider: String
     public var ms: Double
+    /// the second opinion's read of the line's crop, when asked for and the route's flag is on
+    public var second: SecondRead?
+    /// the two reads are the same maths (nil: no second opinion)
+    public var agree: Bool?
 
-    public init(latex: String, text: String = "", kind: String = "math", confidence: Double = 1, provider: String = "mathpix", ms: Double = 0) {
+    /// A second reader's read of a line (never the line's reading: a reason to ask the kid).
+    public struct SecondRead: Codable, Sendable, Equatable {
+        public var latex: String
+        public var confidence: Double?
+
+        public init(latex: String, confidence: Double? = nil) {
+            self.latex = latex
+            self.confidence = confidence
+        }
+    }
+
+    public init(latex: String, text: String = "", kind: String = "math", confidence: Double = 1, provider: String = "mathpix", ms: Double = 0,
+                second: SecondRead? = nil, agree: Bool? = nil) {
         self.latex = latex
         self.text = text
         self.kind = kind
         self.confidence = confidence
         self.provider = provider
         self.ms = ms
+        self.second = second
+        self.agree = agree
     }
 }
 

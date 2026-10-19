@@ -121,9 +121,14 @@ public enum LiveCopy {
     public enum Reading {
         public static let iRead = "I read"
         public static let tapToFix = "Tap to fix"
+        public static let isThisRight = "Is this right?"
+        public static let yesRight = "Yes, that's right"
+        /// a check found a slip on a line the tutor is not sure it read right
+        public static let didIReadThis = "Did I read this right? Tap what I read to check."
         public static let fixed = "Fixed"
         public static let unread = "I couldn't read this"
         public static func spoken(_ plain: String) -> String { "I read \(plain). Tap to fix it." }
+        public static func asking(_ plain: String) -> String { "I read \(plain). Is this right? Tap to check." }
         public static let sheetTitle = "Fix what I read"
         public static let didYouMean = "Did you mean"
         public static let typeIt = "Or type it"

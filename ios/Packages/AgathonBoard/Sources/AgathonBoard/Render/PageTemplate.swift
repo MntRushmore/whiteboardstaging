@@ -6,7 +6,7 @@ import Foundation
 /// "Work it out here", the guide lines, the answer spot and its "Answer:". Never ink, never a
 /// record: the canvas draws it under the ink (`BoardCanvasView`'s template layer, crisp at any zoom),
 /// the thumbnail draws it on white. Text is turned into glyph outlines, so it is vector too.
-public struct PageTemplate {
+public struct PageTemplate: @unchecked Sendable {
     /// What the template draws, each part in one colour.
     public struct Colors: Equatable, @unchecked Sendable {
         /// the guide lines

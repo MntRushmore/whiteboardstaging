@@ -217,6 +217,15 @@ released lines.
 
 ## Trust in reading
 
+Input (2026-10-19): the Mathpix SuperNet-201 eval (`docs/eval/mpx-supernet.md` on `feat/ipad-app`).
+Its findings that shape this: no confidence is good enough alone (SuperNet-201's new fields are empty
+for a line crop; the vision reader's is no signal; v3/text at 0.99 still passes look-alike letters:
+`a = 5` → `0=5`, `e^{x}` → `6^{x}`); the best trigger to ask the kid is the **disagreement** of the
+strokes read and a v3/text read of the line's crop (asks about 2.7 % of lines, catches 71 % of
+misreads; with "strokes confidence < 0.99" too, 4.5 % asked, 88 % caught); and swapping in the other
+read breaks 1 % of right reads. So: **"I read" always shows, quietly; it asks only when there is a
+reason; nothing is ever swapped without a tap.**
+
 ### "I read"
 
 Every read line on the current page shows a quiet chip: **I READ** `2x + 3 = 11` (chalk capsule, the
@@ -227,20 +236,49 @@ readback fades after 2.5 s). Where:
   line runs long), so it never sits where the next line is written;
 - elsewhere, just after the line's mark slot, at its middle.
 
-States: **read**; **unsure** (confidence under 0.6, or a read the engine cannot use) in a pale sunny
-with "Tap to fix"; **fixed** (the kid's or a grown-up's reading, with a small pen icon). The chips hide
-while the pen is down and for 1 s after, so a stroke never starts on one. A grown-ups' switch "Show what
-the tutor read" (default on).
+States:
+
+| state | when | look |
+|---|---|---|
+| **read** | read, no reason to doubt it | chalk, quiet |
+| **asking** ("Is this right?") | the two readers disagree (when the second opinion is on), or Mathpix's strokes confidence is under 0.99, or the page's context makes another reading likely (a lone `×` on an `x` page; `0` where the page's problem has an `a`) | pale sunny (flat), "Is this right?" |
+| **unread** | nothing could be read (confidence under 0.6, or no read) | pale sunny, "I couldn't read this. Tap to fix." |
+| **fixed** | the kid (or a grown-up) confirmed, picked or typed it | chalk, a small pen mark |
+
+The chips hide while the pen is down and for 1 s after, so a stroke never starts on one. A grown-ups'
+switch "Show what the tutor read" (default on).
+
+**A ring needs a read the tutor trusts.** A line in **asking** or **unread** is never ringed: when a
+check finds it a slip, the tutor asks first (the chip opens "Is this right?"; the hint card says "Did I
+read this right?"). Confirmed or fixed, it is judged at once. A tick on an asking line is fine (a right
+step stays right whatever the doubt was about).
+
+### The second opinion (behind flags)
+
+The disagreement trigger needs a crop of every finished line and one more Mathpix call on each
+(it doubles Mathpix's cost per line), so it is off until the owner turns it on, in two places:
+
+- **server:** `/api/live/recognize` takes `secondOpinion: true` with the line's `crop`; with the route's
+  flag on (`RECOGNIZE_SECOND_OPINION=mathpix-text`, off by default) it reads the crop with v3/text in
+  parallel with the strokes (≈0.2 s, inside the strokes read's ≈0.45 s) and answers
+  `second: { latex, confidence }` and `agree` (the two reads the same maths, by the engine's flat
+  form). Flag off, or the crop missing: neither field, nothing else changes. The second read is never
+  the line's reading.
+- **client:** `LiveLoop.secondOpinion` (off by default; a Debug switch in the Live Lab, then a remote
+  setting) sends the crop and `secondOpinion: true` on every read. Off, the strokes-confidence and
+  context triggers still work.
 
 ### Tap to fix
 
 A tap opens **Fix what I read** (a popover on the chip; a sheet in a narrow window):
 
-- **I read** the reading, big.
-- **Did you mean** up to three readings (52 pt chips), best first: the reading the page's context makes
-  likely (below), the second reader's reading if it differed, and the commonest confusions of the read
-  (`×`↔`x`, `X`↔`x`, `1`↔`l`↔`|`, `5`↔`s`, `2`↔`z`, `0`↔`o`, `9`↔`g`, `t`↔`+`, `b`↔`6`), kept only when
-  the engine reads them as maths.
+- **I read** the reading, big, and **Yes, that's right** (confirms it: the line is trusted, and judged).
+- **Did you mean** up to three readings (52 pt chips), best first: the second opinion's read when it
+  disagreed, the page's context (a look-alike of one of the problem's letters as that letter: `×`→`x`,
+  `0`→`a`, `6`→`e`, `;`→`i`, `U`→`u`, one place at a time), the second reader's (`/api/live/reread`)
+  when it differed, then the commonest confusions of a handwritten line (`X`→`x`, `1`↔`l`, `5`↔`s`,
+  `2`↔`z`, `0`↔`o`, `9`↔`g`, `t`→`+`, `b`→`6`), kept only when the engine reads them as maths, a reading
+  that follows from the line above first.
 - **Or type it:** a maths keypad (0–9, `+ − × ÷ = ( ) .`, `x y n`, a fraction `a/b`, a power, `√`, ⌫),
   56 pt keys, no system keyboard. It writes LaTeX (`a/b` → `\frac{a}{b}`).
 - **Use this** sets the line's reading: `provider: fixed`, confidence 1, the line record's meta `fixed`
@@ -253,16 +291,11 @@ A tap opens **Fix what I read** (a popover on the chip; a sheet in a narrow wind
 
 `/api/live/recognize` does take a `hint`, but only `math | chem | physics` (it steers the vision
 reader's prompt; Mathpix's strokes API has no alphabet to steer). So the page's letters are used on
-this side, before the read is analysed (`ReadingContext.correct`, AgathonLive `Logic`):
-
-- a `\times` where multiplication cannot be (before `=`, `+`, `−`, `)`, at the end or the start: `2 \times
-  + 3 = 11`, `4 \times = 12`) becomes the page problem's letter when it has exactly one (`x`);
-- `X` becomes `x`, and `\chi` becomes `x`, when the problem has `x` and no `X`;
-- only when the result reads as maths and the original did not. The raw read stays in the line record's
-  meta (`readRaw`). Never anything that could turn a slip into a right step (no digit is changed).
-
-Sending the page's letters to the server (a Mathpix `alphabets` option, or a richer `hint` that the
-vision prompt uses) is a web change for later (it needs `main`).
+this side, and only to **ask and suggest** (`ReadingContext`, AgathonLive `Logic`): the letters of the
+page's problem (single Latin letters outside commands and `\text{…}`), and the look-alikes of each.
+The tutor's own second reader (`/api/live/reread`, 73/100 real misreads fixed and 0/30 right reads
+broken in its own eval) keeps working as today. Sending the page's letters to the server (a richer
+`hint` for the readers) is a web change for later.
 
 ## The learning record
 
@@ -273,7 +306,8 @@ vision prompt uses) is a web change for later (it needs `main`).
   help keep their meanings at the checks.
 - A new problem's lines are sent once they are settled: moved (under the new page's key) or kept. A move
   made before a check (the usual case in When done) leaves no attempt behind on the old page.
-- A fixed reading: the line is sent again with the fixed LaTeX.
+- A fixed (or confirmed) reading: the line is sent again with that LaTeX. A line the tutor is asking about
+  is not sent with a ring (it gets none until it is trusted).
 - Today's practice counts problems by LaTeX on the board (unchanged): one page a problem, one count.
 - The All done page reads each set problem's latest outcome: a star for first try or self corrected, a
   ring for with help, nothing for tutor solved, "Not yet" (a link to the page) for unfinished.
@@ -284,10 +318,11 @@ vision prompt uses) is a web change for later (it needs `main`).
 |---|---|---|
 | AgathonBoard | `Model/ProblemPage.swift` (meta model, `ProblemPageLayout`), `Canvas/PageTemplateLayer.swift` | `BoardCanvasView` (the template layer), `BoardController` (`insertScreen(after:meta:)`, `moveToNewScreen`), the thumbnail renderer (AgathonSync) draws the template |
 | AgathonBoardUI | | `BoardTopBar` ("Problem 2 of 5", "All done"), `CanvasAppearance.blocks` template colours |
-| AgathonLive | `LiveLoop+Check.swift` (held/released, triggers, the check), `LiveLoop+Pages.swift` (page heads, new problems, the move, Next), `LiveLoop+Fix.swift` (fix, alternatives), `Logic/ReadingContext.swift`, `Logic/TrueStep.swift`, `UI/ReadbackChip.swift`, `UI/FixReadingSheet.swift`, `UI/MathKeypad.swift`, `UI/PageActions.swift` (Check, Next, the offer), `UI/AllDoneCard.swift` | `LiveSettings` (`checking`, `showReadings`), `LivePolicy.Input` (`held`), `render`/`analyze` hooks, `anchorAtProblems`, `writeProblem` (own page), `showReadback` (persistent), `LiveOverlay`, `GrownUpLiveSettings`, `LiveCopy`, `ReadProvider.fixed`, `LiveBoard` (`moveToNewScreen`, `insertScreen`) |
+| AgathonLive | `LiveLoop+Check.swift` (held/released, triggers, the check), `LiveLoop+Pages.swift` (page heads, new problems, the move, Next), `LiveLoop+Fix.swift` (fix, confirm, alternatives, the asking state, the second opinion's request), `Logic/ReadingContext.swift`, `Logic/TrueStep.swift`, `UI/ReadbackChip.swift`, `UI/FixReadingSheet.swift`, `UI/MathKeypad.swift`, `UI/PageActions.swift` (Check, Next, the offer), `UI/AllDoneCard.swift` | `LiveSettings` (`checking`, `showReadings`), `LivePolicy.Input` (`held`), `render`/`analyze` hooks, `anchorAtProblems`, `writeProblem` (own page), `showReadback` (persistent), `LiveOverlay`, `GrownUpLiveSettings`, `LiveCopy`, `ReadProvider.fixed`, `LiveBoard` (`moveToNewScreen`, `insertScreen`) |
 | AgathonAsk | `Board/ProblemPageWriter.swift` | `AskBoardDriver.run` (a `write_problems` goes through the writer) |
 | app | | `BoardTutor.writePractice` (through the writer), `BoardScreen` (the All done card, Next's page move) |
-| brain, web | none | |
+| web (server) | | `/api/live/recognize`: `secondOpinion` + `crop` → `second`, `agree`, behind `RECOGNIZE_SECOND_OPINION` (off); `RecognizeRequestSchema` / `RecognizeResponseSchema` gain the optional fields |
+| brain | none | |
 
 ## Old boards, old settings
 
@@ -336,7 +371,9 @@ vision prompt uses) is a web change for later (it needs `main`).
   9 s pause with Auto on and not off, Help me); the first slip gets the one hint; released lines
   survive a reopen; the page problem heads every column; the three new-problem rules and the offer;
   the move is one undo step and reads nothing again; a fixed reading survives a re-read and is dropped
-  by new ink; `ReadingContext` corrections (and the cases it must not touch).
+  by new ink; a confirmed reading is trusted; an asking line is never ringed (the check asks
+  instead); `ReadingContext`'s suggestions (and the cases it must not touch), never applied without a
+  tap; the asking triggers (disagreement, confidence < 0.99, context).
 - **Unit (AgathonBoard):** `ProblemPage` round trip, the layout's rows for one- and three-line problems,
   `moveToNewScreen` + undo, the template layer's paths.
 - **Unit (AgathonAsk):** the writer makes a page per problem, strips the number, keeps `chatProblem`, adds
@@ -352,6 +389,8 @@ recognize/check calls (reads of moved ink and fixed readings are cache hits).
 ## Open
 
 - The page's letters for the recognizer on the server (needs a web change).
+- Turning the second opinion on (both flags) once the owner OKs doubling Mathpix's cost per line;
+  measure "asked" and "fixed" in the admin console first.
 - "More room" for a long problem (a continuation page judged against the same problem).
 - An answer spot for problems whose answer is a drawing (a graph, a shape): none yet; those pages have
   no answer spot (`page.answer: false`).

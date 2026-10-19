@@ -133,7 +133,7 @@ function dock(page = "2/6", { check = false } = {}) {
 }
 
 function readback(latex, x, y, { unsure = false } = {}) {
-  return el(`<div class="readback ${unsure ? "unsure" : ""}"><b>I read</b><span>${latex}</span>${unsure ? "<em>Tap to fix</em>" : ""}</div>`, vx(x), vy(y) - 17);
+  return el(`<div class="readback ${unsure ? "unsure" : ""}"><b>I read</b><span>${latex}</span>${unsure ? "<em>Is this right?</em>" : ""}</div>`, vx(x), vy(y) - 17);
 }
 
 function callout(text, x, y) { const c = el(text, x, y); c.className = "callout"; return c; }
@@ -198,16 +198,18 @@ const frames = {
     el(`<div class="sheet" style="width:560px">
           <div style="display:flex;justify-content:space-between;align-items:center"><div class="h2">Fix what I read</div><div class="round" style="background:var(--sunken);width:52px;height:52px">&times;</div></div>
           <div class="label" style="margin-top:18px">I read</div>
-          <div style="font-size:34px;font-weight:500;margin-top:6px">4 &times; = 12</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+            <div style="font-size:34px;font-weight:500">4 &times; = 12</div>
+            <div class="btn chalk regular" style="padding:0 20px 0 8px"><span class="badge" style="background:#fff;width:40px;height:40px;font-size:18px">&#10003;</span>Yes, that's right</div></div>
           <div class="label" style="margin-top:22px">Did you mean</div>
-          <div style="display:flex;gap:10px;margin-top:10px"><div class="chip" style="background:var(--ink);color:#fff">4x = 12</div><div class="chip">4 + 12</div></div>
+          <div style="display:flex;gap:10px;margin-top:10px"><div class="chip" style="background:var(--ink);color:#fff">4x = 12</div><div class="chip">4 + = 12</div></div>
           <div class="label" style="margin-top:22px">Or type it</div>
           <div class="field" style="margin-top:10px">4x = 12<span class="caret"></span></div>
           <div style="display:grid;grid-template-columns:repeat(5,64px);gap:8px;margin-top:14px;justify-content:center">
             ${keys.flat().map((k, i) => `<div class="key ${i % 5 >= 3 ? "op" : ""}">${k}</div>`).join("")}</div>
           <div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end"><div class="btn chalk regular">Cancel</div><div class="btn ink regular">Use this</div></div>
         </div>`, 1366 - 40 - 560, 112);
-    callout("x read as &times; : the page's problem has an x", vx(560), vy(250));
+    callout("asked, never swapped: a &times; where no product can be, on an x page", vx(330), vy(250));
   },
   // 6. Solved: the cheer and a big Next
   next() {

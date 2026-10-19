@@ -71,6 +71,27 @@ struct ProblemPagesLogicTests {
         #expect(ReadingContext.letters(["18 + 15 - 19", "\\sqrt{16} \\times 2"]).isEmpty)
     }
 
+    /// The eval's misreads (docs/eval/mpx-supernet.md): a look-alike of the page's letter is a reason
+    /// to ask, and its letter the sheet's suggestion — never a swap.
+    @Test func aLookAlikeOfThePagesLetterIsAReasonToAsk() {
+        #expect(ReadingContext.asks("0=5", letters: ["a"]))
+        #expect(ReadingContext.suggestions("0=5", letters: ["a"]) == ["a=5"])
+        #expect(ReadingContext.asks("6^{x}=10", letters: ["e", "x"]))
+        #expect(ReadingContext.suggestions("6^{x}=10", letters: ["e", "x"]).first == "e^{x}=10")
+        #expect(ReadingContext.asks(";^{23}", letters: ["i"]) && ReadingContext.asks("U=3", letters: ["u"]))
+        #expect(ReadingContext.asks("(0+b)^{2}", letters: ["a", "b"]))
+        #expect(ReadingContext.asks("4 \\times = 12", letters: ["x"]))
+        // a digit inside a number is no reason to ask (`10`), but the sheet may still suggest it (`2a`)
+        #expect(!ReadingContext.asks("10 - 5 = 5", letters: ["a"]))
+        #expect(!ReadingContext.asks("b=20-3", letters: ["a", "b"]))
+        #expect(ReadingContext.suggestions("b=20-3", letters: ["a", "b"]).contains("b=2a-3"))
+        // the letter is there: nothing to ask
+        #expect(!ReadingContext.asks("a = 5", letters: ["a"]) && !ReadingContext.asks("x = 4", letters: ["x"]))
+        #expect(!ReadingContext.asks("0 = 5", letters: []), "arithmetic has no letters to look like")
+        // the second opinion's read comes first in the sheet
+        #expect(ReadingAlternatives.candidates("0=5", letters: ["a"], prior: ["a = 5"]).first == "a = 5")
+    }
+
     @Test func theReadingsItMayHaveBeen() {
         let x: Set<Character> = ["x"]
         #expect(ReadingAlternatives.candidates("4 \\times = 12", letters: x).first == "4x = 12")

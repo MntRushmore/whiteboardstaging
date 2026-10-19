@@ -81,6 +81,9 @@ public final class LiveLoop: ObservableObject {
     @Published public internal(set) var bigBurst = 0
     /// "Graph it" chips beside function lines just read (`LiveLoop+Graph`).
     @Published public internal(set) var graphOffers: [GraphOffer] = []
+    /// Problem pages, check when done and "I read" (`LiveLoop+Check`, `+Pages`, `+Fix`;
+    /// docs/PROBLEM-PAGES.md): what the board shows for them, and what the loop remembers.
+    public let pages = LivePages()
 
     // MARK: the learning record
 

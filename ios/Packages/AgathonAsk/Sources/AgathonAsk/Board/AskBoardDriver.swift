@@ -57,6 +57,9 @@ public final class AskBoardDriver: AskBoardContext {
     /// Reduce Motion: the desk's pauses between a worked solution's steps are skipped
     public var reduceMotion: () -> Bool = { false }
     public var onScreenChange: ((AskScreenRef) -> Void)?
+    /// Problem pages (docs/PROBLEM-PAGES.md): on, every `write_problems` is a page a problem
+    /// (`ProblemPageWriter`); off, the desk's grid (the Labs, the tests).
+    public var problemPages = false
     /// the problems each screen the tutor started for its work came from (`ChatScreen.from`)
     public private(set) var carried: [RecordID: AskScreenFrom] = [:]
     private var screenWatch: AnyCancellable?
@@ -177,6 +180,64 @@ public final class AskBoardDriver: AskBoardContext {
         while running { try? await Task.sleep(for: .milliseconds(50)) }
         running = true
         defer { running = false }
+        if problemPages, actions.contains(where: Self.isWriteProblems) {
+            return await runWithPages(actions, onTutorScreen: onTutorScreen)
+        }
+        return await runDesk(actions, onTutorScreen: onTutorScreen)
+    }
+
+    static func isWriteProblems(_ action: AgathonKit.JSONValue) -> Bool {
+        action["type"]?.stringValue == "write_problems"
+    }
+
+    /// A reply with problems in it: each `write_problems` a page a problem (`ProblemPageWriter`), the
+    /// rest through the desk as before, in order.
+    func runWithPages(_ actions: [AgathonKit.JSONValue], onTutorScreen: @escaping @MainActor (AskScreenRef) -> Void) async -> AskRunReport {
+        var report = AskRunReport()
+        var pending: [AgathonKit.JSONValue] = []
+        func merge(_ r: AskRunReport) {
+            report.outcomes += r.outcomes
+            report.problemsWritten += r.problemsWritten
+            report.problemsDropped += r.problemsDropped
+            report.screensAdded += r.screensAdded
+        }
+        for action in actions {
+            guard Self.isWriteProblems(action) else {
+                pending.append(action)
+                continue
+            }
+            if !pending.isEmpty {
+                merge(await runDesk(pending, onTutorScreen: onTutorScreen))
+                pending = []
+            }
+            let problems = (action["problems"]?.arrayValue ?? []).map { ($0.arrayValue ?? []).compactMap(\.stringValue) }.filter { !$0.isEmpty }
+            let setId = action["set"]?.stringValue ?? "ask:\(UUID().uuidString.prefix(8).lowercased())"
+            let origin = action["origin"]?.stringValue ?? "chat"
+            let screensBefore = board.store.screenIDs.count
+            let r = await ProblemPageWriter(driver: self).write(.init(problems: problems, setId: setId, origin: origin),
+                                                                                onTutorScreen: onTutorScreen)
+            merge(AskRunReport(outcomes: [Self.outcome(r, asked: problems.count)], problemsWritten: r.written, problemsDropped: r.dropped,
+                               screensAdded: board.store.screenIDs.count - screensBefore))
+        }
+        if !pending.isEmpty { merge(await runDesk(pending, onTutorScreen: onTutorScreen)) }
+        return report
+    }
+
+    /// The panel's outcome for a set written on pages, in the desk's own words.
+    static func outcome(_ r: ProblemPageWriter.Report, asked: Int) -> AskActionOutcome {
+        func plural(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? one : many }
+        if r.written == 0 {
+            return AskActionOutcome(type: "write_problems", ok: false,
+                                    note: r.notes.first ?? "I couldn't check \(plural(asked, "that problem", "those problems")), so I didn't write \(plural(asked, "it", "them")).")
+        }
+        var notes: [String] = []
+        if r.dropped > 0 { notes.append("\(r.dropped) of \(asked) problems couldn't be checked, so I left \(plural(r.dropped, "it", "them")) out.") }
+        notes += r.notes.filter { $0.hasPrefix("This board") }
+        return AskActionOutcome(type: "write_problems", ok: true, note: notes.isEmpty ? nil : notes.joined(separator: " "))
+    }
+
+    /// The desk's plan for `actions` on this screen, carried out.
+    func runDesk(_ actions: [AgathonKit.JSONValue], onTutorScreen: @escaping @MainActor (AskScreenRef) -> Void) async -> AskRunReport {
         let start = board.currentScreenID
         let rect = board.screenRect
         let args = AskPlanArgs(

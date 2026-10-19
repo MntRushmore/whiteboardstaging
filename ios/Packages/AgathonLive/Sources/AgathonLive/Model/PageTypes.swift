@@ -4,13 +4,15 @@ import Foundation
 /// What the board shows for problem pages and "I read" (docs/PROBLEM-PAGES.md): the loop publishes
 /// these, the overlay draws them. Page units unless said.
 
-/// A line's "I read" chip: what the tutor read, where the chip goes, and whether to trust it.
+/// A line's "I read" chip: what the tutor read, where the chip goes, and whether to trust it
+/// (docs/PROBLEM-PAGES.md, "Trust in reading": it always shows, quietly; it asks only with a reason).
 public struct LineReading: Identifiable, Equatable, Sendable {
     public enum State: String, Sendable {
-        /// read, and sure
+        /// read, and no reason to doubt it
         case read
-        /// read but unsure (low confidence, or maths the engine cannot use): "Tap to fix"
-        case unsure
+        /// read, with a reason to ask (the readers disagree, Mathpix's confidence under 0.99, a
+        /// look-alike of one of the page's letters): "Is this right?" — never ringed until trusted
+        case asking
         /// the kid's (or a grown-up's) own reading
         case fixed
         /// nothing could be read: "I couldn't read this"
@@ -42,11 +44,14 @@ public struct ReadingFix: Identifiable, Equatable, Sendable {
     public let id: String
     public let latex: String
     public var alternatives: [String]
+    /// nothing was read: no "Yes, that's right"
+    public var unread: Bool
 
-    public init(id: String, latex: String, alternatives: [String] = []) {
+    public init(id: String, latex: String, alternatives: [String] = [], unread: Bool = false) {
         self.id = id
         self.latex = latex
         self.alternatives = alternatives
+        self.unread = unread
     }
 }
 

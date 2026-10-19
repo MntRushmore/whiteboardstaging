@@ -8,8 +8,9 @@ import SwiftUI
 
 // MARK: - "I read"
 
-/// A line's reading, quiet: chalk, the label in caps, the reading in Lexend. Unsure: pale sunny with
-/// "Tap to fix". Fixed: a pen mark. A tap opens "Fix what I read".
+/// A line's reading, quiet: chalk, the label in caps, the reading in Lexend. Asking: pale sunny with
+/// "Is this right?". Unread: "I couldn't read this. Tap to fix." Fixed: a pen mark. A tap opens
+/// "Fix what I read".
 public struct ReadbackChip: View {
     let reading: LineReading
     let onTap: (() -> Void)?
@@ -20,7 +21,7 @@ public struct ReadbackChip: View {
     }
 
     /// pale sunny: sunny mixed with paper, flat (no transparency on the page)
-    static let unsureFill = Color(red: 0xFF / 255, green: 0xF4 / 255, blue: 0xC9 / 255)
+    static let askingFill = Color(red: 0xFF / 255, green: 0xF4 / 255, blue: 0xC9 / 255)
 
     private var plain: String { MathText.plain(reading.latex) }
 
@@ -29,28 +30,29 @@ public struct ReadbackChip: View {
             switch reading.state {
             case .unread:
                 Text(LiveCopy.Reading.unread).dsFont(.caption, size: 14).foregroundStyle(DS.Color.ink)
-            case .read, .unsure, .fixed:
+            case .read, .asking, .fixed:
                 Text(LiveCopy.Reading.iRead.uppercased()).dsFont(.label, size: 11).foregroundStyle(DS.Color.inkSecondary)
                 Text(plain).dsFont(.callout, size: 16).foregroundStyle(DS.Color.ink).lineLimit(1)
             }
             if reading.state == .fixed {
                 DSIcon(.pen, size: 12).foregroundStyle(DS.Color.inkSecondary)
             }
-            if reading.state == .unsure || reading.state == .unread {
-                Text(LiveCopy.Reading.tapToFix).dsFont(.caption, size: 13).fontWeight(.semibold)
+            if reading.state == .asking || reading.state == .unread {
+                Text(reading.state == .asking ? LiveCopy.Reading.isThisRight : LiveCopy.Reading.tapToFix).dsFont(.caption, size: 13).fontWeight(.semibold)
                     .foregroundStyle(DS.Color.ink).underline()
             }
         }
         .padding(.horizontal, 12)
         .frame(height: 34)
-        .background(Capsule().fill(reading.state == .unsure || reading.state == .unread ? Self.unsureFill : DS.Color.surfaceSunken))
+        .background(Capsule().fill(reading.state == .asking || reading.state == .unread ? Self.askingFill : DS.Color.surfaceSunken))
         .fixedSize()
 
         Group {
             if let onTap {
                 Button(action: onTap) { chip.contentShape(Capsule().inset(by: -6)) }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(reading.state == .unread ? LiveCopy.Reading.unread : LiveCopy.Reading.spoken(plain))
+                    .accessibilityLabel(reading.state == .unread ? LiveCopy.Reading.unread
+                                        : reading.state == .asking ? LiveCopy.Reading.asking(plain) : LiveCopy.Reading.spoken(plain))
                     .accessibilityHint(LiveCopy.Reading.tapToFix)
             } else {
                 chip.accessibilityElement(children: .combine)
@@ -62,19 +64,21 @@ public struct ReadbackChip: View {
 
 // MARK: - Fix what I read
 
-/// "Fix what I read": the reading, big; what it may have been; or type it on the maths keypad.
+/// "Fix what I read": the reading, big, and "Yes, that's right"; what it may have been; or type it on
+/// the maths keypad. Nothing changes without a tap.
 public struct FixReadingSheet: View {
     let fix: ReadingFix
     let onUse: (String) -> Void
+    let onConfirm: () -> Void
     let onCancel: () -> Void
     @State private var typed: String
-    @State private var typing = false
 
-    public init(fix: ReadingFix, onUse: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+    public init(fix: ReadingFix, onUse: @escaping (String) -> Void, onConfirm: @escaping () -> Void, onCancel: @escaping () -> Void) {
         self.fix = fix
         self.onUse = onUse
+        self.onConfirm = onConfirm
         self.onCancel = onCancel
-        _typed = State(initialValue: PlainMath.plain(fix.latex))
+        _typed = State(initialValue: fix.unread ? "" : PlainMath.plain(fix.latex))
     }
 
     public var body: some View {
@@ -82,8 +86,15 @@ public struct FixReadingSheet: View {
             SheetHeader(LiveCopy.Reading.sheetTitle, onClose: onCancel)
             VStack(alignment: .leading, spacing: 6) {
                 Text(LiveCopy.Reading.iRead.uppercased()).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
-                Text(fix.latex.isEmpty ? "?" : MathText.plain(fix.latex)).dsFont(.title, size: 34).foregroundStyle(DS.Color.ink)
-                    .accessibilityIdentifier("live.fix.reading")
+                HStack(alignment: .center, spacing: DS.Space.m) {
+                    Text(fix.unread || fix.latex.isEmpty ? "?" : MathText.plain(fix.latex)).dsFont(.title, size: 34).foregroundStyle(DS.Color.ink)
+                        .accessibilityIdentifier("live.fix.reading")
+                    Spacer(minLength: 0)
+                    if !fix.unread && !fix.latex.isEmpty {
+                        PillButton(LiveCopy.Reading.yesRight, icon: .check, kind: .secondaryOnPaper, action: onConfirm)
+                            .accessibilityIdentifier("live.fix.confirm")
+                    }
+                }
             }
             if !fix.alternatives.isEmpty {
                 VStack(alignment: .leading, spacing: DS.Space.xs) {
