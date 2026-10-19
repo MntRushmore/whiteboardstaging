@@ -10,7 +10,9 @@
  *  - the crop retry (`cropOnly`) goes straight to vision: Mathpix is not asked about the same
  *    strokes twice;
  *  - a vision read slower than the client's 6 s is the server's 504 (an event), not a client that
- *    silently went away.
+ *    silently went away;
+ *  - the second opinion (RECOGNIZE_SECOND_OPINION, off by default): v3/text on the crop beside the
+ *    strokes read, `second` + `agree` on the answer, and never the line's reading.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -48,7 +50,7 @@ import { chatJson } from "@/lib/server/openrouter";
 import { resetRateLimits } from "@/lib/server/rate-limit";
 import { POST as recognize } from "@/app/api/live/recognize/route";
 
-const ENV_VARS = ["RECOGNIZE_CROP_READER", "BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+const ENV_VARS = ["RECOGNIZE_CROP_READER", "RECOGNIZE_SECOND_OPINION", "BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
 
 const IMAGE = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==";
@@ -79,6 +81,7 @@ beforeEach(() => {
   vi.mocked(recognizeStrokes).mockClear();
   vi.mocked(recognizeImage).mockClear();
   delete process.env.RECOGNIZE_CROP_READER;
+  delete process.env.RECOGNIZE_SECOND_OPINION;
   vi.mocked(chatJson).mockReset();
   logger.level = "silent";
 });
@@ -277,5 +280,87 @@ describe("live/recognize: RECOGNIZE_CROP_READER=mathpix-text (the v3/text protot
     const res = await recognize(request({ ...BODY, crop: IMAGE, cropOnly: true }));
     expect(await res.json()).toMatchObject({ provider: "vision" });
     expect(recognizeImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("live/recognize: the second opinion", () => {
+  const text = (latex: string, confidence = 0.98) => ({ ok: true, latex, text: latex, confidence, confidences: {}, raw: {} });
+  const strokes = (latex: string, confidence = 0.995) => ({ ok: true, latex, text: latex, confidence, raw: {} });
+  const ASK = { ...BODY, crop: IMAGE, secondOpinion: true };
+
+  it("off by default: the board's ask changes nothing, and v3/text is not called", async () => {
+    fake.mathpix = strokes("3 x=15");
+    fake.mathpixText = text("3x = 15");
+    const res = await recognize(request(ASK));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ latex: "3 x=15", provider: "mathpix" });
+    expect(body).not.toHaveProperty("second");
+    expect(body).not.toHaveProperty("agree");
+    expect(recognizeImage).not.toHaveBeenCalled();
+  });
+
+  it("on, and the two readers spell the same maths: `agree`, and the line keeps the strokes read", async () => {
+    process.env.RECOGNIZE_SECOND_OPINION = "mathpix-text";
+    resetServerEnvCache();
+    fake.mathpix = strokes("3 x=15");
+    fake.mathpixText = text("3x = 15", 0.97);
+    const body = await (await recognize(request(ASK))).json();
+    expect(body).toMatchObject({ latex: "3 x=15", confidence: 0.995, second: { latex: "3x = 15", confidence: 0.97 }, agree: true });
+    expect(recognizeStrokes).toHaveBeenCalledTimes(1);
+    expect(recognizeImage).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(recognizeImage).mock.calls[0][0]).toBe(IMAGE);
+  });
+
+  it("on, and they disagree (the eval's 0 for a): `agree: false`, and the strokes read is never swapped", async () => {
+    process.env.RECOGNIZE_SECOND_OPINION = "mathpix-text";
+    resetServerEnvCache();
+    fake.mathpix = strokes("0=5");
+    fake.mathpixText = text("a=5");
+    const body = await (await recognize(request(ASK))).json();
+    expect(body).toMatchObject({ latex: "0=5", text: "0=5", second: { latex: "a=5" }, agree: false });
+  });
+
+  it("on, but not asked, no crop, or the crop retry: no second read", async () => {
+    process.env.RECOGNIZE_SECOND_OPINION = "mathpix-text";
+    resetServerEnvCache();
+    fake.mathpix = strokes("x=4");
+    fake.mathpixText = text("x=4");
+    for (const body of [{ ...BODY, crop: IMAGE }, { ...BODY, secondOpinion: true }]) {
+      const answer = await (await recognize(request(body))).json();
+      expect(answer).not.toHaveProperty("second");
+    }
+    vi.mocked(chatJson).mockResolvedValue({ latex: "x=4", text: "x=4", confidence: 0.6, isMath: true } as never);
+    await recognize(request({ ...ASK, cropOnly: true }));
+    expect(recognizeImage).not.toHaveBeenCalled();
+  });
+
+  it("a second read that failed or read nothing: the strokes read alone, as before", async () => {
+    process.env.RECOGNIZE_SECOND_OPINION = "mathpix-text";
+    resetServerEnvCache();
+    fake.mathpix = strokes("x=4");
+    for (const outcome of [{ ok: false, reason: "timeout" }, text("")]) {
+      fake.mathpixText = outcome;
+      const res = await recognize(request(ASK));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({ latex: "x=4" });
+      expect(body).not.toHaveProperty("second");
+      expect(body).not.toHaveProperty("agree");
+    }
+  });
+
+  it("with the v3/text crop reader too and the strokes read empty: one v3/text call serves both", async () => {
+    process.env.RECOGNIZE_SECOND_OPINION = "mathpix-text";
+    process.env.RECOGNIZE_CROP_READER = "mathpix-text";
+    resetServerEnvCache();
+    fake.mathpix = { ok: false, reason: "api_error", status: 200, detail: "image_no_content" };
+    fake.mathpixText = text("x=4", 0.9);
+    const body = await (await recognize(request(ASK))).json();
+    expect(body).toMatchObject({ latex: "x=4", provider: "mathpix", confidence: 0.9 });
+    // the crop reader's read is the line's reading here: nothing to compare it with
+    expect(body).not.toHaveProperty("agree");
+    expect(recognizeImage).toHaveBeenCalledTimes(1);
+    expect(chatJson).not.toHaveBeenCalled();
   });
 });

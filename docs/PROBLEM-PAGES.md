@@ -279,9 +279,11 @@ The disagreement trigger needs a crop of every finished line and one more Mathpi
 - **server:** `/api/live/recognize` takes `secondOpinion: true` with the line's `crop`; with the route's
   flag on (`RECOGNIZE_SECOND_OPINION=mathpix-text`, off by default) it reads the crop with v3/text in
   parallel with the strokes (≈0.2 s, inside the strokes read's ≈0.45 s) and answers
-  `second: { latex, confidence }` and `agree` (the two reads the same maths, by the engine's flat
-  form). Flag off, or the crop missing: neither field, nothing else changes. The second read is never
-  the line's reading.
+  `second: { latex, confidence }` and `agree` (the two reads the same maths as written:
+  `src/lib/live/sameRead.ts`, so `3 x=15` and `3x = 15` agree and `0=5` and `a=5` do not). Flag off,
+  the crop missing, the crop retry, or a second read that failed: neither field, nothing else changes.
+  The second read is never the line's reading. With the v3/text crop reader on as well, a strokes
+  read that came back empty takes the second read's answer as its crop read (one call, not two).
 - **client:** `LiveLoop.secondOpinion` (off by default; a Debug switch in the Live Lab, then a remote
   setting) sends the crop and `secondOpinion: true` on every read. Off, the strokes-confidence and
   context triggers still work.
