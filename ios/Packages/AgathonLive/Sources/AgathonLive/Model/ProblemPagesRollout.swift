@@ -9,5 +9,12 @@ import Foundation
 public enum ProblemPagesRollout {
     /// the second part: on, the defaults are check when done and "I read", the page's judging rules
     /// apply, the answer spot is drawn, the offer is made, the grown-ups see the switches
-    public static let secondPart = false
+    /// (Debug: `-pagesSecondPart` turns it on for a run — the UI tests of the second part.)
+    public static let secondPart: Bool = {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-pagesSecondPart")
+        #else
+        return false
+        #endif
+    }()
 }

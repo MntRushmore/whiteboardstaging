@@ -361,9 +361,10 @@ final class Harness {
 
     /// The kid writes `latex` (fixture ink) at `at`; the fake recognizer will read it as `reads`.
     @discardableResult
-    /// `confidence`: Mathpix's for the read (under 0.99 the tutor asks "Is this right?" and rings nothing)
-    func write(_ latex: String, at: Vec2, hand: String = "clean", reads: String? = nil, confidence: Double = 0.995) async -> [RecordID] {
-        let ink = KidHands.strokes(latex, hand: hand, at: at)
+    /// `confidence`: Mathpix's for the read (under 0.99 the tutor asks "Is this right?" and rings nothing,
+    /// with problem pages' second part on)
+    func write(_ latex: String, at: Vec2, hand: String = "clean", reads: String? = nil, confidence: Double = 0.995, scale: Double = 1.4) async -> [RecordID] {
+        let ink = KidHands.strokes(latex, hand: hand, at: at, scale: scale)
         let ids = board.kidWrites(ink)
         await register(ids, reads: reads ?? latex, confidence: confidence)
         written[latex] = ids

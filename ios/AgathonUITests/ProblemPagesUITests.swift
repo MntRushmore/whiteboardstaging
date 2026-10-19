@@ -100,9 +100,10 @@ final class ProblemPagesUITests: XCTestCase {
     }
 
     /// Check when done, the answer spot, "I read" and tap to fix: the second part
-    /// (`ProblemPagesRollout.secondPart`; run with TEST_RUNNER_PAGES_SECOND_PART=1 once it is on).
+    /// (`ProblemPagesRollout.secondPart`, off in the app; `-pagesSecondPart` turns it on for this run).
     func testAThreeProblemSetChecksWhenDone() throws {
-        try XCTSkipUnless(env["PAGES_SECOND_PART"] == "1", "problem pages' second part is not on yet")
+        // the second part is still being finished (its fix sheet's readings): run on purpose only
+        try XCTSkipUnless(env["PAGES_SECOND_PART"] == "1", "problem pages' second part: TEST_RUNNER_PAGES_SECOND_PART=1")
         app = XCUIApplication()
         for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY"] { app.launchEnvironment[key] = env[key] }
         app.launchArguments += [
@@ -111,6 +112,7 @@ final class ProblemPagesUITests: XCTestCase {
             "-practiceProblems", "2x + 3 = 11|3x - 5 = 10|5x + 2 = 17",
             "-boardAutowrite", "2x = 8|answer:x = 4|3x = 15|answer:x = 3|5x = 15|answer:x = 3",
             "-liveMisread", "3x = 15=>3 \\times = 15",
+            "-pagesSecondPart",
         ]
         app.launch()
         signInIfNeeded(email: env["AGATHON_TEST_EMAIL"] ?? "qa-student@example.com", password: env["AGATHON_TEST_PASSWORD"] ?? "password123")
@@ -123,13 +125,13 @@ final class ProblemPagesUITests: XCTestCase {
 
         // 1 · an intermediate step: read, never marked while the kid works
         write("2x = 8")
-        waitFor("debug.live", matching: #"read 2x = 8=read"#, timeout: 30)
+        waitFor("debug.live", matching: #"read 2 ?x ?= ?8=read"#, timeout: 30)
         sleep(3)
-        waitFor("debug.live", matching: #"2x = 8=none.*action check"#, timeout: 5)
+        waitFor("debug.live", matching: #"2 ?x ?= ?8=none.*action check"#, timeout: 5)
         snap("02-working-quiet")
         // the answer, in the answer spot: the page is checked
         write("answer:x = 4")
-        waitFor("debug.live", matching: #"2x = 8=tick.*x = 4=tick.*action next"#, timeout: 40)
+        waitFor("debug.live", matching: #"2 ?x ?= ?8=tick.*x ?= ?4=tick.*action next"#, timeout: 40)
         snap("03-solved-next")
         tap("live.next")
 
@@ -139,7 +141,7 @@ final class ProblemPagesUITests: XCTestCase {
         waitFor("debug.live", matching: #"read 3 \\times = 15=asking"#, timeout: 30)
         write("answer:x = 3")
         // ringed only after the check (the answer spot's), with the one hint; the doubtful read is asked about, not ringed
-        waitFor("debug.live", matching: #"x = 3=ring"#, timeout: 40)
+        waitFor("debug.live", matching: #"x ?= ?3=ring"#, timeout: 40)
         let probe = element("debug.live").label
         XCTAssertTrue(probe.contains("3 \\times = 15=none"), "a read in doubt is never ringed: \(probe)")
         XCTAssertTrue(element("live.hint").waitForExistence(timeout: 20), "no hint on the slip")
@@ -165,7 +167,7 @@ final class ProblemPagesUITests: XCTestCase {
         waitFor("debug.live", matching: #"page 3/3"#, timeout: 20)
         write("5x = 15")
         write("answer:x = 3")
-        waitFor("debug.live", matching: #"x = 3=tick.*action alldone"#, timeout: 40)
+        waitFor("debug.live", matching: #"x ?= ?3=tick.*action alldone"#, timeout: 40)
         snap("07-last-solved")
         tap("live.next")
         XCTAssertTrue(element("live.allDone").waitForExistence(timeout: 20), "no All done")

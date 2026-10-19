@@ -538,6 +538,8 @@ struct ProblemHead: Equatable {
     var lines: [String]
     var rect: BrainRect
     var analyses: [LineAnalysis?] = []
+    /// a chat problem's grid cell: the kid's lines whose middle is in it are its work (the web's `cellOf`)
+    var cell: BrainRect?
 }
 
 /// The latencies the Lab shows and the logs keep (ms).

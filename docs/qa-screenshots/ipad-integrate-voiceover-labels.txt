@@ -1,0 +1,50 @@
+Board:
+  [board.back] Back to my boards
+  [board.title] Monday’s board 5. Page 1 of 1
+  [live.grownUps] For grown-ups
+  [ask.open] Ask your tutor
+  [board.more] More
+  [live.helpMe] Help me
+  [live.helpChoice] How much help: Hint
+  [] Select
+  [] Pen
+  [] Eraser
+  [] Undo
+  [] More
+  [] Black pen
+  [] Red pen
+  [] Orange pen
+  [] Green pen
+  [] Pink pen
+  [] New page
+Ask open:
+  [board.back] Back to my boards
+  [board.title] Monday’s board 5. Page 1 of 1
+  [live.grownUps] For grown-ups
+  [board.more] More
+  [live.helpMe] Help me
+  [live.helpChoice] How much help: Hint
+  [] Select
+  [] Pen
+  [] Eraser
+  [] Undo
+  [] More
+  [] Color
+  [] New page
+  [ask.speaker] Read answers out loud
+  [ask.close] Close
+  [ask.mic] Talk to Ask
+  [ask.send] Send
+  [ask.message.tutor.done] Read it again
+Grown-ups' help settings:
+  [] Close
+  [live.dial] Off
+  [live.dial] Hint
+  [live.dial] Next step
+  [live.dial] Solve it
+  [] Clear the tutor's marks
+  [live.auto] Auto = On
+  [] Tutor writes by hand = On
+  [] Celebrations = On
+  [] Check work as it's written = On
+  [live.answerOnEquals] Show the answer when I write = = Off
