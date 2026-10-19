@@ -25,6 +25,7 @@
 import { all, create, version as mathjsVersion } from "mathjs";
 import type { TLShapeId } from "tldraw";
 import { createEngine } from "@/lib/live/engine";
+import { isArithmetic, judgeLine } from "@/lib/live/engine/columnWork";
 import type { AnalyzeContext, GraphForOptions, HelpMode, InkLine, InkStroke, LineAnalysis, LiveEngine, Rect } from "@/lib/live/contracts";
 import { barGroups, splitInk, type Diagram, type StrokeVerdict } from "@/lib/live/diagrams";
 import { stackGroups } from "@/lib/live/stackedSums";
@@ -156,6 +157,32 @@ export function analyzeLine(args: AnalyzeLineArgs): LineAnalysis {
   need(typeof args.latex === "string", "latex is a string");
   const ctx: AnalyzeContext = { ...args.context, mode: (args.context?.mode ?? "feedback") as HelpMode };
   return engine().analyzeLine(args.latex, ctx);
+}
+
+export interface JudgeLineArgs {
+  latex: string;
+  /** the column context (`LiveLoop.columnContext`); `mode` defaults to "feedback" */
+  context?: Partial<AnalyzeContext>;
+  /**
+   * The problem the line is part of: the tutor's problem heading its column, else the column's first
+   * line. In arithmetic (no letters: `isArithmetic`) a young student's working is judged against it
+   * (`LiveLoop.arithmeticLines`): a lone number is the answer, a side calculation is no slip.
+   */
+  problem?: string[] | null;
+  /** the student's lines above it in its column, top to bottom, as read */
+  above?: string[];
+  /** the step right above it when that step is a slip (ringed, or carried on from one) */
+  slip?: LineAnalysis;
+}
+
+/** `judgeLine` (engine/columnWork.ts): a line of the student's working judged in its column, as `LiveLoop.judge` does. */
+export function judgeLineOf(args: JudgeLineArgs): LineAnalysis {
+  need(typeof args.latex === "string", "latex is a string");
+  const ctx: AnalyzeContext = { ...args.context, mode: (args.context?.mode ?? "feedback") as HelpMode };
+  const problem = Array.isArray(args.problem) ? args.problem.filter((l) => typeof l === "string" && l.trim().length > 0) : [];
+  const arithmetic = problem.length > 0 && problem.every(isArithmetic) ? problem : null;
+  const above = Array.isArray(args.above) ? args.above.filter((l) => typeof l === "string") : [];
+  return judgeLine(engine(), args.latex, { ctx, arithmetic, above, slip: args.slip });
 }
 
 /** Each line of a column analysed as the loop holds it (`analyzeColumn` in localSolve.ts). */
@@ -539,6 +566,7 @@ export const METHODS: Readonly<Record<string, Method>> = {
   version: { run: version },
   init: { run: init },
   analyzeLine: { run: analyzeLine },
+  judgeLine: { run: judgeLineOf },
   analyzeColumn: { run: analyzeColumnOf },
   localSolve: { run: localSolveOf },
   calculate: { run: calculate },

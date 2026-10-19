@@ -1,5 +1,6 @@
 import AgathonDesign
 import SwiftUI
+import UIKit
 
 /// Ask (docs/ASK-V2.md): a tutor to talk to beside the board. The kid types, taps a chip, or holds
 /// the mic and says it; the answer streams in with its maths typeset (read aloud when the speaker
@@ -44,6 +45,8 @@ public struct AskPanel: View {
             speech.stop()
             mic.cancel()
         }
+        // a container of its own, so its controls keep their own identifiers (ask.input, ask.send…)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ask.panel")
     }
 
@@ -121,10 +124,20 @@ public struct AskPanel: View {
                     .padding(.trailing, DS.Space.l)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("ask.hello")
-                FlowStack(spacing: DS.Space.xs, lineSpacing: DS.Space.xs) {
-                    ForEach(hello.chips, id: \.self) { chip in
-                        Chip(chip) { submit(chip) }
-                            .disabled(session.busy)
+                if typeSize.isAccessibilitySize {
+                    // the largest text: one chip a row, its words wrapping in the panel's width
+                    VStack(alignment: .leading, spacing: DS.Space.xs) {
+                        ForEach(hello.chips, id: \.self) { chip in
+                            Chip(chip) { submit(chip) }
+                                .disabled(session.busy)
+                        }
+                    }
+                } else {
+                    FlowStack(spacing: DS.Space.xs, lineSpacing: DS.Space.xs) {
+                        ForEach(hello.chips, id: \.self) { chip in
+                            Chip(chip) { submit(chip) }
+                                .disabled(session.busy)
+                        }
                     }
                 }
             }
@@ -198,6 +211,8 @@ public struct AskPanel: View {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty, !session.busy else { return }
         draft = ""
+        // the keyboard goes: the answer (and the board it writes on) shows whole
+        typing = false
         session.send(t)
     }
 
@@ -326,6 +341,9 @@ public struct AskPanelContainer<Board: View>: View {
     @State private var tall = false
     @GestureState private var drag: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The keyboard's top edge (global points) while it is up. The container ignores the keyboard (the
+    /// board is never relaid out for it); the panel moves above it itself.
+    @State private var keyboardTop: CGFloat?
 
     /// The docked panel's width (the web's 360 px, grown for 17 pt type and 56 pt targets).
     public static var dockedWidth: CGFloat { 420 }
@@ -349,10 +367,18 @@ public struct AskPanelContainer<Board: View>: View {
         return tall ? max(rest, min(height * 0.88, height - minBoardHeight)) : rest
     }
 
+    /// The sheet's height with the keyboard up, covering `overlap` of `height`: the composer and some
+    /// of the thread above the keyboard (half of what is left), the top of the board the other half.
+    public static func sheetHeight(_ height: CGFloat, keyboard overlap: CGFloat) -> CGFloat {
+        max(260, (height - overlap) * 0.5) + overlap
+    }
+
     public var body: some View {
         GeometryReader { geo in
             let docked = Self.docks(geo.size)
             let layout = docked ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+            // how much of this view the keyboard covers (0 when it is down)
+            let overlap = keyboardTop.map { max(0, geo.frame(in: .global).maxY - $0) } ?? 0
             layout {
                 board
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -361,21 +387,31 @@ public struct AskPanelContainer<Board: View>: View {
                     if docked {
                         panel
                             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-                            .padding(.vertical, DS.Space.m)
+                            .padding(.top, DS.Space.m)
+                            // above the keyboard while it is up
+                            .padding(.bottom, overlap > 0 ? overlap + DS.Space.s : DS.Space.m)
                             .padding(.trailing, DS.Space.m)
                             .frame(width: Self.dockedWidth + DS.Space.m)
                             .transition(.move(edge: .trailing))
                     } else {
-                        let h = Self.sheetHeight(geo.size.height + geo.safeAreaInsets.bottom, tall: tall)
+                        // resting (or pulled up tall): the board above keeps this height, keyboard or not
+                        let rest = Self.sheetHeight(geo.size.height + geo.safeAreaInsets.bottom, tall: tall)
+                        // with the keyboard up the sheet rises over the board's foot (the dock and Help
+                        // me, unused while typing) instead of squeezing the board: the work at the top
+                        // of the page stays in sight above the chat
+                        let h = overlap > 0 ? max(rest, Self.sheetHeight(geo.size.height, keyboard: overlap) + geo.safeAreaInsets.bottom) : rest
                         VStack(spacing: 0) {
                             grabber
                             panel
-                            // the home indicator's strip, in the sheet's colour
-                            DS.Color.surface.frame(height: geo.safeAreaInsets.bottom)
+                            // the home indicator's strip in the sheet's colour, or the keyboard's place
+                            DS.Color.surface.frame(height: overlap > 0 ? overlap + geo.safeAreaInsets.bottom : geo.safeAreaInsets.bottom)
                         }
                         .background(DS.Color.surface)
                         .clipShape(UnevenRoundedRectangle(topLeadingRadius: DS.Radius.card, topTrailingRadius: DS.Radius.card, style: .continuous))
                         .frame(height: max(260, h - drag))
+                        // laid out at its resting height, drawn up over the board when taller
+                        .frame(height: max(260, rest - drag), alignment: .bottom)
+                        .zIndex(1)
                         .transition(.move(edge: .bottom))
                         .ignoresSafeArea(.container, edges: .bottom)
                     }
@@ -385,6 +421,13 @@ public struct AskPanelContainer<Board: View>: View {
             .dsAnimation(DS.Motion.snap, value: isOpen)
             .dsAnimation(DS.Motion.snap, value: tall)
         }
+        // the board is never squeezed by the keyboard: the panel moves above it (`keyboardTop`)
+        .ignoresSafeArea(.keyboard)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { note in
+            guard let end = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+            keyboardTop = end.height > 0 ? end.minY : nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardTop = nil }
     }
 
     /// The sheet's handle: tap or drag it to make the chat bigger or smaller.

@@ -88,6 +88,8 @@ final class BoardTutor {
         started = false
         watches.removeAll()
         ask.session.stop()
+        // the tutor's pen too: a reply still writing would keep the closed board until it finished
+        driver.stop()
         ask.speech.stop()
         ask.mic.cancel()
         ask.session.onFailure = nil
@@ -114,7 +116,10 @@ final class BoardTutor {
             "type": .string("write_problems"),
             "problems": .array(problems.map { .array($0.map { .string($0) }) }),
         ])
-        let report = await driver.run([action]) { _ in }
+        // the problems it writes are a practice set's for the learning record (the web's
+        // `runChatActions(actions, { origin: "practice" })`)
+        let driver = self.driver
+        let report = await loop.learning.writing(.practice) { await driver.run([action]) { _ in } }
         loop.problemsChanged()
         return report.problemsWritten
     }

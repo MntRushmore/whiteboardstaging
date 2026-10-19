@@ -42,12 +42,15 @@ struct LocalStackLearningTests {
             let totals = try #require(json["totals"] as? [String: Any])
             return ((totals["problems"] as? NSNumber)?.intValue ?? -1, (totals["independent"] as? NSNumber)?.intValue ?? -1, attempts)
         }
-        let before = try await summary()
-
         let board = try await backend.boards.create(title: "iOS learning \(Int(now.timeIntervalSince1970))")
         let learning = LiveLearning(boardId: board.id, brain: brain, scheduler: MainScheduler())
         learning.connect(backend: backend)
+        // what an earlier run left on this device is saved when the tracker connects: counted before
+        await learning.flush()
+        let before = try await summary()
         let today = LocalDay.of(now)
+        // the day's row is the student's whole day (an earlier run today counted already)
+        let dayBefore = try await repository.dailyPractice(since: today).first { $0.day == today }
         let daily = learning.daily(day: today, goal: 2)
         var t = (now.timeIntervalSince1970 * 1000).rounded(.down) - 120_000
         func at() -> Double {
@@ -109,10 +112,13 @@ struct LocalStackLearningTests {
         #expect(after.independent == before.independent + 3, "solved alone: the own problem, the Now you try, the practice one")
 
         // Today's practice: one problem done, its star, the day's row saved
-        #expect(daily.done == 1 && daily.stars == 1)
+        // a row kept for another board (Today's practice opened there) is that board's to count on
+        let carried = dayBefore.map { $0.boardId == nil } ?? false
+        let doneBefore = carried ? dayBefore?.done ?? 0 : 0, starsBefore = carried ? dayBefore?.stars ?? 0 : 0
+        #expect(daily.done == doneBefore + 1 && daily.stars == starsBefore + 1, "\(doneBefore)/\(starsBefore) → \(daily.done)/\(daily.stars)")
         try await Task.sleep(for: .milliseconds(1_800))
         let row = try await repository.dailyPractice(since: today).first { $0.day == today }
-        #expect((row?.done ?? 0) >= 1 && (row?.stars ?? 0) >= 1, "the day's row went up: \(String(describing: row))")
+        #expect((row?.done ?? 0) >= doneBefore + 1 && (row?.stars ?? 0) >= starsBefore + 1, "the day's row went up: \(String(describing: row))")
 
         // tidy up: the attempts, then the board
         _ = try await backend.supabase.from("learning_attempts").delete().in("id", values: mine.map(\.id)).execute()

@@ -91,10 +91,10 @@ final class KidJourneyUITests: XCTestCase {
         write("newpage")
         write("2x + 3 = 11")
         write("2x = 8")
-        waitFor("debug.live", label: "2x = 8=tick", timeout: 40)
+        waitFor("debug.live", matching: #"2 ?x ?= ?8=tick"#, timeout: 40)
         snap("05-ticked")
         write("x = 5")
-        waitFor("debug.live", label: "x = 5=ring", timeout: 40)
+        waitFor("debug.live", matching: #"x ?= ?5=ring"#, timeout: 40)
         snap("06-ringed")
 
         // Help me: a hint beside the slip
@@ -171,6 +171,8 @@ final class KidJourneyUITests: XCTestCase {
         XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 40))
         // written in the tutor's hand, each heading the column under it
         waitFor("debug.live", matching: #"problems [1-9]"#, timeout: 90)
+        // the day's count and stars on the board
+        XCTAssertTrue(element("board.daily").waitForExistence(timeout: 10), "no Today's practice count on the board")
         sleep(6)
         snap("13b-todays-practice")
         let first = element("debug.live").label
@@ -239,6 +241,11 @@ final class KidJourneyUITests: XCTestCase {
         sleep(3)
         snap("17-plan")
         tap("plan.close")
+        // the iPad back to Sam (the design pass and the next runs start on the kid's Home)
+        if element("board.back").waitForExistence(timeout: 10) { tap("board.back") }
+        tap("boards.switchProfile", wait: 30)
+        tap("switcher.member.Sam", wait: 20)
+        waitFor("home.greeting", label: "Sam", timeout: 30)
     }
 
     // MARK: - helpers
@@ -251,7 +258,8 @@ final class KidJourneyUITests: XCTestCase {
         let lines = arguments.contains("-boardAutowrite") ? [] : ["-boardAutowrite", "newpage|2x + 3 = 11|2x = 8|x = 5"]
         // a variant's extra arguments (the design pass: the largest text, a narrow window)
         let extra = (env["JOURNEY_ARGS"] ?? "").split(separator: " ").map(String.init)
-        app.launchArguments = arguments + lines + extra
+        // -noLabs: the screens as a Release build shows them (Debug's Labs button off)
+        app.launchArguments = ["-noLabs"] + arguments + lines + extra
         app.launch()
     }
 
@@ -275,7 +283,7 @@ final class KidJourneyUITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 30), "no autowrite button (Debug build with -boardAutowrite)")
         XCTAssertTrue(button.label.contains(expected), "the autowrite's next line is \(button.label), not \(expected)")
         button.tap()
-        let idle = NSPredicate(format: "value != 'busy'")
+        let idle = NSPredicate(format: "exists == false OR value != 'busy'")
         sleep(1)
         _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: idle, object: button)], timeout: 30)
         sleep(1)

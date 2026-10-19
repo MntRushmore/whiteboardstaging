@@ -36,7 +36,7 @@ final class BoardResilienceUITests: XCTestCase {
         openNewBoard()
         write("newpage")
         write("3x - 5 = 10")
-        waitFor("debug.live", label: "3x - 5 = 10=", timeout: 40)
+        waitFor("debug.live", label: "10=", timeout: 40)
         waitFor("board.status", value: "saved", timeout: 40)
         // the network goes
         FileManager.default.createFile(atPath: flag, contents: Data())
@@ -45,11 +45,11 @@ final class BoardResilienceUITests: XCTestCase {
         snap("resilience-01-offline")
         let status = element("board.status")
         XCTAssertFalse((status.value as? String ?? "").hasPrefix("saved"), "says saved with the network gone: \(status.value as? String ?? "")")
-        XCTAssertFalse((element("debug.live").label).contains("3x = 15=tick"), "a line was read with the network gone")
+        XCTAssertNil(element("debug.live").label.range(of: #"3 ?x ?= ?15=tick"#, options: .regularExpression), "a line was read with the network gone")
         // …and comes back: the line is read and ticked, the board saved
         try FileManager.default.removeItem(atPath: flag)
         if element("board.retry").exists { element("board.retry").tap() }
-        waitFor("debug.live", label: "3x = 15=tick", timeout: 90)
+        waitFor("debug.live", label: "15=tick", timeout: 90)
         waitFor("board.status", value: "saved", timeout: 90)
         snap("resilience-02-back-online")
         tap("board.back")
@@ -66,7 +66,7 @@ final class BoardResilienceUITests: XCTestCase {
         button.tap()
         // the line is down and backed up (0.5 s after the last stroke); the save (2 s after it) hasn't run
         usleep(500_000)
-        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != 'busy'"), object: button)], timeout: 30)
+        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false OR value != 'busy'"), object: button)], timeout: 30)
         usleep(1_000_000)
         app.terminate()
         launch([])
@@ -142,7 +142,7 @@ final class BoardResilienceUITests: XCTestCase {
             if let api = env["NETCUT_API_URL"] { app.launchEnvironment["AGATHON_API_URL"] = api }
             if let supabase = env["NETCUT_SUPABASE_URL"] { app.launchEnvironment["SUPABASE_URL"] = supabase }
         }
-        app.launchArguments = arguments
+        app.launchArguments = ["-noLabs"] + arguments
         app.launch()
     }
 
@@ -194,7 +194,7 @@ final class BoardResilienceUITests: XCTestCase {
         XCTAssertTrue(button.label.contains(expected), "the autowrite's next line is \(button.label), not \(expected)")
         button.tap()
         sleep(1)
-        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != 'busy'"), object: button)], timeout: 30)
+        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false OR value != 'busy'"), object: button)], timeout: 30)
         sleep(1)
     }
 

@@ -12,8 +12,8 @@ struct OutOfInkView: View {
     let onClose: () -> Void
 
     var body: some View {
-        ZStack {
-            DS.Color.ground.ignoresSafeArea()
+        GeometryReader { geo in
+        ScrollView {
             VStack(spacing: DS.Space.m) {
                 TheShapes(.outOfInk, showsGround: true).frame(width: 220)
                 Text("Help is paused").dsFont(.title).foregroundStyle(DS.Color.ink)
@@ -37,6 +37,11 @@ struct OutOfInkView: View {
                 }
             }
             .padding(DS.Space.xxl)
+            // centred when it fits; scrolls at the largest text sizes
+            .frame(maxWidth: .infinity, minHeight: geo.size.height)
         }
+        .scrollBounceBehavior(.basedOnSize)
+        }
+        .background(DS.Color.ground.ignoresSafeArea())
     }
 }

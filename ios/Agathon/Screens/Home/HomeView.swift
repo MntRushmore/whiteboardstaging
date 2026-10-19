@@ -17,6 +17,7 @@ struct HomeView: View {
     @Environment(\.boardOpening) private var opening
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @State private var model = HomeModel()
     @State private var query = ""
@@ -359,7 +360,9 @@ struct HomeView: View {
     }
 
     private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: 220, maximum: 420), spacing: DS.Space.l, alignment: .top)]
+        // wider tiles at the accessibility text sizes: their names get room to be read
+        [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 380 : 220, maximum: typeSize.isAccessibilitySize ? 640 : 420),
+                  spacing: DS.Space.l, alignment: .top)]
     }
 
     @ViewBuilder private var boardsBody: some View {

@@ -31,13 +31,16 @@ struct DockLayoutTests {
         // iPad Pro 11-inch portrait (834): Help me goes above, the dock keeps as much as fits
         let p11 = DockLayout.fitting(width: 834 - 48, helpWidth: help, pages: 3)
         #expect(p11.helpAbove && p11.fit == .foldColors)
-        // a narrow split view: the most folded dock, Help me above
+        // a narrow split view: no page arrows (the top bar's page line opens the pages), Help me above
         let split = DockLayout.fitting(width: 500, helpWidth: help, pages: 3)
-        #expect(split.helpAbove && split.fit == .compact && split.newPageInMore)
+        #expect(split.helpAbove && split.fit == .tiny && split.newPageInMore && !split.pageArrows)
+        // the narrowest window: Select behind More too
+        let narrow = DockLayout.fitting(width: 380, helpWidth: help, pages: 3)
+        #expect(narrow.fit == .micro && narrow.selectInMore)
         // no Help me (the slot empty): more room for the dock
         #expect(DockLayout.fitting(width: 1000, helpWidth: 0, pages: 3).fit == .row)
         // never wider than the room it was given, once it fits beside or above
-        for w in stride(from: 600.0, through: 1400, by: 20) {
+        for w in stride(from: 360.0, through: 1400, by: 20) {
             let l = DockLayout.fitting(width: CGFloat(w), helpWidth: help, pages: 2)
             let need = DockLayout.width(l.fit, pages: 2) + (l.helpAbove ? 0 : help + DockLayout.Size.helpGap)
             #expect(need <= CGFloat(w))

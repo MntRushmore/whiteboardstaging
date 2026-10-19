@@ -18,6 +18,21 @@ struct HomeFormatTests {
         #expect(HomeFormat.edited(now.addingTimeInterval(-3 * 3600), now: now) == "Edited 3 hours ago")
     }
 
+    @Test func aNewBoardIsNamedForItsDay() {
+        #expect(HomeFormat.newBoardTitle(day: "2026-10-19") == "Monday’s board")
+        // a second (and third) board that day is numbered
+        #expect(HomeFormat.newBoardTitle(day: "2026-10-19", existing: ["Monday’s board"]) == "Monday’s board 2")
+        #expect(HomeFormat.newBoardTitle(day: "2026-10-19", existing: ["Monday’s board", "Monday’s board 2", "Sam's first board"]) == "Monday’s board 3")
+    }
+
+    @Test func anyPracticeIsAtLeastAMinute() {
+        // the web's Progress page: a 40-second day is 1 minute, nothing is 0
+        #expect(ProgressPage.wholeMinutes(0) == 0)
+        #expect(ProgressPage.wholeMinutes(20_000) == 1)
+        #expect(ProgressPage.wholeMinutes(40_000) == 1)
+        #expect(ProgressPage.wholeMinutes(150_000) == 3)
+    }
+
     @Test func greetingUsesTheFirstName() {
         #expect(HomeFormat.greetingName("Maya") == "Maya")
         #expect(HomeFormat.greetingName("  Maya Lopez ") == "Maya")

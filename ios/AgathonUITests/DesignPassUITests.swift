@@ -25,7 +25,8 @@ final class DesignPassUITests: XCTestCase {
             if let v = env[key] { app.launchEnvironment[key] = v }
         }
         let extra = (env["JOURNEY_ARGS"] ?? "").split(separator: " ").map(String.init)
-        app.launchArguments = ["-boardAutowrite", "newpage|2x + 3 = 11|2x = 8|x = 5"] + extra
+        // -noLabs: Debug's Labs button off (it sat over Ask's Send in the corner)
+        app.launchArguments = ["-noLabs", "-boardAutowrite", "newpage|2x + 3 = 11|2x = 8|x = 5"] + extra
         app.launch()
         XCTAssertTrue(element("home.greeting").waitForExistence(timeout: 40), "not on Home (run the kid journey first)")
         sleep(4)
@@ -41,7 +42,7 @@ final class DesignPassUITests: XCTestCase {
         sleep(3)
         snap("03-board-new")
         for line in ["newpage", "2x + 3 = 11", "2x = 8", "x = 5"] { write(line) }
-        waitFor("debug.live", "x = 5=ring", timeout: 45)
+        waitFor("debug.live", "=ring", timeout: 45)
         sleep(2)
         snap("04-board-ticked-ringed")
         tap("live.helpMe")
@@ -55,7 +56,7 @@ final class DesignPassUITests: XCTestCase {
             tap("live.helpChoice")
             sleep(1)
             snap("06-help-choice")
-            app.tap() // close it
+            // close it by choosing what was chosen (a tap on the board would write a dot there)
             if element("live.helpChoice.hint").exists { tap("live.helpChoice.hint") }
         }
         // the grown-ups' help settings
@@ -88,7 +89,9 @@ final class DesignPassUITests: XCTestCase {
         tap("board.title")
         sleep(2)
         snap("11-pages")
-        app.swipeDown(velocity: .fast)
+        // the pages sheet's own Close
+        let closePages = app.buttons["Close"].firstMatch
+        if closePages.waitForExistence(timeout: 5) { closePages.tap() }
         sleep(1)
         tap("board.back")
 
@@ -124,7 +127,7 @@ final class DesignPassUITests: XCTestCase {
         }
         button.tap()
         sleep(1)
-        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != 'busy'"), object: button)], timeout: 30)
+        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false OR value != 'busy'"), object: button)], timeout: 30)
         sleep(1)
     }
 

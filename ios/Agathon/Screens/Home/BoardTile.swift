@@ -16,6 +16,7 @@ struct BoardTile: View {
 
     let board: BoardSummary
     let thumbnail: UIImage?
+    @Environment(\.dynamicTypeSize) private var typeSize
     let open: () -> Void
     let rename: () -> Void
     let delete: () -> Void
@@ -28,11 +29,11 @@ struct BoardTile: View {
                     Text(board.title)
                         .dsFont(.button, size: 17)
                         .foregroundStyle(DS.Color.ink)
-                        .lineLimit(1)
+                        .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                     Text(HomeFormat.edited(board.updatedAt))
                         .dsFont(.caption)
                         .foregroundStyle(DS.Color.inkSecondary)
-                        .lineLimit(1)
+                        .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
                 }
                 .padding(.leading, 6)
                 // Room for the round "more" button on the right.

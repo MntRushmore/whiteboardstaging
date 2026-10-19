@@ -42,6 +42,8 @@ final class BoardScreenModel: ObservableObject {
     @Published private(set) var audience: BoardAudience?
     /// A word for the kid over the board for a moment (work put back from the backup, nearly full).
     @Published private(set) var notice: String?
+    /// Today's practice on this board (its count and stars), when it is that board.
+    @Published private(set) var daily: DailyPractice?
 
     private(set) var request: OpenBoard?
     private weak var backend: AgathonBackend?
@@ -178,8 +180,13 @@ final class BoardScreenModel: ObservableObject {
         let problems = practice.problems.map(\.lines).filter { !$0.isEmpty }
         let key: String
         switch practice.kind {
-        case .daily(let day): key = "daily:\(day)"
-        case .topic(let skill): key = "topic:\(skill)"
+        case .daily(let day):
+            key = "daily:\(day)"
+            // this board is Today's practice: finished problems count, alone earns a star, the day's
+            // row goes up as they do (AgathonLive's learning record, `save_daily_practice`)
+            daily = tutor.loop.learning.daily(day: day, goal: DailyRow.defaultGoal)
+        case .topic(let skill):
+            key = "topic:\(skill)"
         }
         practiceTask = Task { @MainActor [weak self, weak tutor] in
             // the canvas laid out (the hand is sized by the board's zoom) and the brain loaded

@@ -28,13 +28,21 @@ extension LiveLoop {
                 if original == nil && (a.kind == "equation" || a.kind == "inequality") { original = a }
             }
             // the tutor's problem above the column is its first line
-            if var head = head(for: column) {
+            let columnHead = head(for: column)
+            if var head = columnHead {
                 if head.analyses.count != head.lines.count {
                     head.analyses = (try? await brain.analyzeColumn(head.lines, mode: mode)) ?? []
                     if let i = heads.firstIndex(where: { $0.id == head.id }) { heads[i].analyses = head.analyses }
                 }
                 head.analyses.forEach(take)
             }
+            // the problem the column works (`arithmeticLines`): the tutor's, else the column's first
+            // line; in arithmetic a young student's working is judged against it (`judgeLine`: a lone
+            // number is the answer, `14` under `18 + 15 - 19`)
+            let problem = columnHead?.lines ?? columnLines(column).first { !$0.latex.isEmpty }.map { [$0.latex] } ?? []
+            // the student's lines above, as read, and the step right above when it is a slip
+            var above: [String] = []
+            var slip: LineAnalysis?
             var changed: [String] = []
             for st in columnLines(column) {
                 guard !st.latex.isEmpty else { continue }
@@ -43,17 +51,20 @@ extension LiveLoop {
                 let lineMode = settings.answerOnEquals && LivePolicy.endsWithRelation(st.latex) ? LiveMode.answer : mode
                 let ctx = AnalyzeContext(mode: lineMode, previous: previous, original: original)
                 let key = "\(lineMode.rawValue)|\(st.latex)|\(previous?.math ?? "")|\(previous?.kind ?? "")|\(original?.math ?? "")"
+                    + "|\(problem.joined(separator: ";"))|\(above.joined(separator: ";"))|\(slip?.math ?? "")"
                 let a: LineAnalysis
                 if let hit = analysisCache[key] {
                     a = hit
                 } else {
                     do {
-                        a = try await brain.analyzeLine(st.latex, context: ctx)
+                        a = try await brain.judgeLine(st.latex, context: ctx, problem: problem, above: above, slip: slip)
                     } catch {
                         a = LineAnalysis.unknown
                     }
                     analysisCache[key] = a
                 }
+                above.append(st.latex)
+                slip = a.verdict == "mismatch" || a.carried == true ? a : nil
                 guard gen == generation, var cur = lines[st.id], cur.latex == st.latex else {
                     // the line changed while it was analysed: its own read analyses the column again
                     analyzeAgain.insert(column)
