@@ -147,10 +147,10 @@ Use your own `-derivedDataPath` (`DD=`): two worktrees building into one Derived
 The dev server needs `APPLE_ENVIRONMENT=Xcode` (`AgathonTests/ServerFlowTests` posts Xcode-signed
 Apple purchases). The UI tests launch with `-noLabs` (Debug's Labs button sat over Ask's Send).
 
-**State (2026-10-19, after merging `feat/ipad-app` with the LEARNING lane):** on one tree, through
+**State (2026-10-19, `e091e085`, after merging `feat/ipad-app` with the LEARNING lane):** on one tree, through
 `sim-run.sh`, own DerivedData, local stack only —
 
-- every Swift unit suite in the scheme (11 bundles): 631 tests, 624 passed, 0 failed, 7 skipped by design
+- every Swift unit suite in the scheme (11 bundles): 644 tests, 637 passed, 0 failed, 7 skipped by design
   (StoreKitFlowTests is Xcode-only; the billing screenshots, two benches and a snapshot look are opt-in);
 - `KidJourneyUITests`: the whole journey (fresh install → the try ticked → the gate → the account and
   PIN → the first board with the try's tick carried, once → a tick, a ring, Help me's hint → Ask writes
@@ -169,7 +169,36 @@ text pushed the hint card and dock off screen, drew the grown-ups' settings rows
 hid Ask's Send; the Split View dock overflowed and the grown-ups' button had no room; the pages sheet's
 New page tile was cut off (and duplicated the button); every board was "Untitled Whiteboard" (now the
 day's name, numbered); Progress read "0 minutes" after real work; VoiceOver read each settings row
-twice. The last full pass found nothing left to change.
+twice; the account area cut its tab names at the largest text (and had no Sign out in a narrow
+window). Left, cosmetic: a 16:9 page in portrait leaves wide empty bands; at the largest text the
+docked Ask panel shows one chip before it scrolls; "Come back tomorrow for five more" names the
+default goal (5); Debug's autowrite pill shows in Debug shots.
+
+**The column rules, web vs iPad (2026-10-19, after the owner's rings).** The engine (`judgeLine`,
+`primaryWork`, operation lines, chains, `=`-first lines) is shared through the brain; these are the
+loop's own rules (web `liveLoop.ts`, iPad `AgathonLive/Loop`):
+
+| Web rule | iPad |
+|---|---|
+| A kid's line belongs to the chat problem whose cell its middle is in (`cells.ts` `cellOf`) | Ported 2026-10-19 (was: the problem whose ink box ±40 px it overlapped — the owner's rings) |
+| What `judgeLine` gets: problem, lines above, last right line, slip | Ported; `slipAbove` skipping non-steps ported 2026-10-19 |
+| A young hand's read (`youngRead`: wobbly `=`, the ink's signs, her own tick) | Ported 2026-10-19 (brain `youngRead`) |
+| The problem's end written again, then the answer (`answerBeside`) | Ported 2026-10-19 (`judgeLine` `beside`) |
+| `=`-first lines, chains read link by link, operation lines | Engine, shared |
+| Typeset problems (the hand off) head their columns | iPad fix 2026-10-19 |
+| One line spanning two cells cut apart (`splitAtCells`, `splitBesideProblem`) | Missing (brain `clusterStrokes` takes no cells) |
+| Column gaps kept together under a cell (`columnOptions` filled/together) | Partial: a gap can split a cell's work in two columns, both under the same problem |
+| Stray ink (`withoutStrays`: signs-only lines, her tick, pen taps) | Missing |
+| A bar with a number under it is `\div n` (`barDivisionLatex`) | Missing |
+| Stacked sums, givens (`3x + 24 =` over `x = 3`) | Missing (known gaps) |
+| Re-read both lines before a ring (`holdRing`), re-ring unchanged ink | Missing |
+| iPad-only: `+3 = 767` under `… = 764` is `764 + 3 = 767` (`ContinuationLine`, the owner asked) | The web rings it: port to `primaryWork` |
+| iPad-only: never ring a true line of plain numbers (`ArithmeticTruth`) | The web never rings a true relation either |
+
+**A running total** (the owner's iPad, 2026-10-19): `+3 = 767` under `400 + 364 = 764` was ringed
+(read alone it is `3 = 767`). `AgathonLive/Loop/ContinuationLine.swift` judges `op number = number`
+under a line of arithmetic ending in a number as `764 + 3 = 767` through the column's judge; with
+nothing above to go on from it stays quiet (`ChatProblemTests`).
 
 ## Production
 
