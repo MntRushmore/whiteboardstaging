@@ -148,7 +148,9 @@ extension LiveLoop {
             return
         }
         if settings.mode == .off {
-            // Off keeps what is on the page: nothing new is marked
+            // Off keeps what is on the page: nothing new is marked (the learning record still hears
+            // the line, marked as its verdict says)
+            learnLine(st, nil)
             updateVerdict(st, "none")
             return
         }
@@ -202,7 +204,9 @@ extension LiveLoop {
     /// Puts the tutor's mark for this line on the board (tick, ring, "?") or takes it off. Written
     /// again only when its kind or the line's place changes; one already on the page with the same
     /// key (after a reload) is kept. With Auto off, nothing is written on a line nobody asked about.
-    func syncMark(_ st: LiveLine, _ kind: LiveMarks.Kind?, _ why: String? = nil) {
+    func syncMark(_ st: LiveLine, _ kind: LiveMarks.Kind?, _ why: String? = nil, learn: Bool = true) {
+        // the learning record hears the mark decided, drawn or not (the hand off, Auto off, the cap)
+        if learn { learnLine(st, kind) }
         let id = st.id
         var r = rt[id] ?? LineRuntime()
         let want = kind.map { LiveMarks.key($0, st.bounds) }

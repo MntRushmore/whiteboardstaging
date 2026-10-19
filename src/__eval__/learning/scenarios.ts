@@ -480,5 +480,43 @@ export function scenarios(): Scenario[] {
         flush(),
       ],
     },
+    {
+      name: "help for more problems than are kept before they start: the oldest are dropped",
+      course: "algebra1",
+      steps: [
+        ...Array.from({ length: 52 }, (_, i) => help(i, ink(`ln_o${i}`), i % 2 ? "hint" : "ask")),
+        ...Array.from({ length: 12 }, (_, i) => help(60 + i, ink("ln_o51"), "next_step")),
+        line(80, ink("ln_o0"), "ln_o0", "x+1=2", "check", { problem: ["x+1=2"], solved: true }),
+        line(81, ink("ln_o2"), "ln_o2", "x+2=3", "check", { problem: ["x+2=3"], solved: true }),
+        line(82, ink("ln_o51"), "ln_o51", "x+51=52", null, { problem: ["x+51=52"] }),
+      ],
+    },
+    {
+      name: "a line read again and again: the mistakes of its last ten reads are kept",
+      course: "algebra1",
+      steps: [
+        line(0, K, "ln_head", "5x+5=30", null, { problem: ["5x+5=30"] }),
+        ...Array.from({ length: 12 }, (_, i) => [
+          line(10 + i * 10, K, "ln_b", `5x=${26 + i}`, "circle", { problem: ["5x+5=30"], previous: "5x+5=30" }),
+          mistake(11 + i * 10, K, "ln_b", i < 6 ? "arithmetic" : "concept"),
+        ]).flat(),
+        line(200, K, "ln_b", "5x=25", "check", { problem: ["5x+5=30"], previous: "5x+5=30" }),
+        line(210, K, "ln_c", "x=5", "check", { problem: ["5x+5=30"], previous: "5x=25", solved: true }),
+      ],
+    },
+    {
+      name: "a Now you try that needed help again, then one alone",
+      course: null,
+      steps: [
+        problem(0, cell("hb_n1", PAGE2), ["24\div6"], "now_you_try", { page: PAGE2, parentId: attemptId(99) }),
+        line(10, cell("hb_n1", PAGE2), "n1", "3", "circle", { problem: ["24\div6"], kind: "expression", previous: "24\div6", page: PAGE2 }),
+        help(15, cell("hb_n1", PAGE2), "hint"),
+        line(25, cell("hb_n1", PAGE2), "n1", "4", "check", { problem: ["24\div6"], kind: "expression", previous: "24\div6", solved: true, page: PAGE2 }),
+        problem(40, cell("hb_n2", PAGE2), ["35\div7"], "now_you_try", { page: PAGE2, parentId: attemptId(1) }),
+        line(50, cell("hb_n2", PAGE2), "n2", "5", "check", { problem: ["35\div7"], kind: "expression", previous: "35\div7", solved: true, page: PAGE2 }),
+        closed(60),
+        flush(),
+      ],
+    },
   ];
 }

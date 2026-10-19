@@ -63,6 +63,8 @@ extension LiveLoop {
         guard !problem.isEmpty, offer == nil, !offeredFor.contains(key), engineReady else { return }
         offeredFor.insert(key)
         let seed = Int(LiveSeeds.handSeed(key) & 0x7fff_ffff)
+        // the learning record's name for the problem it follows (its attempt is the new one's parent)
+        let parentKey = learn.loopKeys[key]
         let background = self.background
         let screen = board.currentScreenID
         track { [weak self] in
@@ -76,6 +78,7 @@ extension LiveLoop {
             }
             guard let self, let variant, !variant.isEmpty, self.board.currentScreenID == screen, self.offer == nil else { return }
             self.offer = NowYouTryOffer(id: "\(seed)", problem: variant, parent: problem)
+            self.learn.offerParents["\(seed)"] = parentKey
             Self.log.notice("live: now you try offered (\(variant.joined(separator: " ; "), privacy: .public))")
         }
     }
@@ -91,9 +94,13 @@ extension LiveLoop {
     public func takeOffer() {
         guard let offer else { return }
         self.offer = nil
+        let parentKey = learn.offerParents.removeValue(forKey: offer.id)
         track { [weak self] in
             guard let self else { return }
-            if !(await self.writeProblem(offer.problem, origin: "nowYouTry", parent: offer.parent.joined(separator: "\n"))) {
+            // the attempt it follows (`parentId`), once what the board said before has landed
+            var parentAttempt: String?
+            if let parentKey { parentAttempt = await self.learning.attemptId(forProblemKey: parentKey) }
+            if !(await self.writeProblem(offer.problem, origin: "nowYouTry", parent: offer.parent.joined(separator: "\n"), parentAttempt: parentAttempt)) {
                 self.say(LiveCopy.NowYouTry.failed)
             }
         }
@@ -101,7 +108,7 @@ extension LiveLoop {
 
     /// Writes a problem for the kid: placed under the work (or on a fresh screen), in the tutor's
     /// hand at the kid's size.
-    func writeProblem(_ problem: [String], origin: String, parent: String?) async -> Bool {
+    func writeProblem(_ problem: [String], origin: String, parent: String?, parentAttempt: String? = nil) async -> Bool {
         let kidHeight = lines.values.map(\.bounds.h).sorted().dropFirst(lines.count / 2).first ?? 48
         guard let plan = await plan(problem, lineHeight: max(40, kidHeight), seedKey: "problem:\(problem.joined())") else { return false }
         let screenRect = board.screenRect
@@ -125,6 +132,7 @@ extension LiveLoop {
         let id = RecordID.make(.problem)
         var meta: Meta = [LiveMeta.rect: placed.bounds.meta]
         if let parent { meta[LiveMeta.parent] = .string(parent) }
+        if let parentAttempt { meta[Self.parentAttemptMeta] = .string(parentAttempt) }
         let record = ProblemRecord(id: id, screen: board.currentScreenID, lines: [], latex: problem.joined(separator: "\n"), origin: origin, meta: meta)
         board.store.put(.problem(record), origin: .tutor)
         refreshHeads()

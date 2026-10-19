@@ -431,6 +431,8 @@ extension LiveLoop {
 
     func applyRecognition(_ id: String, _ res: RecognizeResponse, reread: String?) async {
         guard var st = lines[id] else { return }
+        // ink read in this session: new work for the learning record
+        learnFresh(id)
         st.latex = reread ?? res.latex
         st.confidence = reread == nil ? res.confidence : max(res.confidence, LiveLimits.minConfidence)
         st.provider = reread == nil ? (res.provider == "vision" ? .vision : .mathpix) : .reread

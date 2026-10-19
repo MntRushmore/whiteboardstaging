@@ -108,6 +108,8 @@ extension LiveLoop {
             guard let self, let plan = await self.inlinePlan(st, answer), self.lines[id]?.latex == latex else { return }
             self.startHandwriting(plan, lineId: id, meta: [LiveMeta.answerFor: .string(latex), LiveMeta.answerLatex: .string(answer)])
             self.tracker.helped(problem: self.problemKey(for: st), solved: true)
+            // the learning record: the tutor answered it — the student's ask, or the settle's (Auto)
+            self.learnInlineAnswer(self.lines[id] ?? st)
         }
         return true
     }
@@ -194,6 +196,8 @@ extension LiveLoop {
                                       meta: [LiveMeta.lineId: .string(id), LiveMeta.suggestFor: .string(latex)])
             if pen.isWriting { self.rt[id]?.stepPen = pen }
             self.tracker.helped(problem: self.problemKey(for: cur), solved: false)
+            // the learning record: the tutor wrote the step — unasked beside a ring (Auto), or asked (Help)
+            self.learnWrote(id, .step, auto: !now ? true : self.learnAutoFor(id))
         }
         return true
     }
@@ -227,6 +231,7 @@ extension LiveLoop {
                 await self.writeSteps(["= \(step)"], for: st, column: st.column, meta: [LiveMeta.nextStepFor: .string(st.latex)])
             }
             self.tracker.helped(problem: self.problemKey(for: st), solved: false)
+            self.learnWrote(id, .step)
         }
         return true
     }

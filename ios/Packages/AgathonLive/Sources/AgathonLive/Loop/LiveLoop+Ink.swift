@@ -7,6 +7,8 @@ extension LiveLoop {
 
     func storeChanged(_ change: ChangeSet) {
         guard started else { return }
+        // the chat's problems on the screen are read again when the learning record next needs them
+        learn.chatCells = nil
         let screen = board.currentScreenID
         switch change.origin {
         case .load:
@@ -92,7 +94,10 @@ extension LiveLoop {
 
     /// The tutor's own changes (and another device's): nothing to read, but a mark rubbed out by
     /// the kid's Undo of nothing… only bookkeeping here.
-    func noteTutorChanges(_ change: ChangeSet, screen: RecordID) {}
+    func noteTutorChanges(_ change: ChangeSet, screen: RecordID) {
+        // a problem the tutor wrote is a new problem for the learning record
+        learnTutorChanges(change)
+    }
 
     /// The kid's pen on the board (from the board's touch observer, or the Lab's replay).
     func pen(_ down: Bool) {
@@ -113,7 +118,8 @@ extension LiveLoop {
         for st in lines.values {
             guard rt[st.id]?.markKey.map({ $0.hasPrefix("circle:") }) == true else { continue }
             guard MarkSettler.inkExtendsLine(ink, st.bounds) else { continue }
-            syncMark(st, nil)
+            // (the learning record waits for the read of the whole line: this is no verdict)
+            syncMark(st, nil, learn: false)
         }
     }
 

@@ -82,6 +82,14 @@ public final class LiveLoop: ObservableObject {
     /// "Graph it" chips beside function lines just read (`LiveLoop+Graph`).
     @Published public internal(set) var graphOffers: [GraphOffer] = []
 
+    // MARK: the learning record
+
+    /// The student's attempts on this board, recorded and saved as the web records them
+    /// (`LiveLearning`; `LiveLoop+Learning` says what the loop tells it).
+    public let learning: LiveLearning
+    /// what the record was told this session (`LiveLoop+Learning`)
+    var learn = LearnState()
+
     // MARK: lifecycle state
 
     var started = false
@@ -232,8 +240,10 @@ public final class LiveLoop: ObservableObject {
         self.services = services
         self.brain = brain
         self.background = background ?? LiveLoop.backgroundBrain
-        self.scheduler = scheduler ?? MainScheduler()
+        let clock = scheduler ?? MainScheduler()
+        self.scheduler = clock
         self.connectivity = connectivity ?? NetworkConnectivity()
+        learning = LiveLearning(boardId: boardId, brain: brain, scheduler: clock)
         self.settings = settings ?? LiveSettings.load(boardId: boardId)
     }
 
@@ -255,6 +265,10 @@ public final class LiveLoop: ObservableObject {
         subscription = board.store.observe { [weak self] change in self?.storeChanged(change) }
         screenSeen = board.currentScreenID
         if hintWriter == nil && HintWording.debugEnabled { hintWriter = HintWording.onDevice() }
+        // the learning record: the signed-in student's, when the services know the backend
+        if learning.connectsAutomatically, learning.recorder == nil, let backend = (services as? LiveAPIServices)?.backend {
+            learning.connect(backend: backend)
+        }
         track { [weak self] in
             guard let self else { return }
             do {
@@ -283,6 +297,8 @@ public final class LiveLoop: ObservableObject {
         for t in tasks.values { t.cancel() }
         tasks.removeAll()
         settings.save(boardId: boardId)
+        // the board is closed: the problems on it are over, and saved, as far as the record goes
+        learnClosed()
     }
 
     /// Waits until every piece of work the loop started (reads, analyses, checks, solves) is done.
@@ -380,6 +396,8 @@ public final class LiveLoop: ObservableObject {
         guard started, board.currentScreenID != screenSeen else { return }
         resetRuntime()
         screenSeen = board.currentScreenID
+        // the learning record: the problems on the screen the student left are over (for now)
+        learnScreen()
         offer = nil
         rebuild()
     }
