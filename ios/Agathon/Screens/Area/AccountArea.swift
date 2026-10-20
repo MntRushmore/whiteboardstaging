@@ -8,7 +8,7 @@ import SwiftUI
 /// kids: the web's rules). A sidebar on a full iPad; a row of tabs in a narrow window.
 struct AccountArea: View {
     enum Page: String, CaseIterable, Identifiable {
-        case progress, account, family, report, bugs
+        case progress, account, family, report, bugs, training
         var id: String { rawValue }
 
         var title: String {
@@ -18,6 +18,7 @@ struct AccountArea: View {
             case .family: return "Family"
             case .report: return "Weekly report"
             case .bugs: return "Bug reports"
+            case .training: return "Training Center"
             }
         }
 
@@ -28,6 +29,7 @@ struct AccountArea: View {
             case .family: return .family
             case .report: return .report
             case .bugs: return .bug
+            case .training: return .check
             }
         }
     }
@@ -45,6 +47,8 @@ struct AccountArea: View {
     /// before the family answered): the kid's pages until the family is read here.
     @State private var who: SignedInAs
     @State private var family: FamilyState?
+    /// An admin sees the Training Center (`is_admin()`; never a kid profile)
+    @State private var isAdmin = false
 
     init(start: Page, who: SignedInAs, family: FamilyState?, practice: @escaping (String) -> Void) {
         self.practice = practice
@@ -59,7 +63,7 @@ struct AccountArea: View {
     static let kidPages: [Page] = [.progress, .account, .bugs]
 
     private var pages: [Page] {
-        isKid ? Self.kidPages : [.progress, .account, .family, .report, .bugs]
+        isKid ? Self.kidPages : [.progress, .account, .family, .report, .bugs] + (isAdmin ? [.training] : [])
     }
 
     /// Tabs on top instead of the sidebar: a narrow window, or the largest text sizes (the sidebar's
@@ -108,11 +112,14 @@ struct AccountArea: View {
         }
         .dsAnimation(DS.Motion.fade, value: page)
         .task {
-            guard case .unknown = who else { return }
-            if let read = try? await backend.family.load() {
+            // Who is here, when Home didn't know yet; then the Training Center for an admin
+            // grown-up (`is_admin()`; never a kid profile).
+            if case .unknown = who, let read = try? await backend.family.load() {
                 family = read
                 who = FamilyState.who(read, email: backend.auth.email)
             }
+            guard who.isGrownUp else { return }
+            isAdmin = await TrainingSync.isAdmin(backend)
         }
         .onChange(of: who) { if !pages.contains(page) { page = .progress } }
     }
@@ -197,6 +204,8 @@ struct AccountArea: View {
             WeeklyReportPage()
         case .bugs:
             BugReportsPage()
+        case .training:
+            TrainingCenterPage()
         }
     }
 

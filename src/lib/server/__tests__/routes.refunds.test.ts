@@ -523,7 +523,8 @@ describe("static: every route that charges ink refunds through runCharged / runC
     it(`${file} charges the user's token and refunds the same requestId for the verified user`, () => {
       const src = readFileSync(join(REPO_ROOT, file), "utf8");
       expect(src).toMatch(/enforceInk\(\s*\{\s*token,\s*route:\s*"[^"]+",\s*requestId\b/);
-      const wrapped = /\brunCharged(Stream)?\(\s*\{\s*userId:\s*user\.id,\s*requestId\s*\}/;
+      // the Training Center's routes also pass the gate-verified flag (routes.training.test.ts)
+      const wrapped = /\brunCharged(Stream)?\(\s*\{\s*userId:\s*user\.id,\s*requestId(,\s*training:\s*ctx\.training)?\s*\}/;
       expect(wrapped.test(src), `${file} must wrap its paid work in runCharged or runChargedStream with { userId: user.id, requestId }`).toBe(true);
     });
   }

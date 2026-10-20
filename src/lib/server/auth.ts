@@ -13,6 +13,9 @@ export type ApiErrorCode =
   | "speech_unavailable"
   // a row that does not exist (the admin console's users, boards, bug reports)
   | "not_found"
+  // a signed-in caller asking for what their account may not do: a training call from a non-admin
+  // (src/lib/server/training.ts). The admin routes answer a bare 404 instead (requireAdmin).
+  | "forbidden"
   | "internal_error"
   | "recognizer_failed";
 

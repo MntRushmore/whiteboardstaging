@@ -34,7 +34,8 @@
     "smoke:live": "node scripts/live-smoke.mjs",
     "brain:build": "node scripts/build-ios-brain.mjs --report",
     "brain:check": "node scripts/build-ios-brain.mjs --check",
-    "brain:golden": "BRAIN_GOLDEN_WRITE=1 vitest run src/__eval__/brain/golden.test.ts"
+    "brain:golden": "BRAIN_GOLDEN_WRITE=1 vitest run src/__eval__/brain/golden.test.ts",
+    "training:fixtures": "node scripts/training-fixtures.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.0.0",
