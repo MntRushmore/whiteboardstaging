@@ -67,8 +67,13 @@ print(' union all '.join(parts))
 import json,sys
 rows=json.load(sys.stdin)
 if isinstance(rows, dict): print(rows); sys.exit(1)
-left=[r for r in rows if int(r["n"])>0]
-for r in rows: print(("LEFT " if int(r["n"])>0 else "ok   ")+r["t"]+" "+str(r["n"]))
+# rate_limit_counters: a route hit counts per window, gone at their expires_at (minutes; a day for
+# kid adds): not the account data
+expiring=lambda r: r["t"].startswith("public.rate_limit_counters")
+left=[r for r in rows if int(r["n"])>0 and not expiring(r)]
+for r in rows:
+    n=int(r["n"])
+    print(("ok   " if n==0 else "EXPIRES " if expiring(r) else "LEFT ")+r["t"]+" "+str(n))
 print("rows left: %d table(s)" % len(left))
 '
   ;;

@@ -8,7 +8,8 @@
 # failed step left is deleted as that account itself.
 #
 #   scripts/ios-device-onboarding.sh            build, install, run, check
-#   scripts/ios-device-onboarding.sh build      build for the iPad only (checks it compiles and signs)
+#   scripts/ios-device-onboarding.sh build      build for an iPad only (checks it compiles and signs; no
+#                                               iPad needed; DEST=device builds for the owner's)
 #   FRESH_INSTALL=1 scripts/ios-device-onboarding.sh   uninstall the app first (loses anything kept only
 #                                                       on this iPad: unsaved board backups)
 #   DEVICE=<xcodebuild id>  DEVICECTL=<devicectl id>  OUT=<folder>
@@ -29,7 +30,11 @@ COMMON=(-project "$ROOT/ios/Agathon.xcodeproj" -scheme Agathon -destination "pla
   -allowProvisioningUpdates -allowProvisioningDeviceRegistration -derivedDataPath "$DD" -parallel-testing-enabled NO)
 
 if [ "${1:-}" = "build" ]; then
-  xcodebuild build-for-testing "${COMMON[@]}" -quiet && echo "built for the iPad: $DD"
+  # compile and sign for an iPad without one attached (the owner's when it is: DEST=device)
+  DEST=$([ "${DEST:-generic}" = "device" ] && echo "platform=iOS,id=$DEVICE" || echo "generic/platform=iOS")
+  xcodebuild build-for-testing -project "$ROOT/ios/Agathon.xcodeproj" -scheme Agathon -destination "$DEST" \
+    -allowProvisioningUpdates -allowProvisioningDeviceRegistration -derivedDataPath "$DD" -parallel-testing-enabled NO -quiet &&
+    echo "built for the iPad ($DEST): $DD"
   exit $?
 fi
 

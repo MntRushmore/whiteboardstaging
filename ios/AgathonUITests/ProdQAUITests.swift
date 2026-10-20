@@ -407,7 +407,10 @@ final class ProdQAUITests: ProdQATestCase {
         let name = element("kid.name")
         XCTAssertTrue(name.waitForExistence(timeout: 15))
         name.tap()
-        name.typeText("Leo")
+        // Return puts the keyboard away: up, it covers the sheet's Add (not hittable)
+        name.typeText("Leo\n")
+        let keyboardGone = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 0"), object: app.keyboards)], timeout: 5)
+        if keyboardGone != .completed, app.keyboards.buttons["Hide keyboard"].exists { app.keyboards.buttons["Hide keyboard"].tap() }
         tap("kid.save")
         XCTAssertTrue(text(containing: "first kid is free").waitForExistence(timeout: 30), "a second kid without the plan wasn't explained")
         snap("41-second-kid-needs-the-plan")
@@ -422,10 +425,12 @@ final class ProdQAUITests: ProdQATestCase {
         tap("home.grownUps", wait: 30)
         tap("area.signOut", wait: 20)
         XCTAssertTrue(element("signin.email").waitForExistence(timeout: 30), "not signed out")
-        let field = element("signin.email")
+        // the Blocks fields carry their id on the pill around the text field
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
         field.typeText(email)
-        let secure = app.secureTextFields["signin.password"].firstMatch
+        let secure = app.secureTextFields.firstMatch
         XCTAssertTrue(secure.waitForExistence(timeout: 10))
         secure.tap()
         secure.typeText(password)
@@ -440,6 +445,9 @@ final class ProdQAUITests: ProdQATestCase {
         XCTAssertTrue(element("home.greeting").waitForExistence(timeout: 60))
         sleep(2)
         tap("home.grownUps", wait: 30)
+        // on Sam's profile the door asks the grown-up's PIN first
+        if element("switcher.pin").waitForExistence(timeout: 8) { key(Self.pin) }
+        XCTAssertTrue(element("area.account").waitForExistence(timeout: 40), "no grown-ups' area")
         deleteTheAccount()
     }
 }

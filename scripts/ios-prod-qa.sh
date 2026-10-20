@@ -7,6 +7,7 @@
 #
 #   scripts/ios-prod-qa.sh [build] [run] [cleanup]     (default: all three)
 #   OUT=<folder>   shots, logs, results, accounts.txt (default: a temp folder)
+#   APP_TESTS="-only-testing:AgathonUITests/ProdQAUITests/test5DeleteAccount"   only some of the app's tests
 #
 # Never touches anyone else: the tests refuse any email that isn't qa-ipad-…@agathon.app, and the
 # cleanup only ever signs in as that account. Real AI calls: about 15–25 (recognize, check, a hint,
@@ -37,7 +38,7 @@ run() { # name, xcodebuild args… (inside sim-run)
     "$@" 2>&1 | tee "$OUT/$name.log" | grep -E "Test Case .*(passed|failed)|error:|Executed" | tail -30
 }
 export -f run
-export ROOT DD OUT
+export ROOT DD OUT APP_TESTS
 
 for step in $STEPS; do
   case $step in
@@ -51,7 +52,7 @@ for step in $STEPS; do
       xcrun simctl uninstall "$SIM_UDID" app.agathon.Agathon >/dev/null 2>&1
       run onboarding -only-testing:AgathonUITests/ProdOnboardingUITests
       "'"$ACCOUNTS"'" ids "'"$EMAIL"'" > "$OUT/ids.txt"; echo "ids: $(tr "\n" " " < "$OUT/ids.txt")"
-      run app -only-testing:AgathonUITests/ProdQAUITests' ;;
+      run app ${APP_TESTS:--only-testing:AgathonUITests/ProdQAUITests}' ;;
   cleanup)
     # anything a failed step left: deleted as the account itself, then every table checked
     [ -s "$OUT/ids.txt" ] || "$ACCOUNTS" ids "$EMAIL" > "$OUT/ids.txt"
