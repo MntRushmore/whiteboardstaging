@@ -119,6 +119,10 @@ final class PencilSession: ObservableObject {
     func start() async {
         guard page == nil, await board.ready() else { return }
         TrainingStore.shared.save(run)
+        // a server without the training pass charges these reads like any (the owner's own ink)
+        if let backend, case .success(nil) = await TrainingStatus.fetch(backend.api) {
+            message = "This server has no training pass yet: what the tutor reads here uses your own ink."
+        }
         await openPage()
     }
 
