@@ -8,7 +8,7 @@ import SwiftUI
 /// kids: the web's rules). A sidebar on a full iPad; a row of tabs in a narrow window.
 struct AccountArea: View {
     enum Page: String, CaseIterable, Identifiable {
-        case progress, account, family, report, bugs
+        case progress, account, family, report, bugs, training
         var id: String { rawValue }
 
         var title: String {
@@ -18,6 +18,7 @@ struct AccountArea: View {
             case .family: return "Family"
             case .report: return "Weekly report"
             case .bugs: return "Bug reports"
+            case .training: return "Training Center"
             }
         }
 
@@ -28,6 +29,7 @@ struct AccountArea: View {
             case .family: return .family
             case .report: return .report
             case .bugs: return .bug
+            case .training: return .check
             }
         }
     }
@@ -43,6 +45,8 @@ struct AccountArea: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var page: Page
     @State private var signOutProblem: String?
+    /// An admin sees the Training Center (`is_admin()`; never a kid profile)
+    @State private var isAdmin = false
 
     init(start: Page, isKid: Bool, family: FamilyState?, practice: @escaping (String) -> Void) {
         self.isKid = isKid
@@ -52,7 +56,7 @@ struct AccountArea: View {
     }
 
     private var pages: [Page] {
-        isKid ? [.progress, .account, .bugs] : [.progress, .account, .family, .report, .bugs]
+        isKid ? [.progress, .account, .bugs] : [.progress, .account, .family, .report, .bugs] + (isAdmin ? [.training] : [])
     }
 
     /// Tabs on top instead of the sidebar: a narrow window, or the largest text sizes (the sidebar's
@@ -100,6 +104,10 @@ struct AccountArea: View {
             }
         }
         .dsAnimation(DS.Motion.fade, value: page)
+        .task {
+            guard !isKid else { return }
+            isAdmin = await TrainingSync.isAdmin(backend)
+        }
     }
 
     private var sidebar: some View {
@@ -182,6 +190,8 @@ struct AccountArea: View {
             WeeklyReportPage()
         case .bugs:
             BugReportsPage()
+        case .training:
+            TrainingCenterPage()
         }
     }
 
