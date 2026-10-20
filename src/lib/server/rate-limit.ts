@@ -83,6 +83,12 @@ export const LIMITS = {
   // Read aloud (POST /api/live/speak): a minute's budget and a day's cap (src/lib/speech/contracts.ts).
   liveSpeak: SPEAK_RATE_LIMITS.perMinute,
   liveSpeakDay: SPEAK_RATE_LIMITS.perDay,
+  // The Training Center's calls (an admin's bench on the iPad, src/lib/server/training.ts), per admin,
+  // on top of each Live route's own bucket. A bench run at a kid's pace is about 1 call a second, so
+  // 180 a minute leaves room for its bursts. Training calls spend no ink, so nothing else bounds what
+  // they cost us: the day's cap is what a runaway bench (a loop that never stops) can spend at most.
+  liveTraining: { limit: 180, windowMs: MINUTE },
+  liveTrainingDay: { limit: 4000, windowMs: 24 * 60 * MINUTE },
 } as const satisfies Record<string, RateLimitOptions>;
 
 export type RateLimitBucket = keyof typeof LIMITS;

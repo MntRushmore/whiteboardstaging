@@ -36,11 +36,11 @@ export async function POST(req: Request) {
   const models = getLiveModels();
   const figure = Boolean(data.crop);
   const [primary, fallback] = figure ? [models.figure, models.figureFallback] : [models.setup, models.setupFallback];
-  const billing = await enforceInk({ token, route: "live/setup", requestId, model: primary }, log);
+  const billing = await enforceInk({ token, route: "live/setup", requestId, model: primary, training: ctx.training }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(
-    { userId: user.id, requestId },
+    { userId: user.id, requestId, training: ctx.training },
     log,
     async () => {
       const { data: reply, model } = await chatJsonWithFallback(primary, fallback, {
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
         // It read the ink and nothing there asks for anything (`{"unknown": "", "lines": []}` — a
         // `2x2` the board took for a drawing). Not an error: a 200 the board turns into a note on
         // what to write; the student is not charged for being told.
-        await refundInk({ userId: user.id, requestId }, log);
+        await refundInk({ userId: user.id, requestId, training: ctx.training }, log);
         const ms = Date.now() - startedAt;
         log.info({ model, ms, figure, labels: data.labels?.length ?? 0, problemLines: data.lines.length, reason: "nothing_asked" }, "setup: nothing asked");
         return withRequestId(Response.json(SetupResponseSchema.parse({ lines: [], reason: "nothing_asked", model, ms } satisfies SetupResponse)), requestId);

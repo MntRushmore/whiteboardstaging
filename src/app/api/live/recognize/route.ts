@@ -91,7 +91,7 @@ export async function POST(req: Request) {
   // Charge ink before any recognizer call; runCharged refunds them on any non-2xx
   // (recognizer_failed, upstream error, timeout). GET is free. See src/lib/server/billing.ts.
   const billing = await enforceInk(
-    { token, route: "live/recognize", requestId, model: isMathpixConfigured() ? "mathpix" : getLiveModels().vision },
+    { token, route: "live/recognize", requestId, model: isMathpixConfigured() ? "mathpix" : getLiveModels().vision, training: ctx.training },
     log,
   );
   if ("response" in billing) return withRequestId(billing.response, requestId);
@@ -110,7 +110,7 @@ export async function POST(req: Request) {
     });
   };
 
-  return runCharged({ userId: user.id, requestId }, log, async () => {
+  return runCharged({ userId: user.id, requestId, training: ctx.training }, log, async () => {
     let result: RecognizeResponse | null = null;
     /** set when Mathpix ran and produced nothing; drives the vision-fallback hints below */
     let mathpixFailure: MathpixFailure | null = null;

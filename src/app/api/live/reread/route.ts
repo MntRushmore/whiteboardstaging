@@ -31,11 +31,11 @@ export async function POST(req: Request) {
   const { requestId, token, user, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
-  const billing = await enforceInk({ token, route: "live/reread", requestId, model: models.reread }, log);
+  const billing = await enforceInk({ token, route: "live/reread", requestId, model: models.reread, training: ctx.training }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(
-    { userId: user.id, requestId },
+    { userId: user.id, requestId, training: ctx.training },
     log,
     async () => {
       const { data: reply, model } = await chatJsonWithFallback(models.reread, models.rereadFallback, {

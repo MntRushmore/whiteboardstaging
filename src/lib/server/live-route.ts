@@ -6,6 +6,7 @@ import { checkRateLimitDistributed, rateLimitedResponse, type RateLimitBucket } 
 import { PROVIDER_UNAVAILABLE_MESSAGE, parseJsonBody, recordRouteError } from "@/lib/server/request";
 import { refundInk, type RefundInput, type RpcClient } from "@/lib/server/billing";
 import { CreditsExhaustedError, UpstreamError } from "@/lib/server/openrouter";
+import { trainingGate, wantsTraining } from "@/lib/server/training";
 
 /** Shared plumbing for the /api/live/* route handlers. */
 
@@ -33,10 +34,17 @@ export type LiveContext<T> = {
   log: pino.Logger;
   data: T;
   startedAt: number;
+  /**
+   * A Training Center call that passed the training gate (an admin, within the training buckets):
+   * the routes in TRAINING_ROUTES pass it to `enforceInk` and every refund, which then charge and
+   * give back nothing. False for every other call. See src/lib/server/training.ts.
+   */
+  training: boolean;
 };
 
 /**
- * Route preamble: requireUser -> checkRateLimitDistributed -> parseJsonBody.
+ * Route preamble: requireUser -> checkRateLimitDistributed -> parseJsonBody, then, for a body with
+ * `"training": true`, the training gate (src/lib/server/training.ts: admins only, its own buckets).
  * Returns `{ response }` (already carrying X-Request-Id) on any failure.
  */
 export async function livePreamble<S extends z.ZodTypeAny>(
@@ -72,7 +80,18 @@ export async function livePreamble<S extends z.ZodTypeAny>(
     return { response: withRequestId(parsed.response, requestId) };
   }
 
-  return { requestId, user, token, log, data: parsed.data, startedAt };
+  // The flag is read from the body as sent (the schemas strip what they do not know) and trusted
+  // only once the gate has checked who sent it.
+  let training = false;
+  if (wantsTraining(parsed.raw)) {
+    const gate = await trainingGate({ user, token, log });
+    if ("response" in gate) return { response: withRequestId(gate.response, requestId) };
+    training = true;
+  }
+
+  // a training call's every log line says so (the bindings feed no event: request.ts reads only
+  // module, route, requestId and userId from them)
+  return { requestId, user, token, log: training ? log.child({ training: true }) : log, data: parsed.data, startedAt, training };
 }
 
 /**

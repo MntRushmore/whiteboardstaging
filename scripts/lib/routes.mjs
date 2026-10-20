@@ -120,6 +120,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   // GET, and POST whose body (RFC 8058's `List-Unsubscribe=One-Click`, or the page's empty form) is never read
   "src/app/api/report/unsubscribe/route.ts",
   "src/app/api/admin/referrals/route.ts",
+  "src/app/api/training/status/route.ts", // GET only
 ]);
 
 export const API_ROUTES = Object.freeze([
@@ -559,6 +560,17 @@ export const API_ROUTES = Object.freeze([
     // 403 for a request that is not from our page; 503 with TRY_ENABLED=0.
     withoutTokenStatus: [403, 503],
     purpose: "Try it free's Show me a step: the engine's next step after the visitor's work, in the tutor's hand -> { latex, ink, solves }",
+    status: "active",
+  },
+  {
+    path: "/api/training/status",
+    file: "src/app/api/training/status/route.ts",
+    methods: ["GET"],
+    // requireAdmin = requireUser (401 without a token) + the admins table (404 for a non-admin).
+    auth: "user",
+    limit: "adminConsole",
+    body: "none",
+    purpose: "The iPad's Training Center (admins only): whether this server takes training calls (no ink) on the five Live routes, and their limits; a 404 means it would charge",
     status: "active",
   },
   {
