@@ -25,7 +25,31 @@ struct BenchSetupView: View {
     static let savedKey = "agathon.training.benchConfig"
 
     static var saved: TrainingConfig {
-        guard let data = UserDefaults.standard.data(forKey: savedKey), let c = try? JSONDecoder().decode(TrainingConfig.self, from: data) else { return .small }
+        var c = (UserDefaults.standard.data(forKey: savedKey).flatMap { try? JSONDecoder().decode(TrainingConfig.self, from: $0) }) ?? .small
+        #if DEBUG
+        // the UI tests: `-trainingBench "count=6;budget=24;hands=clean,messy;pace=brisk;seed=3;grades=K-2,3-4"`
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-trainingBench"), i + 1 < args.count {
+            for pair in args[i + 1].split(separator: ";") {
+                let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+                guard kv.count == 2 else { continue }
+                let list = kv[1].split(separator: ",").map(String.init)
+                switch kv[0] {
+                case "count": c.count = Int(kv[1]) ?? c.count
+                case "budget": c.budget = Int(kv[1]) ?? c.budget
+                case "seed": c.seed = Int(kv[1]) ?? c.seed
+                case "pace": c.pace = kv[1]
+                case "checking": c.checking = kv[1]
+                case "hands": c.hands = list
+                case "grades": c.grades = list.compactMap(TrainingGrade.init(rawValue:))
+                case "categories": c.categories = list.compactMap(TrainingCategory.init(rawValue:))
+                case "wrong": c.includeWrong = kv[1] == "1"
+                case "generated": c.includeGenerated = kv[1] == "1"
+                default: break
+                }
+            }
+        }
+        #endif
         return c
     }
 

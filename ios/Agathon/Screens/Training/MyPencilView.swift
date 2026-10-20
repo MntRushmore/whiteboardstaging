@@ -56,6 +56,9 @@ private struct PencilBoard: View {
 
     var body: some View {
         TrainingBoardView(board: board, title: "My Pencil", onBack: close) {
+            #if DEBUG
+            PencilAutowriteButton(session: session)
+            #endif
             styleMenu
             sourceButton
             linesButton

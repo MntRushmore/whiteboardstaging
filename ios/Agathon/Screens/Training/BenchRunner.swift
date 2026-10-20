@@ -154,8 +154,7 @@ final class BenchRunner: ObservableObject {
         guard let loop = board.loop else { return failed(TrainingWhy(.error, "The tutor went away.")) }
         // 3. the lines, one under another, at a kid's pace
         var rng = SplitMix(seed: Self.stableHash(spec.id + p.hand.name) &+ UInt64(truncatingIfNeeded: config.seed))
-        let (rect, workTop) = board.page
-        let rules = ProblemPageLayout.rules(workTop: workTop)
+        let workTop = board.page.workTop
         var bottom = workTop + 6
         var prev: Box?
         var ids: [[RecordID]] = []
@@ -165,20 +164,8 @@ final class BenchRunner: ObservableObject {
             let ink = inks[k]
             let w = ink.flatMap { $0 }.map(\.x).max() ?? 0
             let h = ink.flatMap { $0 }.map(\.y).max() ?? 0
-            var origin: Vec2
-            switch line.place {
-            case .problem:
-                origin = Vec2(ProblemPageLayout.problemOrigin.x + line.dx, ProblemPageLayout.problemOrigin.y + 10)
-            case .answer:
-                let a = ProblemPageLayout.answer
-                origin = Vec2(a.x + 210 + line.dx, a.y + max(4, (a.h - h) / 2))
-            case .beside where prev != nil:
-                origin = Vec2(prev!.maxX + 70 + line.dx, prev!.maxY - h)
-            case .work, .beside:
-                let g = rules.first { $0 - h + 8 >= bottom + 14 } ?? (bottom + 14 + h - 8)
-                origin = Vec2(140 + line.dx, g - h + 8)
-            }
-            let placed = ink.map { s in s.map { ProblemPageLayout.place(Vec2(origin.x + $0.x, origin.y + $0.y), on: rect) } }
+            let origin = TrainingBoard.origin(for: ink, place: line.place, dx: line.dx, workTop: workTop, bottom: bottom, beside: prev)
+            let placed = board.placed(ink, at: origin)
             var made = await board.write(placed, pace: pace, rng: &rng)
             let box = Box(x: origin.x, y: origin.y, w: w, h: h)
             if line.place == .work || line.place == .beside { bottom = max(bottom, box.maxY) }

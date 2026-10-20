@@ -90,7 +90,7 @@ public enum TrainingGenerator {
 
     /// The engine's worked steps for a problem, at most four, as a kid would write them; nil when the
     /// engine cannot work it without a model.
-    static func workedSteps(_ problem: [String], brain: Brain) async -> [String]? {
+    public static func workedSteps(_ problem: [String], brain: Brain) async -> [String]? {
         guard let solved = try? await brain.localSolve(problem, options: LocalSolveOptions(handwriting: true, mode: .answer)),
               solved.source != nil else { return nil }
         var steps = solved.steps.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -113,7 +113,7 @@ public enum TrainingGenerator {
 
     /// `latex` with its last whole number one more (`x = 4` → `x = 5`): the new line and the number
     /// it had. Nil without a number.
-    static func bump(_ latex: String) -> (String, String)? {
+    public static func bump(_ latex: String) -> (String, String)? {
         let chars = Array(latex)
         var end = chars.count - 1
         while end >= 0 && !chars[end].isNumber { end -= 1 }

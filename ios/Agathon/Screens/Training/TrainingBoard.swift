@@ -112,6 +112,51 @@ final class TrainingBoard: ObservableObject {
         return (s?.rect ?? .screen, s?.problemPage?.resolvedWorkTop ?? ProblemPageLayout.defaultWorkTop)
     }
 
+    // MARK: - where a line goes
+
+    /// Where a line `ink` (page units, its box at 0, 0) goes on the page on show, in the layout's own
+    /// units (1600 × 900): the next guide line under the work so far (`bottom`), the answer spot, the
+    /// problem area, or beside the line before (`beside`). The bench and Debug's autowrite place lines
+    /// alike.
+    static func origin(for ink: [[Vec2]], place: TrainingPlace, dx: Double, workTop: Double, bottom: Double, beside: Box?) -> Vec2 {
+        let h = ink.flatMap { $0 }.map(\.y).max() ?? 0
+        switch place {
+        case .problem:
+            return Vec2(ProblemPageLayout.problemOrigin.x + dx, ProblemPageLayout.problemOrigin.y + 10)
+        case .answer:
+            let a = ProblemPageLayout.answer
+            return Vec2(a.x + 210 + dx, a.y + max(4, (a.h - h) / 2))
+        case .beside where beside != nil:
+            return Vec2(beside!.maxX + 70 + dx, beside!.maxY - h)
+        case .work, .beside:
+            let rules = ProblemPageLayout.rules(workTop: workTop)
+            let g = rules.first { $0 - h + 8 >= bottom + 14 } ?? (bottom + 14 + h - 8)
+            return Vec2(140 + dx, g - h + 8)
+        }
+    }
+
+    /// The kid's ink on the page on show, in the layout's units: the lowest point of the work (the
+    /// answer spot left out), and the last line's box.
+    func workSoFar() -> (bottom: Double, last: Box?) {
+        let (rect, workTop) = page
+        var bottom = workTop + 6
+        var last: Box?
+        for r in controller.store.drawables(on: controller.currentScreenID) {
+            guard case .stroke(let s) = r, s.author == .kid, let b = Box.around(s.points.map { s.pagePoint($0) }) else { continue }
+            let u = ProblemPageLayout.unplace(b, from: rect)
+            if ProblemPageLayout.isInAnswer(u) { continue }
+            if u.maxY > bottom { bottom = u.maxY }
+            last = last.map { $0.maxY < u.maxY - 30 ? u : $0.union(u) } ?? u
+        }
+        return (bottom, last)
+    }
+
+    /// A line's ink placed on the page on show (page units).
+    func placed(_ ink: [[Vec2]], at origin: Vec2) -> [[Vec2]] {
+        let rect = page.rect
+        return ink.map { s in s.map { ProblemPageLayout.place(Vec2(origin.x + $0.x, origin.y + $0.y), on: rect) } }
+    }
+
     // MARK: - the pen
 
     /// Writes strokes (page units, already placed) through the canvas's own touch path at `pace`
@@ -174,11 +219,14 @@ final class TrainingBoard: ObservableObject {
         }
     }
 
-    /// The strokes' page points (page units).
+    /// The strokes' points in the page's own layout units (1600 × 900 from its top-left: what a
+    /// replay puts back on a page of its own), to 0.01.
     func points(_ ids: [RecordID]) -> [TrainingStroke] {
-        ids.compactMap { controller.store.stroke($0) }.map { s in
+        let rect = page.rect
+        let k = rect.w > 0 ? Box.screen.w / rect.w : 1
+        return ids.compactMap { controller.store.stroke($0) }.map { s in
             let pts = s.points.map { s.pagePoint($0) }
-            return TrainingStroke(x: pts.map { ($0.x * 100).rounded() / 100 }, y: pts.map { ($0.y * 100).rounded() / 100 })
+            return TrainingStroke(x: pts.map { (($0.x - rect.x) * k * 100).rounded() / 100 }, y: pts.map { (($0.y - rect.y) * k * 100).rounded() / 100 })
         }
     }
 

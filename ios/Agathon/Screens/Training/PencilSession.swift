@@ -77,6 +77,24 @@ final class PencilSession: ObservableObject {
         } else {
             source = .generated(grade: .g56, skill: "two_step_equations")
         }
+        #if DEBUG
+        // the UI tests: `-trainingSource own|<grade>:<skill>`, `-trainingSeed 7`, `-trainingStyle messy`
+        let args = ProcessInfo.processInfo.arguments
+        func arg(_ name: String) -> String? {
+            guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
+        if let src = arg("-trainingSource") {
+            let parts = src.split(separator: ":").map(String.init)
+            if src == "own" {
+                source = .own
+            } else if parts.count == 2, let g = TrainingGrade(rawValue: parts[0]) {
+                source = .generated(grade: g, skill: parts[1])
+            }
+        }
+        if let s = arg("-trainingSeed").flatMap(Int.init) { seed = s }
+        if let s = arg("-trainingStyle").flatMap(HandwritingStyle.init(rawValue:)) { style = s }
+        #endif
     }
 
     var styleTag: String { HandwritingStyle.tag(style, other: otherStyle) }

@@ -62,7 +62,8 @@ public struct TrainingFixture: Codable, Sendable, Equatable {
         caseKey = r.caseKey
         title = r.problem.isEmpty ? (r.lines.first?.written ?? r.caseKey) : r.problem.joined(separator: " ; ")
         status = "open"
-        savedAt = Date()
+        // whole seconds: what ISO 8601 keeps
+        savedAt = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         kind = r.kind
         hand = r.hand
         category = r.category

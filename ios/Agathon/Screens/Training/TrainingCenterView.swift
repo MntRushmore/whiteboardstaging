@@ -14,6 +14,8 @@ struct TrainingCenterView: View {
     @State private var remote: [TrainingRepository.RunRow] = []
     @State private var remoteNote: String?
     @State private var showSetup = false
+    /// `is_admin()`: nil while asking
+    @State private var admin: Bool?
 
     enum Open: Identifiable {
         case pencil
@@ -35,9 +37,17 @@ struct TrainingCenterView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Space.xl) {
                     header
-                    pencilCard
-                    benchCard
-                    runsCard
+                    if admin == false {
+                        EmptyState(.icon(.lock, .sunny), title: "For admins only",
+                                   message: "The Training Center calls the real tutor on the house: it opens for admins (sign in as one).")
+                            .accessibilityIdentifier("training.notAdmin")
+                    } else if admin == true {
+                        pencilCard
+                        benchCard
+                        runsCard
+                    } else {
+                        ProgressView().controlSize(.large).frame(maxWidth: .infinity, minHeight: 200)
+                    }
                 }
                 .frame(maxWidth: 900, alignment: .leading)
                 .padding(.horizontal, DS.Space.xxl)
@@ -45,7 +55,20 @@ struct TrainingCenterView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .task { await reload() }
+        .task {
+            #if DEBUG
+            await signInIfAsked()
+            #endif
+            admin = await TrainingSync.isAdmin(backend)
+            await reload()
+            #if DEBUG
+            // `-trainingOpen pencil|bench`: straight in (the UI tests)
+            let args = ProcessInfo.processInfo.arguments
+            if admin == true, let i = args.firstIndex(of: "-trainingOpen"), i + 1 < args.count {
+                if args[i + 1] == "pencil" { open = .pencil } else if args[i + 1] == "bench" { showSetup = true }
+            }
+            #endif
+        }
         .fullScreenCover(item: $open, onDismiss: { Task { await reload() } }) { which in
             Group {
                 switch which {
@@ -139,6 +162,20 @@ struct TrainingCenterView: View {
             }
         }
     }
+
+    #if DEBUG
+    /// Debug (the UI tests, the simulator): AGATHON_TEST_EMAIL / AGATHON_TEST_PASSWORD sign that user in
+    /// when signed out (as the Live Lab does).
+    private func signInIfAsked() async {
+        let env = ProcessInfo.processInfo.environment
+        guard let email = env["AGATHON_TEST_EMAIL"], let password = env["AGATHON_TEST_PASSWORD"] else { return }
+        if backend.auth.phase == .signedIn {
+            if backend.auth.email?.lowercased() == email.lowercased() { return }
+            try? await backend.auth.signOut(scope: .local)
+        }
+        try? await backend.auth.signIn(email: email, password: password)
+    }
+    #endif
 
     private func reload() async {
         local = TrainingStore.shared.all()

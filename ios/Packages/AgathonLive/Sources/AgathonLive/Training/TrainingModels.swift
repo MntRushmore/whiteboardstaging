@@ -215,7 +215,8 @@ public struct TrainingCase: Codable, Sendable, Hashable, Identifiable {
         self.problem = problem
         self.lines = lines
         self.solved = solved
-        self.wrong = wrong ?? lines.contains { $0.expect == .ring }
+        // a slip that is put right on the page is a correction, not a wrong solution
+        self.wrong = wrong ?? (lines.contains { $0.expect == .ring } && solved != true)
         self.source = source
         self.note = note
     }
