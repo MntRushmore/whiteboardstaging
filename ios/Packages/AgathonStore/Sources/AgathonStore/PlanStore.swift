@@ -108,12 +108,16 @@ public final class PlanStore {
     // MARK: the product
 
     /// Loads the product, its price and whether this Apple ID can have the free trial.
+    /// What the plan's state says while App Store Connect has no product for it (production before
+    /// the subscription is made, or a build whose StoreKit configuration lacks it).
+    public static let notOnSale = "Agathon Unlimited isn't in the App Store yet."
+
     public func loadProduct() async {
         if productState == .loading { return }
         productState = .loading
         do {
             guard let product = try await Product.products(for: [productID]).first else {
-                productState = .unavailable("Agathon Unlimited isn't in the App Store yet.")
+                productState = .unavailable(Self.notOnSale)
                 note("Product \(productID) not found")
                 return
             }

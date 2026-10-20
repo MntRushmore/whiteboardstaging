@@ -29,27 +29,60 @@ public struct EmptyResponse: Decodable, Sendable, Equatable {
 /// - The token comes from `token`, which refreshes a session that is about to expire.
 /// - A 401 whose body says `PGRST303` ("JWT issued at future": a session minted a moment ago, by a
 ///   clock a little behind) is tried once more after 1.1 s (`SkewRetry`).
+/// - Any other 401, with `refresh` given (the app): the session is refreshed once and the call tried
+///   again. The token can be stale by the server's clock though not by the iPad's (back from a long
+///   background, a clock that drifted); a refresh that fails means signed out, and the 401 stands.
+/// - A token that can't be had (a refresh that failed) is `APIError.network` when offline, else
+///   `APIError.notSignedIn`: never Auth's own words.
 /// - A request that receives no bytes for 30 s fails as `APIError.timeout` (the transport's
 ///   session; SSE streams have their own watchdog, `SSEClient`).
 public final class APIClient: Sendable {
     public typealias TokenProvider = @Sendable () async throws -> String?
+    public typealias Refresh = @Sendable () async throws -> Void
     public typealias Sleep = @Sendable (Duration) async throws -> Void
 
     public let baseURL: URL
     public let transport: any HTTPTransport
     let token: TokenProvider
+    let refresh: Refresh?
     let sleep: Sleep
 
     public init(
         baseURL: URL,
         transport: any HTTPTransport = URLSessionTransport(),
         token: @escaping TokenProvider,
+        refresh: Refresh? = nil,
         sleep: @escaping Sleep = { try await Task.sleep(for: $0) }
     ) {
         self.baseURL = baseURL
         self.transport = transport
         self.token = token
+        self.refresh = refresh
         self.sleep = sleep
+    }
+
+    /// After a 401 that isn't clock skew: refreshes the session once (`refresh`). True when it was
+    /// refreshed and the call is worth trying again.
+    func refreshedAfterUnauthorized(status: Int, body: Data) async -> Bool {
+        guard status == 401, let refresh, !SkewRetry.isSkew(status: status, body: String(decoding: body, as: UTF8.self)) else { return false }
+        do {
+            try await refresh()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// The session's token for a call, its failure as an APIError.
+    func currentToken() async throws -> String? {
+        do {
+            return try await token()
+        } catch {
+            let wrapped = APIError.wrap(error)
+            if wrapped is APIError || wrapped is CancellationError { throw wrapped }
+            // Auth couldn't refresh the session (its refresh token is gone): signed out
+            throw APIError.notSignedIn
+        }
     }
 
     // MARK: building requests
@@ -88,7 +121,7 @@ public final class APIClient: Sendable {
                 request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
         case .required:
-            guard let token = try await token(), !token.isEmpty else { throw APIError.notSignedIn }
+            guard let token = try await currentToken(), !token.isEmpty else { throw APIError.notSignedIn }
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         return request
@@ -105,6 +138,7 @@ public final class APIClient: Sendable {
         auth: AuthRequirement = .required
     ) async throws -> (Data, HTTPURLResponse) {
         var retried = false
+        var refreshed = false
         while true {
             let request = try await makeRequest(method, path, query: query, body: body, auth: auth)
             let data: Data
@@ -118,6 +152,10 @@ public final class APIClient: Sendable {
             if !retried, SkewRetry.isSkew(status: response.statusCode, body: String(decoding: data, as: UTF8.self)) {
                 retried = true
                 try await sleep(SkewRetry.delay)
+                continue
+            }
+            if !refreshed, auth != .none, await refreshedAfterUnauthorized(status: response.statusCode, body: data) {
+                refreshed = true
                 continue
             }
             throw APIError.http(HTTPFailure(response: response, body: data))

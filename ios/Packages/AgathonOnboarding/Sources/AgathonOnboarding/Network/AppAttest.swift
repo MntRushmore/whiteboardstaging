@@ -65,10 +65,15 @@ public actor AppAttestor {
     public func headers(for body: Data) async throws -> [String: String] {
         guard isSupported else {
             // production never takes the debug header: no point sending a device id it would refuse
-            guard allowsDebugHeader else { throw TryCheckError.refused("app attest unsupported") }
+            guard allowsDebugHeader else { throw TryCheckError.cannotAttest }
             return [Headers.debug: deviceId()]
         }
-        let keyId = try await registeredKey()
+        let keyId: String
+        do {
+            keyId = try await registeredKey()
+        } catch let error as DCError where error.code == .featureUnsupported {
+            throw TryCheckError.cannotAttest
+        }
         let hash = Data(SHA256.hash(data: body))
         do {
             let assertion = try await service.generateAssertion(keyId, clientDataHash: hash)

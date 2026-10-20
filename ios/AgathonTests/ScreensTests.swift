@@ -137,15 +137,26 @@ struct FamilyCopyTests {
     }
 
     @Test func pinWords() {
-        let wrong = FamilyCopy.switchMessage(Self.refusal(403, #"{"error":"forbidden","message":"x","reason":"wrong_pin","triesLeft":2}"#))
+        let wrong = FamilyWords.message(Self.refusal(403, #"{"error":"forbidden","message":"x","reason":"wrong_pin","triesLeft":2}"#), .switchProfile)
         #expect(wrong == "That PIN isn't right. 2 tries left.")
-        let last = FamilyCopy.switchMessage(Self.refusal(403, #"{"error":"forbidden","message":"x","reason":"wrong_pin","triesLeft":1}"#))
+        let last = FamilyWords.message(Self.refusal(403, #"{"error":"forbidden","message":"x","reason":"wrong_pin","triesLeft":1}"#), .switchProfile)
         #expect(last == "That PIN isn't right. 1 try left.")
-        let noPin = FamilyCopy.switchMessage(Self.refusal(409, #"{"error":"conflict","message":"x","reason":"no_pin"}"#))
-        #expect(noPin == "The grown-up hasn't set a PIN yet.")
+        let noPin = FamilyWords.message(Self.refusal(409, #"{"error":"conflict","message":"x","reason":"no_pin"}"#), .switchProfile)
+        #expect(noPin.hasPrefix("The grown-up hasn't set a PIN yet."))
         for message in [wrong, last, noPin] {
             #expect(!message.lowercased().contains("wrong"), "kid copy never says wrong")
         }
+    }
+
+    /// The owner's iPad (2026-10-20): Set PIN on a kid's profile said only "The PIN wasn't saved."
+    @Test func aKidSettingThePinIsToldWhy() {
+        let kid = FamilyWords.message(Self.refusal(403, #"{"error":"invalid_request","message":"A kid profile can't do that. Ask your grown-up.","reason":"kid"}"#), .setPin)
+        #expect(kid.contains("kid's profile"))
+        #expect(KidEditorSheet.message(Self.refusal(409, #"{"error":"invalid_request","reason":"plan_required"}"#)).contains("first kid is free"))
+        #expect(KidEditorSheet.message(Self.refusal(403, #"{"error":"invalid_request","reason":"kid"}"#)).contains("kid's profile"))
+        // Cloudflare's 502 page: plain words, no HTML, no status
+        let cloudflare = FamilyWords.message(Self.refusal(502, "<html><title>502 Bad gateway</title></html>"), .setPin)
+        #expect(cloudflare == "The PIN wasn't saved. Try again in a moment.")
     }
 }
 
@@ -222,6 +233,43 @@ struct PracticePlannerTests {
         let problems = await PracticePlanner.topic("times_tables", seed: 7, count: 3)
         #expect(problems.count == 3)
         #expect(problems.allSatisfy { !$0.lines.isEmpty })
+    }
+}
+
+@MainActor
+struct HomeWhoTests {
+    static func family(_ json: String) throws -> FamilyState {
+        try JSONDecoder().decode(FamilyState.self, from: Data(json.utf8))
+    }
+
+    static let kidJSON = #"{"role":"kid","me":"k1","parentId":"p1","hasPin":true,"members":[{"userId":"p1","displayName":"Mom","avatar":null,"grade":null,"isParent":true,"stats":null},{"userId":"k1","displayName":"Maya","avatar":"fox","grade":4,"isParent":false,"stats":null}]}"#
+    static let parentJSON = #"{"role":"parent","me":"p1","parentId":"p1","hasPin":true,"members":[{"userId":"p1","displayName":"Mom","avatar":null,"grade":null,"isParent":true,"stats":null}]}"#
+
+    /// The owner's iPad (2026-10-20): Grown-ups tapped on a kid's profile before the family loaded
+    /// opened the grown-ups' area and its Set PIN. Nobody is a grown-up until the family says so.
+    @Test func nobodyIsAGrownUpBeforeTheFamilySaysSo() throws {
+        let model = HomeModel()
+        model.setForTesting(family: nil, email: "mom@example.com")
+        #expect(model.who == .unknown)
+        #expect(!model.who.isGrownUp)
+        model.setForTesting(family: try Self.family(Self.parentJSON), email: "mom@example.com")
+        #expect(model.who.isGrownUp)
+    }
+
+    @Test func aKidIsAKidByTheirAddressAlone() throws {
+        let model = HomeModel()
+        model.setForTesting(family: nil, email: "kid-0b9c2f1e-6a1d-4c8e-9f57-3d2b8a7c6e51@kids.agathon.app")
+        #expect(model.isKid)
+        model.setForTesting(family: try Self.family(Self.kidJSON), email: "maya@example.com")
+        #expect(model.isKid)
+    }
+
+    @Test func aBoardOpenedBeforeTheFamilyIsKnownSpeaksToAKid() throws {
+        let model = HomeModel()
+        let profile = try JSONDecoder().decode(Profile.self, from: Data(#"{"user_id":"u1","display_name":"Sam","grade":3}"#.utf8))
+        model.setForTesting(family: nil, profile: profile, email: "sam@example.com")
+        // the profile loaded, the family didn't: out of ink must not offer the plan
+        #expect(model.audience?.isKid == true)
     }
 }
 

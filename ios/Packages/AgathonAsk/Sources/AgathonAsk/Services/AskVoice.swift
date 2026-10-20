@@ -46,6 +46,15 @@ public final class AskVoice: PhraseSpeaker {
     static let log = Logger(subsystem: "app.agathon.Agathon", category: "ask")
     /// after the route said it is unavailable, the device's voice for this long
     public static let routeDown: TimeInterval = 600
+    /// after any other failure (a 502/504 page from Cloudflare, a 429, a dropped connection), the
+    /// device's voice for this long: the reply is still read aloud, never cut off in silence, and
+    /// each phrase doesn't wait on a route that is failing
+    public static let routeHiccup: TimeInterval = 60
+
+    /// How long the device's voice stands in after a phrase's audio couldn't be had.
+    public static func deviceVoiceSpan(after error: Error) -> TimeInterval {
+        (error as? SpeechAudioError) == .unavailable ? routeDown : routeHiccup
+    }
 
     let source: SpeechAudioSource?
     private var prefetched: [String: Task<Data?, Never>] = [:]
@@ -90,10 +99,10 @@ public final class AskVoice: PhraseSpeaker {
                 // the prefetch swallowed why: ask once more to learn whether the route is down
                 do {
                     data = try await source.audio(for: words)
-                } catch SpeechAudioError.unavailable {
-                    routeDownUntil = Date().addingTimeInterval(Self.routeDown)
-                    Self.log.notice("ask: the voice route is unavailable; the device's voice for 10 minutes")
                 } catch {
+                    let span = Self.deviceVoiceSpan(after: error)
+                    routeDownUntil = Date().addingTimeInterval(span)
+                    Self.log.notice("ask: the voice route failed (\(String(describing: error), privacy: .public)); the device's voice for \(Int(span)) s")
                     data = nil
                 }
             }
@@ -101,7 +110,7 @@ public final class AskVoice: PhraseSpeaker {
             if let data, let player = try? AVAudioPlayer(data: data) {
                 return await play(player)
             }
-            if !usesDeviceVoice { return .failed }
+            // audio that came but won't play: this phrase in the device's voice all the same
         }
         guard mine == generation else { return .cancelled }
         return await sayWithDevice(text)

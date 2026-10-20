@@ -32,12 +32,19 @@ final class StoreTrialOffering: TrialOffering {
     }
 
     func offer() async throws -> TrialOffer {
+        // the launch's own load may still be asking the App Store: wait for its answer (up to 15 s)
+        // rather than call that "isn't answering"
+        for _ in 0 ..< 60 where store.productState == .loading {
+            try? await Task.sleep(for: .milliseconds(250))
+        }
         if store.productState != .loaded { await store.loadProduct() }
         switch store.productState {
         case .loaded:
-            guard let offer = store.offer else { throw Failure.unavailable("Agathon Unlimited isn't in the App Store yet.") }
+            guard let offer = store.offer else { throw TrialNotOnSale() }
             return TrialOffer(displayPrice: offer.displayPrice, trialDays: offer.trial?.days)
         case .unavailable(let words):
+            // no product in the App Store (yet): not a failure to reach it, and "Not now" goes on
+            if words == PlanStore.notOnSale { throw TrialNotOnSale() }
             throw Failure.unavailable(words)
         case .idle, .loading:
             throw Failure.unavailable("The App Store isn't answering. Check the connection and try again.")

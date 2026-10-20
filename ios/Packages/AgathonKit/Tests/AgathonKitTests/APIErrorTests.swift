@@ -1,4 +1,5 @@
 import Foundation
+import Supabase
 import Testing
 @testable import AgathonKit
 
@@ -88,9 +89,28 @@ struct APIErrorTests {
     @Test func aPageThatIsNotOursIsABareServerError() {
         let f = failure(502, "<html><body>Bad gateway</body></html>")
         #expect(f.code == nil)
-        #expect(f.message == "Request failed (502)")
+        // Cloudflare's page in front of www.agathon.app: plain words, never "Request failed (502)" or HTML
+        #expect(f.message == "Something went wrong on our side. Try again in a moment.")
+        #expect(!f.message.contains("<"))
         #expect(f.isBareServerError)
         #expect(f.body == nil)
+        #expect(APIError.http(f).errorDescription == "Something went wrong on our side. Try again in a moment.")
+    }
+
+    @Test func aBareAnswerOfAnyStatusHasPlainWords() {
+        #expect(failure(504, "<html>Gateway time-out</html>").message == "Something went wrong on our side. Try again in a moment.")
+        #expect(failure(403, "<html>Attention required! Cloudflare</html>").message == "Something got in the way. Try again in a moment.")
+        #expect(failure(429, "").message == "Too many tries. Wait a moment, then try again.")
+        #expect(failure(401, "").message == "You need to be signed in.")
+    }
+
+    @Test func aServerErrorNeverShowsTheServersOwnSettings() {
+        // our own 503s can name the deployment's settings: a person never reads them
+        let f = failure(503, #"{"error":"feature_unavailable","message":"Families are not set up on this deployment (SUPABASE_SERVICE_ROLE_KEY)."}"#)
+        #expect(f.code == "feature_unavailable")
+        #expect(APIError.http(f).errorDescription == "Something went wrong on our side. Try again in a moment.")
+        // a 4xx of ours keeps its words, written for people
+        #expect(APIError.http(failure(400, #"{"error":"invalid_request","message":"Give the board a name."}"#)).errorDescription == "Give the board a name.")
     }
 
     @Test func wrongPinCarriesTriesLeftAndLock() {
@@ -115,5 +135,34 @@ struct APIErrorTests {
         #expect(APIError.http(HTTPFailure(status: 502, code: nil, message: "")).isRetryable)
         #expect(!APIError.http(HTTPFailure(status: 400, code: "invalid_request", message: "")).isRetryable)
         #expect(!APIError.notSignedIn.isRetryable)
+    }
+}
+
+/// What a person reads when a call fails (ErrorWords): never the raw answer.
+struct ErrorWordsTests {
+    private func response(_ status: Int) -> HTTPURLResponse {
+        HTTPURLResponse(url: URL(string: "https://sgolkponjdkphndosrea.supabase.co/rest/v1/whiteboards")!, statusCode: status, httpVersion: nil, headerFields: nil)!
+    }
+
+    @Test func supabasesOwnErrorNeverReadsOutCloudflaresPage() {
+        let page = Data("<!DOCTYPE html><html><head><title>502 Bad gateway</title></head><body>cloudflare</body></html>".utf8)
+        let error = HTTPError(data: page, response: response(502))
+        #expect(error.errorDescription?.contains("<!DOCTYPE") == true) // what supabase-swift would show
+        let words = ErrorWords.message(for: error)
+        #expect(words == "Something went wrong on our side. Try again in a moment.")
+        #expect(ErrorWords.message(for: HTTPError(data: Data(), response: response(404))) == "Something got in the way. Try again in a moment.")
+    }
+
+    @Test func postgresMessagesAreNotForPeople() throws {
+        let error = try JSONDecoder().decode(PostgrestError.self, from: Data(#"{"code":"42501","message":"new row violates row-level security policy for table \"whiteboards\""}"#.utf8))
+        #expect(ErrorWords.message(for: error) == "Something got in the way. Try again in a moment.")
+    }
+
+    @Test func ourOwnWordsPassThrough() {
+        #expect(ErrorWords.message(for: URLError(.notConnectedToInternet)) == ErrorWords.offline)
+        #expect(ErrorWords.message(for: APIError.timeout).contains("stalled"))
+        #expect(ErrorWords.message(for: FamilyError.nameEmpty) == "Give them a name.")
+        struct Raw: LocalizedError { var errorDescription: String? { "Error Domain=NSCocoaErrorDomain Code=4864" } }
+        #expect(ErrorWords.message(for: Raw()) == ErrorWords.fallback)
     }
 }

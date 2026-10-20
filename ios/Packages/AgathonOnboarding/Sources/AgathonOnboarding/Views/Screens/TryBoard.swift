@@ -288,7 +288,7 @@ final class TryBoard {
             apply(result, batch: batch, box: box, lift: lift)
         } catch {
             guard gen == generation else { return }
-            cantCheck()
+            cantCheck(cannotAttest: error as? TryCheckError == .cannotAttest)
         }
     }
 
@@ -306,8 +306,16 @@ final class TryBoard {
         }
     }
 
-    private func cantCheck() {
+    /// The read couldn't happen. `cannotAttest`: this iPad can't prove it's the app before there's an
+    /// account (the simulator against production), so it never will here: typing the answer works.
+    private func cantCheck(cannotAttest: Bool = false) {
         phase = .cantCheck
+        if cannotAttest {
+            message = Message(kind: .paused, title: "The tutor can’t read writing on this iPad yet.",
+                              detail: "Type your answer instead, or tap Next.")
+            announce("The tutor can’t read writing on this iPad yet. Type your answer instead, or tap Next.")
+            return
+        }
         message = Message(kind: .paused, title: "The tutor can’t check right now.", detail: "Tap Next to keep going.")
         announce("The tutor can’t check right now. Tap Next to keep going.")
     }

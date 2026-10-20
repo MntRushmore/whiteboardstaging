@@ -37,8 +37,16 @@ final class HomeModel {
 
     // MARK: who is signed in
 
+    /// The signed-in address (a kid profile's is known from it before the family loads).
+    private(set) var email: String?
+
+    /// Who is signed in, for the grown-up places: a kid by their address or the family's word; a
+    /// grown-up only once the family has said so (`FamilyState.who`). The owner's iPad, 2026-10-20:
+    /// a kid profile whose family hadn't loaded yet was treated as a grown-up and offered Set PIN.
+    var who: SignedInAs { FamilyState.who(family, email: email) }
+
     /// A kid profile in a family: no billing, no grown-up areas without the PIN.
-    var isKid: Bool { family?.role == .kid }
+    var isKid: Bool { who.isKid }
 
     /// The name on the profile chip.
     func displayName(email: String?) -> String {
@@ -181,6 +189,7 @@ final class HomeModel {
     // MARK: loading
 
     func load(_ backend: AgathonBackend) async {
+        email = backend.auth.email
         let boardsRepository = backend.boards
         let profiles = backend.profiles
         let familyService = backend.family
@@ -207,10 +216,19 @@ final class HomeModel {
         if showsPractice { await loadLearning(backend) }
     }
 
-    /// Who is at a board opened from here (nil until the family is read: the board reads it).
+    /// Reads the family again (the Grown-ups door when it wasn't known yet). Nil when it couldn't.
+    @discardableResult
+    func loadFamily(_ backend: AgathonBackend) async -> FamilyState? {
+        email = backend.auth.email
+        if let state = try? await backend.family.load() { family = state }
+        return family
+    }
+
+    /// Who is at a board opened from here (nil until the family is read: the board reads it). Not
+    /// known to be a grown-up: the kid's words (out of ink sends them to a grown-up, never a price).
     var audience: BoardAudience? {
         guard family != nil || profile != nil else { return nil }
-        return BoardAudience(isKid: isKid, grade: grade)
+        return BoardAudience(isKid: !who.isGrownUp, grade: grade)
     }
 
     /// Makes a new board and returns it (Home then opens it), or nil with a toast.
@@ -266,9 +284,10 @@ final class HomeModel {
     }
 
     #if DEBUG
-    func setForTesting(family: FamilyState?, profile: Profile? = nil) {
+    func setForTesting(family: FamilyState?, profile: Profile? = nil, email: String? = nil) {
         self.family = family
         self.profile = profile
+        self.email = email
     }
     #endif
 

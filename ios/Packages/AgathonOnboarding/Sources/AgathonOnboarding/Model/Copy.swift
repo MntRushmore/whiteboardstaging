@@ -198,6 +198,14 @@ public struct OnboardingCopy: Sendable {
     public let restore = "Restore purchase"
     public var pending: String { "Waiting for approval. \(name ?? "Your kid") can start now." }
     public let storeError = "Couldn’t reach the App Store. Try again."
+    /// The plan isn't on sale in this App Store yet (no product): "Not now" still makes the profile.
+    public var trialUnavailable: String {
+        "Agathon Unlimited isn’t in the App Store yet. Tap Not now: \(name ?? "your kid") still gets a profile and the free board."
+    }
+    /// The iPad is on a kid's profile at the grown-up's part: the grown-up signs in over it.
+    public var signInAsGrownUp: String {
+        "This iPad is on a kid’s profile. Sign in with the grown-up’s account to save \(name.map(Self.possessive) ?? "the") plan."
+    }
     public let restoreNothing = "No purchase to restore on this Apple ID."
 
     public let pinTitle = "Pick a 4-digit PIN."
