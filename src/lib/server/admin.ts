@@ -13,6 +13,10 @@
  * not an admin (the route does not exist for them), and 503 when the lookup itself failed (no
  * service role, or the database did not answer): an admin must be able to tell "the database is
  * down" from "you are not an admin", and a failed lookup is never cached.
+ *
+ * `adminStatus` is the same cached lookup for a caller that has verified the user itself: the
+ * Training Center's gate on the Live routes (src/lib/server/training.ts), which answers its own
+ * 403 and 503 there.
  */
 import { getServerEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
@@ -64,23 +68,30 @@ async function lookUp(userId: string): Promise<boolean | null> {
   }
 }
 
+/**
+ * Is this (already verified) user in `admins`? The answer is kept ADMIN_CACHE_MS, both ways; null
+ * when it could not be checked, which is never kept.
+ */
+export async function adminStatus(userId: string): Promise<boolean | null> {
+  const now = Date.now();
+  const cached = cache.get(userId);
+  if (cached && cached.until > now) return cached.admin;
+  const found = await lookUp(userId);
+  if (found === null) return null;
+  if (cache.size >= ADMIN_CACHE_MAX) cache.clear();
+  cache.set(userId, { admin: found, until: now + ADMIN_CACHE_MS });
+  return found;
+}
+
 /** The signed-in admin, or the response to send (401 signed out, 404 not an admin: the route does not exist for them). */
 export async function requireAdmin(req: Request): Promise<{ user: AuthedUser } | { response: Response }> {
   const auth = await requireUser(req);
   if ("response" in auth) return { response: auth.response };
   const { user } = auth;
 
-  const now = Date.now();
-  const cached = cache.get(user.id);
-  let admin = cached && cached.until > now ? cached.admin : undefined;
-  if (admin === undefined) {
-    const found = await lookUp(user.id);
-    if (found === null) {
-      return { response: json(503, "feature_unavailable", "Admin access could not be checked right now. Try again in a minute.") };
-    }
-    admin = found;
-    if (cache.size >= ADMIN_CACHE_MAX) cache.clear();
-    cache.set(user.id, { admin, until: now + ADMIN_CACHE_MS });
+  const admin = await adminStatus(user.id);
+  if (admin === null) {
+    return { response: json(503, "feature_unavailable", "Admin access could not be checked right now. Try again in a minute.") };
   }
 
   if (!admin) {

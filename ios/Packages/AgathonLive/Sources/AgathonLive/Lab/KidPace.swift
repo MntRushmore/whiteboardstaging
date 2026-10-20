@@ -1,12 +1,12 @@
-#if DEBUG
 import AgathonBoard
 import AgathonBrain
 import Foundation
 
 /// A kid's pace at the pen, for replaying the handwriting fixtures (the Live Lab, the timing bench in
-/// the tests): how long each stroke takes and the pause before it, from the strokes' own geometry —
-/// short inside a glyph (the second bar of an `=`), longer between glyphs, longest before the answer
-/// after an `=` (working it out), and the pause before the next line. Seeded: the same seed, the
+/// the tests, and the Training Center's bench, which is in Release builds too): how long each stroke
+/// takes and the pause before it, from the strokes' own geometry — short inside a glyph (the second
+/// bar of an `=`), longer between glyphs, longest before the answer after an `=` (working it out),
+/// and the pause before the next line. Seeded: the same seed, the
 /// same pauses.
 ///
 /// Not measured on children: the ranges are assumptions in the spirit of handwriting studies'
@@ -96,4 +96,3 @@ public struct SplitMix: RandomNumberGenerator, Sendable {
         return z ^ (z >> 31)
     }
 }
-#endif

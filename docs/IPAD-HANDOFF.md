@@ -174,6 +174,53 @@ window). Left, cosmetic: a 16:9 page in portrait leaves wide empty bands; at the
 docked Ask panel shows one chip before it scrolls; "Come back tomorrow for five more" names the
 default goal (5); Debug's autowrite pill shows in Debug shots.
 
+### Production QA (2026-10-20, branch `feat/ipad-prodqa`)
+
+The owner's iPad against production: "I'm unable to set my PIN". Production logged
+`POST /api/family/pin 403`: the iPad was on a demo family's **kid** profile, and the server refuses a
+PIN from a kid (`setFamilyPin` → `isKid` → 403 `kid`). The server was right; the app offered Set PIN
+to a kid (a family not loaded yet counted as a grown-up) and said only "The PIN wasn't saved."
+
+- **Who is signed in** (`AgathonKit` `FamilyState.who`): a kid by their address
+  (`@kids.agathon.app`, known from the session at once) or the family's word; a grown-up only once
+  the family says so; unknown until then. Home's Grown-ups door (unknown: the family is read first,
+  then the PIN pad or the area, or "Couldn't check who's signed in"), the ink meter, the account
+  area's pages, the Family page (a kid's profile sees "Grown-ups only", no PIN or kid controls) and
+  the board's audience all decide on it.
+- **FamilyWords** (`AgathonKit`): every family refusal in words, for the Family page, the switcher
+  and the first run (kid, pin_required, no_pin, wrong_pin with tries left and the lock, pin_locked,
+  pin_unavailable, plan_required: "Your first kid is free…", too_many, kid_add_limit, self, 404,
+  429, 401, 5xx and Cloudflare's page, offline).
+- **The first run** never runs the grown-up's part on a kid's session (`FlowRules.afterGate`,
+  `grownUpScreen`, `kidPlan`): the gate on a kid's profile sends the grown-up to sign in over it; a
+  flow reopened on the trial/PIN goes back to the plan; a refused PIN (`kid`) signs the grown-up in;
+  the kid is switched to and never added twice (a second add without the plan is `plan_required`);
+  an iPad already on the kid carries on.
+- **Production-only failures** (an audit of every call): Cloudflare's HTML 502/504 and
+  supabase-swift's "Status Code: 502 Body: <!DOCTYPE html>…" never reach a person (`ErrorWords`,
+  every screen's `userMessage`); a 5xx never shows the server's settings; a 401 by the server's clock
+  (back from a long background) refreshes the session once and retries (API and SSE); the trial
+  with no App Store product says "Agathon Unlimited isn't in the App Store yet. Tap Not now…" (no
+  empty-price button, no wait for a load already running); the simulator (no App Attest) is told
+  "The tutor can't read writing on this iPad yet. Type your answer instead, or tap Next."; a failing
+  ElevenLabs route hands the reply to the device's voice for a minute (it used to stop the reply);
+  the Plan card never spins forever; deleting from a kid's profile stops before any picture goes.
+- **Runs.** `scripts/ios-prod-qa.sh` (simulator: the first run makes a `qa-ipad-<timestamp>@agathon.app`
+  account, `ProdQAUITests` use it and the last one deletes it in the app; a failed step's account is
+  deleted as itself, `rpc delete_own_account`; `scripts/lib/prod-qa-accounts.sh verify` checks every
+  public table and storage). `scripts/ios-device-onboarding.sh` runs the whole first run on the
+  owner's iPad with real App Attest, then deletes the account in the app (`build` alone checks it
+  compiles and signs). It signs the app's current session out on that iPad (`-onboardingFresh`).
+- **Results on production (simulator, 2026-10-20):** the first run end to end (the try typed, the
+  trial's "isn't in the App Store yet" and Not now, the PIN as the grown-up, Sam as the first kid
+  without a plan, the first board saved); Sam's new board ticked and ringed by the real routes, Help
+  me's hint, one Ask question writing on the board, Today's practice written once, Progress; as Sam
+  the meter is no button, Sam's area has no Family/report/delete, Grown-ups asks the PIN, a wrong
+  PIN says "That PIN isn't right. 4 tries left."; as the grown-up Change PIN saved, a second kid
+  without the plan explained; sign out and in; Delete my account. Three throwaway accounts made,
+  all deleted, every table checked (only `rate_limit_counters`, which expire, keep the ids).
+  `scripts/ios-device-onboarding.sh` builds for iPadOS (not yet run on the iPad).
+
 **The column rules, web vs iPad (2026-10-19, after the owner's rings).** The engine (`judgeLine`,
 `primaryWork`, operation lines, chains, `=`-first lines) is shared through the brain; these are the
 loop's own rules (web `liveLoop.ts`, iPad `AgathonLive/Loop`):

@@ -52,6 +52,11 @@ final class FlowModel {
     /// the trial's offer, fetched when the account screen opens so the trial's title is ready
     var offer: TrialOffer?
     var offerFailed = false
+    /// the offer couldn't be had because the App Store has no plan yet (`TrialNotOnSale`), not
+    /// because it couldn't be reached
+    var offerNotOnSale = false
+    /// said on the sign-in screen when the flow sent the grown-up there (the iPad was on a kid's profile)
+    var signInNote: String?
     /// made by `kidProfile`, opened by `firstBoard`
     var firstBoard: FirstBoardHandoff?
     var firstBoardMade: FirstBoardMaker.Made?
@@ -62,6 +67,7 @@ final class FlowModel {
     var liveWriter: TutorWriter?
     private var transition: Task<Void, Never>?
     private var started = false
+    private(set) var fetchingOffer = false
 
     init(state: OnboardingState, backend: any OnboardingBackend, trial: any TrialOffering, gate: any ParentalGate,
          onFinish: @escaping (OnboardingOutcome) -> Void) {
@@ -85,6 +91,22 @@ final class FlowModel {
         if shown == .hello { record("start_shown") }
         Task { await backend.tryChecker.warmUp() }
         present(shown, entering: true)
+        // a flow reopened on the grown-up's part (the trial, the PIN…) while the iPad is on a kid's
+        // profile, or signed out: back to the plan, so the grown-up comes through the gate and signs in
+        if [.trial, .pin, .handOver, .addToFamily].contains(shown) {
+            let resumed = shown
+            Task {
+                let target = FlowRules.grownUpScreen(resumed, await backend.session())
+                // only while the screen is still the one reopened (nobody has moved on meanwhile)
+                if target != resumed, state.step == resumed { go(target) }
+            }
+        }
+    }
+
+    /// Sends the grown-up to sign in over a kid's profile, saying why.
+    func signInAsGrownUp(from step: OnboardingStep) {
+        signInNote = copy.signInAsGrownUp
+        openSignIn(from: step)
     }
 
     func go(_ step: OnboardingStep) {
@@ -283,13 +305,17 @@ final class FlowModel {
     // MARK: - the trial's offer
 
     func prefetchOffer() {
-        guard offer == nil else { return }
-        offerFailed = false
+        guard offer == nil, !fetchingOffer else { return }
+        fetchingOffer = true
         Task {
+            defer { fetchingOffer = false }
             do {
                 offer = try await trial.offer()
+                offerFailed = false
+                offerNotOnSale = false
             } catch {
                 offerFailed = true
+                offerNotOnSale = error is TrialNotOnSale
             }
         }
     }

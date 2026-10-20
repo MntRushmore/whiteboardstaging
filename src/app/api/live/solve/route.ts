@@ -79,7 +79,7 @@ export async function POST(req: Request) {
 
   // Charge ink before opening the stream (a 402/503 JSON body, not SSE). The charge is
   // refunded if the stream fails before the first step (runChargedStream), never after.
-  const billing = await enforceInk({ token, route: "live/solve", requestId, model: models.solve }, log);
+  const billing = await enforceInk({ token, route: "live/solve", requestId, model: models.solve, training: ctx.training }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   const messages = buildSolveMessages(data);
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
         judge ??= createSolveStepJudge({ sourceLatex: solveSourceLatex(data.lines), parses: (latex) => engineParsesStep(engine, latex) });
         for (const step of steps) judge.judge(step.latex);
       };
-      await runChargedStream({ userId: user.id, requestId }, log, () => sent > 0, async () => {
+      await runChargedStream({ userId: user.id, requestId, training: ctx.training }, log, () => sent > 0, async () => {
         let model = models.solve;
         emit("meta", { requestId, model });
 
@@ -201,7 +201,7 @@ export async function POST(req: Request) {
               ms,
             },
           });
-          await refundInk({ userId: user.id, requestId }, log);
+          await refundInk({ userId: user.id, requestId, training: ctx.training }, log);
         }
         log.info(
           { model, ms, sent, usable: judge?.drawn ?? null, discarded: judge?.discarded ?? null, retried, parsed: first.count, invalid: first.invalid, lines: data.lines.length },

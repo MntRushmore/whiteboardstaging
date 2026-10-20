@@ -145,3 +145,81 @@ public enum FlowRules {
     /// Single choices move on by themselves after this long (the tick has drawn).
     public static let autoAdvance: Duration = .milliseconds(360)
 }
+
+// MARK: - the grown-up's session
+
+/// Who the iPad is signed in as, for the grown-up's part of the flow (the trial, the PIN, adding the
+/// kid). The PIN and the kids are the grown-up's: the server refuses them from a kid's profile
+/// (403 `kid`), as on the owner's iPad (2026-10-20), which was left on a demo family's kid.
+public enum OnboardingSession: Sendable, Equatable {
+    case signedOut
+    /// A grown-up's account (solo or a family's): whether its PIN is set, and its kids.
+    case grownUp(hasPin: Bool, kids: [MadeKid])
+    /// A kid's profile: an iPad left on a kid, or the flow's own kid after the switch.
+    case kid(MadeKid)
+    /// Signed in, but who it is couldn't be read (the family didn't load).
+    case unknown
+}
+
+extension FlowRules {
+    /// Where the gate leads: the account when signed out; for a grown-up, the trial without the plan,
+    /// else the PIN (or the hand-over when it's set); for a kid's profile, the grown-up's sign-in
+    /// (the grown-up's own session is what makes the PIN and the kid's profile); nil when it can't be
+    /// told who is signed in (stay at the gate and say so).
+    public static func afterGate(_ session: OnboardingSession, hasPlan: Bool) -> OnboardingStep? {
+        switch session {
+        case .signedOut: return .account
+        case .kid: return .signIn
+        case .unknown: return nil
+        case let .grownUp(hasPin, _): return hasPlan ? (hasPin ? .handOver : .pin) : .trial
+        }
+    }
+
+    /// A screen of the grown-up's part, reopened with the session the iPad has now: itself for a
+    /// grown-up (or one not known yet: its own call says what's wrong); the plan for anyone else, so
+    /// the grown-up comes back through the gate and signs in. Other screens are themselves.
+    public static func grownUpScreen(_ step: OnboardingStep, _ session: OnboardingSession) -> OnboardingStep {
+        guard [.trial, .pin, .handOver, .addToFamily].contains(step) else { return step }
+        switch session {
+        case .grownUp, .unknown: return step
+        case .signedOut, .kid: return .plan
+        }
+    }
+
+    /// How the kid's profile is reached on `kidProfile`.
+    public enum KidPlan: Sendable, Equatable {
+        /// add the kid, then become them
+        case add
+        /// become this member (made a moment ago, or already in the family by that name: an add that
+        /// went through before the switch didn't, so a second add never meets `plan_required`)
+        case become(String)
+        /// the iPad is already on this kid (the app closed after the switch)
+        case already(String)
+        /// not the grown-up's session (signed out, or another kid's profile): the grown-up signs in
+        case needsGrownUp
+    }
+
+    public static func kidPlan(made: MadeKid?, name: String?, _ session: OnboardingSession) -> KidPlan {
+        let wanted = Self.nameKey(name)
+        switch session {
+        case let .kid(me):
+            if me.userId == made?.userId { return .already(me.userId) }
+            if made == nil, Self.nameKey(me.displayName) == wanted { return .already(me.userId) }
+            return .needsGrownUp
+        case let .grownUp(_, kids):
+            if let made { return .become(made.userId) }
+            if let same = kids.first(where: { Self.nameKey($0.displayName) == wanted }) { return .become(same.userId) }
+            return .add
+        case .signedOut:
+            return .needsGrownUp
+        case .unknown:
+            return made.map { .become($0.userId) } ?? .add
+        }
+    }
+
+    /// A kid's name as the flow adds it ("Me" without one), for matching.
+    static func nameKey(_ name: String?) -> String {
+        let n = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return (n.isEmpty ? "Me" : n).lowercased()
+    }
+}

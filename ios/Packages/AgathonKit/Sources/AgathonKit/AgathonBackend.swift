@@ -55,7 +55,9 @@ public final class AgathonBackend {
         let api = APIClient(
             baseURL: environment.apiBaseURL,
             transport: transport ?? URLSessionTransport(session: session),
-            token: { try await AuthService.accessToken(from: supabase) }
+            token: { try await AuthService.accessToken(from: supabase) },
+            // a 401 by the server's clock: the session refreshed once, the call tried again
+            refresh: { _ = try await supabase.auth.refreshSession() }
         )
         self.api = api
         live = LiveAPI(sse: SSEClient(api: api))

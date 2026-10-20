@@ -62,7 +62,9 @@ extension APIError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notSignedIn: return "You need to be signed in."
-        case let .http(failure): return failure.message
+        // a 5xx says nothing a person can act on, and some name the server's own settings
+        // ("…not set up on this deployment (SUPABASE_SERVICE_ROLE_KEY)"): our plain line instead
+        case let .http(failure): return failure.status >= 500 ? HTTPFailure.serverWords : failure.message
         case .timeout: return "The connection stalled. Check the Wi-Fi and try again."
         case .incomplete: return "The answer was cut off. Try again."
         case .network: return "Agathon can't connect. Check the Wi-Fi and try again."
@@ -110,7 +112,9 @@ public struct HTTPFailure: Sendable, Equatable {
         let json = JSONValue.parse(data)
         let object = json?.objectValue
         let code = object?["error"]?.stringValue ?? object?["code"]?.stringValue
-        let message = object?["message"]?.stringValue ?? code ?? "Request failed (\(status))"
+        // a body that isn't ours (Cloudflare's HTML 502 page, a platform error): plain words, never
+        // "Request failed (502)" or the page's HTML
+        let message = object?["message"]?.stringValue ?? Self.plainWords(status: status)
         self.init(
             status: status,
             code: code,
@@ -124,6 +128,19 @@ public struct HTTPFailure: Sendable, Equatable {
 
     public init(response: HTTPURLResponse, body: Data, now: Date = Date()) {
         self.init(status: response.statusCode, header: { response.value(forHTTPHeaderField: $0) }, body: body, now: now)
+    }
+
+    /// What a 5xx says to a person.
+    public static let serverWords = "Something went wrong on our side. Try again in a moment."
+
+    /// The words for an answer with no message of ours in it.
+    public static func plainWords(status: Int) -> String {
+        switch status {
+        case 401: return "You need to be signed in."
+        case 429: return "Too many tries. Wait a moment, then try again."
+        case 500...: return serverWords
+        default: return "Something got in the way. Try again in a moment."
+        }
     }
 
     // MARK: what it means

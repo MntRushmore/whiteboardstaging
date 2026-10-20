@@ -238,7 +238,7 @@ struct ProfileSwitcherSheet: View {
                 if start == .grownUp { HomeFlow.openGrownUpsNext = true }
                 dismiss()
             } catch {
-                let message = FamilyCopy.switchMessage(error)
+                let message = FamilyWords.message(error, .switchProfile)
                 if pinFor != nil {
                     pinProblem = message
                     self.pin = ""
@@ -259,26 +259,6 @@ struct ProfileSwitcherSheet: View {
             } catch {
                 signOutProblem = "Couldn't sign you out. Try again in a moment."
             }
-        }
-    }
-}
-
-/// The web's family words (src/lib/family/switchError.ts, copy.ts), short and kind.
-enum FamilyCopy {
-    static func switchMessage(_ error: Error) -> String {
-        guard let failure = (error as? APIError)?.failure else { return userMessage(for: error) }
-        switch (failure.status, failure.reason) {
-        case (403, "wrong_pin"):
-            if failure.locked { return "That PIN isn't right. Switching to the grown-up is locked until they sign in." }
-            return "That PIN isn't right." + (failure.triesLeft.map { " \($0) tr\($0 == 1 ? "y" : "ies") left." } ?? "")
-        case (429, "pin_locked"):
-            return "Too many PIN tries today. The grown-up can sign in with their password."
-        case (429, _):
-            return "Too many tries. Wait a few minutes, then try again."
-        case (_, "no_pin"):
-            return "The grown-up hasn't set a PIN yet."
-        default:
-            return "Couldn't switch profiles. Try again in a moment."
         }
     }
 }

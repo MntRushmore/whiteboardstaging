@@ -36,6 +36,11 @@ import { recordRouteEvent } from "@/lib/server/request";
  * Retry-After) as any rate limit, never the 402 out-of-ink. Nothing else here changes: the routes
  * call `enforceInk` and `runCharged` as before, and a refund of a subscriber's call gives back 0
  * ink (it spent none), so refunds can never mint ink.
+ *
+ * Training Center calls (src/lib/server/training.ts): an admin's bench on the iPad sends the Live
+ * routes its tutor uses with `"training": true`. Once the training gate has checked that the caller
+ * is an admin, the route passes `training: true` to `enforceInk` and to every refund, and both return
+ * at once without asking the database: no ink, no fair-use count, nothing to give back.
  */
 
 export const billingLogger = logger.child({ module: "billing" });
@@ -86,6 +91,13 @@ export type ConsumeInput = {
   requestId: string;
   /** Provider model id (informational; recorded on the usage event). */
   model?: string | null;
+  /**
+   * A Training Center call (an admin's bench on the iPad): `enforceInk` charges nothing and counts
+   * nothing (no ink, no fair-use count, no usage event). Only `LiveContext.training` may set it, which
+   * is true only once the training gate (src/lib/server/training.ts) checked that the caller is an
+   * admin; never a value read from a request body.
+   */
+  training?: boolean;
 };
 
 /** The subset of a Supabase client `consumeInk` needs (lets tests pass a fake). */
@@ -235,6 +247,12 @@ export type RefundInput = {
   userId: string;
   /** Must be the very requestId that was passed to `consumeInk` / `enforceInk`. */
   requestId: string;
+  /**
+   * A Training Center call: it was never charged (`ConsumeInput.training`), so there is nothing to
+   * give back and the database is not asked. The same rule as there: only `LiveContext.training`,
+   * set by the training gate (src/lib/server/training.ts), may set it.
+   */
+  training?: boolean;
 };
 
 export type RefundResult =
@@ -261,10 +279,11 @@ export function normalizeRefundResult(data: unknown): RefundResult {
 /**
  * Give back what `consumeInk` charged for `requestId`, with the service role. Never throws; a
  * refund that cannot happen is logged and reported as `{ refunded: 0, reason }` so the route can
- * still answer the client. With `BILLING_ENFORCE=0` nothing was charged, so nothing is refunded
- * and the database is not touched.
+ * still answer the client. With `BILLING_ENFORCE=0`, or for a training call, nothing was charged,
+ * so nothing is refunded, nothing is logged and the database is not touched.
  */
 export async function refundInk(input: RefundInput, log: BillingLog = billingLogger, client?: RpcClient): Promise<RefundResult> {
+  if (input.training) return { refunded: 0, reason: "training" };
   if (!billingEnforced()) return { refunded: 0, reason: "not_enforced" };
 
   let result: RefundResult;
@@ -411,6 +430,8 @@ export type EnforceResult = { response: Response } | { remaining: number | null 
  * One call for route handlers: charge the route's ink, or produce the response
  * that ends the request.
  *
+ *  - a training call (`input.training`, set only by the training gate): passes at once, nothing
+ *    spent and nothing counted; the database is not asked.
  *  - `BILLING_ENFORCE=0`: skip the database entirely (logged once per process).
  *  - an Agathon Unlimited subscriber: passes, nothing spent (the RPC decides).
  *  - not enough ink: `402 ink_empty`.
@@ -422,6 +443,7 @@ export async function enforceInk(
   log: { warn: (obj: object, msg: string) => void; info?: (obj: object, msg: string) => void } = billingLogger,
   client?: RpcClient,
 ): Promise<EnforceResult> {
+  if (input.training) return { remaining: null };
   if (!billingEnforced()) {
     if (!warnedNotEnforced) {
       warnedNotEnforced = true;

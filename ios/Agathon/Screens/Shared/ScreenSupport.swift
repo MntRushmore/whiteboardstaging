@@ -14,11 +14,10 @@ enum AppLinks {
 }
 
 /// What a failed call says to the person: the error's own description when it has one written for
-/// people (`LocalizedError`), else a plain line. Never a stack of codes.
+/// people (`LocalizedError`), else a plain line. Never a stack of codes, a status or Cloudflare's
+/// HTML page (AgathonKit's `ErrorWords`).
 func userMessage(for error: Error) -> String {
-    if error is URLError { return "Can't reach Agathon. Check the Wi-Fi, then try again." }
-    if let error = error as? LocalizedError, let text = error.errorDescription, !text.isEmpty { return text }
-    return "Something got in the way. Try again in a moment."
+    ErrorWords.message(for: error)
 }
 
 /// An async call's value or error, so several can run side by side and fail on their own.

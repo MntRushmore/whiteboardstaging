@@ -58,13 +58,17 @@ export type BodyFailure = "unreadable" | "malformed" | "invalid";
 export type BodyIssue = { path: string; message: string };
 
 /**
- * Parse and validate a JSON request body. Returns `{ data }` on success or a ready-to-return 400
- * `invalid_request` response, with `failure` (and `issues`) for the caller's log.
+ * Parse and validate a JSON request body. Returns `{ data, raw }` on success or a ready-to-return
+ * 400 `invalid_request` response, with `failure` (and `issues`) for the caller's log.
+ *
+ * `raw` is the JSON as it arrived, before the schema stripped the keys it does not know. The Live
+ * routes read one such key there: the iPad's `"training": true` (livePreamble), which a schema
+ * never carries, so that a server without the training path strips it and charges as usual.
  */
 export async function parseJsonBody<S extends z.ZodTypeAny>(
   req: Request,
   schema: S,
-): Promise<{ data: z.infer<S> } | { response: Response; failure: BodyFailure; issues?: BodyIssue[] }> {
+): Promise<{ data: z.infer<S>; raw: unknown } | { response: Response; failure: BodyFailure; issues?: BodyIssue[] }> {
   let text: string;
   try {
     text = await req.text();
@@ -93,7 +97,7 @@ export async function parseJsonBody<S extends z.ZodTypeAny>(
     };
   }
 
-  return { data: result.data };
+  return { data: result.data, raw };
 }
 
 /* ------------------------------------------------------------------------- */

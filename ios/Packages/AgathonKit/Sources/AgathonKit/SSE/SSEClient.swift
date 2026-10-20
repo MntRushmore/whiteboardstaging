@@ -88,18 +88,25 @@ public final class SSEClient: Sendable {
         let activity = ActivityClock()
         return try await withThrowingTaskGroup(of: Bool.self) { group in
             group.addTask {
-                let request = try await api.makeRequest(.post, path, body: body, accept: "text/event-stream")
-                let (response, chunks) = try await api.transport.stream(for: request)
-                activity.touch()
-                guard (200 ..< 300).contains(response.statusCode) else {
+                var attempt = 0
+                var opened: (HTTPURLResponse, AsyncThrowingStream<Data, Error>)
+                while true {
+                    attempt += 1
+                    let request = try await api.makeRequest(.post, path, body: body, accept: "text/event-stream")
+                    opened = try await api.transport.stream(for: request)
+                    activity.touch()
+                    if (200 ..< 300).contains(opened.0.statusCode) { break }
                     var data = Data()
-                    for try await chunk in chunks {
+                    for try await chunk in opened.1 {
                         activity.touch()
                         data.append(chunk)
                         if data.count > 64 * 1024 { break }
                     }
-                    throw APIError.http(HTTPFailure(response: response, body: data))
+                    // a stale session (back from a long background): refreshed once, then asked again
+                    if attempt == 1, await api.refreshedAfterUnauthorized(status: opened.0.statusCode, body: data) { continue }
+                    throw APIError.http(HTTPFailure(response: opened.0, body: data))
                 }
+                let chunks = opened.1
                 var parser = SSEParser()
                 for try await chunk in chunks {
                     activity.touch()

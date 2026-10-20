@@ -87,6 +87,44 @@ struct APIClientTests {
         #expect(sleeper.sleeps.isEmpty)
     }
 
+    /// Back from a long background, the token can be stale by the server's clock: refreshed once.
+    @Test func a401IsTriedAgainAfterOneRefresh() async throws {
+        let transport = FakeTransport(replies: [
+            .json(401, #"{"error":"unauthorized","message":"You need to be signed in to use this feature."}"#),
+            .json(200, #"{"ok":true}"#),
+        ])
+        let refreshes = Counter()
+        let api = APIClient(baseURL: Fixtures.baseURL, transport: transport, token: { Fixtures.token }, refresh: { refreshes.add() })
+        let answer: OK = try await api.get("/api/family")
+        #expect(answer == OK(ok: true))
+        #expect(transport.requests.count == 2)
+        #expect(refreshes.value == 1)
+    }
+
+    @Test func aRefreshThatFailsLeavesThe401() async throws {
+        let transport = FakeTransport(replies: [.json(401, #"{"error":"unauthorized"}"#), .json(401, #"{"error":"unauthorized"}"#)])
+        let api = APIClient(baseURL: Fixtures.baseURL, transport: transport, token: { Fixtures.token }, refresh: { throw URLError(.userAuthenticationRequired) })
+        do {
+            let _: EmptyResponse = try await api.get("/api/family")
+            Issue.record("expected a failure")
+        } catch let error as APIError {
+            #expect(error.isUnauthorized)
+        }
+        #expect(transport.requests.count == 1)
+    }
+
+    @Test func aTokenThatCantBeHadIsNeverAuthsOwnWords() async throws {
+        struct RefreshFailed: Error {}
+        let signedOut = APIClient(baseURL: Fixtures.baseURL, transport: FakeTransport(), token: { throw RefreshFailed() })
+        await #expect(throws: APIError.notSignedIn) {
+            let _: EmptyResponse = try await signedOut.get("/api/family")
+        }
+        let offline = APIClient(baseURL: Fixtures.baseURL, transport: FakeTransport(), token: { throw URLError(.notConnectedToInternet) })
+        await #expect(throws: APIError.network(.notConnectedToInternet)) {
+            let _: EmptyResponse = try await offline.get("/api/family")
+        }
+    }
+
     @Test func errorsKeepTheRequestId() async throws {
         let transport = FakeTransport(replies: [.json(402, #"{"error":"ink_empty","message":"Out of ink","remaining":2,"cost":3}"#,
                                                       headers: ["X-Request-Id": "req-42"])])
@@ -126,4 +164,11 @@ struct APIClientTests {
         let answer: EmptyResponse = try await Fixtures.client(transport).post("/api/client-errors", body: ["a": "b"])
         #expect(answer == EmptyResponse())
     }
+}
+
+final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    var value: Int { lock.withLock { n } }
+    func add() { lock.withLock { n += 1 } }
 }

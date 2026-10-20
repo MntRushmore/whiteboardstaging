@@ -25,7 +25,16 @@ struct FamilyPage: View {
     var body: some View {
         AreaPage("Family", subtitle: "Each kid gets their own boards, practice and path.") {
             AreaStatus(loading: loading && family == nil, error: family == nil ? error : nil) { Task { await load() } }
-            if let family {
+            if let family, !FamilyState.who(family, email: backend.auth.email).isGrownUp {
+                // a kid's profile (the area decided before the family said so, or a stale screen):
+                // the grown-ups' controls never show; the server would refuse them anyway (403 `kid`)
+                AreaCard("Grown-ups only") {
+                    Text("You're on a kid's profile. The PIN and the kids' profiles are the grown-up's. Switch to the grown-up's profile with their PIN to change them.")
+                        .dsFont(.callout).foregroundStyle(DS.Color.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("family.kidProfile")
+                }
+            } else if let family {
                 if let note {
                     Banner(.success, note)
                 }
@@ -119,7 +128,7 @@ struct FamilyPage: View {
             family = try await backend.family.load()
             error = nil
         } catch {
-            self.error = userMessage(for: error)
+            self.error = FamilyWords.message(error, .load)
         }
     }
 
@@ -129,7 +138,7 @@ struct FamilyPage: View {
                 try await backend.family.switchProfile(to: kid.userId)
             } catch {
                 note = nil
-                switchProblem = FamilyCopy.switchMessage(error)
+                switchProblem = FamilyWords.message(error, .switchProfile)
             }
         }
     }
@@ -211,22 +220,14 @@ struct KidEditorSheet: View {
                 await saved()
                 dismiss()
             } catch {
-                problem = Self.message(error)
+                problem = Self.message(error, adding: member == nil)
             }
         }
     }
 
-    /// The family routes' refusals, in the web's words (src/lib/family/copy.ts).
-    static func message(_ error: Error) -> String {
-        if let error = error as? FamilyError { return error.errorDescription ?? "" }
-        guard let failure = (error as? APIError)?.failure else { return userMessage(for: error) }
-        switch failure.reason {
-        case "plan_required": return "Kids share your Agathon Unlimited plan. Start the free trial, then add them here."
-        case "pin_required": return "Set your PIN first, then add kids."
-        case "too_many": return "A family has up to \(FamilyService.maxKids) kids."
-        case "kid_add_limit": return "That's a lot of new profiles today. Try again tomorrow."
-        default: return failure.status == 429 ? "Too many tries. Wait a few minutes, then try again." : "That didn't save. Try again in a moment."
-        }
+    /// The family routes' refusals, in the web's words (src/lib/family/copy.ts): AgathonKit's FamilyWords.
+    static func message(_ error: Error, adding: Bool = true) -> String {
+        FamilyWords.message(error, adding ? .addKid : .editKid)
     }
 }
 
@@ -267,7 +268,7 @@ struct RemoveKidSheet: View {
                 await removed()
                 dismiss()
             } catch {
-                problem = "\(kid.displayName) is still here. Try again in a moment."
+                problem = FamilyWords.message(error, .removeKid(name: kid.displayName))
             }
         }
     }
@@ -325,7 +326,9 @@ struct SetPinSheet: View {
                 await saved()
                 dismiss()
             } catch {
-                problem = "The PIN wasn't saved. Try again."
+                // the server's reason in words: a kid's profile is told to switch to the grown-up
+                // (403 `kid`), never just "try again"
+                problem = FamilyWords.message(error, .setPin)
                 first = nil
                 entry = ""
             }

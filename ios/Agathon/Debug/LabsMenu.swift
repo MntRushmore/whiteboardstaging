@@ -44,7 +44,7 @@ private struct LabsButton: ViewModifier {
 }
 
 private enum Lab: String, CaseIterable, Identifiable {
-    case board, editor, brain, design, live, ask, billing, debugScreens, onboarding
+    case board, editor, brain, design, live, ask, billing, debugScreens, onboarding, training
 
     var id: String { rawValue }
 
@@ -66,6 +66,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .debugScreens: return "Old debug screens (kit lane)"
         case .billing: return "Billing Lab (StoreKit test purchases)"
         case .onboarding: return "Onboarding (the first run)"
+        case .training: return "Training Center (bench the tutor)"
         }
     }
 
@@ -80,6 +81,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .debugScreens: return "ladybug"
         case .billing: return "creditcard"
         case .onboarding: return "hand.wave"
+        case .training: return "checklist"
         }
     }
 }
@@ -100,8 +102,9 @@ private struct LabScreen: View {
             case .debugScreens: DebugScreens()
             case .billing: BillingLabView()
             case .onboarding: OnboardingLab(gate: AppParentalGate(), close: close)
+            case .training: TrainingCenterView(close: close)
             }
-            if lab != .onboarding { Button(action: close) {
+            if lab != .onboarding && lab != .training { Button(action: close) {
                 Label("Close", systemImage: "xmark")
                     .font(.footnote.weight(.semibold))
                     .padding(.horizontal, 12)
