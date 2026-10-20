@@ -78,7 +78,12 @@ struct GateScreen: View {
         case .open:
             note = nil
             OnboardingSound.shared.play(.tick)
-            model.passGate()
+            Task {
+                if let problem = await model.passGate() {
+                    note = problem
+                    entry = ""
+                }
+            }
         case .miss:
             miss = true
             note = model.gate.missNote ?? model.copy.gateMiss
@@ -101,9 +106,19 @@ struct GateScreen: View {
 }
 
 extension FlowModel {
-    func passGate() {
+    /// Past the gate: the account when signed out; the grown-up's next step when the grown-up is
+    /// signed in; their sign-in when the iPad is on a kid's profile (`FlowRules.afterGate`). What to
+    /// say at the gate when it can't be told who is signed in (nil when it moved on).
+    func passGate() async -> String? {
         record("start_gate")
-        go(backend.isSignedIn ? (state.hasPlan ? .pin : .trial) : .account)
+        let session: OnboardingSession = backend.isSignedIn ? await backend.session() : .signedOut
+        guard let next = FlowRules.afterGate(session, hasPlan: state.hasPlan) else { return copy.offline }
+        if next == .signIn {
+            signInAsGrownUp(from: .handBack)
+        } else {
+            go(next)
+        }
+        return nil
     }
 }
 
@@ -372,10 +387,12 @@ struct TrialScreen: View {
                     .reveal(6)
                 }
             }
-            if let note {
+            if let note = note ?? offerNote {
                 Text(note).dsFont(.callout).foregroundStyle(DS.Color.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 16).padding(.vertical, 8)
                     .background(Capsule().fill(DS.Color.tryAgain))
+                    .accessibilityIdentifier("onboarding.trial.note")
             }
             if let offer {
                 // the price, every word of it, in the grown-up's part only
@@ -403,10 +420,14 @@ struct TrialScreen: View {
                     Button(c.notNow) { decline() }
                         .buttonStyle(.pill(.quiet, size: .large))
                         .accessibilityIdentifier("onboarding.trial.notNow")
-                    PillButton(busy ? "One moment…" : (days > 0 ? c.startTrial : c.subscribe(offer?.displayPrice ?? "")),
-                               icon: .play, kind: .sunny, size: .large) { start() }
-                        .accessibilityIdentifier("onboarding.trial.start")
-                        .disabled(busy || offer == nil)
+                    // no offer (the App Store has no plan yet, or isn't answering): no buy button
+                    // at all, "Not now" carries on; while it is asked: "One moment…"
+                    if !model.offerFailed || offer != nil {
+                        PillButton(busy || offer == nil ? "One moment…" : (days > 0 ? c.startTrial : c.subscribe(offer?.displayPrice ?? "")),
+                                   icon: .play, kind: .sunny, size: .large) { start() }
+                            .accessibilityIdentifier("onboarding.trial.start")
+                            .disabled(busy || offer == nil)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -415,8 +436,14 @@ struct TrialScreen: View {
         .sheet(item: $safari) { url in SafariView(url: url).ignoresSafeArea() }
         .onAppear {
             if model.offer == nil { model.prefetchOffer() }
-            if model.offerFailed { note = c.storeError }
         }
+    }
+
+    /// Why there's no offer, while there's none: the plan not in the App Store yet (prod before App
+    /// Store Connect has the product), or the App Store not answering.
+    private var offerNote: String? {
+        guard model.offer == nil, model.offerFailed else { return nil }
+        return model.offerNotOnSale ? model.copy.trialUnavailable : model.copy.storeError
     }
 
     private func start() {
@@ -441,7 +468,7 @@ struct TrialScreen: View {
                     break
                 }
             } catch {
-                note = model.copy.storeError
+                note = (error as? LocalizedError)?.errorDescription ?? model.copy.storeError
             }
         }
     }
@@ -571,7 +598,11 @@ struct PinScreen: View {
                 .frame(maxWidth: 420, alignment: side ? .leading : .center)
                 .reveal(0)
             PinDots(count: entry.count, lookAgain: miss).reveal(1)
-            Text(note ?? " ").dsFont(.callout).foregroundStyle(DS.Color.ink).frame(height: 22)
+            Text(note ?? " ").dsFont(.callout).foregroundStyle(DS.Color.ink)
+                .multilineTextAlignment(side ? .leading : .center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420, minHeight: 22, alignment: side ? .leading : .center)
+                .accessibilityIdentifier("onboarding.pin.note")
         }
         let pad = PinPad(entry: $entry, keyFill: .paper) { pin in submit(pin) }
             .disabled(busy)
@@ -624,9 +655,15 @@ struct PinScreen: View {
                 OnboardingSound.shared.play(.tick)
                 model.go(.handOver)
             } catch {
-                note = model.copy.offline
                 entry = ""
                 self.first = nil
+                if FamilyRefusal(error) == .kid {
+                    // the iPad is on a kid's profile: the PIN is the grown-up's to set
+                    model.signInAsGrownUp(from: .handBack)
+                    return
+                }
+                note = FamilyWords.message(error, .setPin)
+                model.retype(model.copy.pinTitle)
             }
         }
     }
@@ -735,9 +772,16 @@ struct KidProfileScreen: View {
             do {
                 try await model.makeKidAndBoard()
                 model.go(.firstBoard)
+            } catch FlowError.needsGrownUp {
+                model.signInAsGrownUp(from: .handOver)
             } catch {
-                note = (error as? APIError)?.failure?.reason == "plan_required"
-                    ? "Start the free trial to add another kid." : model.copy.offline
+                if FamilyRefusal(error) == .kid {
+                    model.signInAsGrownUp(from: .handOver)
+                } else if error is APIError {
+                    note = FamilyWords.message(error, .addKid)
+                } else {
+                    note = model.copy.offline
+                }
             }
         }
     }
@@ -749,15 +793,24 @@ extension FlowModel {
     func makeKidAndBoard() async throws {
         let a = state.answers
         let name = a.name ?? "Me"
-        let kid: MadeKid
-        if let made = madeKid {
-            kid = made
-        } else {
-            kid = try await backend.addKid(name: name, grade: a.choice?.grade, avatar: (a.picture ?? .tomato).avatarId)
+        // who the iPad is on decides it (`FlowRules.kidPlan`): a kid made a moment ago is switched to,
+        // never added twice (a second add without the plan is refused `plan_required`); an iPad
+        // already on this kid (closed after the switch) carries on as them; anyone else is the
+        // grown-up's to sort out (their sign-in)
+        switch FlowRules.kidPlan(made: madeKid, name: a.name, await backend.session()) {
+        case .needsGrownUp:
+            throw FlowError.needsGrownUp
+        case let .already(id):
+            madeKid = madeKid ?? MadeKid(userId: id, displayName: name)
+        case let .become(id):
+            try await backend.switchTo(id)
+            madeKid = madeKid ?? MadeKid(userId: id, displayName: name)
+        case .add:
+            let kid = try await backend.addKid(name: name, grade: a.choice?.grade, avatar: (a.picture ?? .tomato).avatarId)
             madeKid = kid
             record("start_kid_added")
+            try await backend.switchTo(kid.userId)
         }
-        try await backend.switchTo(kid.userId)
         try? await backend.saveKid(choice: a.choice)
         let title = a.name.map { "\($0)’s first board" } ?? "My first board"
         let boardId = try? await backend.createBoard(title: title)
@@ -798,10 +851,12 @@ struct SignInScreen: View {
                         .submitLabel(.go)
                         .onSubmit { signIn() }
                         .reveal(2)
-                    if let note {
+                    if let note = note ?? model.signInNote {
                         Text(note).dsFont(.callout).foregroundStyle(DS.Color.ink)
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 16).padding(.vertical, 8)
                             .background(Capsule().fill(DS.Color.tryAgain))
+                            .accessibilityIdentifier("onboarding.signIn.note")
                     }
                     HStack(spacing: 12) {
                         PillButton(busy ? "Signing in…" : c.signIn, icon: .forward, kind: .sunny, size: .large) { signIn() }
@@ -846,11 +901,17 @@ extension FlowModel {
     /// Signed in: a family with kids goes Home (the switcher's picker is the screens lane's); an
     /// iPad holding an unsaved plan offers to add the kid; anyone else goes Home.
     func afterSignIn() async {
+        signInNote = nil
         state.hasPlan = await hasPlanNow()
-        let family = try? await backend.family()
-        let hasKids = family?.members.contains { !$0.isParent } ?? false
+        let session = await backend.session()
         let holdsPlan = state.answers.role != nil && state.answers.choice != nil
-        if holdsPlan, !hasKids || state.hasPlan, family?.role != .kid {
+        let canAdd: Bool
+        switch session {
+        case let .grownUp(_, kids): canAdd = kids.isEmpty || state.hasPlan
+        case .unknown: canAdd = true // its own calls say what's wrong
+        case .kid, .signedOut: canAdd = false
+        }
+        if holdsPlan, canAdd {
             go(.addToFamily)
         } else {
             state.finish()
@@ -881,6 +942,14 @@ struct AddToFamilyScreen: View {
             }
             .reveal(1)
         }
-        .task { hasPin = (try? await model.backend.family().hasPin) ?? false }
+        .task {
+            if case let .grownUp(pin, _) = await model.backend.session() { hasPin = pin }
+        }
     }
+}
+
+/// Why the first run can't go on as it is.
+enum FlowError: Error, Equatable {
+    /// the step needs the grown-up's own session, and the iPad isn't on it
+    case needsGrownUp
 }

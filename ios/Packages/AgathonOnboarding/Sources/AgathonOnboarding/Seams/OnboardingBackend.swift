@@ -34,6 +34,8 @@ public protocol OnboardingBackend: AnyObject {
     /// `profiles.checkout_ref`, Apple's `appAccountToken`.
     func checkoutRef() async -> UUID?
     func family() async throws -> FamilyState
+    /// Who the iPad is signed in as, for the grown-up's part (`OnboardingSession`).
+    func session() async -> OnboardingSession
     func setPin(_ pin: String) async throws
     /// `POST /api/family/kids`.
     func addKid(name: String, grade: Int?, avatar: String) async throws -> MadeKid
@@ -120,6 +122,20 @@ public final class LiveOnboardingBackend: OnboardingBackend {
 
     public func family() async throws -> FamilyState {
         try await backend.family.load()
+    }
+
+    public func session() async -> OnboardingSession {
+        guard isSignedIn else { return .signedOut }
+        let family = try? await backend.family.load()
+        switch FamilyState.who(family, email: backend.auth.email) {
+        case .kid:
+            let me = family?.meMember
+            return .kid(MadeKid(userId: backend.auth.userId ?? me?.userId ?? "", displayName: me?.displayName ?? ""))
+        case let .grownUp(f):
+            return .grownUp(hasPin: f.hasPin, kids: f.members.filter { !$0.isParent }.map { MadeKid(userId: $0.userId, displayName: $0.displayName) })
+        case .unknown:
+            return .unknown
+        }
     }
 
     public func setPin(_ pin: String) async throws {

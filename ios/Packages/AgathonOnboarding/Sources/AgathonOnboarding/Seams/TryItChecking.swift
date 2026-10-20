@@ -51,6 +51,9 @@ public enum TryCheckError: Error, Sendable, Equatable {
     case unavailable
     /// the app could not prove itself (App Attest) or the server refused the request
     case refused(String)
+    /// this device can't prove it is the app (App Attest unsupported: the simulator against
+    /// production), so nothing before the account can be read here; typed answers still work
+    case cannotAttest
 }
 
 /// The seam for the tutor's read and verdict on the try (docs/ONBOARDING.md, `tryIt`).

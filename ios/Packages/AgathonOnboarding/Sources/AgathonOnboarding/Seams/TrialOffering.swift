@@ -17,6 +17,13 @@ public struct TrialOffer: Sendable, Equatable {
     public var hasTrial: Bool { (trialDays ?? 0) > 0 }
 }
 
+/// The App Store has no plan to sell yet (no product in App Store Connect, as production before the
+/// subscription exists): not a failure to reach it. The trial screen says so and "Not now" carries on.
+public struct TrialNotOnSale: Error, Sendable, Equatable, LocalizedError {
+    public init() {}
+    public var errorDescription: String? { "Agathon Unlimited isn't in the App Store yet." }
+}
+
 /// What came of the tap on Start (StoreKit 2's purchase result, after the server has the signed
 /// transaction and it is finished).
 public enum TrialOutcome: Sendable, Equatable {

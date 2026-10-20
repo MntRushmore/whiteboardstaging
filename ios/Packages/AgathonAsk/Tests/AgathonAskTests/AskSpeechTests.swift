@@ -109,6 +109,16 @@ struct AskSpeechTests {
         #expect(AskSpeechQueue.phraseLimit(9) == 240)
     }
 
+    /// ElevenLabs behind Cloudflare: a 502/504 page, a 429 or a dropped connection must not cut the
+    /// reply off in silence (it used to answer `.failed`, which ends the reply): the device's voice
+    /// for a minute; the route's own 503 "use the device" for ten.
+    @Test func aVoiceRouteThatFailsHandsOverToTheDevice() {
+        #expect(AskVoice.deviceVoiceSpan(after: SpeechAudioError.unavailable) == AskVoice.routeDown)
+        #expect(AskVoice.deviceVoiceSpan(after: SpeechAudioError.failed) == AskVoice.routeHiccup)
+        #expect(AskVoice.deviceVoiceSpan(after: URLError(.timedOut)) == AskVoice.routeHiccup)
+        #expect(AskVoice.routeHiccup > 0 && AskVoice.routeHiccup < AskVoice.routeDown)
+    }
+
     @Test func theSpeakerSettingIsPerUserAndOnForTheYoungest() {
         let defaults = UserDefaults(suiteName: "ask-tests-\(UUID().uuidString)")!
         let voice = AskVoice(source: nil)

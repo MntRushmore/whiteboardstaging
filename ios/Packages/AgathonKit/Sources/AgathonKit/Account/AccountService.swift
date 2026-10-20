@@ -142,6 +142,9 @@ public final class AccountService: Sendable {
         var result = DeleteResult()
         do {
             _ = try await api.perform(.delete, "/api/family")
+        } catch let error as APIError where error.failure?.reason == "kid" {
+            // a kid's profile: `delete_own_account` refuses it too, so stop before any picture goes
+            throw AccountError.kidProfile
         } catch {
             result.problems.append("kids' pictures: \(error.localizedDescription)")
         }
@@ -184,12 +187,15 @@ public enum AccountError: Error, Equatable, LocalizedError {
     case gradeOutOfRange
     /// A plan would charge again: cancel it first.
     case planStillActive
+    /// A kid's profile: only the grown-up deletes the family's account.
+    case kidProfile
 
     public var errorDescription: String? {
         switch self {
         case .nameTooLong: return "A name is at most \(AccountService.displayNameMax) characters."
         case .gradeOutOfRange: return "Pick a grade from Kindergarten to 8th."
         case .planStillActive: return "Cancel Agathon Unlimited first, then delete the account."
+        case .kidProfile: return "You're on a kid's profile. Only the grown-up can delete the account."
         }
     }
 }

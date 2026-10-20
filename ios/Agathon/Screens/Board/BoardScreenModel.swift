@@ -148,13 +148,15 @@ final class BoardScreenModel: ObservableObject {
         }
     }
 
-    /// Who is at the board when the request didn't say: a kid profile, and the grade.
+    /// Who is at the board when the request didn't say: a kid profile, and the grade. A family that
+    /// couldn't be read is a kid's (`FamilyState.who`): out of ink then sends them to a grown-up
+    /// rather than offering the plan to whoever holds the iPad.
     static func readAudience(_ backend: AgathonBackend) async -> BoardAudience {
         async let family = try? backend.family.load()
         async let profile = try? backend.profiles.profile()
         let f = await family
         let p = await profile
-        return BoardAudience(isKid: f?.role == .kid, grade: p?.grade ?? f?.meMember?.grade)
+        return BoardAudience(isKid: !FamilyState.who(f, email: backend.auth.email).isGrownUp, grade: p?.grade ?? f?.meMember?.grade)
     }
 
     // MARK: - the canvas is up: the tutor joins

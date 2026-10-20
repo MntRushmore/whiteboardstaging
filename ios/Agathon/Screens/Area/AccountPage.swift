@@ -21,6 +21,8 @@ struct AccountPage: View {
     @State private var gradeNote: String?
     @State private var deleting = false
     @State private var showsPlan = false
+    /// the plan couldn't be read: say so (and offer the read again), never spin
+    @State private var inkFailed = false
 
     private var account: AccountService { AccountService(api: backend.api, client: backend.supabase) }
     private var hasKids: Bool { family?.members.contains { !$0.isParent } ?? false }
@@ -55,7 +57,7 @@ struct AccountPage: View {
                 .accessibilityIdentifier("account.grade")
             }
             AreaCard("Plan") {
-                PlanWords(ink: ink)
+                PlanWords(ink: ink, failed: inkFailed) { Task { await load() } }
                 PillButton(ink?.hasUnlimited == true ? "Manage the plan" : "See the plan", icon: .lock, kind: .secondaryOnPaper) { showsPlan = true }
                     .fixedSize()
                     .padding(.top, DS.Space.xs)
@@ -88,6 +90,7 @@ struct AccountPage: View {
         async let inkRow = try? backend.profiles.inkSummary()
         profile = await profileRow ?? nil
         ink = await inkRow ?? nil
+        inkFailed = ink == nil
         name = profile?.displayName ?? ""
         savedName = name
         grade = profile?.grade
@@ -202,9 +205,18 @@ struct GradePicker: View {
 /// The plan, in words, for the grown-up (never shown to kids).
 struct PlanWords: View {
     let ink: InkSummary?
+    var failed = false
+    var retry: (() -> Void)?
 
     var body: some View {
-        if let ink {
+        if ink == nil, failed {
+            Text("Couldn't check the plan just now.").dsFont(.body).foregroundStyle(DS.Color.ink)
+            if let retry {
+                Button("Try again", action: retry)
+                    .buttonStyle(.pill(.quiet))
+                    .accessibilityIdentifier("account.plan.retry")
+            }
+        } else if let ink {
             if ink.hasUnlimited {
                 Text(planLine(ink.unlimited)).dsFont(.body).foregroundStyle(DS.Color.ink)
                 Text("Help on the board and in Ask is covered.").dsFont(.callout).foregroundStyle(DS.Color.inkSecondary)
@@ -411,6 +423,8 @@ struct DeleteAccountSheet: View {
                 try await account.deleteAccount { try await auth.signOut(scope: .local) }
             } catch AccountError.planStillActive {
                 blocked = true
+            } catch AccountError.kidProfile {
+                problem = AccountError.kidProfile.errorDescription
             } catch {
                 problem = "Your account wasn't deleted. Try again in a moment."
             }

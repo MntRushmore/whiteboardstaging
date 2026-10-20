@@ -84,6 +84,11 @@ struct TryItScreen: View {
                 if voiceOver || board?.phase == .cantCheck {
                     Button(c.typeInstead) { typing = true }
                         .buttonStyle(.pill(.quiet))
+                        .accessibilityIdentifier("onboarding.try.typeIt")
+                        #if DEBUG
+                        // the UI tests type the problem's answer (the simulator can't attest to production)
+                        .accessibilityValue(board.map { TryBoard.plainAnswer($0.problem.firstStep) } ?? "")
+                        #endif
                 }
                 RoundButton(.speaker, fill: .paper, diameter: 52, label: c.readAloud) { readProblem() }
                 Button(c.skipForNow) { model.skipTry() }
@@ -313,6 +318,7 @@ struct TypeItSheet: View {
             }
             PillButton(copy.check, icon: .check, kind: .sunny, size: .large) { submit(entry) }
                 .disabled(entry.isEmpty)
+                .accessibilityIdentifier("onboarding.typeIt.check")
         }
         .padding(28)
         .background(DS.Color.paper)

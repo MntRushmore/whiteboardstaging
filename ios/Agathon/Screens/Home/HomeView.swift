@@ -146,7 +146,7 @@ struct HomeView: View {
             }
         }
         .fullScreenCover(item: $area, onDismiss: { Task { await model.load(backend) } }) { request in
-            AccountArea(start: request.page, isKid: model.isKid, family: model.family) { skill in
+            AccountArea(start: request.page, who: model.who, family: model.family) { skill in
                 Task { if let board = await model.startTopic(skill, backend: backend) { openBoard = board } }
             }
             .environment(backend)
@@ -180,10 +180,11 @@ struct HomeView: View {
         .frame(minHeight: DS.Size.minTarget)
     }
 
-    /// The tutor's ink. A grown-up's opens the plan (behind the gate); a kid's is just the meter.
+    /// The tutor's ink. A grown-up's opens the plan (behind the gate); a kid's is just the meter, and
+    /// so is anyone's until the family says they're a grown-up.
     @ViewBuilder private var inkMeter: some View {
         if model.ink != nil {
-            if model.isKid {
+            if !model.who.isGrownUp {
                 InkMeter(level: InkLevel.level(model.ink), style: .compact)
                     .fixedSize()
                     .accessibilityIdentifier("boards.ink")
@@ -210,7 +211,7 @@ struct HomeView: View {
 
     private func grownUpsChip(showsWord: Bool) -> some View {
         Button {
-            if model.isKid { sheet = .grownUpPin } else { area = AreaRequest(page: .account) }
+            Task { await openGrownUps() }
         } label: {
             HStack(spacing: 8) {
                 DSIcon(.lock, size: 18)
@@ -227,8 +228,22 @@ struct HomeView: View {
         .buttonStyle(.plain)
         .fixedSize()
         .accessibilityLabel("Grown-ups")
-        .accessibilityHint(model.isKid ? "Needs the grown-up's PIN" : "Account, family and sign out")
+        .accessibilityHint(model.who.isGrownUp ? "Account, family and sign out" : "Needs the grown-up's PIN")
         .accessibilityIdentifier("home.grownUps")
+    }
+
+    /// The Grown-ups door: the grown-up's own places only for a grown-up; a kid gets the PIN pad.
+    /// Before the family has answered nobody is a grown-up yet: read it now, and if it can't be read,
+    /// say so rather than open the grown-ups' places to whoever is holding the iPad.
+    private func openGrownUps() async {
+        if case .unknown = model.who { await model.loadFamily(backend) }
+        switch model.who {
+        case .kid: sheet = .grownUpPin
+        case .grownUp: area = AreaRequest(page: .account)
+        case .unknown:
+            model.toast = HomeModel.Toast(kind: .lookAgain, title: "Couldn't check who's signed in.",
+                                          message: "Check the Wi-Fi, then try again.")
+        }
     }
 
     // MARK: hello

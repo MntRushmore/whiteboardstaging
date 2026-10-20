@@ -32,8 +32,6 @@ struct AccountArea: View {
         }
     }
 
-    let isKid: Bool
-    let family: FamilyState?
     /// Starts a topic's practice board from Progress (Home opens it).
     let practice: (String) -> Void
 
@@ -43,16 +41,25 @@ struct AccountArea: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var page: Page
     @State private var signOutProblem: String?
+    /// Who is here: the grown-ups' pages only for a grown-up. Not known yet (Home opened Progress
+    /// before the family answered): the kid's pages until the family is read here.
+    @State private var who: SignedInAs
+    @State private var family: FamilyState?
 
-    init(start: Page, isKid: Bool, family: FamilyState?, practice: @escaping (String) -> Void) {
-        self.isKid = isKid
-        self.family = family
+    init(start: Page, who: SignedInAs, family: FamilyState?, practice: @escaping (String) -> Void) {
         self.practice = practice
-        _page = State(initialValue: start)
+        _who = State(initialValue: who)
+        _family = State(initialValue: family)
+        // a grown-up's page asked for by someone not known to be one: their progress instead
+        _page = State(initialValue: who.isGrownUp || Self.kidPages.contains(start) ? start : .progress)
     }
 
+    private var isKid: Bool { !who.isGrownUp }
+
+    static let kidPages: [Page] = [.progress, .account, .bugs]
+
     private var pages: [Page] {
-        isKid ? [.progress, .account, .bugs] : [.progress, .account, .family, .report, .bugs]
+        isKid ? Self.kidPages : [.progress, .account, .family, .report, .bugs]
     }
 
     /// Tabs on top instead of the sidebar: a narrow window, or the largest text sizes (the sidebar's
@@ -100,6 +107,14 @@ struct AccountArea: View {
             }
         }
         .dsAnimation(DS.Motion.fade, value: page)
+        .task {
+            guard case .unknown = who else { return }
+            if let read = try? await backend.family.load() {
+                family = read
+                who = FamilyState.who(read, email: backend.auth.email)
+            }
+        }
+        .onChange(of: who) { if !pages.contains(page) { page = .progress } }
     }
 
     private var sidebar: some View {
