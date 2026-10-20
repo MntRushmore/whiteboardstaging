@@ -111,7 +111,8 @@ private struct PencilBoard: View {
                 }
             }
         } label: {
-            TrainingPill(text: "Hand: \(session.style == .other && !session.otherStyle.isEmpty ? session.otherStyle : session.style.title)")
+            TrainingPill(text: "Hand: \(session.style == .other && !session.otherStyle.isEmpty ? session.otherStyle : session.style.title)"
+                         + (session.page.map { $0.tag != session.styleTag } == true ? " (next page)" : ""))
         }
         .accessibilityIdentifier("pencil.style")
         .alert("Describe the handwriting", isPresented: $askOther) {
@@ -132,7 +133,9 @@ private struct PencilBoard: View {
 
     private var linesButton: some View {
         Button { showLines = true } label: {
-            TrainingPill(text: "Lines \(session.reviews.count)/\(session.lines.filter { !$0.latex.isEmpty }.count)")
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                TrainingPill(text: "Lines \(session.reviews.count)/\(session.lines.filter { !$0.latex.isEmpty }.count)")
+            }
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("pencil.lines")

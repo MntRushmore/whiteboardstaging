@@ -190,7 +190,7 @@ public struct TrainingSummary: Sendable, Equatable {
             for (k, v) in r.calls { calls[k, default: 0] += v }
             add(&cat, r.category.title, r, judged: judged)
             add(&hand, r.hand, r, judged: judged)
-            add(&grade, r.grade?.rawValue ?? "—", r, judged: judged)
+            add(&grade, r.grade?.rawValue ?? "No grade", r, judged: judged)
         }
         let order = { (a: Bucket, b: Bucket) in a.lines != b.lines ? a.lines > b.lines : a.name < b.name }
         byCategory = cat.values.sorted(by: order)

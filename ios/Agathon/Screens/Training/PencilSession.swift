@@ -35,15 +35,24 @@ final class PencilSession: ObservableObject {
         var startedAt = Date()
         var callsBefore: [String: Int]
         var readsBefore: Int
+        /// the handwriting the page is written in: the tag when its first line was written (a tag
+        /// changed after that is the next page's)
+        var tag: String
     }
 
     let board: TrainingBoard
     @Published private(set) var run: TrainingRun
     @Published var style: HandwritingStyle {
-        didSet { UserDefaults.standard.set(style.rawValue, forKey: Self.styleKey) }
+        didSet {
+            UserDefaults.standard.set(style.rawValue, forKey: Self.styleKey)
+            retag()
+        }
     }
     @Published var otherStyle: String {
-        didSet { UserDefaults.standard.set(otherStyle, forKey: Self.otherKey) }
+        didSet {
+            UserDefaults.standard.set(otherStyle, forKey: Self.otherKey)
+            retag()
+        }
     }
     @Published var source: Source {
         didSet { if let data = try? JSONEncoder().encode(source) { UserDefaults.standard.set(data, forKey: Self.sourceKey) } }
@@ -99,6 +108,13 @@ final class PencilSession: ObservableObject {
 
     var styleTag: String { HandwritingStyle.tag(style, other: otherStyle) }
 
+    /// A tag chosen before the page has ink is this page's; after, it is the next page's.
+    private func retag() {
+        guard var p = page, lines.allSatisfy({ $0.ink.strokeIds.isEmpty }) else { return }
+        p.tag = styleTag
+        page = p
+    }
+
     /// The board is up: the first page.
     func start() async {
         guard page == nil, await board.ready() else { return }
@@ -139,7 +155,7 @@ final class PencilSession: ObservableObject {
         switch source {
         case .own:
             guard let screen = board.ownPage() else { return }
-            page = Page(number: pageCount, screen: screen, problem: [], source: .own, callsBefore: calls, readsBefore: reads)
+            page = Page(number: pageCount, screen: screen, problem: [], source: .own, callsBefore: calls, readsBefore: reads, tag: styleTag)
         case .generated(_, let skill):
             var problem: [String]?
             for attempt in 0..<4 {
@@ -152,7 +168,8 @@ final class PencilSession: ObservableObject {
                 if attempt == 3 { message = "The brain has no problem for that topic right now: try another." }
             }
             guard let problem else { return }
-            page = Page(number: pageCount, screen: board.controller.currentScreenID, problem: problem, source: source, callsBefore: calls, readsBefore: reads)
+            page = Page(number: pageCount, screen: board.controller.currentScreenID, problem: problem, source: source, callsBefore: calls, readsBefore: reads,
+                        tag: styleTag)
         }
     }
 
@@ -223,7 +240,7 @@ final class PencilSession: ObservableObject {
         }
         let result = TrainingCaseResult(
             id: page.id, kind: .pencil, caseKey: "pencil:\(topic):\(page.number)", category: page.source == .own ? .ownProblem : .generated,
-            grade: grade, topic: topic, hand: styleTag, problem: page.problem, spec: nil, lines: results, strokes: strokes,
+            grade: grade, topic: topic, hand: page.tag, problem: page.problem, spec: nil, lines: results, strokes: strokes,
             reads: Array(board.services.reads.dropFirst(page.readsBefore)), solvedExpected: nil, solvedGot: loop.trainingSolved,
             pass: judged.isEmpty ? nil : judged.allSatisfy { $0 }, calls: Self.diff(board.services.calls, page.callsBefore),
             ms: Date().timeIntervalSince(page.startedAt) * 1000,

@@ -50,6 +50,7 @@ struct PencilAutowriteButton: View {
                     .padding(.horizontal, 10)
                     .frame(minHeight: 32)
                     .background(Capsule().strokeBorder(DS.Color.line))
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("pencil.autowrite")
@@ -85,7 +86,8 @@ struct PencilAutowriteButton: View {
             guard let ink = try? await StudentHand.ink(latex, hand: Self.hand, brain: .shared) else { continue }
             let so = board.workSoFar()
             let origin = TrainingBoard.origin(for: ink, place: place, dx: 0, workTop: board.page.workTop, bottom: so.bottom, beside: so.last)
-            _ = await board.write(board.placed(ink, at: origin), pace: .brisk, rng: &rng)
+            let made = await board.write(board.placed(ink, at: origin), pace: .brisk, rng: &rng)
+            TrainingBoard.log.notice("TRAINING autowrite \(latex, privacy: .public) at \(Int(origin.x)),\(Int(origin.y)): \(made.count) strokes")
             try? await Task.sleep(for: .milliseconds(900))
         }
     }
