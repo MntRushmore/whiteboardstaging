@@ -120,9 +120,11 @@ targets:
         NSMicrophoneUsageDescription: Agathon listens only while you hold the mic, so you can ask your question out loud.
         # Ask's mic when the transcribe route is resting: the iPad's own recognizer (SFSpeechRecognizer).
         NSSpeechRecognitionUsageDescription: Agathon turns what you say into words while you hold the mic to ask a question.
-        # No camera or photo-library-add keys: the app never opens the camera (pictures come from the
-        # Photos picker or Files, which need no permission) and never saves to the photo library.
-        # Add them back with the feature that needs them (docs/APP-STORE-LAUNCH.md, "Info.plist").
+        # The board's picture menu, Take Photo (AgathonBoardUI/Pictures/PictureImport.swift, CameraPicker).
+        # Without this key the camera crashes the app.
+        NSCameraUsageDescription: Take a photo of a worksheet or a drawing to put it on your board.
+        # No photo-library keys: pictures come from the Photos picker (no permission needed) and the app
+        # never saves to the photo library. Add NSPhotoLibraryAddUsageDescription with a feature that does.
     scheme:
       # Xcode's local StoreKit testing: the plan, its price and the 7-day free trial without App Store
       # Connect (Debug > StoreKit > Manage Transactions to renew, expire or refund). Payloads it signs are

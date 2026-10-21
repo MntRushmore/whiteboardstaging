@@ -100,6 +100,18 @@ pl() { /usr/libexec/PlistBuddy -c "Print :$1" "$PL" 2>/dev/null || true; }
 [ -z "$(find "$APP" -name '*.storekit')" ] || fail "a StoreKit test configuration is inside the app"
 AENT=$(codesign -d --entitlements - --xml "$APP" 2>/dev/null || true)
 grep -q 'appattest-environment</key><string>production' <<<"$AENT" || fail "the archived app's App Attest environment isn't production"
+# every permission the code can ask for has its purpose string (a missing one crashes the app)
+SYMS="$OUT/binary-strings.txt"
+{ strings -a "$APP/Agathon"; nm -u "$APP/Agathon" 2>/dev/null; } > "$SYMS"
+need_key() { # what the binary uses, the Info.plist key it needs
+  if grep -q "$1" "$SYMS" && [ -z "$(pl "$2")" ]; then fail "the app uses $1 but Info.plist has no $2"; fi
+}
+need_key UIImagePickerController NSCameraUsageDescription
+need_key AVAudioRecorder NSMicrophoneUsageDescription
+need_key SFSpeechRecognizer NSSpeechRecognitionUsageDescription
+need_key UIImageWriteToSavedPhotosAlbum NSPhotoLibraryAddUsageDescription
+need_key CLLocationManager NSLocationWhenInUseUsageDescription
+rm -f "$SYMS"
 echo "archive ok: $(du -sh "$APP" | cut -f1) app, min iPadOS $(pl MinimumOSVersion)"
 [ $ARCHIVE_ONLY = 1 ] && { echo "archive: $ARCHIVE"; exit 0; }
 
@@ -112,7 +124,12 @@ if [ $UPLOAD = 1 ] && [ "${UPLOAD_WITH:-altool}" = xcodebuild ]; then
 fi
 xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist "$OPTS" -exportPath "$OUT/export" \
   -allowProvisioningUpdates ${ASC_AUTH[@]+"${ASC_AUTH[@]}"} > "$OUT/export.log" 2>&1 \
-  || { tail -40 "$OUT/export.log"; fail "the export failed (log: $OUT/export.log)"; }
+  || { tail -40 "$OUT/export.log"
+         if grep -q "No Accounts" "$OUT/export.log"; then
+           echo "ios-release: signing for the App Store needs Apple: sign in to Xcode › Settings › Accounts as the team's" >&2
+           echo "  account holder, or set ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_PATH (an Admin key) and run again with --no-bump." >&2
+         fi
+         fail "the export failed (log: $OUT/export.log)"; }
 if [ "$(/usr/libexec/PlistBuddy -c 'Print :destination' "$OPTS")" = upload ]; then
   say "uploaded by xcodebuild: App Store Connect › TestFlight shows $VERSION ($BUILD) once Apple has processed it (5–30 min)"
   exit 0
