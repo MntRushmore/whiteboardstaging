@@ -29,14 +29,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSCameraUsageDescription</key>
-	<string>Take a photo of a worksheet or a drawing to put it on your board.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Agathon listens while you hold the mic to ask a question out loud, and during Lecture mode.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Agathon saves your board replays and pictures to your photo library.</string>
+	<string>Agathon listens only while you hold the mic, so you can ask your question out loud.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Agathon turns what you say into words when you talk to Ask, and what the teacher says into notes during Lecture mode.</string>
+	<string>Agathon turns what you say into words while you hold the mic to ask a question.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
