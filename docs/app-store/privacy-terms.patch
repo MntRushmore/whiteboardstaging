@@ -1,0 +1,626 @@
+--- a/src/components/legal/LegalPage.tsx
++++ b/src/components/legal/LegalPage.tsx
+@@ -8,7 +8,7 @@
+  * The date of this version of the three pages; change it with the text, and with TERMS_VERSION
+  * (src/lib/legal.ts) when the change is one sign-up should record.
+  */
+-export const LEGAL_LAST_UPDATED = "October 11, 2026";
++export const LEGAL_LAST_UPDATED = "October 21, 2026";
+ 
+ /**
+  * The frame of /terms, /privacy and /refunds: a plain top bar back to Agathon, the title, the dates,
+--- a/src/app/(platform)/privacy/page.tsx
++++ b/src/app/(platform)/privacy/page.tsx
+@@ -31,6 +31,15 @@
+  *  - tldraw's CDN (fonts, icons) and unpkg (the PDF.js worker, src/lib/pdf.ts)
+  *  - Ask's saved chat and memory notes (ask_messages, learner_memory: 20261011000000_ask_v2.sql,
+  *    src/lib/server/ask/store.ts): Supabase, and the memory model through OpenRouter
++ *  - Cloudflare: in front of www.agathon.app, so every request passes through it (the iPad app's too)
++ *  - Apple, for the iPad app: in-app purchase (src/lib/server/apple; unlimited_subscriptions' Apple
++ *    columns, billing_events), App Attest (src/lib/server/appAttest; app_attest_keys, linked to no
++ *    account) and the iPad's speech recognizer when ElevenLabs is not available (AskMic.swift)
++ *  - The first-run setup's step counts (start_steps by journey id: POST /api/start/step,
++ *    20261013020000_start_steps.sql) and the iPad app's error reports (POST /api/client-errors ->
++ *    app_events, pruned after 30 days by prune_admin_rows())
++ *  - The free trial's tips (src/lib/email/nudges.ts) and the weekly report (src/lib/email/weeklyReport.ts,
++ *    only with WEEKLY_REPORT_EMAILS=on): a child's first name goes to Resend in them
+  */
+ const PROVIDERS = [
+   {
+@@ -40,10 +49,15 @@
+   },
+   {
+     name: "Vercel",
+-    role: "Hosts the app, runs its scheduled jobs, and keeps its server logs.",
+-    data: "Every request: IP address, browser, the page or feature used, timing and error reports.",
++    role: "Hosts the app (the website, and the server the iPad app talks to), runs its scheduled jobs, and keeps its server logs.",
++    data: "Every request: IP address, browser or app version, the page or feature used, timing and error reports.",
+   },
+   {
++    name: "Cloudflare",
++    role: "Sits in front of agathon.app: every request from your browser or the iPad app passes through it on its way to Vercel, and it shields the site from attacks.",
++    data: "Each request as it passes: IP address, browser or app version, and what the request carries.",
++  },
++  {
+     name: "OpenRouter",
+     role: "Passes our AI requests to the AI model providers below and brings back their answers.",
+     data: "What each AI request contains (see “AI and your boards”). Not your email address or name.",
+@@ -60,13 +74,18 @@
+   },
+   {
+     name: "Stripe",
+-    role: `Payments for ink packs and ${plan}, under the seller name “${LEGAL.stripeSellerName}”, and the billing page where a plan is managed or cancelled.`,
++    role: `Payments on the web for ink packs and ${plan}, under the seller name “${LEGAL.stripeSellerName}”, and the billing page where a plan is managed or cancelled.`,
+     data: "What the payer enters at checkout (email, name, card details, billing country and postcode) and the payments. We receive the pack or plan, amounts, dates and status, never the full card number.",
+   },
+   {
++    name: "Apple",
++    role: `For the iPad app: the App Store and in-app purchase of ${plan}, App Attest (which proves to our server that a request comes from the real app), and the iPad’s own speech recognizer for Ask’s microphone when ElevenLabs is not available.`,
++    data: "For a purchase: Apple takes the payment and holds your Apple Account; we receive the purchase’s ids, product, status, dates, price and currency, the App Store country, and a random reference our app gives Apple to match the purchase to your account. Never your card. For App Attest: a key Apple makes for that copy of the app, not linked to you. For speech: the recording, which the iPad hears on its own when it can and otherwise sends to Apple.",
++  },
++  {
+     name: "Resend",
+-    role: "Sends our emails: password resets, the welcome email, the confirmation and reminder for a free trial, and our replies to bug reports.",
+-    data: "Your email address (for a plan’s emails, the email used at checkout) and the email we send.",
++    role: "Sends our emails: password resets, the welcome email, the confirmation, tips and reminder for a free trial, the weekly report when it is on, and our replies to bug reports.",
++    data: "Your email address (for a plan’s emails, the email used at checkout) and the email we send, which can include a child’s first name and how their practice went.",
+   },
+   {
+     name: "ElevenLabs",
+@@ -93,8 +112,8 @@
+       summary={
+         <ul>
+           <li>
+-            We collect what Agathon needs to work: your account, your boards, how you use the tutor, and your payments
+-            and plan.
++            We collect what Agathon needs to work, on the web and in the iPad app: your account, your boards, how you
++            use the tutor, and your payments and plan.
+           </li>
+           <li>
+             To tutor you, what you write is sent to AI services that read handwriting and answer (listed{" "}
+@@ -116,8 +135,8 @@
+       <LegalSection id="who" title="Who we are">
+         <p>
+           {LEGAL.productName} is run by {LEGAL.operatorName} (“we”). This policy explains what we collect when
+-          you use {LEGAL.productName} at {LEGAL.siteHost}, why, and what you can do about it. It is part of our{" "}
+-          <Link href="/terms">Terms of Service</Link>.
++          you use {LEGAL.productName}, on the web at {LEGAL.siteHost} or in the {LEGAL.productName} app for iPad, why,
++          and what you can do about it. It is part of our <Link href="/terms">Terms of Service</Link>.
+         </p>
+       </LegalSection>
+ 
+@@ -126,23 +145,36 @@
+         <ul>
+           <li>
+             <strong>Account:</strong> your email address and password (stored only as a secure hash; we never see it),
+-            an optional display name, and the course you pick when you start.
++            an optional display name, the grade or course you pick when you start, and, if you choose to tell us, how
++            you heard about {LEGAL.productName}.
+           </li>
+           <li>
+-            <strong>Your boards:</strong> your handwriting and drawings, typed text, images and PDFs you add, what the
+-            tutor writes back, and the messages you type to the tutor. In lecture mode (switched off for now), what is
+-            said near your microphone while it is listening, turned into text.
++            <strong>Family profiles:</strong> a grown-up can add a profile for each child. For each one, the grown-up
++            gives a name (a first name is enough), a grade and a picture chosen from ours. A kid profile has no email
++            address or password of its own; the grown-up sets a 4-digit PIN (stored only as a secure hash) to switch
++            back to their own profile.
+           </li>
+           <li>
++            <strong>Your boards:</strong> your handwriting and drawings, typed text, images and PDFs you add (in the
++            iPad app, a photo you take with the camera or pick from your photo library; the app sees only the photos
++            you pick), what the tutor writes back, and the messages you type to the tutor. In lecture mode (switched
++            off for now, and not in the iPad app), what is said near your microphone while it is listening, turned
++            into text.
++          </li>
++          <li>
+             <strong>Your voice, when you use Ask’s microphone:</strong> while you hold the microphone button, your
+-            browser records what you say. The recording goes through our server to ElevenLabs, which turns it into
+-            words for your message. We never store the recording; only the words you send are kept, as a chat
+-            message. When ElevenLabs is not available, your browser’s own speech recognizer may listen instead, and
+-            some browsers send the audio to their maker (for example Google, for Chrome).
++            browser (or the iPad app) records what you say. The recording goes through our server to ElevenLabs,
++            which turns it into words for your message. We never store the recording; only the words you send are
++            kept, as a chat message. When ElevenLabs is not available, your browser’s own speech recognizer may listen
++            instead, and some browsers send the audio to their maker (for example Google, for Chrome). In the iPad
++            app it is the iPad’s own recognizer, which works on the iPad when it can and otherwise sends the recording
++            to Apple. The iPad app asks before it first uses the microphone.
+           </li>
+           <li>
+             <strong>Bug reports</strong>, when you send one: your message, a screenshot of your board, recent technical
+-            logs from the app, your browser details and your account email.
++            logs from the app, your browser details and your account email. From the iPad app: your message, the board
++            you were on, the app’s version, the iPadOS version, the iPad’s language and region setting, and your
++            account email (no screenshot).
+           </li>
+         </ul>
+         <h3>Collected as you use Agathon</h3>
+@@ -177,7 +209,10 @@
+           <li>
+             <strong>Usage:</strong> which AI features you use, when, which AI model answered, and how much ink they used.
+             On {plan}, each AI action is recorded instead (which feature, when, and the ink it would have cost), to
+-            apply the <Link href="/terms#fair-use">fair-use limit</Link> and to see what the plan costs to run.
++            apply the <Link href="/terms#fair-use">fair-use limit</Link> and to see what the plan costs to run. During
++            the first-run setup, which steps you reach, with a few of the answers (who is setting up, the grade or
++            course, how many topics were picked, whether the first try was solved), counted under a random id kept on
++            the device and joined to your account once you make one.
+           </li>
+           <li>
+             <strong>Email log:</strong> which of our emails we sent to your account and when (not what they said), so
+@@ -186,14 +221,28 @@
+           <li>
+             <strong>Technical data:</strong> IP address, browser and device type, the pages you open (without anything
+             after a “?” in the address), and error reports when something in the app crashes (the page, your
+-            browser, the error, and your account id).
++            browser, the error, and your account id). In the iPad app, error reports when something goes wrong (the
++            screen, the error, the app’s version, the iPadOS version and your account id).
+           </li>
++          <li>
++            <strong>App check (iPad app):</strong> before there is an account, the app proves to our server that it is
++            the real {LEGAL.productName} app, with Apple’s App Attest. We keep the key Apple made for that copy of the
++            app (its id, its public key and Apple’s receipt for it) and when it was last used. It is not linked to you
++            or your account.
++          </li>
++          <li>
++            <strong>Trying the board before you have an account:</strong> the pen strokes of the line written go to
++            Mathpix to be read, and our server checks the answer. We keep neither the strokes nor what was read.
++          </li>
+         </ul>
+         <h3>Kept on your device</h3>
+         <p>
+           Your browser stores your sign-in session, your settings, and a backup of board changes not yet saved, so
+-          nothing is lost if your connection drops. We do not use advertising or analytics cookies, and
+-          there are no third-party trackers.
++          nothing is lost if your connection drops. The iPad app keeps the same on the iPad (your sign-in in the
++          iPad’s keychain), and the first-run setup’s progress and its random id. We do not use advertising or
++          analytics cookies, and there are no third-party trackers. The iPad app has no advertising or analytics
++          tools in it, does not use the iPad’s advertising identifier, and does not track you across other apps or
++          websites.
+         </p>
+       </LegalSection>
+ 
+@@ -210,8 +259,12 @@
+             the fair-use limit, and remind you before a free trial ends.
+           </li>
+           <li>To send the emails listed under <a href="#emails">Emails we send</a>.</li>
+-          <li>To keep the service safe and fair: sign-in, rate limits, preventing abuse.</li>
++          <li>To keep the service safe and fair: sign-in, rate limits, preventing abuse (in the iPad app, App Attest).</li>
+           <li>
++            To count how many people reach each step of the first-run setup, and where they stop, so we can make it
++            simpler.
++          </li>
++          <li>
+             To find and fix problems, using error reports, logs and the bug reports you send, and, when we need to,
+             by looking at your boards (see <a href="#staff">When our staff look</a>).
+           </li>
+@@ -248,9 +301,10 @@
+             the board you are working on.
+           </li>
+           <li>
+-            <strong>Chat:</strong> the messages you type to the tutor and its recent replies, with the maths on the
+-            board and the notes Ask keeps about how you learn. After a chat message, the message, the reply and those
+-            notes go to an AI model that updates the notes.
++            <strong>Chat:</strong> the messages you type or say to the tutor and its recent replies, with a picture of
++            the screen you are on, the maths on the board, your grade or course (so it talks at the right level) and
++            the notes Ask keeps about how you learn. After a chat message, the message, the reply and those notes go
++            to an AI model that updates the notes.
+           </li>
+           <li>
+             <strong>Naming a board:</strong> the lines of maths on it.
+@@ -270,13 +324,14 @@
+           <strong>Read aloud:</strong> when it is on, the words the tutor is about to say (a hint, a question, a word of
+           praise) go to ElevenLabs to be turned into speech, without your name or email address. Your handwriting is
+           never sent to ElevenLabs. When ElevenLabs is not available, your browser’s own voice says them instead (see{" "}
+-          <a href="#providers">below</a>).
++          <a href="#providers">below</a>); in the iPad app, the iPad’s built-in voice, which works on the iPad.
+         </p>
+         <p>
+           <strong>Ask’s microphone:</strong> when you hold it and talk, the recording goes through our server to
+           ElevenLabs speech-to-text, without your name or email address, to get your words back. We never store the
+           recording. When ElevenLabs is not available, your browser’s own speech recognizer is used instead, and some
+-          browsers send the audio to their maker (for example Google, for Chrome).
++          browsers send the audio to their maker (for example Google, for Chrome). In the iPad app it is the iPad’s
++          own recognizer, which hears it on the iPad when it can and otherwise sends it to Apple.
+         </p>
+         <p>
+           We do not use your boards to train AI models. {LEGAL.aiProviderTraining} Mathpix keeps only a record that a
+@@ -288,7 +343,8 @@
+       <LegalSection id="emails" title="Emails we send">
+         <p>
+           We send only the emails {LEGAL.productName} needs to work, to the email address on your account, except the
+-          emails about {plan}, which go to the person who paid, at the email used at checkout:
++          emails about {plan}, which go to the person who paid, at the email used at checkout (for a plan bought in
++          the iPad app, the account’s email address):
+         </p>
+         <ul>
+           <li>
+@@ -299,19 +355,31 @@
+           </li>
+           <li>
+             <strong>Free trial started:</strong> if you start {plan}, one email when it starts, confirming that nothing
+-            was charged, the date and amount of the first charge, and how to cancel.
++            was charged, the date and amount of the first charge, and how to cancel. Not for a plan bought in the
++            iPad app: Apple sends its own.
+           </li>
+           <li>
+             <strong>Free trial ending:</strong> if you start {plan}, one reminder about 2 to 3 days before the free trial
+             ends, with the date of the first charge and a link to cancel. None if the plan is already set to cancel.
+           </li>
+           <li>
++            <strong>Free trial tips:</strong> if you start {plan}, up to two emails during the free trial: about a day
++            in, if nobody has practiced yet, that the first practice is ready; and a few days in, what each child has
++            done so far (their first name, the problems solved and the skills practiced).
++          </li>
++          <li>
++            <strong>Weekly report:</strong> when we have it switched on, once a week, each child’s week in a few
++            numbers (problems, skills mastered, what to try next), with a link to turn it off. You can also turn it
++            off on the Report page.
++          </li>
++          <li>
+             <strong>A reply to your bug report:</strong> when we answer a bug report you sent, we may email you our reply
+             (for a kid profile, to their grown-up), and you can read it and write back on Your bug reports.
+           </li>
+         </ul>
+         <p>
+-          Stripe may also email the person who paid: receipts and notices about their payments. We send no newsletters or
++          Stripe may also email the person who paid: receipts and notices about their payments (for a plan bought in
++          the iPad app, Apple sends its own). We send no newsletters or
+           marketing emails. If we ever want to, we will ask you first.
+         </p>
+         <p>
+@@ -335,6 +403,10 @@
+           ))}
+         </ul>
+         <p>
++          Each of them may use what we share only to provide its service to {LEGAL.productName}, and must protect it
++          at least as well as this policy does.
++        </p>
++        <p>
+           We may also disclose information when the law requires it, to protect someone’s safety, or as part of a
+           sale or merger of {LEGAL.productName}, in which case this policy keeps applying to it.
+         </p>
+@@ -349,21 +421,25 @@
+         <ul>
+           <li>
+             <strong>Parental consent.</strong> A parent or legal guardian must create the account for a child under 13,
+-            or give consent before the child uses it. By doing so, the parent agrees to this policy for the child.
++            or give consent before the child uses it. By doing so, the parent agrees to this policy for the child. In
++            the iPad app, a grown-up makes the account, after a grown-ups-only check, and adds each child as a kid
++            profile.
+           </li>
+           <li>
+             <strong>What we collect from a child:</strong> their handwriting and drawings, the maths on their boards,
+             what they type to the tutor (their chat with Ask, saved with each board, and Ask’s notes about how they
+             learn), what they say to Ask’s microphone (turned into words by ElevenLabs; the recording is never
+-            stored), images and PDFs they add, a record of the problems they work and how they went
++            stored), images, photos and PDFs they add, a record of the problems they work and how they went
+             (their learning record), and bug reports if they send one; the email address
+-            and password used to sign in, the course they pick and an optional display name; and how they use the
++            and password used to sign in, the grade or course they pick and an optional display name (a kid profile
++            has no email address or password: only the name, grade and picture their grown-up gives); and how they use the
+             tutor (see <a href="#collect">What we collect</a>). Only what the tutor needs. We do not ask a child for
+             their address, phone number, photo or location.
+           </li>
+           <li>
+             <strong>What the AI sees:</strong> the parts of the board it needs to help (see{" "}
+-            <a href="#ai">AI and your boards</a>), never the child’s email address or display name.
++            <a href="#ai">AI and your boards</a>) and, for Ask, the child’s grade; never the child’s email address or
++            display name.
+           </li>
+           <li>
+             <strong>Who sees it:</strong> only the service providers <a href="#providers">listed above</a>, to run the
+@@ -374,11 +450,14 @@
+           </li>
+           <li>
+             <strong>Emails</strong> go to the account’s email address. If you set up your child’s account with your
+-            own address, the welcome email and any free-week reminder come to you.
++            own address, the welcome email and any free-week reminder come to you. A kid profile has no email address,
++            so nothing is ever emailed to it: a family’s emails, including the free trial’s tips and the weekly report
++            about each child, go to the grown-up.
+           </li>
+           <li>
+             <strong>Payments</strong> are made by a parent or guardian, through Stripe: a child does not pay. Ink packs
+-            and {plan} are paid with a grown-up’s card.
++            and {plan} are paid with a grown-up’s card. In the iPad app, {plan} is bought through Apple, after a
++            grown-ups-only check.
+           </li>
+           <li>
+             <strong>Reviewing a child’s data:</strong> a parent can see the child’s boards and their progress (the
+@@ -390,7 +469,9 @@
+             <strong>Deleting a child’s data:</strong> a parent can delete the account at any time from the Account
+             page (Delete account; if {plan} is on, cancel it first), which deletes the boards and their chats, Ask’s
+             notes, the learning record, ink, usage records, profile, email log and bug reports, or email us and we will
+-            delete it. A parent can clear Ask’s notes about their child at any time on the Family page. A parent can also
++            delete it. The Account page is in the iPad app too. Deleting a grown-up’s account deletes their kid profiles
++            too, and a grown-up can remove one kid profile on the Family page, which deletes that child’s boards and
++            record. A parent can clear Ask’s notes about their child at any time on the Family page. A parent can also
+             tell us to stop collecting the child’s information; the account then has to be closed.
+           </li>
+           <li>
+@@ -438,19 +519,29 @@
+           <li>
+             <strong>{plan}:</strong> when an account is deleted, its plan’s record (Stripe ids, status and dates,
+             nothing that names you) is kept without the link to the account, so a plan whose account is gone can still
+-            be found and stopped.
++            be found and stopped. The same goes for a plan bought in the iPad app (Apple’s ids for it, its status and
++            dates).
+           </li>
+           <li>
+             <strong>Payment notices from Stripe:</strong> kept after an account is deleted, for our accounts and to sort
+             out payment questions and refunds. After 90 days we delete what a notice says about the payer (name, email,
+             address and card details) and keep only a record that it came. Stripe keeps its own payment records under
+-            its own policy and the law.
++            its own policy and the law. Apple’s notices about a plan bought in the iPad app are kept the same way, and
++            after 90 days only a record that each came is kept.
+           </li>
+           <li>
+             <strong>Server logs and error reports:</strong> kept by our hosting provider for a limited time, then
+-            deleted. Resend keeps a record of each email it sends for a limited time.
++            deleted. Error reports and the other events our admin page shows are kept for 30 days. Resend keeps a
++            record of each email it sends for a limited time.
+           </li>
+           <li>
++            <strong>First-run step counts:</strong> kept; when an account is deleted, its counts stay without the link
++            to it.
++          </li>
++          <li>
++            <strong>App Attest keys (iPad app):</strong> kept; nothing in them names you.
++          </li>
++          <li>
+             <strong>The log of staff looks:</strong> which of our staff looked at which board or bug report, and when,
+             kept for 180 days. It names the board or account, never what is on it.
+           </li>
+@@ -465,9 +556,11 @@
+         <ul>
+           <li>See and change your account details on your Account page.</li>
+           <li>
+-            Delete your account, and everything in it, from your Account page. If {plan} is on, cancel it first:
+-            deleting the account does not cancel the plan.
++            Delete your account, and everything in it, from your Account page, on the web or in the iPad app.
++            If {plan} is on, cancel it first: deleting the account does not cancel the plan. A plan bought in the iPad
++            app is cancelled in the iPad’s Settings (tap your name, then Subscriptions).
+           </li>
++          <li>Turn off the microphone or the camera for {LEGAL.productName} at any time in the iPad’s Settings.</li>
+           <li>
+             Ask us for a copy of your data, to correct it, or to delete it, by emailing <ContactEmail />. We will reply
+             within 30 days.
+--- a/src/app/(platform)/terms/page.tsx
++++ b/src/app/(platform)/terms/page.tsx
+@@ -2,6 +2,7 @@
+ import Link from "next/link";
+ import { ContactBlock, ContactEmail, LegalPage, LegalSection } from "@/components/legal/LegalPage";
+ import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
++import { MAX_KIDS } from "@/lib/family/contracts";
+ import { LEGAL } from "@/lib/legal";
+ 
+ export const metadata: Metadata = {
+@@ -19,7 +20,10 @@
+ // Every statement about the plan is what the code does: the Payment Link (free trial, card up front,
+ // monthly renewal), the customer portal (cancel at the period end), has_unlimited() (past_due spends
+ // ink), unlimited_fair_use_per_day(), delete_own_account() (refuses while a plan would charge again)
+-// and the trial-reminder cron (src/lib/email/trialReminders.ts).
++// and the trial-reminder cron (src/lib/email/trialReminders.ts). In the iPad app the plan is sold through
++// Apple (StoreKit 2: supabase/migrations/20261017200000_apple_subscriptions.sql, docs/RUNBOOK-billing.md
++// section 16): `#app-store` says what Apple handles instead; `#apple` is Apple's minimum terms for an app's
++// own EULA. Kid profiles share the grown-up's plan (src/lib/family/contracts.ts, MAX_KIDS).
+ export default function TermsPage() {
+   return (
+     <LegalPage
+@@ -35,6 +39,11 @@
+             nothing (<a href="#unlimited">how it works</a>).
+           </li>
+           <li>
++            In the iPad app, {plan} is bought through Apple, at the App Store’s price, with Apple’s free trial. Apple
++            renews it each month until you cancel in the iPad’s Settings, and refunds go through Apple (
++            <a href="#app-store">in the iPad app</a>).
++          </li>
++          <li>
+             Ink packs are no longer sold. See the <Link href="/refunds">Refund Policy</Link> for the plan, and for ink
+             bought before.
+           </li>
+@@ -43,7 +52,8 @@
+     >
+       <LegalSection id="who" title="Who we are">
+         <p>
+-          {LEGAL.productName} (at {LEGAL.siteHost}) is run by {LEGAL.operatorName} (“we”, “us”).
++          {LEGAL.productName} (at {LEGAL.siteHost}, and the {LEGAL.productName} app for iPad) is run by{" "}
++          {LEGAL.operatorName} (“we”, “us”).
+           These terms are an agreement between you and us about using {LEGAL.productName}. By creating an account or
+           using {LEGAL.productName} you agree to them, and to our <Link href="/privacy">Privacy Policy</Link> and{" "}
+           <Link href="/refunds">Refund Policy</Link>.
+@@ -89,6 +99,11 @@
+           <li>One person per account. You are responsible for what happens under your account; tell us if you think
+             someone else is using it.</li>
+           <li>
++            <strong>Family profiles:</strong> a grown-up can add up to {MAX_KIDS} kid profiles to their account, one for
++            each of their children. The kids share the grown-up’s {plan}. The grown-up is responsible for them, and for
++            keeping the family PIN to themselves.
++          </li>
++          <li>
+             Keep your email address up to date. It is where we send password resets and notice of changes to these
+             terms or to prices. Emails about {plan}’s payments go to the email used at checkout.
+           </li>
+@@ -117,7 +132,7 @@
+             try to get around the plan, ink, the fair-use limit, rate limits or security, or access other people’s
+             accounts or boards;
+           </li>
+-          <li>share one account, or one plan, between several people;</li>
++          <li>share one account, or one plan, between several people, apart from the kid profiles of one family;</li>
+           <li>scrape, copy or resell the service, or access it with bots or scripts;</li>
+           <li>try to make the AI produce harmful content, or overload or disrupt the service;</li>
+           <li>reverse-engineer the service, except where the law allows it.</li>
+@@ -199,7 +214,63 @@
+           <li>
+             Deleting your {LEGAL.productName} account does not cancel the plan, so cancel it first. The app will not
+             delete an account whose plan would charge the card again.
++          </li>
++          <li>
++            Bought in the iPad app? Cancel it in the iPad’s Settings instead (see{" "}
++            <a href="#app-store">In the iPad app</a>).
++          </li>
++        </ul>
++
++        <h3 id="app-store">In the iPad app (through Apple)</h3>
++        <p>
++          In the {LEGAL.productName} app for iPad, {plan} is sold through Apple’s in-app purchase, not Stripe. The rest of
++          these terms apply to it, except what Apple handles, where Apple’s rules apply instead:
++        </p>
++        <ul>
++          <li>
++            <strong>Price:</strong> the price the App Store shows before you buy, in your currency, plus any tax. Apple
++            charges it to the payment method of your Apple Account.
++          </li>
++          <li>
++            <strong>Free trial:</strong> Apple’s free trial of {trialDays} days, for an Apple Account that has not had it
++            before. When it ends, Apple charges the first month, unless you cancel at least 24 hours before it ends.
++          </li>
++          <li>
++            <strong>It renews every month</strong> until you cancel. Apple charges each renewal in the 24 hours before
++            the month ends, unless you cancel at least 24 hours before it ends. Apple confirms the free trial when it
++            starts, and about 2 to 3 days before it ends we email the account’s email address with the date and how to
++            cancel.
++          </li>
++          <li>
++            <strong>To cancel:</strong> on the iPad, open Settings, tap your name, then Subscriptions, and choose{" "}
++            {plan}. Cancel at least 24 hours before the free trial or the month ends to stop the next charge; the plan
++            stays on until then. Only you can cancel it: we cannot cancel an App Store subscription for you.
++          </li>
++          <li>
++            <strong>Refunds</strong> are Apple’s to give: ask Apple at{" "}
++            <a href="https://reportaproblem.apple.com">reportaproblem.apple.com</a>. Our{" "}
++            <Link href="/refunds">Refund Policy</Link> does not cover purchases made through Apple.
++          </li>
++          <li>
++            <strong>If a payment does not go through,</strong> Apple tries again for a while. Until it does, help uses
++            ink again; if it never does, the plan ends.
++          </li>
++          <li>
++            <strong>Price changes</strong> follow Apple’s rules: Apple tells you before a new price applies and, where
++            its rules say so, asks you to agree to it first.
+           </li>
++          <li>
++            A grown-up buys the plan, after a grown-ups-only check in the app. Apple’s Ask to Buy and Screen Time
++            settings apply too.
++          </li>
++          <li>
++            Deleting your {LEGAL.productName} account does not cancel a plan bought through Apple, and the app lets you
++            delete it anyway, so cancel the plan in Settings first.
++          </li>
++          <li>
++            Apple’s <a href="https://www.apple.com/legal/internet-services/itunes/">Media Services Terms</a> also apply
++            to buying and using the app.
++          </li>
+         </ul>
+ 
+         <h3 id="fair-use">Fair use</h3>
+@@ -232,17 +303,23 @@
+             agrees to these terms for the plan and is responsible for its charges.
+           </li>
+           <li>
+-            Payments are processed by Stripe, under the seller name <strong>“{LEGAL.stripeSellerName}”</strong>; your
++            On the web, payments are processed by Stripe, under the seller name{" "}
++            <strong>“{LEGAL.stripeSellerName}”</strong>; your
+             card statement shows the plan’s charges as <strong>“{LEGAL.statementDescriptors.unlimited}”</strong>.
+             Stripe’s billing page shows the plan, its invoices and the card. We never see or store your full card
+             number.
+           </li>
++          <li>
++            In the iPad app, Apple takes the payment from your Apple Account, and your statement shows Apple. We never
++            see your card.
++          </li>
+         </ul>
+ 
+         <h3>Free trials</h3>
+         <p>
+           The free trial is for new subscribers. We may limit it to one per person, family or card. If we find a repeat
+-          free trial, we may cancel it (nothing is charged) or not offer one.
++          free trial, we may cancel it (nothing is charged) or not offer one. In the iPad app, Apple decides who is
++          offered its free trial.
+         </p>
+ 
+         <h3>Your ink, and if we shut down</h3>
+@@ -254,9 +331,10 @@
+ 
+       <LegalSection id="ending" title="Ending your account">
+         <p>
+-          You can delete your account at any time from your Account page. Deleting it removes your boards and ink
+-          balance and cannot be undone; ask for a refund of unused ink first if you are within the refund window. If you
+-          have {plan}, cancel it first (see <a href="#unlimited">above</a>).
++          You can delete your account at any time from your Account page, on the web or in the iPad app. Deleting it
++          removes your boards, your kid profiles and their boards, and your ink balance, and cannot be undone; ask for a
++          refund of unused ink first if you are within the refund window. If you have {plan}, cancel it first (see{" "}
++          <a href="#unlimited">above</a>; bought in the iPad app, <a href="#app-store">in Settings</a>).
+         </p>
+         <p>
+           We may suspend or close an account that breaks these terms. If we do, we cancel its plan so it is not charged
+@@ -281,6 +359,38 @@
+         </p>
+       </LegalSection>
+ 
++      <LegalSection id="apple" title="If you got the app from the App Store">
++        <ul>
++          <li>
++            These terms are between you and {LEGAL.operatorName}, not Apple. We, not Apple, are responsible for the app
++            and what is in it.
++          </li>
++          <li>
++            You may use the app on Apple devices you own or control, as the Usage Rules in Apple’s Media Services Terms
++            allow.
++          </li>
++          <li>Apple has no duty to support or maintain the app. For help, contact us (below).</li>
++          <li>
++            If the app does not meet a warranty that applies to it, you may tell Apple, and Apple will refund what you
++            paid for the app, if anything. Apart from that, and to the extent the law allows, Apple has no warranty
++            duty for the app.
++          </li>
++          <li>
++            We, not Apple, deal with any claim about the app, such as product liability, a claim that it does not meet
++            a legal or regulatory requirement, a consumer protection or privacy claim, or a claim that the app or your
++            use of it infringes someone’s intellectual property.
++          </li>
++          <li>
++            You confirm that you are not in a country under a US government embargo or named by the US government as
++            supporting terrorism, and that you are not on a US government list of prohibited or restricted parties.
++          </li>
++          <li>
++            Apple and its subsidiaries are third-party beneficiaries of these terms and, once you accept them, may
++            enforce them against you.
++          </li>
++        </ul>
++      </LegalSection>
++
+       <LegalSection id="law" title="Governing law">
+         <p>
+           These terms are governed by the laws of {LEGAL.governingLaw}. Disputes go to {LEGAL.disputeVenue}, unless the
+--- a/src/app/(platform)/refunds/page.tsx
++++ b/src/app/(platform)/refunds/page.tsx
+@@ -24,7 +24,8 @@
+ 
+ // DRAFT for the owner and counsel to review (src/lib/legal.ts): both refund rules are proposals the
+ // owner has to confirm. Refunds are made by hand in the Stripe Dashboard (docs/RUNBOOK-billing.md
+-// sections 5 and 10); a refunded plan is also cancelled there. Static: no request data.
++// sections 5 and 10); a refunded plan is also cancelled there. A plan bought in the iPad app can only be
++// refunded by Apple (section 16). Static: no request data.
+ export default function RefundsPage() {
+   return (
+     <LegalPage
+@@ -40,6 +41,7 @@
+             buying it; ink you have already used is not refundable.
+           </li>
+           <li>If something went wrong on our side, we put it right or refund you in full, at any time.</li>
++          <li>Bought {plan} in the iPad app? Refunds for it go through Apple.</li>
+         </ul>
+       }
+     >
+@@ -59,6 +61,11 @@
+             the plan stays on until the end of the month you have paid for.
+           </li>
+           <li>A refund for the plan never takes any ink from your account.</li>
++          <li>
++            <strong>Bought in the iPad app?</strong> Apple took the payment, so refunds are Apple’s to give: ask Apple
++            at <a href="https://reportaproblem.apple.com">reportaproblem.apple.com</a>. We cannot refund an App Store
++            purchase.
++          </li>
+         </ul>
+       </LegalSection>
+ 

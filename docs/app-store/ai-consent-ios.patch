@@ -1,0 +1,71 @@
+diff --git a/ios/Agathon/Screens/Auth/SignInView.swift b/ios/Agathon/Screens/Auth/SignInView.swift
+index f8cf7209..c2f10397 100644
+--- a/ios/Agathon/Screens/Auth/SignInView.swift
++++ b/ios/Agathon/Screens/Auth/SignInView.swift
+@@ -326,6 +326,8 @@ struct ConsentBox: View {
+     let openPage: (URL) -> Void
+ 
+     static let ageLine = "I'm 13 or older, or I'm a parent or guardian setting this up for my child."
++    /// What goes to AI services, agreed to in this box (App Review 5.1.2(i)).
++    static let aiLine = "To check work and answer questions, Agathon sends what you or your kid write, say and ask to AI services that read it and answer (the Privacy Policy lists them). Never a name or email."
+ 
+     var body: some View {
+         HStack(alignment: .top, spacing: DS.Space.s) {
+@@ -348,13 +350,13 @@ struct ConsentBox: View {
+             .buttonStyle(.plain)
+             .padding(.leading, -12)
+             .padding(.top, -12)
+-            .accessibilityLabel("I agree to the Terms and the Privacy Policy. \(Self.ageLine)")
++            .accessibilityLabel("I agree to the Terms and the Privacy Policy, including the AI services. \(Self.ageLine) \(Self.aiLine)")
+             .accessibilityValue(agreed ? "Ticked" : "Not ticked")
+             .accessibilityAddTraits(agreed ? [.isSelected] : [])
+             .accessibilityIdentifier("signin.consent")
+ 
+             VStack(alignment: .leading, spacing: 6) {
+-                Text(LocalizedStringKey("I agree to the [Terms](\(AppLinks.terms.absoluteString)) and the [Privacy Policy](\(AppLinks.privacy.absoluteString))."))
++                Text(LocalizedStringKey("I agree to the [Terms](\(AppLinks.terms.absoluteString)) and the [Privacy Policy](\(AppLinks.privacy.absoluteString)), including the AI services."))
+                     .tint(DS.Color.tutorInk)
+                     .environment(\.openURL, OpenURLAction { url in
+                         openPage(url)
+@@ -363,6 +365,10 @@ struct ConsentBox: View {
+                 Text(Self.ageLine)
+                     .onTapGesture { agreed.toggle() }
+                     .accessibilityHidden(true)
++                Text(Self.aiLine)
++                    .foregroundStyle(DS.Color.inkSecondary)
++                    .onTapGesture { agreed.toggle() }
++                    .accessibilityHidden(true)
+             }
+             .dsFont(.callout)
+             .foregroundStyle(DS.Color.ink)
+diff --git a/ios/Packages/AgathonOnboarding/Sources/AgathonOnboarding/Model/Copy.swift b/ios/Packages/AgathonOnboarding/Sources/AgathonOnboarding/Model/Copy.swift
+index cf35b0d3..ee1d8e0d 100644
+--- a/ios/Packages/AgathonOnboarding/Sources/AgathonOnboarding/Model/Copy.swift
++++ b/ios/Packages/AgathonOnboarding/Sources/AgathonOnboarding/Model/Copy.swift
+@@ -159,7 +159,10 @@ public struct OnboardingCopy: Sendable {
+     }
+     public let email = "Email"
+     public let password = "Password"
+-    public let consent = "I agree to the Terms and Privacy Policy. I’m 13 or older, or I’m a parent or guardian setting this up for my child."
++    /// What goes to AI services, said before the account is made and agreed to in the box below it
++    /// (App Review 5.1.2(i): disclose sharing with third-party AI and get explicit permission first).
++    public let aiDisclosure = "To check work and answer questions, Agathon sends what your kid writes, says and asks to AI services that read it and answer (our Privacy Policy lists them). Never their name or email."
++    public let consent = "I agree to the Terms and Privacy Policy, including the AI services. I’m 13 or older, or I’m a parent or guardian setting this up for my child."
+     public let terms = "Terms"
+     public let privacy = "Privacy Policy"
+     public let heardFromPrompt = "How did you hear about Agathon?"
+diff --git a/ios/Packages/AgathonOnboarding/Sources/AgathonOnboarding/Views/Screens/GrownUpScreens.swift b/ios/Packages/AgathonOnboarding/Sources/AgathonOnboarding/Views/Screens/GrownUpScreens.swift
+index 3984eec3..c11070c5 100644
+--- a/ios/Packages/AgathonOnboarding/Sources/AgathonOnboarding/Views/Screens/GrownUpScreens.swift
++++ b/ios/Packages/AgathonOnboarding/Sources/AgathonOnboarding/Views/Screens/GrownUpScreens.swift
+@@ -170,6 +170,10 @@ struct AccountScreen: View {
+                         }
+                         .frame(maxWidth: 440)
+                         VStack(alignment: .leading, spacing: 14) {
++                            Text(c.aiDisclosure).dsFont(.callout, size: 15).foregroundStyle(DS.Color.inkSecondary)
++                                .fixedSize(horizontal: false, vertical: true)
++                                .accessibilityIdentifier("onboarding.account.ai")
++                                .reveal(3)
+                             Toggle(isOn: $agreed) {
+                                 VStack(alignment: .leading, spacing: 6) {
+                                     Text(c.consent).dsFont(.callout, size: 15).foregroundStyle(DS.Color.ink)
