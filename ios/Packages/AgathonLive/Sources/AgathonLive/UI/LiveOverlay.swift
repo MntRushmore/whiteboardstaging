@@ -1,3 +1,4 @@
+import AgathonBoard
 import AgathonBrain
 import Combine
 import AgathonDesign
@@ -156,7 +157,7 @@ struct PagesLayer: View {
                 ForEach(pages.readings) { r in chip(r) }
             }
             if let offer = pages.offer { offerBar(offer) }
-            if let action = pages.action { corner(action) }
+            if pages.action != nil || pages.moreRoom { corner(pages.action, moreRoom: pages.moreRoom) }
             if pages.page?.kind == .done { allDone }
         }
         .onReceive(cameraChanges) { _ in cameraTick &+= 1 }
@@ -167,6 +168,7 @@ struct PagesLayer: View {
                 .presentationCornerRadius(DS.Radius.card)
         }
         .dsAnimation(DS.Motion.snap, value: pages.action)
+        .dsAnimation(DS.Motion.snap, value: pages.moreRoom)
         .dsAnimation(DS.Motion.snap, value: pages.offer)
     }
 
@@ -212,20 +214,35 @@ struct PagesLayer: View {
             .transition(.opacity)
     }
 
-    /// Check / Next at the page's bottom right (a problem page's action corner, beside the answer spot).
+    /// Check / Next at the page's bottom right (a problem page's action corner, beside the answer spot),
+    /// and "More room" beside it when the page is getting full — above it when the page's corner is
+    /// too narrow for both (an upright iPad, a split view).
     @ViewBuilder
-    private func corner(_ action: PageAction) -> some View {
+    private func corner(_ action: PageAction?, moreRoom: Bool) -> some View {
         let page = pageFrame
         let anchor = CGPoint(x: page.maxX - 20, y: page.maxY - 20)
+        // the corner and the gap before the answer spot, in view points
+        let room = page.width * (ProblemPageLayout.actions.w + ProblemPageLayout.actions.x - ProblemPageLayout.answer.maxX) / Box.screen.w
         Group {
-            switch action {
-            case .check: CheckButton { loop.checkPage() }
-            case .next(let last): NextButton(last: last) { loop.nextPage() }
+            if room >= 400 {
+                HStack(alignment: .bottom, spacing: DS.Space.s) { cornerButtons(action, moreRoom: moreRoom) }
+            } else {
+                VStack(alignment: .trailing, spacing: DS.Space.s) { cornerButtons(action, moreRoom: moreRoom) }
             }
         }
         .alignmentGuide(.leading) { d in -(anchor.x - d.width) }
         .alignmentGuide(.top) { d in -(anchor.y - d.height) }
         .transition(.opacity)
+    }
+
+    @ViewBuilder
+    private func cornerButtons(_ action: PageAction?, moreRoom: Bool) -> some View {
+        if moreRoom { MoreRoomButton { loop.moreRoom() } }
+        switch action {
+        case .check?: CheckButton { loop.checkPage() }
+        case .next(let last)?: NextButton(last: last) { loop.nextPage() }
+        case nil: EmptyView()
+        }
     }
 
     private var allDone: some View {

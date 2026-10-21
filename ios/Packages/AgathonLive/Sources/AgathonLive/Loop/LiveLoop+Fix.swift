@@ -89,7 +89,8 @@ extension LiveLoop {
         if let second = pages.second[lineId], !second.agree { prior.append(second.latex) }
         let reread = st.ink.hash.isEmpty ? nil : (rereads[st.ink.hash] ?? nil)
         let raw = ReadingAlternatives.candidates(st.latex, letters: letters, prior: prior, also: reread.map { [$0] } ?? [])
-        let previous = lastGoodLineAbove(st)?.analysis
+        // (the first line of a page that continues a problem follows from the page before: "More room")
+        let previous = lastGoodLineAbove(st)?.analysis ?? carryIn(column: st.column)?.previous
         track { [weak self] in
             guard let self else { return }
             var follows: [String] = []
@@ -169,6 +170,8 @@ extension LiveLoop {
             render(st.id, userAsked: !settings.auto)
         }
         refreshPage()
+        // the problem's later pages go on from this one ("More room"): what is checked there, again
+        refreshLaterPages()
     }
 
     /// A check found a slip on a line the tutor is not sure it read: it asks first (its chip opens

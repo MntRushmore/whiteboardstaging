@@ -97,10 +97,8 @@ final class TestBoard: LiveBoard {
         let from = currentScreenID
         let moving = ids.compactMap { store.stroke($0) }.filter { $0.screen == from }
         guard !moving.isEmpty else { return nil }
-        let screens = store.screens
-        let i = screens.firstIndex { $0.id == from }
-        let next = i.flatMap { $0 + 1 < screens.count ? screens[$0 + 1].order : nil }
-        let order = (i.flatMap { try? OrderKey.between(screens[$0].order, next) }) ?? OrderKey.after(screens.last?.order)
+        // (after the last page of this problem, when it needed more room, as the controller does)
+        let order = store.screenOrder(after: store.lastPageOfProblem(from))
         let screen = ScreenRecord(order: order, meta: meta)
         store.transact(.kid) { tx in
             tx.put(.screen(screen))

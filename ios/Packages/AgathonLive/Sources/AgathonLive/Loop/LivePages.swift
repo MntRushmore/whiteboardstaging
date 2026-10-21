@@ -23,6 +23,9 @@ public final class LivePages: ObservableObject {
     @Published public internal(set) var page: ProblemPage?
     /// on the All done page: the set's problems and how each went
     @Published public internal(set) var setProblems: [SetProblem] = []
+    /// "More room": the page is getting full (the kid's work reaches its last row), the problem can
+    /// go on on a new page (`LiveLoop+MoreRoom`)
+    @Published public internal(set) var moreRoom = false
     /// the chips step aside while the pen writes (and a moment after)
     @Published public internal(set) var chipsHidden = false
 
@@ -86,6 +89,12 @@ public final class LivePages: ObservableObject {
     var partial = Set<String>()
     /// the page's problem is solved (the cheer and Next)
     var solved = false
+    /// "More room": how the problem's work stood at the bottom of the page before (a continued page;
+    /// a loop on another page is given it), and how each column of this page ends (`LiveLoop+MoreRoom`)
+    var carry: PageCarry?
+    var columnEnds: [Int: PageCarry] = [:]
+    /// the problem's other pages, as the board's records say (cached by the store's change count)
+    var elsewhere: (seq: UInt64, screen: RecordID, held: Bool, solved: Bool)?
 
     public init() {}
 
@@ -110,6 +119,10 @@ public final class LivePages: ObservableObject {
         keptHere = []
         partial = []
         solved = false
+        carry = nil
+        columnEnds = [:]
+        elsewhere = nil
+        if moreRoom { moreRoom = false }
         if !readings.isEmpty { readings = [] }
         if fixing != nil { fixing = nil }
         if offer != nil { offer = nil }

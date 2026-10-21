@@ -89,6 +89,25 @@ Every record has `id`, `type` and optional `meta` (an object; left out when empt
 A board has 1 to 50 screens (`ScreenRecord.maxScreens`, the web's `MAX_SCREENS`). The camera stays
 on the current one.
 
+**A problem page** (docs/PROBLEM-PAGES.md) is a screen with `meta.page`: `kind` (`problem` | `done`),
+`set`, `index`, `count`, `problem` (its `problem` record), `origin`, `workTop`, `answer` (false: no
+answer spot). A problem that needed more room ("More room", 2026-10-21) spreads over more screens:
+
+| `meta.page` key | on | meaning |
+|---|---|---|
+| `continues` | every page of the problem after its first | the problem's first page (a screen id) |
+| `more` | every page of the problem but its last | the problem goes on on the next page: no answer spot here (it is on the last page) |
+
+The pages of a problem are its first page and every screen whose `continues` names it, in the screens'
+order (they are kept next to each other). A page whose first page is gone stands on its own. Its
+`set`, `index`, `count`, `problem` and `origin` are the first page's. The problem again, small, at the
+top of each later page is ordinary tutor ink (or a typeset `math` / an `image`) with
+`meta.reminder: "<first page id>"` and `locked: true`. The problem's `problem` record stays on its
+first page and its `lines` list its lines on every page, in order.
+
+These are meta keys: no schema bump, no migration (an older reader shows the pages as plain pages of
+the set).
+
 ### `stroke`: one pen-down … pen-up of ink, the kid's or the tutor's
 
 | field | type | default | notes |

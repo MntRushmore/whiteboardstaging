@@ -1,4 +1,5 @@
 import AgathonBoard
+import CoreGraphics
 import Foundation
 import Testing
 @testable import AgathonSync
@@ -276,6 +277,42 @@ struct ThumbnailTests {
         // a blank board clears it
         let blank = BoardStore(document: BoardSession.blankDocument(boardId: "b"))
         #expect(BoardThumbnail.scene(store: blank, screen: blank.screenIDs[0]) == nil)
+    }
+
+    /// "More room" (docs/PROBLEM-PAGES.md): a page that continues a problem has a thumbnail of its own —
+    /// the problem's copy at its top, and its template's "Problem 1, continued" under the ink.
+    @Test func aContinuedPagesThumbnailShowsTheProblemAndSaysContinued() async throws {
+        var first = ScreenRecord(id: "screen:p1", order: "a0")
+        first.problemPage = ProblemPage(setId: "s", index: 1, count: 2, origin: "practice")
+        let problem = StrokeRecord(id: "stroke:p", screen: "screen:p1", order: "a1", author: .tutor, color: .tutor, width: 4, pressure: .real,
+                                   x: 88, y: 70, points: [InkPoint(x: 0, y: 0), InkPoint(x: 200, y: 30), InkPoint(x: 400, y: 0)])
+        let store = BoardStore(document: BoardDocument([.screen(first), .stroke(problem)]))
+        let plan = try #require(MoreRoom.plan(store, from: "screen:p1"))
+        let id = MoreRoom.apply(plan, to: store)
+        guard case .set(let url) = await BoardThumbnail.preview(store: store, screen: id) else {
+            Issue.record("no thumbnail for the continued page")
+            return
+        }
+        #expect(url.hasPrefix("data:image/jpeg;base64,") && url.count <= BoardThumbnail.maxChars)
+        // the template's words are drawn: dark pixels where "Problem 1, continued" is, none in the blank band under it
+        let continued = try #require(plan.screen.problemPage)
+        let template = try #require(PageTemplate(page: continued, screen: .screen))
+        let image = try #require(BoardThumbnail.render([], rect: .screen, width: 640, template: template))
+        func dark(_ x0: Double, _ y0: Double, _ x1: Double, _ y1: Double) -> Int {
+            let k = 640.0 / 1600
+            let w = image.width, h = image.height
+            guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue), let data = ctx.data else { return 0 }
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            let px = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+            var n = 0
+            for y in Int(y0 * k)..<Int(y1 * k) {
+                for x in Int(x0 * k)..<Int(x1 * k) where px[(y * w + x) * 4] < 160 { n += 1 }
+            }
+            return n
+        }
+        #expect(dark(88, 60, 400, 90) > 20, "the header")
+        #expect(dark(88, 120, 1000, 200) == 0, "nothing drawn between the header and the first rule")
     }
 }
 
