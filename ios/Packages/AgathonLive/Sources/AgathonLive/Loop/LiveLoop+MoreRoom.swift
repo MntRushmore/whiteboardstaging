@@ -319,6 +319,14 @@ extension LiveLoop {
         }
     }
 
+    /// A loop on another page reads that page's ink never read (a read cut short by More room), not
+    /// ink read before that gave nothing (it is read again when the kid is on that page): a check on
+    /// page 2 never asks the server about page 1's scribble each time.
+    func readBeforeElsewhere(_ ink: InkLine) -> Bool {
+        guard passive, case .line(let l)? = board.store[RecordID("line:\(ink.id)")] else { return false }
+        return l.verdict == .unknown && Set(l.strokes.map(\.rawValue)) == Set(ink.strokeIds)
+    }
+
     // MARK: - the learning record, on a continued page
 
     /// A line in this page's first column, of the problem begun on the page before: the record's key for it.

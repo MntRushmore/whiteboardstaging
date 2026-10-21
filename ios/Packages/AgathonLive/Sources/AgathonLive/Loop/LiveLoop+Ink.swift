@@ -351,7 +351,7 @@ extension LiveLoop {
             // what was on the screen before this session had its pauses then: Auto leaves it be
             for st in self.lines.values where !st.latex.isEmpty { _ = self.autoOnce(self.autoKey("check", st)) }
             // ink never read (written with Live off, or offline before a reload): read now
-            for ink in unread { self.processLine(ink, moveOnly: false) }
+            for ink in unread where !self.readBeforeElsewhere(ink) { self.processLine(ink, moveOnly: false) }
             self.refreshPage()
         }
     }
