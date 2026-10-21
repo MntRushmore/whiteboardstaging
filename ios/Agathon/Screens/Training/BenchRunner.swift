@@ -164,7 +164,7 @@ final class BenchRunner: ObservableObject {
             let ink = inks[k]
             let w = ink.flatMap { $0 }.map(\.x).max() ?? 0
             let h = ink.flatMap { $0 }.map(\.y).max() ?? 0
-            let origin = TrainingBoard.origin(for: ink, place: line.place, dx: line.dx, workTop: workTop, bottom: bottom, beside: prev)
+            let origin = TrainingBench.origin(for: ink, place: line.place, dx: line.dx, workTop: workTop, bottom: bottom, beside: prev)
             let placed = board.placed(ink, at: origin)
             var made = await board.write(placed, pace: pace, rng: &rng)
             let box = Box(x: origin.x, y: origin.y, w: w, h: h)
@@ -196,39 +196,8 @@ final class BenchRunner: ObservableObject {
         // the tutor's pen writes the marks at a hand's pace
         try? await Task.sleep(for: .milliseconds(1_400))
         let checkMs = Date().timeIntervalSince(checkAt) * 1000 - 1_400
-        // 5. what the tutor did with each line
-        let besideQuiet = Set(spec.lines.indices.filter { spec.lines[$0].place == .beside && spec.lines[$0].expect == .quiet })
-        var results: [TrainingLineResult] = []
-        for (k, line) in spec.lines.enumerated() {
-            var r = TrainingLineResult(index: k, written: line.latex, meaning: line.meaning, expect: line.expect, value: line.value, place: line.place)
-            if erased.contains(k) {
-                // rubbed out: nothing to judge (a mark left behind would show on the next line's)
-                r.expect = nil
-                results.append(r)
-                continue
-            }
-            let others = Set(ids.enumerated().filter { $0.offset != k && !besideQuiet.contains($0.offset) }.flatMap { $0.element.map(\.rawValue) })
-            let obs = loop.trainingObserve(strokes: ids[k], others: others)
-            r.lineId = obs.lineIds.first
-            r.read = obs.latex
-            r.provider = obs.provider
-            r.confidence = obs.confidence
-            r.reading = obs.reading
-            r.verdict = obs.verdict
-            r.kind = obs.kind
-            r.result = obs.result
-            r.mark = obs.mark
-            r.released = obs.released
-            r.readMs = obs.readMs
-            r.markMs = obs.markMs
-            r.pieces = obs.merged ? 0 : obs.lineIds.count
-            if besideQuiet.contains(k) && (obs.merged || obs.lineIds.isEmpty) {
-                // a kid's own tick taken in with the line it ticks: as it should be
-                r.pieces = 1
-                r.mark = .none
-            }
-            results.append(r)
-        }
+        // 5. what the tutor did with each line (`TrainingBench.observe`: the headless bench reads it the same way)
+        let results = TrainingBench.observe(spec: spec, ids: ids, erased: erased, loop: loop)
         let judged = TrainingJudge.judge(lines: results, solvedExpected: spec.solved, solvedGot: loop.trainingSolved)
         let reads = Array(board.services.reads.dropFirst(readsBefore))
         let pass = judged.pass ?? true
