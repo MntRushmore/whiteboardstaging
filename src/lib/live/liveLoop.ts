@@ -131,7 +131,7 @@ import {
   recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
-import { assignColumns, clusterLines, inkScale, medianStrokeHeight, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
+import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
 import type { Stroke } from "@/lib/hand";
 import { roundInk } from "./inkCompact";
 import { lineGroupsOf, type LineGroup } from "./typedInk";
@@ -140,11 +140,12 @@ import { TYPED_COUNT_META, TYPED_ID_META, type TypedLineRef, type TypedSpot, typ
 import type { TypedHost, TypedWriter } from "./typedWriter";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { captureInkCrop } from "./inkCrop";
-import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, leadingSigns, ownTicks, readYoungHand } from "./youngHand";
+import { answerAfterRestatedEnd, leadingSigns, readYoungHand } from "./youngHand";
+import { withoutStrays } from "./strays";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, stackedAnalysis, workStacked, type StackedWork } from "./engine/columnArithmetic";
-import { bracketLine, isArithmetic, isSlip, judgeLine, MISREAD_STACK } from "./engine/columnWork";
+import { bracketLine, isArithmetic, isSlip, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "./engine/columnWork";
 import { stackGrid, stackGroups, type StackGrid, type StackedSum } from "./stackedSums";
 import { parseDomainPiece } from "./engine/domain";
 import { figureAnswer, isValueLabel, labelKey, looksLikeUnknown } from "./figure";
@@ -554,12 +555,6 @@ const NEXT_STEP_META = "nextStepFor";
  * tutor wrote is not written again, and a sum rewritten takes the tutor's digits with it.
  */
 const STACK_META = "stackFor";
-/**
- * A wrong digit in a stacked sum is ringed only on a read this sure of it: a child's sum ringed for
- * a digit Mathpix misread is worse than one left unmarked (the second reader, which re-reads a line
- * before its ring, reads one line, not a block). Mathpix read every stacked block at ~1.
- */
-const STACK_RING_CONFIDENCE = 0.85;
 /** between two digits of a stacked sum the tutor writes, a beat (not a whole line's pause) */
 const STACK_DIGIT_GAP_MS = 200;
 /** on the strokes of a tutor's mark (tick / ring / question mark): its `markKey` */
@@ -2012,48 +2007,9 @@ export class LiveLoop implements LiveController {
     this.publishHelpTarget();
   }
 
-  /**
-   * The lines without what a young student puts on the page that is no maths (`youngHand.ts`): a
-   * line of nothing but taps of the pen is no line (`isSpeckLine`: never read, so never given a "?");
-   * under one of the chat's problems, nor is one of nothing but level bars — `-`, `=`, `= -`, an answer
-   * started whose number is still to come (`isSignsOnly`: Mathpix reads a lone minus `\backslash`,
-   * and `= -` as `=`) — until the number joins it; and under one of the chat's sums her own tick after
-   * her answer is not part of it (`ownTicks`; a line that was only a tick is none). Those strokes stay
-   * on the page in no line, like a drawing's. A division bar's or a stacked sum's line is left as it
-   * is. `writing`: the strokes clustered; `cells`: the chat's problems.
-   */
+  /** The lines without what a young student puts on the page that is no maths (`strays.ts`). */
   private withoutStrays(lines: InkLine[], writing: readonly InkStroke[], columns: ColumnOptions, cells: readonly ProblemCell[]): InkLine[] {
-    const byId = new Map(writing.map((s) => [s.id as string, s]));
-    const glyph = medianStrokeHeight([...writing]);
-    let changed = false;
-    const out: InkLine[] = [];
-    for (const line of lines) {
-      const strokes = line.strokeIds.map((id) => byId.get(id)).filter((s): s is InkStroke => Boolean(s));
-      // a division bar's line, a stacked sum's: not the clusterer's, left alone
-      if (strokes.length !== line.strokeIds.length) {
-        out.push(line);
-        continue;
-      }
-      if (isSpeckLine(strokes, glyph)) {
-        changed = true;
-        continue;
-      }
-      const cell = cellOf(line.bounds, cells);
-      // `-`, `=`, `= -` under one of the chat's problems: an answer started, its number still to come
-      if (cell && isSignsOnly(strokes)) {
-        changed = true;
-        continue;
-      }
-      const ticks = cell && cell.lines.every(isArithmetic) ? ownTicks(strokes) : [];
-      if (ticks.length === 0) {
-        out.push(line);
-        continue;
-      }
-      changed = true;
-      const kept = strokes.filter((s) => !ticks.includes(s));
-      if (kept.length > 0) out.push({ ...line, strokeIds: kept.map((s) => s.id), bounds: unionRects(kept.map((s) => s.bounds)) });
-    }
-    return changed ? assignColumns(out, columns) : lines;
+    return withoutStrays(lines, writing, columns, cells);
   }
 
   /**

@@ -15,7 +15,7 @@
  */
 import type { InkStroke, Rect } from "@/lib/live/contracts";
 import type { BrainStroke } from "@/lib/brain";
-import { analyzeColumnOf } from "@/lib/brain";
+import { analyzeColumnOf, clusterStrokes } from "@/lib/brain";
 import { SKILLS } from "@/lib/learning/contracts";
 import { hasPractice, practiceProblems } from "@/lib/learning/practiceSet";
 import { summarize, learnerHint } from "@/lib/learning/summary";
@@ -199,11 +199,34 @@ function inkCases(): BrainCase[] {
     ["unanswered", () => toInkStrokes(writeStack(["123", "+456"], null).all)],
   ];
   stacks.forEach(([name, make], i) => out.push({ name: `clusterStrokes/stack/${name}`, method: "clusterStrokes", args: { strokes: toBrainStrokes(make()), idSeed: 3000 + i } }));
+  // a stacked sum's line, worked with its layout from the ink (`stackedLine`), and from a read alone
+  const sums: Array<[string, string[], string | null, string]> = [
+    ["right", ["286", "+680"], "966", "\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 966 \\end{array}"],
+    ["slip", ["286", "+680"], "866", "\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 866 \\end{array}"],
+    ["borrow", ["52", "-17"], "35", "\\begin{array}{r} 52 \\\\ -17 \\\\ \\hline 35 \\end{array}"],
+    ["open", ["123", "+456"], null, "\\begin{array}{r} 123 \\\\ +456 \\\\ \\hline \\end{array}"],
+  ];
+  sums.forEach(([name, rows, answer, latex], i) => {
+    const stack = clusterStrokes({ strokes: toBrainStrokes(toInkStrokes(writeStack(rows, answer).all)), idSeed: 3100 + i }).stacks[0] ?? null;
+    out.push({ name: `stackedLine/${name}`, method: "stackedLine", args: { latex, confidence: 0.99, stack } });
+  });
+  out.push({ name: "stackedLine/unsure", method: "stackedLine", args: { latex: sums[1][3], confidence: 0.6 } });
+  out.push({ name: "stackedLine/read-alone", method: "stackedLine", args: { latex: "\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 138 \\\\ 920 \\\\ \\hline 1058 \\end{array}" } });
+  out.push({ name: "stackedLine/fraction", method: "stackedLine", args: { latex: "\\frac{+680}{966}" } });
+  out.push({ name: "stackedLine/no-stack", method: "stackedLine", args: { latex: "286 + 680 = 966" } });
   // a whole screen of work, at a desktop and an iPad's zoom, and with the previous flush's lines
   const page = pageOfWork(200);
   out.push({ name: "clusterStrokes/page", method: "clusterStrokes", args: { strokes: page, idSeed: 4000 } });
   out.push({ name: "clusterStrokes/page/ipad", method: "clusterStrokes", args: { strokes: page, zoom: 0.52, idSeed: 4001 } });
   out.push({ name: "clusterStrokes/page/nosplit", method: "clusterStrokes", args: { strokes: page, split: false, idSeed: 4002 } });
+  // the board's flush with the chat's problems: one cell over the left half of the page, two cells, none
+  const cell = (key: string, x: number, w: number) => ({ key, n: 1, lines: ["2x + 3 = 11"], head: { x: x + 20, y: 20, w: 300, h: 40 }, cell: { x, y: 0, w, h: 2000 } });
+  out.push({ name: "clusterStrokes/page/cell", method: "clusterStrokes", args: { strokes: page, cells: [cell("a", 0, 800)], idSeed: 4003 } });
+  out.push({ name: "clusterStrokes/page/cells", method: "clusterStrokes", args: { strokes: page, cells: [cell("a", 0, 500), cell("b", 500, 1100)], idSeed: 4004 } });
+  out.push({ name: "clusterStrokes/page/strays", method: "clusterStrokes", args: { strokes: [...page, { id: "tap", x: [5, 6, 5], y: [5, 6, 6] }], cells: [], idSeed: 4005 } });
+  // a bar with a number under it: divide both sides
+  out.push({ name: "youngRead/bar", method: "youngRead", args: { latex: "3", bar: true } });
+  out.push({ name: "youngRead/bar-negative", method: "youngRead", args: { latex: "-2", bar: true } });
   return out;
 }
 

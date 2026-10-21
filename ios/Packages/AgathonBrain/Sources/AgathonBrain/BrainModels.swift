@@ -77,6 +77,23 @@ public struct DivisionBar: Codable, Hashable, Sendable {
     public var divisor: [String]
 }
 
+/// One of the chat's problems on the screen (`ProblemCell` in src/lib/live/chat/cells.ts): its lines,
+/// where its ink is (`head`) and its grid cell — on a problem page, the whole page.
+public struct ProblemCell: Codable, Hashable, Sendable {
+    public var key: String
+    public var n: Int
+    public var lines: [String]
+    public var head: Rect
+    public var cell: Rect
+    public init(key: String, n: Int = 1, lines: [String], head: Rect, cell: Rect) {
+        self.key = key
+        self.n = n
+        self.lines = lines
+        self.head = head
+        self.cell = cell
+    }
+}
+
 public struct ClusterRequest: Codable, Sendable {
     public var strokes: [BrainStroke]
     public var previousLines: [InkLine]?
@@ -85,7 +102,13 @@ public struct ClusterRequest: Codable, Sendable {
     public var equations: [Rect]?
     public var split: Bool?
     public var idSeed: Int?
-    public init(strokes: [BrainStroke], previousLines: [InkLine]? = nil, previousDiagrams: [Diagram]? = nil, zoom: Double? = nil, equations: [Rect]? = nil, split: Bool? = nil, idSeed: Int? = nil) {
+    /// the chat's problems on the screen: given (even empty), the flush is the board's — a cell's work
+    /// one problem gap or no gap, ink under two problems never one line, strays no line (`strays.ts`)
+    public var cells: [ProblemCell]?
+    /// lines that were one problem at the last flush, each group's ids
+    public var mates: [[String]]?
+    public init(strokes: [BrainStroke], previousLines: [InkLine]? = nil, previousDiagrams: [Diagram]? = nil, zoom: Double? = nil, equations: [Rect]? = nil, split: Bool? = nil, idSeed: Int? = nil,
+                cells: [ProblemCell]? = nil, mates: [[String]]? = nil) {
         self.strokes = strokes
         self.previousLines = previousLines
         self.previousDiagrams = previousDiagrams
@@ -93,6 +116,8 @@ public struct ClusterRequest: Codable, Sendable {
         self.equations = equations
         self.split = split
         self.idSeed = idSeed
+        self.cells = cells
+        self.mates = mates
     }
 }
 
@@ -142,6 +167,15 @@ public struct LineDomain: Codable, Hashable, Sendable {
 }
 
 /// What the engine makes of one line (`LineAnalysis` in src/lib/live/contracts.ts).
+/// A stacked sum's line (`stackedLine`): its analysis, and where its tick and ring go (nil: round the
+/// line, as any line's).
+public struct StackedLine: Codable, Hashable, Sendable {
+    public var stacked: Bool
+    public var analysis: LineAnalysis?
+    public var tick: Rect?
+    public var ring: Rect?
+}
+
 public struct LineAnalysis: Codable, Hashable, Sendable {
     public struct Plot: Codable, Hashable, Sendable { public var expr: String; public var latex: String }
     public struct Chem: Codable, Hashable, Sendable { public var balanced: Bool; public var balancedLatex: String }

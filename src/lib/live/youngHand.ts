@@ -76,6 +76,38 @@ const MIDDLE_UNREADABLE_RE = between(UNREADABLE);
 /** a tick after the answer: `\checkmark`, `\text{✓}`, `\vee`, `v`, `V`, `\surd`, an empty `\sqrt{}` */
 const TRAILING_TICK_RE = /(\d\}?)\s*(?:\\checkmark|\\text\s*\{\s*[✓✔]\s*\}|[✓✔]|\\vee(?![a-zA-Z])|\\surd(?![a-zA-Z])|\\sqrt\s*\{\s*\}|\\mathrm\s*\{\s*[vV]\s*\}|[vV])\s*$/;
 
+/** ...and the ticks no maths could be, anywhere: `\checkmark`, `✓`, an empty `\sqrt{}` (a `√` with no bar over anything) */
+const TRAILING_SURE_TICK_RE = /(\d\}?)\s*(?:\\checkmark|\\text\s*\{\s*[✓✔]\s*\}|[✓✔]|\\sqrt\s*\{\s*\})\s*$/;
+
+/**
+ * A child's numbers Mathpix took for words (`\text { 767-336 }`, `\text { = } 431`, `\text { 5/6 }`,
+ * `\text { 3R3 }`, `\text { -9 }`; real reads of the Training Center's bench, 2026-10-21): text of
+ * nothing but digits, signs and brackets — or a remainder's `R` between two numbers — is maths. Words
+ * (`\text{apples}`, `\text { O }`) stay.
+ */
+function mathsOfText(latex: string): string {
+  return latex.replace(/\\text\s*\{([^{}]*)\}/g, (m, inner: string) => {
+    const t = inner.trim();
+    if (/^\d+\s*[Rr]\s*\d+$/.test(t)) return ` ${t} `;
+    if (/^[\d\s.,+\-=/()×÷:<>]+$/.test(t) && /[\d=+\-<>]/.test(t)) return ` ${t} `;
+    return m;
+  });
+}
+
+/**
+ * A long-division bracket as Mathpix reads one with its quotient over it: the divisor and its bracket
+ * taken for words (`\text { 9) }`, a 9 read `g`), the quotient over the overline read as a fraction's
+ * top (`\frac{16}{144}`). Put as the bracket the engine reads (`primaryWork.ts`):
+ * `\begin{array}{r} 16 \\ 9)\overline{144} \end{array}`. Nothing else is changed.
+ */
+const BRACKET_READ_RE = /^\s*(?:\\text\s*\{\s*([0-9gq]{1,3})\s*\)\s*\}|(\d{1,3})\s*\))\s*\\[dt]?frac\s*\{\s*(\d+)\s*\}\s*\{\s*(\d+)\s*\}\s*$/;
+function bracketOfRead(latex: string): string {
+  const m = BRACKET_READ_RE.exec(latex);
+  if (!m) return latex;
+  const divisor = (m[1] ?? m[2]).replace(/[gq]/g, "9");
+  return `\\begin{array}{r} ${m[3]} \\\\ ${divisor})\\overline{${m[4]}} \\end{array}`;
+}
+
 /** Maths with digits and no letters: `18 + 15 - 19`, `6 \times 4`, `\frac{1}{2}` (relations allowed). */
 function numbersOnly(latex: string): boolean {
   const bare = latex.replace(/\\(?:frac|dfrac|tfrac|times|div|cdot|left|right|quad|qquad|le|ge|ne|,|;|:|!)(?![a-zA-Z])/g, " ");
@@ -185,7 +217,8 @@ export function isSignsOnly(strokes: readonly InkStroke[]): boolean {
 
 /** The line as a young student meant it (see the file comment); unchanged when nothing applies. */
 export function readYoungHand(latex: string, ctx: YoungReadContext): string {
-  let s = latex.replace(/⌣/g, "\\smile ").replace(/⌢/g, "\\frown ");
+  // her numbers read as words, her long division's bracket read as words and a fraction
+  let s = bracketOfRead(mathsOfText(latex)).replace(/⌣/g, "\\smile ").replace(/⌢/g, "\\frown ");
   // two bars read stacked, and a curved bar wherever it is
   s = tidy(s.replace(STACKED_RE, " = ").replace(CURVED_RE, " = "));
   if (LONE_STRONG_RE.test(s) || (ctx.arithmetic && LONE_ANY_RE.test(s))) return "=";
@@ -193,6 +226,9 @@ export function readYoungHand(latex: string, ctx: YoungReadContext): string {
     s = s.replace(TRAILING_TICK_RE, "$1").trim();
     s = s.replace(LEADING_RE, "= ");
     s = withSignsOfInk(s, ctx.signs);
+  } else {
+    // in algebra too, a tick no maths could be (`x=4 \sqrt{ }`: a `√` over nothing is her ✓)
+    s = s.replace(TRAILING_SURE_TICK_RE, "$1").trim();
   }
   // between two sides: in arithmetic any look-alike; anywhere, one the engine cannot read on a line of numbers
   const swapped = s.replace(ctx.arithmetic ? MIDDLE_ANY_RE : MIDDLE_UNREADABLE_RE, " = ");
