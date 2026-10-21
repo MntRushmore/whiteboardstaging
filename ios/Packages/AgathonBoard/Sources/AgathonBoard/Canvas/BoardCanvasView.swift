@@ -76,6 +76,8 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
     private let templateLayer = CALayer()
     private let templateAnswer = CAShapeLayer()
     private let templateAnswerLabel = CAShapeLayer()
+    /// "Problem 2, continued", "Answer on the next page" ("More room")
+    private let templateNotes = CAShapeLayer()
     private let templateLabel = CAShapeLayer()
     private let templateRules = CAShapeLayer()
     /// the page the template was drawn for (redrawn only when it changes)
@@ -186,7 +188,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         content.addSublayer(paper)
         templateLayer.anchorPoint = .zero
         templateLayer.actions = ["sublayers": NSNull(), "hidden": NSNull()]
-        for l in [templateAnswer, templateAnswerLabel, templateLabel, templateRules] {
+        for l in [templateAnswer, templateAnswerLabel, templateNotes, templateLabel, templateRules] {
             l.actions = ["path": NSNull(), "fillColor": NSNull(), "strokeColor": NSNull(), "lineWidth": NSNull(), "hidden": NSNull()]
             templateLayer.addSublayer(l)
         }
@@ -252,6 +254,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         paper.shadowOffset = CGSize(width: 0, height: 2)
         templateAnswer.fillColor = appearance.template.answer
         templateAnswerLabel.fillColor = appearance.template.answerLabel
+        templateNotes.fillColor = appearance.template.answerLabel
         templateLabel.fillColor = appearance.template.label
         templateRules.strokeColor = appearance.template.rule
         selectionFrame.strokeColor = appearance.selectionInk.cgColor
@@ -1102,6 +1105,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         }
         templateAnswer.path = t.answer
         templateAnswerLabel.path = t.answerLabel
+        templateNotes.path = t.notes
         templateLabel.path = t.label
         templateRules.path = t.rules
         templateRules.lineWidth = t.ruleWidth
