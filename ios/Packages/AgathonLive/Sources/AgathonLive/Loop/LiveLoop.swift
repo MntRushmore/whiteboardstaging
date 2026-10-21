@@ -123,6 +123,15 @@ public final class LiveLoop: ObservableObject {
     var pendingRewrite = false
     var forceRecognize = Set<String>()
     var diagrams: [Diagram] = []
+    /// the stacked sums in the ink (`clusterStrokes`' `stacks`), and where a stacked line's marks go
+    /// (`LiveLoop+Stacks`)
+    var stacks: [AgathonBrain.JSONValue] = []
+    var stackMarks: [String: (tick: BrainRect?, ring: BrainRect?)] = [:]
+    /// division bars' strokes (`clusterStrokes`' `bars`): a number under one is "divide both sides"
+    var barStrokeIds = Set<String>()
+    /// the lines that were one problem (one column) at the last flush: they stay one (the web's
+    /// `problemMates`)
+    var problemMates: [String: Set<String>] = [:]
     var flushing = false
     var flushAgain = false
     /// per line: tickets, in-flight work, its mark
@@ -387,6 +396,10 @@ public final class LiveLoop: ObservableObject {
         penLineId = nil
         lastTouchedLineId = nil
         diagrams = []
+        stacks = []
+        stackMarks = [:]
+        barStrokeIds = []
+        problemMates = [:]
         heads = []
         columnHeads = [:]
         lines = [:]
