@@ -101,7 +101,8 @@ final class TrainingCenterUITests: XCTestCase {
     func test2Bench() throws {
         let app = launch([
             "-trainingOpen", "bench",
-            "-trainingBench", "count=6;budget=24;hands=clean,messy;pace=brisk;seed=5;grades=K-2,3-4,5-6;generated=0",
+            // TEST_RUNNER_TRAINING_BENCH: another setup (e.g. the owner's kinds of writing only)
+            "-trainingBench", env["TRAINING_BENCH"] ?? "count=6;budget=24;hands=clean,messy;pace=brisk;seed=5;grades=K-2,3-4,5-6;generated=0",
         ])
         let start = app.buttons["bench.start"]
         wait(start, timeout: 60)

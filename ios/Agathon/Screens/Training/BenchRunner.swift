@@ -77,7 +77,7 @@ final class BenchRunner: ObservableObject {
             if stopping || Task.isCancelled { status = .stopped; break }
             if board.services.spent { status = .budget; break }
             if board.pagesLeft < 2 { status = .stopped; now = "The board is full (50 pages)."; break }
-            now = "\(p.spec.title) — \(p.hand.name)"
+            now = "\(MathText.plain(p.spec.title)) — \(p.hand.name)"
             let result = await runCase(p)
             run.cases.append(result)
             TrainingStore.shared.save(run)
