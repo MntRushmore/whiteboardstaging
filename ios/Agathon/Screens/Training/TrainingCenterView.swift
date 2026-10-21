@@ -178,7 +178,8 @@ struct TrainingCenterView: View {
     #endif
 
     private func reload() async {
-        local = TrainingStore.shared.all()
+        // a session left before its first page (or a bench stopped before its first case) is no run
+        local = TrainingStore.shared.all().filter { !$0.cases.isEmpty }
         do {
             remote = try await TrainingRepository(client: backend.supabase).runs()
             remoteNote = nil
