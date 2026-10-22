@@ -161,3 +161,36 @@ struct HintPointingTests {
         #expect(HintWording.accept("Check the addition on the right side of line 4", facts: facts) == "Check the addition on the right side of this line.")
     }
 }
+
+/// "Now you try one" in free space (the owner's call, 2026-10-22): never over the answer spot or its tick.
+struct NowYouTryPlacementTests {
+    // s04's page as the iPad Air 11" shows it (view points): the work at the left, the answer spot at the bottom
+    let page = CGRect(x: 78, y: 102, width: 1000, height: 478)
+    let answer = CGRect(x: 124, y: 497, width: 456, height: 61)
+    let ink = [CGRect(x: 120, y: 120, width: 110, height: 40),   // the problem (the tutor's)
+               CGRect(x: 150, y: 205, width: 190, height: 40), CGRect(x: 150, y: 250, width: 160, height: 40),
+               CGRect(x: 150, y: 300, width: 200, height: 40), CGRect(x: 150, y: 350, width: 210, height: 45),
+               CGRect(x: 240, y: 505, width: 90, height: 45)]    // the answer and its tick
+    let card = CGSize(width: 460, height: 200)
+
+    @Test func itSitsInFreeSpaceNeverOverTheAnswer() {
+        let at = NowYouTryPlacement.place(card: card, page: page, answer: answer, ink: ink)
+        let r = CGRect(origin: at, size: card)
+        #expect(!r.intersects(answer))
+        #expect(!ink.contains { r.intersects($0) })
+        #expect(page.contains(r))
+        // bottom-trailing: to the right of the answer spot
+        #expect(r.maxX == page.maxX - 16)
+    }
+
+    @Test func aFreePageGetsBottomTrailing() {
+        let at = NowYouTryPlacement.place(card: card, page: page, answer: nil, ink: [])
+        #expect(at == CGPoint(x: page.maxX - 16 - card.width, y: page.maxY - 16 - card.height))
+    }
+
+    @Test func aFullPageStillKeepsTheAnswerClear() {
+        let full = (0..<9).map { CGRect(x: 100, y: 110 + Double($0) * 42, width: 960, height: 38) }
+        let at = NowYouTryPlacement.place(card: card, page: page, answer: answer, ink: full)
+        #expect(!CGRect(origin: at, size: card).intersects(answer))
+    }
+}
