@@ -759,8 +759,8 @@
     "mode": "feedback"
   },
   "solved": true,
-  "status": "fixed",
+  "status": "open",
   "title": "5.6 - 2.75",
   "version": 1,
-  "why": "Misread: wrote 5.60 - 2.75 = 2.85, read 5.60-275=2.85; a ring where a tick belongs."
+  "why": "Still open (2026-10-22): 2.75 read as 275 rings a right line; the second look before a ring (LiveLoop+Chain) is what fixes it live, and a fixture has no second reader's reply recorded."
 }

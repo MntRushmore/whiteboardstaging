@@ -64,6 +64,12 @@ public enum TrainingBench {
             r.readMs = obs.readMs
             r.markMs = obs.markMs
             r.pieces = obs.merged ? 0 : obs.lineIds.count
+            if line.then == .strike && !obs.merged && obs.lineIds.isEmpty {
+                // a crossed-out line taken as a drawing (its strike crosses the writing): never read,
+                // never judged, as it should be
+                r.pieces = 1
+                r.mark = .none
+            }
             if besideQuiet.contains(k) && (obs.merged || obs.lineIds.isEmpty) {
                 // a kid's own tick taken in with the line it ticks: as it should be
                 r.pieces = 1

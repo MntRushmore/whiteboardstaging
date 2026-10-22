@@ -78,7 +78,7 @@ struct ChainTests {
     @Test func aRingWaitsForASecondLookThatCanTakeItBack() async throws {
         let h = Harness(mode: .feedback)
         // the second reader sees the kid's `4` that Mathpix read as a `5`
-        h.services.rereadReply = RereadResponse(latex: "x = 4", changed: true, model: "fake", ms: 1)
+        h.services.rereadReplies["x = 5"] = RereadResponse(latex: "x = 4", changed: true, model: "fake", ms: 1)
         await h.start()
         await slip(h)
         #expect(!h.services.rereadRequests.isEmpty, "the step and the line above were read again")
@@ -88,7 +88,7 @@ struct ChainTests {
 
     @Test func aSecondLookThatLeavesTheStepWrongLeavesTheRing() async throws {
         let h = Harness(mode: .feedback)
-        h.services.rereadReply = RereadResponse(latex: "x = 6", changed: true, model: "fake", ms: 1)
+        h.services.rereadReplies["x = 5"] = RereadResponse(latex: "x = 6", changed: true, model: "fake", ms: 1)
         await h.start()
         await slip(h)
         #expect(h.board.mark(on: "x = 5") == .ring)
