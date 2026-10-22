@@ -454,8 +454,12 @@ extension LiveLoop {
         }
         cheers = Array(cheers.suffix(2)) + [cheer]
         if cheer.big { bigBurst += 1 }
+        refreshReadings()
         let cid = cheer.id
-        scheduler.after(2_200) { [weak self] in self?.cheers.removeAll { $0.id == cid } }
+        scheduler.after(2_200) { [weak self] in
+            self?.cheers.removeAll { $0.id == cid }
+            self?.refreshReadings()
+        }
     }
 
     // MARK: - records

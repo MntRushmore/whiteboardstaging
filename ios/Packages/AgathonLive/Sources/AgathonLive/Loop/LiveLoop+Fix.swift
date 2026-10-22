@@ -36,6 +36,9 @@ extension LiveLoop {
         var out: [LineReading] = []
         for st in lines.values.sorted(by: { ($0.column, $0.row) < ($1.column, $1.row) }) {
             if reading.contains(st.id) || st.ink.strokeIds.isEmpty { continue }
+            // its cheer is on show where the chip goes (a big hand's line reaches the margin lane): the
+            // chip comes back when the cheer goes
+            if cheers.contains(where: { $0.lineId == st.id }) { continue }
             // nothing read yet (never asked, or waiting for the network): no chip
             if st.latex.isEmpty && st.provider == .none && st.analysis == nil { continue }
             // a lone label or a scratch mark is no line to read back
