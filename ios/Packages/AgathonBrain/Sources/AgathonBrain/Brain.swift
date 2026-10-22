@@ -181,6 +181,15 @@ public actor Brain {
         return r.latex
     }
 
+    /// What a messy read of a child's step may have been (`readVariants`: a plus written high, her `x`
+    /// read as `\times`, a side note behind a left arrow, the minus her ink starts with that the read
+    /// dropped). For the second look before a ring only: one is taken when it makes the step follow.
+    /// `keep`: the problem and the line above — no variant drops a number they have.
+    public func readVariants(_ latex: String, strokes: [BrainStroke], keep: [String] = []) throws -> [String] {
+        let r: ReadVariants = try call("readVariants", ReadVariantsArgs(latex: latex, strokes: strokes, keep: keep))
+        return r.variants
+    }
+
     /// Every line of a column analysed as the board holds them (each against the lines above it).
     public func analyzeColumn(_ lines: [String], mode: HelpMode = .answer) throws -> [LineAnalysis?] {
         try call("analyzeColumn", ColumnArgs(lines: lines, mode: mode))
@@ -331,6 +340,8 @@ public actor Brain {
     }
     private struct YoungReadArgs: Encodable { var latex: String; var problem: [String]; var strokes: [BrainStroke]; var bar: Bool? }
     private struct YoungRead: Decodable { var latex: String }
+    private struct ReadVariantsArgs: Encodable { var latex: String; var strokes: [BrainStroke]; var keep: [String] }
+    private struct ReadVariants: Decodable { var variants: [String] }
     private struct ColumnArgs: Encodable { var lines: [String]; var mode: HelpMode }
     private struct ClassifyArgs: Encodable { var lines: [String]; var course: String? }
     private struct LocalSolveArgs: Encodable {

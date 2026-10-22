@@ -142,6 +142,8 @@ public final class LiveLoop: ObservableObject {
     /// once from then on (`LiveLoop+Chain`, the web's `chainHolds` / `chainsDone`)
     var chainHolds: [String: String] = [:]
     var chainsDone = Set<String>()
+    /// pairs of inks whose step's read was looked at again on the iPad before a ring (`lookAgainLocally`)
+    var localLooks = [String: Bool]()
     var flushing = false
     var flushAgain = false
     /// per line: tickets, in-flight work, its mark
@@ -415,6 +417,7 @@ public final class LiveLoop: ObservableObject {
         struckCache = [:]
         chainHolds = [:]
         chainsDone = []
+        localLooks = [:]
         heads = []
         columnHeads = [:]
         lines = [:]

@@ -208,6 +208,19 @@ export function leadingSigns(strokes: readonly InkStroke[]): string | null {
 }
 
 /**
+ * The line's ink starts with a minus (`leadingSigns` says `-`) whose bar ends within a glyph's height
+ * of the line's first glyph: the sign of what follows, not a stray dash further off.
+ */
+export function inkLeadsWithMinus(strokes: readonly InkStroke[]): boolean {
+  if (leadingSigns(strokes) !== "-") return false;
+  const ink = strokes.filter((s) => !isDotStroke(s));
+  const glyphs = ink.filter((s) => !isLevelBar(s.bounds));
+  const lead = glyphs.reduce((m, s) => (s.bounds.x < m.bounds.x ? s : m)).bounds;
+  const bar = ink.filter((s) => isLevelBar(s.bounds) && s.bounds.x + s.bounds.w <= lead.x + 0.3 * lead.w).reduce((m, s) => (s.bounds.x > m.bounds.x ? s : m)).bounds;
+  return lead.x - (bar.x + bar.w) <= lead.h;
+}
+
+/**
  * Nothing but level bars (and taps of the pen): `-`, `=`, `= -` — the signs of an answer, its number
  * still to come. Under one of the chat's problems such a line is not read until the number joins it
  * (`LiveLoop.withoutStrays`): Mathpix reads a lone minus as `\backslash`, and `= -` as `=`.
@@ -270,6 +283,60 @@ export function rightAnswerTo(engine: LiveEngine, problem: readonly string[]): (
       return false;
     }
   };
+}
+
+/** An exponent that is nothing but a plus, a term after it (`5 x^{+} 20`): never meant — the `+` written a little high (an ion's `Na^{+}` has none). */
+const SIGN_EXPONENT_RE = /(?<=[\da-zA-Z)}])\s*\^\s*\{\s*\+\s*\}(?=\s*[\da-zA-Z(\\])/g;
+/** A `\times` with nothing before it (`\times=2`, `(\times + 1)`): no product — her `x`. */
+const LONE_TIMES_RE = /(^|[=(+\-]\s*)\\times(?![a-zA-Z])(?=\s*(?:[=+\-)]|$))/g;
+/** A left arrow and what follows it (`2 x=11-3 \Longleftarrow 9`): a note at the side, pointing back. */
+const LEFT_ARROW_TAIL_RE = /\s*\\(?:Long|long)?(?:left|Left)arrow(?![a-zA-Z]).*$/;
+
+/**
+ * Out of arithmetic, what a messy read of a child's step may have been (real-ink bench, 2026-10-22):
+ * a plus written high, read as an exponent (`5 x^{+} 20`); her `x` read as a times sign with nothing
+ * to multiply (`\times=2`); a note at the side behind a left arrow (`2 x=11-3 \Longleftarrow 9`); and,
+ * when her ink starts with a minus right before its first glyph (`minus`: `inkLeadsWithMinus`), that
+ * minus, which the read dropped (`-5x + 20 - 6x` read `5 x^{+} 20-6 x`: the right step was ringed).
+ * Each alone, then all together; none drops a number that `keep` (the problem, the line above) has.
+ * They are only ever taken to find a step RIGHT (`judgeLine`, the loop's second look before a ring),
+ * and each is a confusion of what the ink shows: a variant never makes a ring or a "?".
+ */
+export function readVariants(read: string, minus = false, keep: readonly string[] = []): string[] {
+  // never a number taken out that the problem or the line above has (a side note's `9` may go; a
+  // `9` the work is about may not): a variant must not make right what the ink does not say
+  const kept = new Set(keep.flatMap(numbersIn));
+  const steps: Array<(s: string) => string> = [
+    (s) => s.replace(SIGN_EXPONENT_RE, " + "),
+    (s) => s.replace(LONE_TIMES_RE, "$1x"),
+    (s) => {
+      const noted = s.replace(LEFT_ARROW_TAIL_RE, "");
+      return /[=<>]|\\(?:le|ge|leq|geq)(?![a-zA-Z])/.test(noted) ? noted : s;
+    },
+    (s) => (minus && /^(?:\d|[a-zA-Z(]|\\(?:frac|left|sqrt)(?![a-zA-Z]))/.test(s.trim()) ? `-${s.trim()}` : s),
+  ];
+  const out: string[] = [];
+  const before = numbersIn(read);
+  const add = (v: string) => {
+    const t = tidy(v);
+    if (t === tidy(read) || out.includes(t)) return;
+    // the same numbers, in order, but for some a side note held that nothing above has
+    const after = numbersIn(t);
+    let k = 0;
+    for (const n of before) {
+      if (n === after[k]) k += 1;
+      else if (kept.has(n)) return;
+    }
+    if (k === after.length) out.push(t);
+  };
+  for (const step of steps) add(step(read));
+  add(steps.reduce((s, step) => step(s), read));
+  return out;
+}
+
+/** The numbers written in a read, unsigned, in order (`12`, `3.5`). */
+function numbersIn(latex: string): string[] {
+  return latex.match(/\d+(?:\.\d+)?/g) ?? [];
 }
 
 /** The line as a young student meant it (see the file comment); unchanged when nothing applies. */

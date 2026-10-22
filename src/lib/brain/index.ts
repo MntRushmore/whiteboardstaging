@@ -27,7 +27,7 @@ import type { TLShapeId } from "tldraw";
 import { createEngine } from "@/lib/live/engine";
 import { bracketLine, isArithmetic, isStackRead, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "@/lib/live/engine/columnWork";
 import { parseStacked, rowPlaces, stackedAnalysis, workStacked } from "@/lib/live/engine/columnArithmetic";
-import { answerAfterRestatedEnd, leadingSigns, readYoungHand, rightAnswerTo } from "@/lib/live/youngHand";
+import { answerAfterRestatedEnd, inkLeadsWithMinus, leadingSigns, readVariants, readYoungHand, rightAnswerTo } from "@/lib/live/youngHand";
 import type { AnalyzeContext, GraphForOptions, HelpMode, InkLine, InkStroke, LineAnalysis, LiveEngine, Rect } from "@/lib/live/contracts";
 import { barGroups, fractionGroups, splitInk, type Diagram, type StrokeVerdict } from "@/lib/live/diagrams";
 import { stackGrid, stackGroups, type StackedSum } from "@/lib/live/stackedSums";
@@ -214,6 +214,18 @@ export function youngReadOf(args: { latex: string; problem?: string[] | null; st
   // a division bar and the number under it (`bar`: one of the line's strokes is a `bars`' bar): Mathpix
   // drops the bar and reads `2` — the line is "divide both sides by 2" (`LiveLoop.applyRecognition`)
   return { latex: args.bar === true ? (barDivisionLatex(read) ?? read) : read };
+}
+
+/**
+ * What a messy read of a child's step may have been (`readVariants`: a plus written high, her `x` read
+ * as `\times`, a side note behind a left arrow, the minus her ink starts with that the read dropped),
+ * for the loop's second look before a ring (`LiveLoop.holdRing`): taken only when one makes the step follow.
+ */
+export function readVariantsOf(args: { latex: string; strokes?: BrainStroke[]; keep?: string[] }): { variants: string[] } {
+  need(typeof args.latex === "string", "latex is a string");
+  const ink = Array.isArray(args.strokes) && args.strokes.length > 0 ? args.strokes.map(toInkStroke) : [];
+  const keep = Array.isArray(args.keep) ? args.keep.filter((l) => typeof l === "string") : [];
+  return { variants: readVariants(args.latex, ink.length > 0 && inkLeadsWithMinus(ink), keep) };
 }
 
 export interface StackedLineArgs {
@@ -711,6 +723,7 @@ export const METHODS: Readonly<Record<string, Method>> = {
   clusterStrokes: { run: clusterStrokes },
   recognizerPayload: { run: recognizerPayload, plain: true },
   youngRead: { run: youngReadOf, plain: true },
+  readVariants: { run: readVariantsOf, plain: true },
   layoutHandwriting: { run: layoutHandwriting, plain: true },
   layoutMath: { run: layoutMathOf, plain: true },
   writeText: { run: writeText, plain: true },

@@ -6,7 +6,7 @@ import { getEngine } from "../engine";
 import { analyzeColumn } from "../localSolve";
 import { isLoneRelation } from "../policy";
 import { clusterLines, isEqualsPair, medianStrokeHeight, unionRects } from "../strokeClusters";
-import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, isTickStroke, leadingSigns, misreadVariants, ownTicks, readYoungHand, rightAnswerTo } from "../youngHand";
+import { answerAfterRestatedEnd, inkLeadsWithMinus, isSignsOnly, isSpeckLine, isTickStroke, leadingSigns, misreadVariants, ownTicks, readVariants, readYoungHand, rightAnswerTo } from "../youngHand";
 import { negativeAnswers, PHOTO_HEADS, youngGlyphs, youngInk, youngLine, type Pt } from "../__fixtures__/youngInk";
 import { CORPUS } from "@/__eval__/corpus";
 
@@ -430,5 +430,35 @@ describe("misreadVariants / rightAnswer: a nonsense read of her answer that can 
     expect(readYoungHand("9)\\overline{144}", ARITHMETIC)).toBe("9)\\overline{144}");
     expect(readYoungHand("0.\\overline{3}", ARITHMETIC)).toBe("0.\\overline{3}");
     expect(readYoungHand("\\overline{2}", ANYWHERE)).toBe("\\overline{2}");
+  });
+});
+
+describe("readVariants: what a messy read of a child's step may have been (only ever taken to find it right)", () => {
+  it("a plus written high, her x read as a times sign, a side note behind a left arrow", () => {
+    expect(readVariants("-5 x^{+} 20-6 x")).toContain("-5 x + 20-6 x");
+    expect(readVariants("\\times=2")).toContain("x=2");
+    expect(readVariants("2 x=11-3 \\Longleftarrow 9")).toContain("2 x=11-3");
+  });
+
+  it("her minus that the read dropped, only when her ink starts with one; all fixes together too", () => {
+    expect(readVariants("5 x^{+} 20-6 x", true)).toEqual(["5 x + 20-6 x", "-5 x^{+} 20-6 x", "-5 x + 20-6 x"]);
+    expect(readVariants("5 x+20-6 x")).toEqual([]);
+    expect(readVariants("=5", true)).toEqual([]);
+  });
+
+  it("leaves alone what is meant: a product, an ion's charge, a right arrow between steps, a bare arrow", () => {
+    expect(readVariants("3 \\times 4=12")).toEqual([]);
+    expect(readVariants("\\mathrm{Na}^{+}")).toEqual([]);
+    expect(readVariants("x^{2}+1")).toEqual([]);
+    expect(readVariants("2 x=8 \\Rightarrow x=4")).toEqual([]);
+    expect(readVariants("\\leftarrow 9")).toEqual([]);
+  });
+
+  it("a minus in the ink is hers only right before the first glyph", () => {
+    const ink = youngInk(youngLine("-5", 200, 100));
+    expect(inkLeadsWithMinus(ink)).toBe(true);
+    const far = ink.map((s, k) => (k === 0 ? { ...s, bounds: { ...s.bounds, x: s.bounds.x - 300 } } : s));
+    expect(inkLeadsWithMinus(far)).toBe(false);
+    expect(inkLeadsWithMinus(youngInk(youngLine("5", 200, 100)))).toBe(false);
   });
 });
