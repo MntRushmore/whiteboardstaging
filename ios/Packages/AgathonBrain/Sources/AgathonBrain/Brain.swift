@@ -226,6 +226,11 @@ public actor Brain {
         try call("layoutHandwriting", request)
     }
 
+    /// A word problem's sentences in the tutor's hand, wrapped at `maxWidth` (`planWords`).
+    public func layoutWords(_ request: WordsRequest) throws -> WordsResult {
+        try call("layoutWords", request)
+    }
+
     /// A tick, ring or question mark for a line, and the plan that reveals it.
     public func mark(_ kind: MarkKind, around bbox: Rect, seedKey: String) throws -> MarkResult {
         try call("marks", MarkArgs(kind: kind, bbox: bbox, seedKey: seedKey))

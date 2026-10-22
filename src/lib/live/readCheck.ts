@@ -138,7 +138,13 @@ export type ReadSignal =
   /** `\frac{9}{0}`: nobody writes a zero denominator on purpose; `8` and `0` look alike */
   | "zero-denominator"
   /** `(0+b)`: nobody adds zero on purpose; `a` and `0` look alike */
-  | "zero-term";
+  | "zero-term"
+  /**
+   * `\bar{2}`, `\overline{3}`, `\frac{}{6}`: a fraction read without its top — a bar over a lone number (a repeating decimal's, `0.\\overline{3}`, is
+   * left alone)
+   * (the Training Center's bench: `\frac{1}{2} = \frac{3}{6}` re-read `\bar{2}=\bar{6}`, judged 2 = 6, ringed)
+   */
+  | "lost-numerator";
 
 /**
  * Is this read implausible in its column? The first reason found, or null.
@@ -180,6 +186,7 @@ export function suspiciousRead(latex: string, others: readonly string[] = []): R
   }
   if (/\\frac\s*\{[^{}]*\}\s*\{\s*0\s*\}/.test(line)) return "zero-denominator";
   if (/(?<![\d.])0\s*\+\s*[a-zA-Z(]|[a-zA-Z)]\s*[+-]\s*0(?![\d.])/.test(bare)) return "zero-term";
+  if (/(?<![\d.]\s?)\\(?:bar|overline)\s*\{\s*\d+\s*\}|\\frac\s*\{\s*\}/.test(line)) return "lost-numerator";
 
   const sides = equationSides(line);
   if (sides && PLAIN_NUMBER.test(sides[0]) && PLAIN_NUMBER.test(sides[1]) && Number(sides[0]) !== Number(sides[1])) {

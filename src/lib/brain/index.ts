@@ -37,7 +37,7 @@ import { withoutStrays } from "@/lib/live/strays";
 import { barDivisionLatex } from "@/lib/live/engine/operationLine";
 import { buildPayload, payloadPointCount } from "@/lib/live/strokePayload";
 import { analyzeColumn, localSolve, type LocalSolveResult } from "@/lib/live/localSolve";
-import { HAND_WRITE, handSeedFor, handSizeFor, inlineHandSizeFor, placeHandPlanOnBaseline, planFromStrokes, planHandwriting, type HandPlanResult } from "@/lib/live/handwriting";
+import { HAND_WRITE, handSeedFor, handSizeFor, inlineHandSizeFor, placeHandPlanOnBaseline, planFromStrokes, planHandwriting, planWords, type HandPlanResult } from "@/lib/live/handwriting";
 import { markAnchor, markKey, markStrokes, ringRect, type MarkKind } from "@/lib/live/marks";
 import { decide, type PolicyDecision, type PolicyInput } from "@/lib/live/policy";
 import { planGraph, type GraphWindowHint } from "@/lib/live/graphing";
@@ -498,6 +498,17 @@ export function writeText(args: { text: string; maxWidth: number; size?: number;
   return composeHandwriting(args.text, { maxWidth: args.maxWidth, size: args.size, seed: args.seed });
 }
 
+/**
+ * A word problem's sentences in the tutor's hand (`planWords`), wrapped at `maxWidth`, as a plan
+ * the board's pen writes at `origin` (page coordinates). `plan` null when nothing could be drawn.
+ */
+export function layoutWords(args: { sentences: string[]; maxWidth: number; size: number; seed?: number; seedKey?: string; origin?: { x: number; y: number } }) {
+  need(Array.isArray(args.sentences) && args.sentences.every((s) => typeof s === "string"), "sentences is an array of strings");
+  need(typeof args.maxWidth === "number" && typeof args.size === "number", "maxWidth and size are numbers");
+  const seed = args.seed ?? handSeedFor(args.seedKey ?? args.sentences.join("\n"));
+  return { plan: planWords(args.sentences, { size: args.size, seed, maxWidth: args.maxWidth, origin: args.origin }), size: args.size, seed };
+}
+
 export interface MarkArgs {
   kind: MarkKind;
   /** the student's line, page px */
@@ -701,6 +712,7 @@ export const METHODS: Readonly<Record<string, Method>> = {
   layoutHandwriting: { run: layoutHandwriting, plain: true },
   layoutMath: { run: layoutMathOf, plain: true },
   writeText: { run: writeText, plain: true },
+  layoutWords: { run: layoutWords, plain: true },
   marks: { run: marks, plain: true },
   policy: { run: policy },
   variantOf: { run: variantOf },
