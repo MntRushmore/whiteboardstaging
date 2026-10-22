@@ -791,8 +791,8 @@
     "mode": "feedback"
   },
   "solved": true,
-  "status": "fixed",
+  "status": "open",
   "title": "18 \\times 7",
   "version": 1,
-  "why": "Misread: wrote 18 \\times 7 = 70 + 56 = 126, read 18 \\times 7=70+56-126; a ring where a tick belongs."
+  "why": "Partly fixed (2026-10-22): the = read as a minus is no longer ringed (ArithmeticTruth.minusAsEquals); its recorded reads no longer match the ink as the board now groups it, so the replay reads nothing."
 }

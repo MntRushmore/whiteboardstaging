@@ -136,6 +136,12 @@ public final class LiveLoop: ObservableObject {
     /// the lines that were one problem (one column) at the last flush: they stay one (the web's
     /// `problemMates`)
     var problemMates: [String: Set<String>] = [:]
+    /// lines crossed out, by ink version (`LiveLoop+Chain`)
+    var struckCache: [String: Bool] = [:]
+    /// rings waiting for a second look: the step's line id → its pair of inks; a pair done is drawn at
+    /// once from then on (`LiveLoop+Chain`, the web's `chainHolds` / `chainsDone`)
+    var chainHolds: [String: String] = [:]
+    var chainsDone = Set<String>()
     var flushing = false
     var flushAgain = false
     /// per line: tickets, in-flight work, its mark
@@ -406,6 +412,9 @@ public final class LiveLoop: ObservableObject {
         stackMarks = [:]
         barStrokeIds = []
         problemMates = [:]
+        struckCache = [:]
+        chainHolds = [:]
+        chainsDone = []
         heads = []
         columnHeads = [:]
         lines = [:]
