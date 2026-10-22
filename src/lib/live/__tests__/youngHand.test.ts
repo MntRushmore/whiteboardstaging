@@ -427,6 +427,8 @@ describe("misreadVariants / rightAnswer: a nonsense read of her answer that can 
     const right = (problem: string) => ({ arithmetic: true, rightAnswer: rightAnswerTo(engine, [problem]) });
     expect(readYoungHand("=30=", right("2 \\times 5 \\times 3"))).toBe("=30");
     expect(readYoungHand("=\\mathbb{G}", right("7+2"))).toBe("=9");
+    expect(readYoungHand("=b5", right("58 + 7"))).toBe("=65");
+    expect(readYoungHand("=b5", right("58 + 8"))).toBe("=b5");
     expect(readYoungHand("\\text { } \\approx 12", right("3 \\times 4"))).toBe("= 12");
     // never toward a wrong answer
     expect(readYoungHand("=\\mathbb{G}", right("7+3"))).toBe("=\\mathbb{G}");

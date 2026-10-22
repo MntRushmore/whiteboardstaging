@@ -276,7 +276,7 @@ const THOUSANDS_RE = /^\d{1,3}(?:,\d{3})+$/;
  *    of the pen) read as a comma — `9108`, `908`;
  *  - a spaced tail of a stroke or two after the number (`-4 \quad-`, `27 \quad ,`): her own tick
  *    or a stray, read into the answer — the number alone; so is a trailing `=` (`=30=`);
- *  - a lone letter a digit looks like (`=\mathbb{G}` for `= 9`, `O` for 0).
+ *  - a letter a digit looks like, alone or in the number (`=\mathbb{G}` for `= 9`, `=b5` for `= 65`).
  * Plain numbers only (`ANSWER_NUMBER`); empty when nothing applies.
  */
 export function misreadVariants(read: string): string[] {
@@ -295,6 +295,10 @@ export function misreadVariants(read: string): string[] {
   const letter = /^(?:\\math(?:bb|rm|bf|cal)\s*\{\s*([A-Za-z])\s*\}|([A-Za-z]))$/.exec(body);
   const digit = letter ? LOOKALIKE_DIGITS[letter[1] ?? letter[2]] : undefined;
   if (digit) out.add(lead + digit);
+  // ...or one inside a number (`=b5` for `= 65`)
+  if (/^[\dA-Za-z]+$/.test(body) && /\d/.test(body) && [...body].every((c) => /\d/.test(c) || c in LOOKALIKE_DIGITS)) {
+    out.add(lead + [...body].map((c) => LOOKALIKE_DIGITS[c] ?? c).join(""));
+  }
   const tail = /^(-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}))\s*(?:\\q?quad|\\[,;:]|~)\s*[-,.'`^~|/]?\s*(?:\\(?:prime|vee|wedge))?\s*$/.exec(body);
   if (tail) out.add(lead + tail[1].trim());
   return [...out].filter((v) => v !== read && ANSWER_NUMBER.test(v.slice(lead.length)));
