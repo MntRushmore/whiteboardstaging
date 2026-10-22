@@ -16,6 +16,7 @@ import Testing
 ///     AGATHON_REALINK_CASES   the corpus's bench cases (a JSON file outside the repo)
 ///     AGATHON_REALINK_ONLY    ids or id prefixes, or tag:<tag>, comma separated (default every case)
 ///     AGATHON_REALINK_PACE    real (default: the board's own pauses, capped) | fast (a quick kid)
+@MainActor
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["AGATHON_REALINK"] == "1", "set AGATHON_REALINK=1 (scripts/ios-realink-bench.sh)"), .serialized)
 struct RealInkBenchTests {
     /// One attempt: what the kid wrote, line by line, and every stroke in writing order (page units, from
@@ -192,8 +193,10 @@ struct RealInkBenchTests {
         let clock = HeadlessBench.Clock(loop: loop, scheduler: scheduler)
         let written = Written()
         written.lines = c.lines.map { (Set<String>(), $0.latex) }
-        let reader: (@MainActor (RecognizeRequest) async -> String?)? = oracle
-            ? { @MainActor request in await Oracle.read(request, written: written.lines, board: board) } : nil
+        var reader: (@MainActor (RecognizeRequest) async -> String?)?
+        if oracle {
+            reader = { @MainActor request in await Oracle.read(request, written: written.lines, board: board) }
+        }
         services.begin(boardId, oracle: reader)
         loop.start()
         await clock.idle()
