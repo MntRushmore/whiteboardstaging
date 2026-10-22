@@ -31,6 +31,8 @@ struct HomeView: View {
 
     /// Agathon Unlimited for a grown-up, behind the parental gate.
     @State private var showsPlan = false
+    /// SAT practice (docs/SAT-MODE.md): for every profile, no plan needed.
+    @State private var showsSAT = false
 
     init(firstBoard: FirstBoardRequest? = nil, tookFirstBoard: @escaping () -> Void = {}) {
         self.firstBoard = firstBoard
@@ -65,6 +67,8 @@ struct HomeView: View {
                         practiceRow
                             .padding(.top, DS.Space.xl)
                     }
+                    SATHomeCard { showsSAT = true }
+                        .padding(.top, DS.Space.l)
                     boardsSection
                         .padding(.top, DS.Space.xxl)
                 }
@@ -98,6 +102,9 @@ struct HomeView: View {
                     openBoard = OpenBoard(board: board, audience: BoardAudience(isKid: true, grade: nil), seed: first.document)
                 }
             }
+            #if DEBUG
+            if SATDebug.openAtLaunch != nil { showsSAT = true }
+            #endif
             await model.load(backend)
             if HomeFlow.openGrownUpsNext {
                 HomeFlow.openGrownUpsNext = false
@@ -118,6 +125,14 @@ struct HomeView: View {
                 #if DEBUG
                 .labsButton()
                 .debugWindow()
+                #endif
+        }
+        .fullScreenCover(isPresented: $showsSAT, onDismiss: { Task { await model.refreshQuietly(backend) } }) {
+            SATHomeScreen(onClose: { showsSAT = false })
+                .environment(backend)
+                .environment(planStore)
+                #if DEBUG
+                .labsButton()
                 #endif
         }
         .fullScreenCover(isPresented: $showsPlan, onDismiss: { Task { await model.load(backend) } }) {

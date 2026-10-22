@@ -58,6 +58,9 @@ public final class AuthService {
     /// The signed-in user's id (a uuid, lowercased as Supabase writes it).
     public private(set) var userId: String?
     public private(set) var email: String?
+    /// An anonymous session (SAT mode with no account, `POST /api/sat/anon`, docs/SAT-MODE.md): it may
+    /// use SAT practice and nothing else until it becomes a real account (`upgradeAnonymous`).
+    public private(set) var isAnonymous = false
 
     public let client: SupabaseClient
     /// Where an email link (reset, confirm) sends the browser: the web's pages on the API's host,
@@ -86,10 +89,12 @@ public final class AuthService {
         if let session, event != .signedOut {
             userId = session.user.id.uuidString.lowercased()
             email = session.user.email
+            isAnonymous = session.user.isAnonymous
             phase = .signedIn
         } else {
             userId = nil
             email = nil
+            isAnonymous = false
             phase = .signedOut
         }
     }
@@ -151,6 +156,23 @@ public final class AuthService {
     public func signOut(scope: SignOutScope = .global) async throws {
         try await client.auth.signOut(scope: scope)
         apply(event: .signedOut, session: nil)
+    }
+
+    /// Makes the anonymous session a real account: the SAME user (its SAT attempts, passes and board
+    /// carry over), given an email and a password and the Terms version (as sign-up sends it). The
+    /// project may ask the email to be confirmed first: then the user stays anonymous until the link
+    /// is opened (`.confirmEmail`).
+    @discardableResult
+    public func upgradeAnonymous(email: String, password: String) async throws -> SignUpOutcome {
+        guard isAnonymous else { throw APIError.notSignedIn }
+        let user = try await client.auth.update(user: UserAttributes(
+            email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password, data: Self.signUpMetadata))
+        if let session = client.auth.currentSession { apply(event: .userUpdated, session: session) }
+        isAnonymous = user.isAnonymous
+        self.email = user.email ?? self.email
+        // still anonymous, or the new address waits for its link: the account is not finished yet
+        let waiting = user.isAnonymous || (user.emailConfirmedAt == nil && user.newEmail != nil)
+        return waiting ? .confirmEmail : .signedIn
     }
 
     /// Takes a session minted elsewhere (POST /api/family/switch).

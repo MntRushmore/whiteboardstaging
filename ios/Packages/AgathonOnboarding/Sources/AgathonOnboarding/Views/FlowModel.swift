@@ -10,6 +10,9 @@ public enum OnboardingOutcome: Sendable {
     case firstBoard(FirstBoardHandoff)
     /// A grown-up signed in to an existing account with nothing to add here: open Home.
     case signedIn
+    /// "I'm studying for the SAT": straight into SAT practice, no account (the app gets an anonymous
+    /// session, `POST /api/sat/anon`; docs/SAT-MODE.md).
+    case sat
 }
 
 /// The first board, as the onboarding made it: the row's id (nil when it could not be made; the
