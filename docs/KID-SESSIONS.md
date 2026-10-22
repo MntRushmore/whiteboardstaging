@@ -90,6 +90,10 @@ judged checks, 72 passed (plus the two reopen checks in the UI test, both passed
   `= 180 + 24` in the tutor's ink under the kid's line: a correction of a 34 the kid never wrote. A
   re-read that turns a ringed slip into a true line should not win on its own (keep the ring, or ask
   "Is this right?"). Recording: qa-sessions/2026-10-22/video/s04.mp4 at 0:48–1:20.
+  It happened in 2 of 3 runs. The read history (rerun 2) shows Mathpix read the line right, sure of it —
+  `27.1 s → 180+24=214 (mathpix 1.00)` — and the line ended `180+34=214`: the change came from the two
+  `/api/live/reread` calls, the second look of feat/ipad-blitz c6cae954 ("a ring waits for a second
+  look"). Re-run: `SESSIONS="04" scripts/ios-kid-sessions.sh run report`.
 
 **For the overlay (design call)**
 
@@ -97,10 +101,10 @@ judged checks, 72 passed (plus the two reopen checks in the UI test, both passed
 
 **For the tutor's desk**
 
-- The word problem "Maya has 3 bags of 12 apples. / She gives away 9. How many are left?" was refused
-  by `write_problems` (s12): nothing was written, so the kid's work had no problem to be judged against
-  and the answer `27` got no mark. Two-step word problems a practice set or Ask might give need the
-  desk to check them.
+- `write_problems` refused both word problems tried — "Maya has 3 bags of 12 apples. / She gives away 9.
+  How many are left?" and the catalogue's own "A pen costs 2 dollars. / How much do 7 pens cost?"
+  (`AskBrain.plan`: a problem the desk cannot check is not written). Nothing appears, so a practice set
+  or Ask asked for word problems writes none. s12 now works a word problem from paper on a free page.
 
 **Smaller**
 
