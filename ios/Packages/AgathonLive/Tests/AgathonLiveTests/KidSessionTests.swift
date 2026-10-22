@@ -96,6 +96,16 @@ struct KidSessionTests {
         #expect(all.map(\.budget).reduce(0, +) <= 250)
     }
 
+    /// Found by s01 (2026-10-22): "I read" beside a stacked sum showed "beginarrayr 47 \\ +38 \\ hline 85 endarray".
+    @Test func aStackedSumReadsAsOneLine() {
+        #expect(MathText.plain("\\begin{array}{r}\n47 \\\\\n+38 \\\\\n\\hline 85\n\\end{array}") == "47 + 38 = 85")
+        #expect(MathText.plain("\\begin{array}{r} 52 \\\\ -17 \\\\ \\hline 35 \\end{array}") == "52 - 17 = 35")
+        #expect(MathText.plain("\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 138 \\\\ 920 \\\\ \\hline 1058 \\end{array}")
+                == "46 × 23 = 138 + 920 = 1058")
+        #expect(MathText.plain("\\begin{array}{r} 16 \\\\ 9 )\\overline{144} \\end{array}") == "144 ÷ 9 = 16")
+        #expect(MathText.plain("\\frac{3}{4} + 1") == "3/4 + 1")
+    }
+
     @Test func everySessionLineIsOneTheHandCanWrite() async throws {
         try await TestBrain.shared.load()
         for s in KidSessions.all {
