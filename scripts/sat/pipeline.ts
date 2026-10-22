@@ -17,6 +17,9 @@
  * free and gives the same bank; spend is kept in src/__eval__/.cache/sat/spend.json under a HARD
  * cap of $35 (the model bench's SpendLedger: each call reserves its worst case first).
  *
+ * A person's verdicts: data/sat/manual-review.json (id -> why) demotes a question to draft on every
+ * run; data/sat/spot-check.json records the hand-solved spot checks.
+ *
  * Outputs (checked in): data/sat/bank.json (every question, live and draft, sorted by id: the
  * samples plus the generated), data/sat/review.json (per question: why draft, the numeric check,
  * the solvers' answers, the mistake behind each wrong choice), data/sat/report.json (the numbers).
@@ -336,7 +339,10 @@ async function main(): Promise<void> {
   const twins = nearDuplicates(order.map((id) => questions.get(id)!).filter(Boolean));
   for (const [id, of] of twins) reviews.get(id)?.reasons.push(`near-duplicate of ${of}`);
 
-  // 6. status
+  // 6. what a person demoted by hand (data/sat/manual-review.json: id -> why), then status
+  const manualFile = join(DATA_DIR, "manual-review.json");
+  const manual = existsSync(manualFile) ? (JSON.parse(readFileSync(manualFile, "utf8")) as Record<string, string>) : {};
+  for (const [id, why] of Object.entries(manual)) reviews.get(id)?.reasons.push(why.startsWith("manual review") ? why : `manual review: ${why}`);
   for (const [id, r] of reviews) {
     if (r.source === "generated" && !r.solve && !r.reasons.length) r.reasons.push("not solved");
     r.status = r.reasons.length ? "draft" : "live";

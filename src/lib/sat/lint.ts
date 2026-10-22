@@ -11,7 +11,7 @@ import { SatQuestionSchema, type SatFigure, type SatQuestion } from "@/lib/sat/c
  *  - LaTeX is the SwiftMath-safe subset: only SAFE_COMMANDS, balanced braces and `$`, nothing that
  *    looks like a currency dollar inside text;
  *  - an spr: every accepted form is a valid grid-in (5 characters, 6 with a minus; no mixed numbers),
- *    and the forms agree with each other in value (to the precision the grid allows);
+ *    the forms agree with each other in value, and a rounded decimal fills the grid (".6667", not ".67");
  *  - an mcq: four different choices, and no two choices with the same numeric value;
  *  - a figure: its items lie inside its axes; a labelled point "(a, b)" sits at (a, b) and on any
  *    plotted function that should pass through it; a shape's numeric side labels share one scale
@@ -158,6 +158,15 @@ export function questionIssues(q: unknown): string[] {
     if (values.length) {
       const base = values[0];
       for (const v of values) if (Math.abs(v - base) > Math.max(1e-3, Math.abs(base) * 1e-3)) out.push(`accepted forms disagree (${forms.join(", ")})`);
+    }
+    // a rounded decimal must fill the grid: with 2/3 listed, ".67" is too short (".6667" fits)
+    const exact = forms.filter((f) => f.includes("/")).map(sprValue).find((v): v is number => v !== null);
+    if (exact !== undefined) {
+      for (const f of forms) {
+        const v = sprValue(f);
+        const max = f.startsWith("-") ? 6 : 5;
+        if (f.includes(".") && v !== null && Math.abs(v - exact) > 1e-12 && f.length < max) out.push(`accepted "${f}" is not as precise as the grid allows`);
+      }
     }
     if (forms.length !== new Set(forms).size) out.push("an accepted form is listed twice");
     if (!forms.every((f) => isSprCorrect(f, forms))) out.push("an accepted form is not accepted by the checker");

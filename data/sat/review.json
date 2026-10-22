@@ -3963,8 +3963,10 @@
   "source": "generated"
  },
  "algebra-linear-functions-0126": {
-  "status": "live",
-  "reasons": [],
+  "status": "draft",
+  "reasons": [
+   "manual review: the context is backwards (crates still to fill rise as the minutes left fall), so its interpretation has no sensible answer"
+  ],
   "cas": {
    "result": "skipped",
    "detail": "no numeric form"

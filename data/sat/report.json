@@ -1,5 +1,5 @@
 {
- "at": "2026-10-22T22:01:02.634Z",
+ "at": "2026-10-22T22:03:53.050Z",
  "models": {
   "writer": "anthropic/claude-opus-5.5",
   "solver": "openai/gpt-5.4-mini",
@@ -10,13 +10,14 @@
  "generated": 369,
  "samples": 20,
  "total": 389,
- "live": 353,
- "draft": 36,
+ "live": 352,
+ "draft": 37,
  "draft_reasons": {
   "lint": 17,
   "numeric check": 5,
   "near-duplicate of algebra-linear-one-var-0132": 2,
   "independent solve": 5,
+  "manual review": 1,
   "near-duplicate of algebra-linear-functions-0119": 1,
   "near-duplicate of algebra-linear-systems-0001": 2,
   "near-duplicate of algebra-linear-systems-0119": 2,
@@ -41,7 +42,7 @@
  },
  "live_by_domain": {
   "advanced_math": 125,
-  "algebra": 203,
+  "algebra": 202,
   "geometry_trig": 8,
   "psda": 17
  },
@@ -49,7 +50,7 @@
   "equivalent expressions": 67,
   "nonlinear equations and systems": 56,
   "nonlinear functions": 2,
-  "linear functions": 46,
+  "linear functions": 45,
   "linear inequalities": 40,
   "linear equations in one variable": 38,
   "systems of two linear equations": 44,
@@ -66,22 +67,22 @@
  },
  "live_by_difficulty": {
   "1": 127,
-  "2": 118,
+  "2": 117,
   "3": 108
  },
  "live_by_format": {
-  "mcq": 249,
+  "mcq": 248,
   "spr": 104
  },
  "live_by_figure": {
   "none": 283,
-  "plot": 42,
+  "plot": 41,
   "table": 23,
   "shape": 5
  },
  "spend_usd": {
   "total": 6.5778,
-  "this_run": 0.0819,
+  "this_run": 0,
   "cap": 35,
   "by_model": {
    "openai/gpt-5.4-mini": {
