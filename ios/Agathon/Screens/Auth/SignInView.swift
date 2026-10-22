@@ -159,6 +159,16 @@ struct SignInView: View {
                 switch mode {
                 case .signIn:
                     textButton("Forgot your password?", id: "signin.forgot") { switchMode(.forgot) }
+                    // SAT practice works with no account (docs/SAT-MODE.md): an anonymous session from the server
+                    textButton("Practice SAT math without an account", icon: .forward, id: "signin.sat") {
+                        Task {
+                            do {
+                                try await SATAnonymous.ensureSession(backend)
+                            } catch {
+                                self.error = "SAT practice couldn't start on this iPad. Check the Wi-Fi, or sign in."
+                            }
+                        }
+                    }
                 case .forgot:
                     textButton("Back to sign in", icon: .back, id: "signin.back") { switchMode(.signIn) }
                 case .signUp:

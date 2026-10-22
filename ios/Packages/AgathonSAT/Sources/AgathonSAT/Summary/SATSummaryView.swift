@@ -124,12 +124,28 @@ public struct SATSummaryView: View {
 
     private var actionsRow: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: DS.Space.s) { buttons }
-            VStack(alignment: .leading, spacing: DS.Space.s) { buttons }
+            HStack(spacing: DS.Space.s) {
+                mainButtons
+                homeButton
+            }
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
+                HStack(spacing: DS.Space.s) { mainButtons }
+                homeButton
+            }
+            VStack(alignment: .leading, spacing: DS.Space.s) {
+                mainButtons
+                homeButton
+            }
         }
     }
 
-    @ViewBuilder private var buttons: some View {
+    private var homeButton: some View {
+        PillButton(SATCopy.backToSAT, kind: .quiet, action: home)
+            .fixedSize()
+            .accessibilityIdentifier("sat.summary.home")
+    }
+
+    @ViewBuilder private var mainButtons: some View {
         PillButton(busy ? "Getting questions…" : SATCopy.practiceMore, kind: .primary, action: more)
             .disabled(busy)
             .fixedSize()
@@ -139,9 +155,6 @@ public struct SATSummaryView: View {
                 .fixedSize()
                 .accessibilityIdentifier("sat.summary.review")
         }
-        PillButton(SATCopy.backToSAT, kind: .quiet, action: home)
-            .fixedSize()
-            .accessibilityIdentifier("sat.summary.home")
     }
 }
 #endif
