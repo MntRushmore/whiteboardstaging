@@ -195,7 +195,19 @@ struct RealInkBenchTests {
         written.lines = c.lines.map { (Set<String>(), $0.latex) }
         var reader: (@MainActor (RecognizeRequest) async -> String?)?
         if oracle {
-            reader = { @MainActor request in await Oracle.read(request, written: written.lines, board: board) }
+            // perfect reads of real ink: the labeled lines the read's line holds whole, as written; ink no
+            // line owns (a stray, her own tick) is invisible; a line held in part is unreadable (it is
+            // still being written)
+            reader = { @MainActor [weak loop] request in
+                guard let ink = loop?.lines[request.lineId]?.ink.strokeIds else { return nil }
+                let held = Set(ink)
+                var whole: [String] = []
+                for line in written.lines where !line.strokes.isEmpty && !line.strokes.isDisjoint(with: held) {
+                    guard line.strokes.isSubset(of: held) else { return nil }
+                    whole.append(Oracle.spoken(line.latex))
+                }
+                return whole.isEmpty ? nil : whole.joined(separator: " ")
+            }
         }
         services.begin(boardId, oracle: reader)
         loop.start()
@@ -261,6 +273,21 @@ struct RealInkBenchTests {
 
     // MARK: - the report
 
+    /// A case right as a teacher sees the page: every line's pieces carry the mark it wants (a tick on an
+    /// answer, a ring on a slip, never a ring or a "?" on right work), no stray ringed, and the page
+    /// solved as it should be. A stacked sum read as one block is right when its marks are.
+    static func teacherRight(_ c: CaseOutcome) -> Bool {
+        guard c.strayRings == 0, c.solvedExpected == nil || c.solvedExpected == c.solvedGot else { return false }
+        return c.lines.allSatisfy { l in
+            if l.expect != .ring && (l.marks.contains(.ring) || l.marks.contains(.question)) { return false }
+            switch l.expect {
+            case .tick: return l.marks.contains(.tick)
+            case .ring: return l.marks.contains(.ring)
+            case .calm, .quiet: return true
+            }
+        }
+    }
+
     static func summary(_ cases: [CaseOutcome], counts: BenchServices.Counts, label: String, stopped: Bool) -> String {
         func pct(_ a: Int, _ b: Int) -> String { b == 0 ? "-" : String(format: "%.1f%%", 100 * Double(a) / Double(b)) }
         let lines = cases.flatMap(\.lines)
@@ -268,6 +295,8 @@ struct RealInkBenchTests {
         let slips = lines.filter { $0.expect == .ring }
         let read = lines.filter { $0.readRight != nil }
         var s = "REALINK \(label)\(stopped ? " (stopped: budget)" : "")\n"
+        let teacherRight = cases.filter(Self.teacherRight).count
+        s += "TEACHER-RIGHT: \(teacherRight)/\(cases.count) = \(pct(teacherRight, cases.count))\n"
         s += "cases \(cases.count): pass \(pct(cases.filter { $0.pass == true }.count, cases.count))"
         s += "; no ring on right work \(pct(cases.filter { c in !c.lines.contains(where: \.falseRing) && c.strayRings == 0 }.count, cases.count))\n"
         s += "lines \(lines.count): judged right \(pct(lines.filter { $0.pass == true }.count, lines.count))"
