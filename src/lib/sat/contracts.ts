@@ -104,18 +104,21 @@ export const TableFigureSchema = z
     kind: z.literal("table"),
     headers: z.array(Short).min(1).max(8),
     rows: z.array(z.array(Short).min(1).max(8)).min(1).max(12),
-    note: z.string().max(200).optional(),
   })
   .strict()
   .refine((t) => t.rows.every((r) => r.length === t.headers.length), { message: "every row has one cell per header" });
 
 const Axis = z.object({ min: Num, max: Num, step: Num.positive(), label: Short.optional() }).strict().refine((a) => a.max > a.min, { message: "axis max must be above min" });
 
+/**
+ * A plot's items, exactly the spec's. A function's `expr` is a JS-style expression in `x` using
+ * numbers, `x`, + - * / ( ) and `**` for powers (the bank writes nothing else).
+ */
 export const PlotItemSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("function"), expr: z.string().min(1).max(120), label: Short.optional(), dashed: z.boolean().optional(), domain: z.tuple([Num, Num]).optional() }).strict(),
-  z.object({ type: z.literal("segment"), from: Pt, to: Pt, label: Short.optional(), dashed: z.boolean().optional() }).strict(),
-  z.object({ type: z.literal("point"), at: Pt, label: Short.optional(), open: z.boolean().optional() }).strict(),
-  z.object({ type: z.literal("bar"), x: Num, height: Num, label: Short.optional(), width: Num.positive().optional() }).strict(),
+  z.object({ type: z.literal("function"), expr: z.string().min(1).max(120) }).strict(),
+  z.object({ type: z.literal("segment"), from: Pt, to: Pt }).strict(),
+  z.object({ type: z.literal("point"), at: Pt, label: Short.optional() }).strict(),
+  z.object({ type: z.literal("bar"), x: Num, height: Num, label: Short.optional() }).strict(),
 ]);
 
 export const PlotFigureSchema = z
@@ -125,15 +128,14 @@ export const PlotFigureSchema = z
     y: Axis,
     grid: z.boolean().optional(),
     items: z.array(PlotItemSchema).min(1).max(60),
-    note: z.string().max(200).optional(),
   })
   .strict();
 
+/** A shape's items, exactly the spec's (its own units, y up; angles in degrees, counter-clockwise from +x). */
 export const ShapeItemSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("polygon"), points: z.array(Pt).min(3).max(12), dashed: z.boolean().optional() }).strict(),
-  z.object({ type: z.literal("circle"), center: Pt, r: Num.positive(), dashed: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal("polygon"), points: z.array(Pt).min(3).max(12) }).strict(),
+  z.object({ type: z.literal("circle"), center: Pt, r: Num.positive() }).strict(),
   z.object({ type: z.literal("segment"), from: Pt, to: Pt, dashed: z.boolean().optional() }).strict(),
-  z.object({ type: z.literal("point"), at: Pt, label: Short.optional() }).strict(),
   z.object({ type: z.literal("label"), at: Pt, text: Short }).strict(),
   z.object({ type: z.literal("right_angle"), at: Pt, dirs: z.tuple([Pt, Pt]) }).strict(),
   z.object({ type: z.literal("arc_angle"), at: Pt, from: Num, to: Num, label: Short.optional() }).strict(),
