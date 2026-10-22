@@ -91,7 +91,7 @@ describe("requireAdmin", () => {
 
   it("an admin gets through, looked up in admins with the service role", async () => {
     const result = await requireAdmin(request(fake.ADMIN_TOKEN));
-    expect(result).toEqual({ user: { id: fake.ADMIN_ID, email: "owner@example.com" } });
+    expect(result).toEqual({ user: { id: fake.ADMIN_ID, email: "owner@example.com", anonymous: false } });
     expect(lookups).toHaveLength(1);
     expect(lookups[0].url).toBe(`http://127.0.0.1:54321/rest/v1/admins?select=user_id&user_id=eq.${fake.ADMIN_ID}`);
     expect(lookups[0].headers.get("apikey")).toBe("service-role-test");

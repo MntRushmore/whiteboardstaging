@@ -73,8 +73,10 @@ export const SAT_DOMAIN_SHARE: Record<SatDomain, number> = { algebra: 0.35, adva
 export const SAT_QUESTION_ID_RE = /^(algebra|advanced_math|psda|geometry_trig)-[a-z0-9]+(-[a-z0-9]+)*-[0-9]{4}$/;
 
 export const SAT_LIMITS = {
-  /** SAT_FREE_TUTOR_PER_DAY's default: free tutor questions a day without Unlimited. */
-  freeTutorPerDay: 5,
+  /** SAT_FREE_TUTOR_PER_DAY's default: free tutor questions a day for a signed-in account without Unlimited. */
+  freeTutorPerDay: 20,
+  /** SAT_ANON_TUTOR_PER_DAY's default: free tutor questions a day with no account (an anonymous session). */
+  anonTutorPerDay: 5,
   /** A question is not asked again within this many days, unless the bank (or the filter) is exhausted. */
   noRepeatDays: 30,
   /** GET /api/sat/next: at most this many at once (default 10). */
@@ -264,3 +266,17 @@ export type SatProgressResponse = {
   /** A rough 200–800 band from practice (src/lib/sat/estimate.ts), never a score; null below 15 answers. */
   estimate: { low: number; high: number; note: string } | null;
 };
+
+// ------------------------------------------------------------------ an account-free session
+
+/** POST /api/sat/anon (App Attest guarded): its body cap and limits (in memory, per instance). */
+export const SAT_ANON_LIMITS = {
+  maxBytes: 1024,
+  perIp: { limit: 20, windowMs: 60 * 60_000 },
+  perDevice: { limit: 5, windowMs: 24 * 60 * 60_000 },
+} as const;
+
+/** The body is an empty JSON object (any keys are ignored): only the assertion over its bytes matters. */
+export const SatAnonRequestSchema = z.object({}).passthrough();
+
+export type SatAnonResponse = { access_token: string; refresh_token: string; expires_at: number; user_id: string };

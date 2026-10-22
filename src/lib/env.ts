@@ -109,8 +109,10 @@ const envSchema = z.object({
   // The new onboarding's anonymous step counts (POST /api/start/step): how many steps everyone
   // together may record in a UTC day (default START_STEP_LIMITS.perDay).
   START_DAILY_STEPS: optionalString,
-  // SAT mode (docs/SAT-MODE.md): free tutor questions a day without Agathon Unlimited (default 5).
+  // SAT mode (docs/SAT-MODE.md): free tutor questions a day without Agathon Unlimited, for a
+  // signed-in account (default 20) and with no account (an anonymous session, default 5).
   SAT_FREE_TUTOR_PER_DAY: optionalString,
+  SAT_ANON_TUTOR_PER_DAY: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof envSchema>;
@@ -226,15 +228,27 @@ export function tryDailyReads(fallback: number): number {
   return Number.isSafeInteger(n) && n >= 1 ? Math.min(n, 1_000_000) : fallback;
 }
 
+function wholeOr(raw: string | undefined, fallback: number): number {
+  const t = raw?.trim();
+  const n = t && /^\d+$/.test(t) ? Number(t) : NaN;
+  return Number.isSafeInteger(n) ? Math.min(n, 1000) : fallback;
+}
+
 /**
- * `SAT_FREE_TUTOR_PER_DAY`: how many SAT questions a day a student without Agathon Unlimited may use
- * the live tutor on (POST /api/sat/tutor). Unset or not a whole number: `fallback`
- * (SAT_LIMITS.freeTutorPerDay, 5). `0` turns the free tutor off; at most 1000.
+ * `SAT_FREE_TUTOR_PER_DAY`: how many SAT questions a day a signed-in student without Agathon
+ * Unlimited may use the live tutor on (POST /api/sat/tutor). Unset or not a whole number: `fallback`
+ * (SAT_LIMITS.freeTutorPerDay, 20). `0` turns the free tutor off; at most 1000.
  */
 export function satFreeTutorPerDay(fallback: number): number {
-  const raw = getServerEnv().SAT_FREE_TUTOR_PER_DAY?.trim();
-  const n = raw && /^\d+$/.test(raw) ? Number(raw) : NaN;
-  return Number.isSafeInteger(n) ? Math.min(n, 1000) : fallback;
+  return wholeOr(getServerEnv().SAT_FREE_TUTOR_PER_DAY, fallback);
+}
+
+/**
+ * `SAT_ANON_TUTOR_PER_DAY`: the same for a student with no account (an anonymous SAT session).
+ * Unset or not a whole number: `fallback` (SAT_LIMITS.anonTutorPerDay, 5). `0` turns it off; at most 1000.
+ */
+export function satAnonTutorPerDay(fallback: number): number {
+  return wholeOr(getServerEnv().SAT_ANON_TUTOR_PER_DAY, fallback);
 }
 
 export type LiveModels = {

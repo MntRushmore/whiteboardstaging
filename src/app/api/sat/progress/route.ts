@@ -1,11 +1,10 @@
 import { SAT_LIMITS, SatProgressQuerySchema } from "@/lib/sat/contracts";
 import { isTimeZone, localDay } from "@/lib/sat/day";
 import { buildProgress } from "@/lib/sat/progress";
-import { satFreeTutorPerDay } from "@/lib/env";
 import { json, requireUser } from "@/lib/server/auth";
 import { withRequestId } from "@/lib/server/live-route";
 import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
-import { satHeaders, satLogger } from "@/lib/server/sat/http";
+import { satHeaders, satLogger, satTutorCap } from "@/lib/server/sat/http";
 import { countPasses, readAttempts, readBankMeta, readUnlimited, satStoreDeps } from "@/lib/server/sat/store";
 
 export const runtime = "nodejs";
@@ -25,7 +24,8 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
   const headers = satHeaders(requestId);
-  const auth = await requireUser(req);
+  // SAT mode works without an account: an anonymous session is welcome here
+  const auth = await requireUser(req, { allowAnonymous: true });
   if ("response" in auth) return withRequestId(auth.response, requestId);
   const { user, token } = auth;
   const log = satLogger.child({ requestId, route: "sat/progress", userId: user.id });
@@ -54,7 +54,7 @@ export async function GET(req: Request) {
       tz,
       now,
       tutorUsedToday,
-      cap: satFreeTutorPerDay(SAT_LIMITS.freeTutorPerDay),
+      cap: satTutorCap(user),
       unlimited,
     });
     log.info({ answered: body.answered, streak: body.streak_days, estimate: body.estimate !== null }, "sat progress");

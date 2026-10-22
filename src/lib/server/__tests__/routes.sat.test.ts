@@ -153,7 +153,7 @@ afterEach(() => {
   logger.level = process.env.LOG_LEVEL || "info";
 });
 
-const auth = (token: string | null = fake.TOKEN) => (token ? { Authorization: `Bearer ${token}` } : {});
+const auth = (token: string | null = fake.TOKEN): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {});
 const get = (path: string, token?: string | null) => new Request(`http://localhost${path}`, { headers: auth(token) });
 const post = (path: string, body: unknown, token?: string | null) =>
   new Request(`http://localhost${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...auth(token) }, body: JSON.stringify(body) });
@@ -256,7 +256,9 @@ describe("POST /api/sat/tutor", () => {
     return { status: res.status, body: (await res.json()) as Record<string, unknown> };
   };
 
-  it("five free questions a day on the student's date; the same question again is free; the sixth is refused", async () => {
+  it("a capped day on the student's date (SAT_FREE_TUTOR_PER_DAY=5 here): the same question again is free; the sixth is refused", async () => {
+    process.env.SAT_FREE_TUTOR_PER_DAY = "5";
+    resetServerEnvCache();
     for (let i = 0; i < 5; i++) expect((await ask(ids[i])).body).toEqual({ allowed: true, used_today: i + 1, cap: 5, unlimited: false });
     expect((await ask(ids[2])).body).toEqual({ allowed: true, used_today: 5, cap: 5, unlimited: false });
     expect((await ask(ids[5])).body).toEqual({ allowed: false, used_today: 5, cap: 5, unlimited: false });
@@ -266,7 +268,8 @@ describe("POST /api/sat/tutor", () => {
     expect((await ask(ids[5], "Asia/Tokyo")).body).toEqual({ allowed: true, used_today: 1, cap: 5, unlimited: false });
   });
 
-  it("SAT_FREE_TUTOR_PER_DAY sets the cap; Unlimited lifts it", async () => {
+  it("a signed-in account's cap is 20 by default; SAT_FREE_TUTOR_PER_DAY sets it; Unlimited lifts it", async () => {
+    expect((await ask(ids[0])).body).toMatchObject({ allowed: true, cap: 20 });
     process.env.SAT_FREE_TUTOR_PER_DAY = "1";
     resetServerEnvCache();
     expect((await ask(ids[0])).body).toMatchObject({ allowed: true, cap: 1 });
@@ -295,7 +298,7 @@ describe("GET /api/sat/progress", () => {
     const res = await progressGet(get("/api/sat/progress?tz=America/New_York"));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toMatchObject({ answered: 2, correct: 1, streak_days: 2, today: { answered: 1, tutor_used: 1, cap: 5, unlimited: false }, estimate: null });
+    expect(body).toMatchObject({ answered: 2, correct: 1, streak_days: 2, today: { answered: 1, tutor_used: 1, cap: 20, unlimited: false }, estimate: null });
     expect(body.by_domain).toHaveLength(4);
   });
 

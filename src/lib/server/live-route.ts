@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type pino from "pino";
 import { logger } from "@/lib/logger";
-import { json, requireUser, type AuthedUser } from "@/lib/server/auth";
+import { accountRequiredResponse, json, requireUser, type AuthedUser } from "@/lib/server/auth";
 import { SatQuestionIdSchema } from "@/lib/sat/contracts";
 import { checkRateLimitDistributed, rateLimitedResponse, type RateLimitBucket } from "@/lib/server/rate-limit";
 import { PROVIDER_UNAVAILABLE_MESSAGE, parseJsonBody, recordRouteError } from "@/lib/server/request";
@@ -63,10 +63,15 @@ export async function livePreamble<S extends z.ZodTypeAny>(
   const startedAt = Date.now();
   const requestId = crypto.randomUUID();
 
-  const auth = await requireUser(req);
+  // an anonymous (SAT-only) session gets past here, and through below only for an SAT page's call
+  const auth = await requireUser(req, { allowAnonymous: true });
   if ("response" in auth) return { response: withRequestId(auth.response, requestId) };
   const { user, token } = auth;
   const log = liveLogger.child({ requestId, route, userId: user.id });
+  if (user.anonymous && !SAT_LIVE_ROUTES.has(route)) {
+    log.info("anonymous session refused: not one of the SAT tutor's routes");
+    return { response: withRequestId(accountRequiredResponse(), requestId) };
+  }
 
   const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket });
   if (!rl.ok) {
@@ -94,6 +99,12 @@ export async function livePreamble<S extends z.ZodTypeAny>(
     log.warn("invalid sat_question_id");
     return { response: withRequestId(json(400, "invalid_request", "sat_question_id must be a SAT question id.", { requestId }), requestId) };
   }
+  // Without an account, the tutor's routes on an SAT page only (docs/SAT-MODE.md): the rest of Live
+  // (and these routes on any other board) need a real one.
+  if (user.anonymous && sat === null) {
+    log.info("anonymous session refused: not an SAT page's call");
+    return { response: withRequestId(accountRequiredResponse(), requestId) };
+  }
 
   // The flag is read from the body as sent (the schemas strip what they do not know) and trusted
   // only once the gate has checked who sent it.
@@ -108,6 +119,12 @@ export async function livePreamble<S extends z.ZodTypeAny>(
   // module, route, requestId and userId from them)
   return { requestId, user, token, log: training ? log.child({ training: true }) : log, data: parsed.data, startedAt, training, satQuestionId: sat };
 }
+
+/**
+ * The Live routes an SAT page's tutor calls with `sat_question_id` (each passes it to enforceInk):
+ * the only ones an anonymous session may use.
+ */
+export const SAT_LIVE_ROUTES: ReadonlySet<string> = new Set(["recognize", "reread", "setup", "check", "solve", "ask", "chat", "proof"]);
 
 /** `sat_question_id` from a raw body: the id, null when absent (or JSON null), "invalid" otherwise. */
 export function satQuestionIdOf(raw: unknown): string | null | "invalid" {

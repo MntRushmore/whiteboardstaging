@@ -94,14 +94,13 @@ describe("pickQuestions", () => {
     const b = bank(4).filter((q) => q.domain === "advanced_math");
     const weak = "nonlinear functions";
     // the student has missed every nonlinear-functions question and got the rest right (all long ago)
-    const attempts = b.slice(0, 0);
     const past: PastAttempt[] = [];
     for (const s of SAT_SKILLS.advanced_math) for (let i = 0; i < 10; i++) past.push({ question_id: `x-${s.slug}-${i}`, correct: s.name !== weak, created_at: NOW - 60 * DAY });
     // those ids are not in the bank: give them metadata by adding them as retired-but-known entries
     const known = past.map((p) => ({ id: p.question_id, domain: "advanced_math" as const, skill: SAT_SKILLS.advanced_math.find((s) => p.question_id.includes(s.slug))!.name, difficulty: 2 }));
     let weakCount = 0;
     for (let seed = 1; seed <= 100; seed++) {
-      const ids = pickQuestions({ bank: [...b, ...known], attempts: [...attempts, ...past], count: 6, filter: { domain: "advanced_math", skill: null, difficulty: null }, now: NOW, random: seeded(seed) });
+      const ids = pickQuestions({ bank: [...b, ...known], attempts: past, count: 6, filter: { domain: "advanced_math", skill: null, difficulty: null }, now: NOW, random: seeded(seed) });
       weakCount += ids.filter((id) => b.find((q) => q.id === id)?.skill === weak).length;
     }
     // a third of the skills, picked well over a third of the time

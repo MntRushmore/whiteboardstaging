@@ -1,11 +1,10 @@
-import { SAT_LIMITS, SatTutorRequestSchema } from "@/lib/sat/contracts";
+import { SatTutorRequestSchema } from "@/lib/sat/contracts";
 import { isTimeZone, localDay } from "@/lib/sat/day";
-import { satFreeTutorPerDay } from "@/lib/env";
 import { json, requireUser } from "@/lib/server/auth";
 import { withRequestId } from "@/lib/server/live-route";
 import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { parseJsonBody } from "@/lib/server/request";
-import { satHeaders, satLogger } from "@/lib/server/sat/http";
+import { satHeaders, satLogger, satTutorCap } from "@/lib/server/sat/http";
 import { satStoreDeps, takeTutorPass } from "@/lib/server/sat/store";
 
 export const runtime = "nodejs";
@@ -15,8 +14,9 @@ export const dynamic = "force-dynamic";
  * POST /api/sat/tutor {question_id, tz} — may the live tutor help on this question today?
  * (docs/SAT-MODE.md): `{ allowed, used_today, cap, unlimited }`.
  *
- * Without Agathon Unlimited a student has SAT_FREE_TUTOR_PER_DAY free tutor questions a day (default
- * 5), counted on their own date (`tz`, an IANA zone). Asking takes one pass for the question, once:
+ * Without Agathon Unlimited a student has a few free tutor questions a day, by tier (satTutorCap): 5
+ * with no account (SAT_ANON_TUTOR_PER_DAY), 20 for a signed-in account (SAT_FREE_TUTOR_PER_DAY),
+ * counted on their own date (`tz`, an IANA zone). The iPad asks on the first stroke on a question's page. Asking takes one pass for the question, once:
  * the same question on the same day is allowed again without a second pass (idempotent). Unlimited is
  * always allowed (the pass is still recorded, so `used_today` counts it). When `allowed` is false the
  * app keeps the tutor off for that page; the live routes refuse an SAT call without a pass anyway
@@ -29,7 +29,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
   const headers = satHeaders(requestId);
-  const auth = await requireUser(req);
+  // SAT mode works without an account: an anonymous session is welcome here
+  const auth = await requireUser(req, { allowAnonymous: true });
   if ("response" in auth) return withRequestId(auth.response, requestId);
   const { user, token } = auth;
   const log = satLogger.child({ requestId, route: "sat/tutor", userId: user.id });
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
   if (!isTimeZone(tz)) return json(400, "invalid_request", "tz must be an IANA time zone, like America/New_York.", { requestId }, headers);
 
   const day = localDay(tz, satStoreDeps.now());
-  const cap = satFreeTutorPerDay(SAT_LIMITS.freeTutorPerDay);
+  const cap = satTutorCap(user);
   try {
     const pass = await takeTutorPass(user.id, question_id, day, cap);
     if (pass === "missing") return json(404, "not_found", "That question is not in the bank.", { requestId }, headers);

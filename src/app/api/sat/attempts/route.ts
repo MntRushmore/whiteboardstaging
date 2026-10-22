@@ -25,7 +25,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
   const headers = satHeaders(requestId);
-  const auth = await requireUser(req);
+  // SAT mode works without an account: an anonymous session is welcome here
+  const auth = await requireUser(req, { allowAnonymous: true });
   if ("response" in auth) return withRequestId(auth.response, requestId);
   const { user, token } = auth;
   const log = satLogger.child({ requestId, route: "sat/attempts", userId: user.id });
