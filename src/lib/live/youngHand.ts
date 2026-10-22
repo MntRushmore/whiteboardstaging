@@ -30,7 +30,7 @@
  *    precalculus (`x \approx 2.41`), an `\approx` is meant, and stays.
  */
 
-import type { InkStroke, Rect } from "./contracts";
+import type { InkStroke, LiveEngine, Rect } from "./contracts";
 import { isDotStroke, isLevelBar, strokeLength } from "./strokeClusters";
 
 export interface YoungReadContext {
@@ -45,6 +45,13 @@ export interface YoungReadContext {
    * (a wave and a bar) as one minus, `-54` for `= 54`, and the right answer was ringed.
    */
   signs?: string | null;
+  /**
+   * In arithmetic, is this read the problem's right answer? (the caller's engine: `problem = read`
+   * holds). A read a child's glyph made nonsense of (`9,08` for 9108, her tick read into it, `-4
+   * \quad-`) is taken as the one number it can only be — and only when that number is right
+   * (`misreadVariants`): a nonsense read never becomes a wrong answer, so never a ring.
+   */
+  rightAnswer?: (latex: string) => boolean;
 }
 
 const commands = (names: readonly string[]) => names.map((n) => `\\\\${n}(?![a-zA-Z])`).join("|");
@@ -215,6 +222,56 @@ export function isSignsOnly(strokes: readonly InkStroke[]): boolean {
   return bars > 0;
 }
 
+/**
+ * A read that is a whole number with a bar over it (`\overline{544}`, `= \overline{544}`): in
+ * arithmetic, the rule of a stacked sum or product over its answer, read into it. Never after a `)`
+ * (a long-division bracket) or a decimal point (a repeating decimal): the whole read is the number.
+ */
+const OVERLINED_ANSWER_RE = /^(\s*=?\s*-?\s*)\\overline\s*\{\s*(\d+)\s*\}\s*$/;
+
+/** A number's commas as thousands separators: `1,500`, `12,345,678` (and no comma at all). */
+const THOUSANDS_RE = /^\d{1,3}(?:,\d{3})+$/;
+
+/**
+ * What a nonsense read of a young student's answer may have been (`YoungReadContext.rightAnswer`
+ * picks one only when it is right):
+ *  - a comma between digits that no thousands separator could be (`9,08`): a short `1` (or a tap
+ *    of the pen) read as a comma — `9108`, `908`;
+ *  - a spaced tail of a stroke or two after the number (`-4 \quad-`, `27 \quad ,`): her own tick
+ *    or a stray, read into the answer — the number alone.
+ * Plain numbers only (`ANSWER_NUMBER`); empty when nothing applies.
+ */
+export function misreadVariants(read: string): string[] {
+  const out = new Set<string>();
+  const lead = /^\s*=\s*/.exec(read)?.[0] ?? "";
+  const body = read.slice(lead.length).trim();
+  const number = /^-?\s*[\d,]+$/.exec(body)?.[0];
+  if (number && /\d,\d/.test(number) && !THOUSANDS_RE.test(number.replace(/^-\s*/, ""))) {
+    out.add(lead + number.replace(/(?<=\d),(?=\d)/g, "1"));
+    out.add(lead + number.replace(/(?<=\d),(?=\d)/g, ""));
+  }
+  const tail = /^(-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}))\s*(?:\\q?quad|\\[,;:]|~)\s*[-,.'`^~|/]?\s*(?:\\(?:prime|vee|wedge))?\s*$/.exec(body);
+  if (tail) out.add(lead + tail[1].trim());
+  return [...out].filter((v) => v !== read && ANSWER_NUMBER.test(v.slice(lead.length)));
+}
+
+/**
+ * `YoungReadContext.rightAnswer` for an arithmetic problem of one line: the read, its `=` aside, is a
+ * plain number (`ANSWER_NUMBER`) and `problem = number` holds. Undefined for a problem of more lines.
+ */
+export function rightAnswerTo(engine: LiveEngine, problem: readonly string[]): ((latex: string) => boolean) | undefined {
+  if (problem.length !== 1) return undefined;
+  return (latex) => {
+    const answer = latex.replace(/^\s*=\s*/, "").trim();
+    if (!ANSWER_NUMBER.test(answer)) return false;
+    try {
+      return engine.analyzeLine(`${problem[0]} = ${answer}`, { mode: "feedback" }).verdict === "ok";
+    } catch {
+      return false;
+    }
+  };
+}
+
 /** The line as a young student meant it (see the file comment); unchanged when nothing applies. */
 export function readYoungHand(latex: string, ctx: YoungReadContext): string {
   // her numbers read as words, her long division's bracket read as words and a fraction
@@ -226,6 +283,7 @@ export function readYoungHand(latex: string, ctx: YoungReadContext): string {
     s = s.replace(TRAILING_TICK_RE, "$1").trim();
     s = s.replace(LEADING_RE, "= ");
     s = withSignsOfInk(s, ctx.signs);
+    s = s.replace(OVERLINED_ANSWER_RE, "$1$2");
   } else {
     // in algebra too, a tick no maths could be (`x=4 \sqrt{ }`: a `√` over nothing is her ✓)
     s = s.replace(TRAILING_SURE_TICK_RE, "$1").trim();
@@ -234,6 +292,11 @@ export function readYoungHand(latex: string, ctx: YoungReadContext): string {
   const swapped = s.replace(ctx.arithmetic ? MIDDLE_ANY_RE : MIDDLE_UNREADABLE_RE, " = ");
   if (swapped !== s && numbersOnly(swapped)) s = swapped;
   s = tidy(s);
+  // a nonsense read of her answer that can only have been the right number (`misreadVariants`)
+  if (ctx.arithmetic && ctx.rightAnswer && !ctx.rightAnswer(s)) {
+    const meant = misreadVariants(s).find((v) => ctx.rightAnswer?.(v));
+    if (meant) return meant;
+  }
   return s === tidy(latex) ? latex : s;
 }
 
@@ -243,7 +306,7 @@ export function readYoungHand(latex: string, ctx: YoungReadContext): string {
  * Her own tick: ONE stroke shaped like a ✓ — two straight-ish arms meeting at its lowest point, the
  * corner in the left half, the long arm reaching up to the top on the right and at least 1.3 times
  * the short one, which rises less — drawn in either direction (a young hand draws it from the top of
- * the long arm down, then up the short one). A `√` drawn without its bar is the same shape: it is
+ * the long arm down, then up the short one), its short arm slanting or straight down. A `√` drawn without its bar is the same shape: it is
  * only taken for a tick at the end of an answer in arithmetic (`ownTicks`). A `7`, a `2`, an `L` end
  * at their lowest point or at the bottom; a `v` or a `U` has arms of one length.
  */
@@ -257,7 +320,8 @@ export function isTickStroke(s: InkStroke): boolean {
   if (v === 0 || v === pts.length - 1) return false;
   const corner = pts[v];
   const [left, right] = pts[0].x <= pts[pts.length - 1].x ? [pts[0], pts[pts.length - 1]] : [pts[pts.length - 1], pts[0]];
-  if (corner.x <= left.x || corner.x >= right.x || corner.x - left.x > 0.5 * (right.x - left.x)) return false;
+  // the short arm may come straight down (the corner right under where it starts: a real child's ✓)
+  if (corner.x < left.x - 0.05 * w || corner.x >= right.x || corner.x - left.x > 0.5 * (right.x - left.x)) return false;
   if (right.y > y + 0.3 * h || left.y > corner.y - 0.2 * h || left.y <= right.y) return false;
   const long = Math.hypot(right.x - corner.x, right.y - corner.y);
   const short = Math.hypot(left.x - corner.x, left.y - corner.y);

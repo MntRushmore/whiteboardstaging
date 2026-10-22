@@ -6,7 +6,7 @@ import { getEngine } from "../engine";
 import { analyzeColumn } from "../localSolve";
 import { isLoneRelation } from "../policy";
 import { clusterLines, isEqualsPair, medianStrokeHeight, unionRects } from "../strokeClusters";
-import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, isTickStroke, leadingSigns, ownTicks, readYoungHand } from "../youngHand";
+import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, isTickStroke, leadingSigns, misreadVariants, ownTicks, readYoungHand, rightAnswerTo } from "../youngHand";
 import { negativeAnswers, PHOTO_HEADS, youngGlyphs, youngInk, youngLine, type Pt } from "../__fixtures__/youngInk";
 import { CORPUS } from "@/__eval__/corpus";
 
@@ -171,6 +171,12 @@ describe("isTickStroke / ownTicks: her own tick after her answer", () => {
     expect(isTickStroke(down)).toBe(true);
     // the way an adult draws it: short arm first, then up the long one
     expect(isTickStroke(one([[300, 140], [310, 150], [330, 175], [350, 150], [380, 120], [400, 100]]))).toBe(true);
+  });
+
+  it("a ✓ whose short arm comes straight down is a tick too (real-ink bench: read into `-4` as `-4 \\quad-`)", () => {
+    // re-drawn, not a child's ink: straight down a quarter of its height, then a long slant up right
+    expect(isTickStroke(one([[300, 138], [300, 144], [301, 150], [315, 142], [340, 125], [368, 101]]))).toBe(true);
+    expect(isTickStroke(one([[368, 101], [340, 125], [315, 142], [301, 150], [300, 144], [300, 138]]))).toBe(true);
   });
 
   it("a 7, a 2, an L, a v, a U, a 1 are not", () => {
@@ -379,5 +385,50 @@ describe("negative answers: the signs as the ink has them", () => {
     expect(isEqualsPair(three[0].bounds, three[2].bounds, three.map((s) => s.bounds))).toBe(false);
     // each in its problem's cell
     for (const [k, strokes] of [one, two, three, four].entries()) expect(cellOf(unionRects(strokes.map((s) => s.bounds)), cells)?.n).toBe(k + 1);
+  });
+});
+
+describe("misreadVariants / rightAnswer: a nonsense read of her answer that can only have been the right number", () => {
+  let engine: LiveEngine;
+  beforeAll(async () => {
+    engine = await getEngine();
+  }, 60_000);
+
+  it("a comma no thousands separator could be is a short 1 (or a tap); a spaced tail after the number is her tick", () => {
+    expect(misreadVariants("9,08")).toEqual(["9108", "908"]);
+    expect(misreadVariants("= 9,08")).toEqual(["= 9108", "= 908"]);
+    expect(misreadVariants("-4 \\quad-")).toEqual(["-4"]);
+    expect(misreadVariants("27 \\quad ,")).toEqual(["27"]);
+    // a number as it is, a thousands separator, maths, words: nothing to try
+    expect(misreadVariants("1,500")).toEqual([]);
+    expect(misreadVariants("12,345")).toEqual([]);
+    expect(misreadVariants("9108")).toEqual([]);
+    expect(misreadVariants("4 + 3")).toEqual([]);
+    expect(misreadVariants("x \\quad -")).toEqual([]);
+  });
+
+  it("is taken only when it is the right answer: a nonsense read never becomes a wrong one", () => {
+    const right = (problem: string) => ({ arithmetic: true, rightAnswer: rightAnswerTo(engine, [problem]) });
+    expect(readYoungHand("9,08", right("414 \\times 22"))).toBe("9108");
+    expect(readYoungHand("-4 \\quad-", right("-7 + 3"))).toBe("-4");
+    expect(readYoungHand("= 9,08", right("414 \\times 22"))).toBe("= 9108");
+    // no variant is right: the read stands (the loop asks or waits, as before) — never a ring
+    expect(readYoungHand("9,08", right("414 \\times 23"))).toBe("9,08");
+    expect(readYoungHand("-5 \\quad-", right("-7 + 3"))).toBe("-5 \\quad-");
+    // a read that is right already, or a thousands separator, is left alone
+    expect(readYoungHand("1,500", right("1000 + 500"))).toBe("1,500");
+    // in algebra nothing is tried
+    expect(readYoungHand("-4 \\quad-", { arithmetic: false, rightAnswer: () => true })).toBe("-4 \\quad-");
+    // a problem of more than one line has no single answer to check against
+    expect(rightAnswerTo(engine, ["4 + 3", "2 + 1"])).toBeUndefined();
+  });
+
+  it("in arithmetic a whole number under a rule read with its bar over it is the number", () => {
+    expect(readYoungHand("\\overline{544}", ARITHMETIC)).toBe("544");
+    expect(readYoungHand("= \\overline{544}", ARITHMETIC)).toBe("= 544");
+    // a long-division bracket, a repeating decimal, algebra's division bar: left alone
+    expect(readYoungHand("9)\\overline{144}", ARITHMETIC)).toBe("9)\\overline{144}");
+    expect(readYoungHand("0.\\overline{3}", ARITHMETIC)).toBe("0.\\overline{3}");
+    expect(readYoungHand("\\overline{2}", ANYWHERE)).toBe("\\overline{2}");
   });
 });

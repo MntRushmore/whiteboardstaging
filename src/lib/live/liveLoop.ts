@@ -140,9 +140,9 @@ import { TYPED_COUNT_META, TYPED_ID_META, type TypedLineRef, type TypedSpot, typ
 import type { TypedHost, TypedWriter } from "./typedWriter";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { captureInkCrop } from "./inkCrop";
-import { answerAfterRestatedEnd, leadingSigns, readYoungHand } from "./youngHand";
+import { answerAfterRestatedEnd, leadingSigns, readYoungHand, rightAnswerTo } from "./youngHand";
 import { withoutStrays } from "./strays";
-import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
+import { barGroups, DIAGRAM_RULES, diagramNear, fractionGroups, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, stackedAnalysis, workStacked, type StackedWork } from "./engine/columnArithmetic";
 import { bracketLine, isArithmetic, isSlip, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "./engine/columnWork";
@@ -1960,7 +1960,7 @@ export class LiveLoop implements LiveController {
     const columns = this.columnOptions(inLines);
     // a division bar with its divisor, a stacked sum and a typed line are a line each whatever the clusterer makes of them
     const byId = new Map(ink.map((s) => [s.id as string, s]));
-    const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink), ...groups.map((g) => g.strokeIds.flatMap((id) => byId.get(id) ?? []))];
+    const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink), ...fractionGroups(split.fractions, ink), ...groups.map((g) => g.strokeIds.flatMap((id) => byId.get(id) ?? []))];
     // ink beside one of the chat's problems is never one line with ink under another (`splitAcrossProblems`)
     const cells = this.problemCells();
     const apart = cells.length > 1 ? (group: InkStroke[]) => splitAcrossProblems(group, cells) : undefined;
@@ -2494,7 +2494,10 @@ export class LiveLoop implements LiveController {
     // the signs her answer starts with, as its ink has them: a wobbly `=` is read as a minus too
     const ink = arithmetic ? state.line.strokeIds.map((id) => this.editor.getShape(id)).map((s) => (s ? this.inkOf(s) : null)) : [];
     const signs = arithmetic ? leadingSigns(ink.filter((s): s is InkStroke => s !== null)) : null;
-    return readYoungHand(latex, { arithmetic, signs });
+    // a nonsense read of her answer that can only have been the right number (`misreadVariants`)
+    const problem = arithmetic ? this.arithmeticLines(state) : null;
+    const rightAnswer = problem && this.engine ? rightAnswerTo(this.engine, problem) : undefined;
+    return readYoungHand(latex, { arithmetic, signs, rightAnswer });
   }
 
   // ---------------------------------------------------------------- the second reader
