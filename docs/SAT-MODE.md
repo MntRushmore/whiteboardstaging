@@ -125,8 +125,18 @@ There is no web path, and the app must never call `signInAnonymously()` itself.
   only with `sat_question_id` under that question's pass. Everything else refuses an anonymous user
   (`403 {"error":"forbidden"}` on routes that need a real account; RLS keeps it to its own SAT rows
   and its SAT board).
-- Upgrading: the app calls `auth.updateUser(email:)` and the user verifies; the user id stays, so
-  attempts, passes and the board carry over. The server then treats them as a real (free) account.
+- Upgrading: FIRST `auth.updateUser(data: ["terms_version": TERMS_VERSION])` (the sign-up consent,
+  as a sign-up sends it), THEN `auth.updateUser(email:)` (or link Apple). Becoming permanent without
+  a valid `terms_version` in the user metadata is refused by the database, exactly like a sign-up
+  without it. The user id stays, so attempts, passes and the board carry over; at that moment the
+  account gets what a sign-up gets (its profile with the acceptance, the starter ink), and from then
+  on it is a real free account (cap 20, the rest of the app).
+- What an anonymous session can't do, server side: every route outside `/api/sat/*` and the SAT
+  tutor's Live routes answers `403 {"error":"forbidden","reason":"account_required"}` (requireUser
+  refuses anonymous sessions unless a route opts in). Through PostgREST its token may read its own
+  rows but write only `sat_attempts`, its whiteboards (at most 10) and their assets, `user_settings`,
+  and call the SAT RPCs; everything else is a 403. It has no profile, so it gets no ink, no trial, no
+  emails, and no admin or growth metric counts it. Ask on an SAT page answers but saves no chat.
 
 #### Route details (bank lane, 2026-10-22; additive to the contract above)
 
@@ -217,7 +227,7 @@ There is no web path, and the app must never call `signInAnonymously()` itself.
     without writing on the board uses no pass. Asking again for the same question the same day is
     free (the pass is idempotent per question per day). If it's allowed, the live tutor is on for
     that page from that stroke. If not, it shows a quiet line ("Free tutor used up for today: 5 of
-    5. The board still works. Unlimited lifts it.") and the tutor stays off.
+    5. The board still works. Unlimited lifts it.", with the caller's own `cap`) and the tutor stays off.
   - **Check:** right turns green and shows "See the solution". Wrong lets them try again once, then
     offers the solution. The solution shows its steps, plus the Desmos tip when there is one. Every
     answer posts an attempt.
@@ -228,3 +238,31 @@ There is no web path, and the app must never call `signInAnonymously()` itself.
 
 Reading & Writing, ACT, full timed practice tests (two adaptive modules, 22 questions each), an
 in-app Desmos (its API licence needs a deal), teacher classes.
+
+## Deploy checklist (the owner, at merge time; nothing here is applied to production before)
+
+In this order, on the production project:
+
+1. **Migrations**, both, before the code: `20261022000000_sat_mode.sql` (the SAT tables and
+   functions) and `20261022010000_sat_anonymous.sql` (anonymous users limited to SAT mode; it also
+   sets the PostgREST pre-request check on the `authenticator` role and reloads PostgREST's config).
+   `npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING" --include-all`, then check:
+   `select count(*) from public.sat_questions;` (0 until step 2) and
+   `select rolconfig from pg_roles where rolname = 'authenticator';` (shows
+   `pgrst.db_pre_request=public.anonymous_request_guard`).
+2. **Load the bank**: `scripts/sat/upsert.ts` refuses any non-local URL on purpose. For production,
+   run it with the production URL and service role key after removing that guard for the one run,
+   or load `data/sat/bank.json` with the SQL it prints (`--dry-run` shows what it would write). Only
+   `live` rows reach the app.
+3. **Env vars** (Vercel, Production): `SAT_FREE_TUTOR_PER_DAY` (empty = 20) and
+   `SAT_ANON_TUTOR_PER_DAY` (empty = 5) only if the defaults should change.
+   `SUPABASE_SERVICE_ROLE_KEY` must be set (POST /api/sat/tutor takes passes with it; it already is
+   for billing).
+4. **Deploy** the code.
+5. **Auth setting, last**: Authentication -> Sign In / Providers -> **Allow anonymous sign-ins: on**,
+   and Authentication -> Rate Limits -> **anonymous sign-ins per hour: 1000** (every one comes from our
+   server's IP, so the default 30 is a global cap; the route limits per IP and per device). Before
+   this step `POST /api/sat/anon` answers 503 and SAT mode needs an account; nothing else changes.
+6. Check: the iPad in SAT mode with no account gets a session, sees questions, and its first stroke
+   on a page takes a pass (`select count(*) from public.sat_tutor_passes where day = current_date;`).
+
