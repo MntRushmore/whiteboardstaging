@@ -356,11 +356,14 @@ extension LiveLoop {
                 }
                 self.lines[ink.id] = line
             }
+            // a page that continues a problem ("More room"): its work goes on from the page before
+            await self.takeCarry()
+            guard gen == self.generation else { return }
             await self.analyzeAll(quiet: true)
             // what was on the screen before this session had its pauses then: Auto leaves it be
             for st in self.lines.values where !st.latex.isEmpty { _ = self.autoOnce(self.autoKey("check", st)) }
             // ink never read (written with Live off, or offline before a reload): read now
-            for ink in unread { self.processLine(ink, moveOnly: false) }
+            for ink in unread where !self.readBeforeElsewhere(ink) { self.processLine(ink, moveOnly: false) }
             self.refreshPage()
         }
     }
@@ -378,6 +381,8 @@ extension LiveLoop {
             let cell = p.meta[Self.problemCellMeta].flatMap(BrainRect.init(meta:))
             next.append(ProblemHead(id: p.id, lines: lines, rect: rect, analyses: old?.lines == lines ? old?.analyses ?? [] : [], cell: cell))
         }
+        // a page that continues a problem ("More room"): the problem's own record heads it too
+        next += groupHeads(keeping: heads)
         heads = next
     }
 

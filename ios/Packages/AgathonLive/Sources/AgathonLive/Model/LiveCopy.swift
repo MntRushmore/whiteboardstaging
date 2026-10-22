@@ -98,6 +98,11 @@ public enum LiveCopy {
         public static let next = "Next problem"
         public static let allDone = "All done"
         public static let nextLabel = "Go to the next problem"
+        /// "More room": a page full of big handwriting goes on on a new page (the same problem)
+        public static let moreRoom = "More room"
+        public static let moreRoomLabel = "More room: a new page for this problem"
+        /// a check found a slip on another page of the problem (its ring is there)
+        public static func lookBack(_ page: Int) -> String { "Have another look at page \(page)." }
         public static let newPage = "New page for this one"
         public static let newPageLabel = "Move this problem to a new page"
         public static let keepHere = "Keep it here"

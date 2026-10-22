@@ -8,6 +8,10 @@ import Foundation
 /// "page": { "kind": "problem", "set": "daily:2026-10-19", "index": 2, "count": 5,
 ///           "problem": "problem:k3Vb…", "origin": "practice", "workTop": 186 }
 /// ```
+///
+/// A problem that needs more room spreads over more pages ("More room", docs/PROBLEM-PAGES.md): each
+/// page after its first says which page it `continues` (the problem's first page), and every page but
+/// the last says there is `more` (its answer spot moved on to the last page).
 public struct ProblemPage: Equatable, Sendable {
     public enum Kind: String, Sendable {
         /// one problem's page
@@ -31,11 +35,16 @@ public struct ProblemPage: Equatable, Sendable {
     public var origin: String?
     /// where the work area starts (page units), under the problem as written; nil: the default
     public var workTop: Double?
-    /// the page has an answer spot (false: a problem whose answer is a drawing)
+    /// the problem has an answer spot (false: a problem whose answer is a drawing); it is on the
+    /// problem's last page (`hasAnswerSpot`)
     public var answer: Bool
+    /// "More room": the problem's first page, on each page that continues it (nil on a first page)
+    public var continues: RecordID?
+    /// "More room": the problem goes on on the next page (this page's answer spot moved there)
+    public var more: Bool
 
     public init(kind: Kind = .problem, setId: String? = nil, index: Int? = nil, count: Int? = nil, problem: RecordID? = nil,
-                origin: String? = nil, workTop: Double? = nil, answer: Bool = true) {
+                origin: String? = nil, workTop: Double? = nil, answer: Bool = true, continues: RecordID? = nil, more: Bool = false) {
         self.kind = kind
         self.setId = setId
         self.index = index
@@ -44,6 +53,8 @@ public struct ProblemPage: Equatable, Sendable {
         self.origin = origin
         self.workTop = workTop
         self.answer = answer
+        self.continues = continues
+        self.more = more
     }
 
     /// The page in a screen's meta, if it is one (an unknown kind is no page: an older build's
@@ -58,6 +69,8 @@ public struct ProblemPage: Equatable, Sendable {
         origin = v["origin"]?.stringValue
         workTop = v["workTop"]?.numberValue
         answer = v["answer"]?.boolValue ?? true
+        continues = v["continues"]?.stringValue.map { RecordID($0) }
+        more = v["more"]?.boolValue ?? false
     }
 
     /// As the screen's meta stores it (fields at their default left out).
@@ -70,6 +83,8 @@ public struct ProblemPage: Equatable, Sendable {
         if let origin { o["origin"] = .string(origin) }
         if let workTop { o["workTop"] = .number((workTop * 100).rounded() / 100) }
         if !answer { o["answer"] = .bool(false) }
+        if let continues { o["continues"] = .string(continues.rawValue) }
+        if more { o["more"] = .bool(true) }
         return .object(o)
     }
 
@@ -81,6 +96,12 @@ public struct ProblemPage: Equatable, Sendable {
 
     /// The work area's top on this page.
     public var resolvedWorkTop: Double { workTop ?? ProblemPageLayout.defaultWorkTop }
+
+    /// The answer spot is on this page: the problem has one, and this is its last page.
+    public var hasAnswerSpot: Bool { kind == .problem && answer && !more }
+
+    /// A "More room" page: it continues a problem begun on an earlier page.
+    public var isContinuation: Bool { continues != nil }
 }
 
 extension ScreenRecord {
@@ -131,6 +152,32 @@ public enum ProblemPageLayout {
     public static let actions = Box(x: 1000, y: 744, w: 512, h: 116)
     /// a work area keeps at least this many guide rows
     public static let minRows = 2
+
+    // "More room" (docs/PROBLEM-PAGES.md): a page that continues a problem
+
+    /// "Problem 2, continued": its baseline and size, in the problem's place
+    public static let continuedBaseline = 76.0
+    public static let continuedSize = 20.0
+    /// the problem again, small, under it: its top-left, at most this scale and this tall (a one-line
+    /// problem at a little under half size; a word problem smaller), so the page has a row more than
+    /// the problem's first page
+    public static let reminderOrigin = Vec2(88, 88)
+    public static let reminderScale = 0.45
+    public static let reminderMaxHeight = 60.0
+    /// a continued page's work area starts this far under the reminder, and never above `continuedMinWorkTop`
+    public static let reminderGap = 20.0
+    public static let continuedMinWorkTop = 150.0
+    /// "More room" is offered once the kid's work reaches this far down (the last row of the work
+    /// area, and a little of the row above)
+    public static let fullBand = workBottom - 1.25 * rulePitch
+    /// a problem spreads over at most this many pages
+    public static let maxPages = 4
+
+    /// A continued page's work area top, under the problem's reminder ending at `reminderBottom`.
+    public static func continuedWorkTop(reminderBottom: Double) -> Double {
+        let latest = workBottom - firstRuleOffset - Double(minRows - 1) * rulePitch
+        return min(max(continuedMinWorkTop, reminderBottom + reminderGap), latest)
+    }
 
     /// The work area's top for a problem whose ink ends at `problemBottom` (page units).
     public static func workTop(problemBottom: Double) -> Double {

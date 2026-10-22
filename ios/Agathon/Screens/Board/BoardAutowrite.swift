@@ -10,7 +10,8 @@ import SwiftUI
 /// writes the next line in a kid's hand (the web's handwriting scoreboard, the clean hand: the Live
 /// Lab's fixture on this Mac's disk) through the canvas's own touch path, under what is on the page.
 /// `newpage` as a line adds a page and goes to it; `answer:x = 4` writes `x = 4` in a problem page's
-/// answer spot. Never in a Release build.
+/// answer spot; `big:2x = 8` writes it in a big hand (a kid whose writing fills a page: "More room").
+/// Never in a Release build.
 struct BoardAutowriteButton: View {
     @ObservedObject var model: BoardScreenModel
     @ObservedObject private var progress = BoardAutowriter.progress
@@ -86,9 +87,13 @@ enum BoardAutowriter {
             try? await Task.sleep(for: .milliseconds(600))
             return
         }
-        // `answer:…`: in the answer spot of a problem page (docs/PROBLEM-PAGES.md)
+        // `answer:…`: in the answer spot of a problem page (docs/PROBLEM-PAGES.md); `big:…`: a big hand
         let inAnswer = latex.hasPrefix("answer:")
-        let ink = inAnswer ? String(latex.dropFirst("answer:".count)) : latex
+        let big = latex.hasPrefix("big:")
+        let ink = inAnswer ? String(latex.dropFirst("answer:".count)) : big ? String(latex.dropFirst("big:".count)) : latex
+        // (a big hand writes about two rows high, and leaves most of a row between its lines)
+        let scale = big ? 5.5 : 1.6
+        let gap = big ? 27 * scale * 0.9 : 60
         guard let strokes = hand[ink] else {
             BoardScreenModel.log.error("autowrite: no ink for \(ink, privacy: .public)")
             return
@@ -105,9 +110,9 @@ enum BoardAutowriter {
             return ys.max()
         }.max()
         let x = inAnswer ? answer.x + 220 : rect.x + 140
-        let y = inAnswer ? answer.y + 24 : (bottom.map { $0 + 60 } ?? rect.y + 140)
+        let y = inAnswer ? answer.y + 24 : (bottom.map { $0 + gap } ?? rect.y + 140)
         let page: [[Vec2]] = strokes.map { flat in
-            stride(from: 0, to: flat.count - 1, by: 2).map { i in Vec2(x + flat[i] * 1.6, y + flat[i + 1] * 1.6) }
+            stride(from: 0, to: flat.count - 1, by: 2).map { i in Vec2(x + flat[i] * scale, y + flat[i + 1] * scale) }
         }
         controller.tool = .pen
         tutor.liveBoard.notePen(true)
@@ -171,6 +176,8 @@ struct BoardDebugProbe: View {
         // problem pages: the page, its action corner, what the tutor read (and how sure it is)
         let pages = tutor.loop.pages
         let page = pages.page.map { p in p.kind == .done ? "done" : "\(p.index ?? 0)/\(p.count ?? 0)" } ?? "plain"
+        // "More room": which page of its problem, and whether More room is offered
+        let part = store.problemGroup(of: screen).flatMap { g in g.part(of: screen).map { "\($0)/\(g.count)" } } ?? "1/1"
         let action: String
         switch pages.action {
         case .check?: action = "check"
@@ -178,7 +185,7 @@ struct BoardDebugProbe: View {
         case nil: action = "none"
         }
         let read = pages.readings.map { "\($0.latex)=\($0.state.rawValue)" }.joined(separator: "; ")
-        return "lines: \(lines.joined(separator: "; ")) | hints \(tutor.loop.hints.count) | chat \(chat) | problems \(problems) | activity \(tutor.loop.activity) | page \(page) | action \(action) | checking \(tutor.loop.settings.checking.rawValue) | why \(tutor.loop.checkDiagnosis) | read \(read) | screens \(store.screenIDs.count) | save \(save)"
+        return "lines: \(lines.joined(separator: "; ")) | hints \(tutor.loop.hints.count) | chat \(chat) | problems \(problems) | activity \(tutor.loop.activity) | page \(page) part \(part) | action \(action) room \(pages.moreRoom ? "yes" : "no") | note \(tutor.loop.note ?? "-") | checking \(tutor.loop.settings.checking.rawValue) | why \(tutor.loop.checkDiagnosis) | read \(read) | screens \(store.screenIDs.count) | save \(save)"
     }
 }
 #endif
