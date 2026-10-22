@@ -48,6 +48,11 @@ final class BoardTutor {
         self.driver = driver
     }
 
+    #if DEBUG
+    /// The training services of the board opened with `-liveTraining` (the kid sessions count its calls).
+    static var trainingServices: TrainingServices?
+    #endif
+
     /// The app's tutor on the signed-in user's board.
     static func live(backend: AgathonBackend, controller: BoardController, canvas: BoardCanvasView, boardId: String,
                      grade: Int?) -> BoardTutor {
@@ -59,6 +64,15 @@ final class BoardTutor {
         if let i = args.firstIndex(of: "-liveMisread"), i + 1 < args.count {
             let parts = args[i + 1].components(separatedBy: "=>")
             if parts.count == 2 { misread = (parts[0], parts[1]) }
+        }
+        // the kid sessions (KidSessionPlayer): `-liveTraining <calls>` sends the board's Live calls with
+        // the training flag (an admin's: no ink spent) under that budget
+        if let i = args.firstIndex(of: "-liveTraining"), i + 1 < args.count, let budget = Int(args[i + 1]) {
+            let services = TrainingServices(backend: backend, budget: budget)
+            trainingServices = services
+            return BoardTutor(controller: controller, canvas: canvas, boardId: boardId, services: services) { board, helper in
+                AskParts.live(backend: backend, boardId: boardId, board: board, helper: helper, userId: userId, grade: grade)
+            }
         }
         #endif
         return BoardTutor(controller: controller, canvas: canvas, boardId: boardId, services: LiveAPIServices(backend: backend, misread: misread)) { board, helper in
