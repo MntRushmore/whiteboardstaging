@@ -62,6 +62,11 @@ export const LIMITS = {
   appleTransaction: { limit: 30, windowMs: MINUTE },
   // The weekly report (src/app/api/report): the page's week picker and a replay's board.
   report: { limit: 30, windowMs: MINUTE },
+  // SAT mode (src/app/api/sat): a set of 10 questions and the progress page are reads; an answer is
+  // posted per checked question; a tutor pass is asked once per question opened.
+  satRead: { limit: 60, windowMs: MINUTE },
+  satAttempt: { limit: 60, windowMs: MINUTE },
+  satTutor: { limit: 30, windowMs: MINUTE },
   // Live Math routes (budgets are defined once, in the shared contracts).
   liveRecognize: LIVE_RATE_LIMITS.liveRecognize,
   liveCheck: LIVE_RATE_LIMITS.liveCheck,

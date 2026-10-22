@@ -41,7 +41,7 @@ export async function POST(req: Request) {
 
   // Charge ink before opening the stream (a 402/503 JSON body, not SSE). The charge is
   // refunded if the stream fails before the first annotation (runChargedStream), never after.
-  const billing = await enforceInk({ token, route: "live/check", requestId, model: models.check, training: ctx.training }, log);
+  const billing = await enforceInk({ token, route: "live/check", requestId, model: models.check, training: ctx.training, satQuestionId: ctx.satQuestionId }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   // the request as parsed, `learner` (the student's recurring mistakes) included

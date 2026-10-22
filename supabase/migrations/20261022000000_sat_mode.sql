@@ -34,14 +34,21 @@
 --                      no second pass); otherwise Unlimited, or fewer than `cap` passes that day,
 --                      takes one. Answers {allowed, used_today, cap, unlimited}. The cap is an
 --                      argument because it is an env var on the server; a user cannot call this.
---   sat_tutor_access(question)  authenticated, read-only, about the caller only: {unlimited, pass,
---                      remaining}. The live routes ask it when a call carries `sat_question_id`
---                      (src/lib/server/sat/gate.ts): Unlimited is charged as usual (fair use), a
---                      pass for that question lets the call through without ink, and anything else
---                      is the usual 402. `pass` means a row for that question whose day is "today"
---                      somewhere on Earth right now (UTC-12 .. UTC+14), because the live calls do
---                      not send a time zone: at most a day's slack, for a question already passed.
---                      `remaining` is the ink the caller would spend (a kid's is their grown-up's).
+--   sat_tutor_access()  authenticated, read-only, about the caller only: {unlimited, remaining}
+--                      (GET /api/sat/progress's `today.unlimited`). `remaining` is the ink the caller
+--                      would spend (a kid's is their grown-up's).
+--   sat_tutor_spend(question, units)  authenticated, about the caller only. The live routes call it
+--                      when a request carries `sat_question_id` (enforceInk, src/lib/server/billing.ts):
+--                      {unlimited, allowed, reason, remaining}. Unlimited: nothing is written and the
+--                      route charges consume_credits as usual (no ink, the fair-use count). Otherwise
+--                      the call is allowed, spending no ink, only when the caller has a pass for that
+--                      question "today" and the pass has room for `units` more: one pass lets through
+--                      at most 200 ink-priced units of live calls (a question worked hard takes well
+--                      under 100), so a pass cannot be stretched into a free day of tutoring on other
+--                      boards. "Today" is a pass whose day is today somewhere on Earth right now
+--                      (UTC-12 .. UTC+14), because the live calls send no time zone: at most a day's
+--                      slack, for a question already passed. Refusals: `no_pass`, `pass_used_up`.
+--                      A user can only ever add to their own pass's count.
 --
 -- Supabase's default privileges grant ALL on every new public table and function to anon,
 -- authenticated and service_role, so each object revokes first and grants exactly what is used.
@@ -51,7 +58,7 @@
 --   indexes     sat_questions_pick_idx, sat_attempts_user_created_idx,
 --               sat_attempts_question_idx, sat_tutor_passes_day_idx
 --   functions   sat_attempts_enforce_cap() [trigger], sat_take_tutor_pass(uuid, text, date, int),
---               sat_tutor_access(text)
+--               sat_tutor_access(), sat_tutor_spend(text, int)
 --   policies    "sat_questions: read live", "sat_attempts: owner select" / "owner insert" /
 --               "owner delete", "sat_tutor_passes: owner select"
 -- =============================================================================
@@ -204,9 +211,13 @@ create table if not exists public.sat_tutor_passes (
   profile_id   uuid        not null references auth.users (id) on delete cascade,
   question_id  text        not null references public.sat_questions (id),
   day          date        not null,
+  -- the ink-priced live calls this pass has let through (sat_tutor_spend; at most 200)
+  units        integer     not null default 0,
   created_at   timestamptz not null default now(),
-  primary key (profile_id, question_id, day)
+  primary key (profile_id, question_id, day),
+  constraint sat_tutor_passes_units_range check (units between 0 and 100000)
 );
+alter table public.sat_tutor_passes add column if not exists units integer not null default 0;
 
 -- "how many passes did this profile use on this day"
 create index if not exists sat_tutor_passes_day_idx on public.sat_tutor_passes (profile_id, day);
@@ -284,9 +295,10 @@ revoke all on function public.sat_take_tutor_pass(uuid, text, date, integer) fro
 grant execute on function public.sat_take_tutor_pass(uuid, text, date, integer) to service_role;
 
 -- -----------------------------------------------------------------------------
--- 5. sat_tutor_access (authenticated: the live routes' SAT gate, and /api/sat/progress)
+-- 5. sat_tutor_access (authenticated: GET /api/sat/progress)
 -- -----------------------------------------------------------------------------
-create or replace function public.sat_tutor_access(p_question_id text default null)
+drop function if exists public.sat_tutor_access(text);
+create or replace function public.sat_tutor_access()
 returns jsonb
 language plpgsql
 stable
@@ -295,27 +307,75 @@ set search_path = public
 as $$
 declare
   v_uid uuid := auth.uid();
-  v_pass boolean := false;
   v_remaining integer;
 begin
   if v_uid is null then
     raise exception 'not authenticated' using errcode = '42501';
   end if;
-  if p_question_id is not null then
-    select exists (
-      select 1 from public.sat_tutor_passes t
-      where t.profile_id = v_uid and t.question_id = p_question_id
-        and t.day between (now() at time zone 'Etc/GMT+12')::date and (now() at time zone 'Etc/GMT-14')::date
-    ) into v_pass;
+  select coalesce(pr.ink_balance, 0) into v_remaining
+  from public.profiles pr where pr.user_id = public.plan_owner_of(v_uid);
+  return jsonb_build_object('unlimited', coalesce(public.has_unlimited(v_uid), false), 'remaining', coalesce(v_remaining, 0));
+end;
+$$;
+revoke all on function public.sat_tutor_access() from public, anon, authenticated;
+grant execute on function public.sat_tutor_access() to authenticated, service_role;
+
+-- -----------------------------------------------------------------------------
+-- 6. sat_tutor_spend (authenticated: the live routes' SAT gate)
+-- -----------------------------------------------------------------------------
+create or replace function public.sat_tutor_spend(p_question_id text, p_units integer)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_remaining integer;
+  v_unlimited boolean;
+  v_found boolean;
+  v_spent boolean;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated' using errcode = '42501';
+  end if;
+  if p_units is null or p_units < 1 or p_units > 1000 then
+    raise exception 'p_units must be between 1 and 1000' using errcode = '22023';
   end if;
   select coalesce(pr.ink_balance, 0) into v_remaining
   from public.profiles pr where pr.user_id = public.plan_owner_of(v_uid);
-  return jsonb_build_object(
-    'unlimited', coalesce(public.has_unlimited(v_uid), false),
-    'pass', v_pass,
-    'remaining', coalesce(v_remaining, 0)
-  );
+  v_remaining := coalesce(v_remaining, 0);
+  v_unlimited := coalesce(public.has_unlimited(v_uid), false);
+  if v_unlimited then
+    return jsonb_build_object('unlimited', true, 'allowed', true, 'reason', null, 'remaining', v_remaining);
+  end if;
+
+  -- today's pass for this question (today somewhere on Earth), with room for these units
+  with today as (
+    select t.ctid from public.sat_tutor_passes t
+    where t.profile_id = v_uid and t.question_id = p_question_id
+      and t.day between (now() at time zone 'Etc/GMT+12')::date and (now() at time zone 'Etc/GMT-14')::date
+    order by t.day desc
+    limit 1
+    for update
+  )
+  update public.sat_tutor_passes t set units = t.units + p_units
+  from today
+  where t.ctid = today.ctid and t.units + p_units <= 200
+  returning true into v_spent;
+
+  if coalesce(v_spent, false) then
+    return jsonb_build_object('unlimited', false, 'allowed', true, 'reason', null, 'remaining', v_remaining);
+  end if;
+  select exists (
+    select 1 from public.sat_tutor_passes t
+    where t.profile_id = v_uid and t.question_id = p_question_id
+      and t.day between (now() at time zone 'Etc/GMT+12')::date and (now() at time zone 'Etc/GMT-14')::date
+  ) into v_found;
+  return jsonb_build_object('unlimited', false, 'allowed', false,
+    'reason', case when v_found then 'pass_used_up' else 'no_pass' end, 'remaining', v_remaining);
 end;
 $$;
-revoke all on function public.sat_tutor_access(text) from public, anon, authenticated;
-grant execute on function public.sat_tutor_access(text) to authenticated, service_role;
+revoke all on function public.sat_tutor_spend(text, integer) from public, anon, authenticated;
+grant execute on function public.sat_tutor_spend(text, integer) to authenticated, service_role;

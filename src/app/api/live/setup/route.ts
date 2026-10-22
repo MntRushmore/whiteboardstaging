@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   const models = getLiveModels();
   const figure = Boolean(data.crop);
   const [primary, fallback] = figure ? [models.figure, models.figureFallback] : [models.setup, models.setupFallback];
-  const billing = await enforceInk({ token, route: "live/setup", requestId, model: primary, training: ctx.training }, log);
+  const billing = await enforceInk({ token, route: "live/setup", requestId, model: primary, training: ctx.training, satQuestionId: ctx.satQuestionId }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(

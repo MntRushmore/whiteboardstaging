@@ -98,6 +98,13 @@ export type ConsumeInput = {
    * admin; never a value read from a request body.
    */
   training?: boolean;
+  /**
+   * SAT mode: the bank question an SAT page's live call is about (`sat_question_id` in its body,
+   * read by `livePreamble`). Without Unlimited the call then spends no ink, and goes through only
+   * on that question's free tutor pass for today (`satTutorGate`). Only `LiveContext.satQuestionId`
+   * sets it. Absent: the route's ordinary rules.
+   */
+  satQuestionId?: string | null;
 };
 
 /** The subset of a Supabase client `consumeInk` needs (lets tests pass a fake). */
@@ -452,6 +459,12 @@ export async function enforceInk(
     return { remaining: null };
   }
 
+  if (input.satQuestionId) {
+    const sat = await satTutorGate({ ...input, satQuestionId: input.satQuestionId }, log, client);
+    // null: an Unlimited subscriber, charged below as on any board (no ink, the fair-use count)
+    if (sat) return sat;
+  }
+
   const result = await consumeInk(input, client);
   if (result.ok) return { remaining: result.remaining };
 
@@ -475,4 +488,78 @@ export async function enforceInk(
     meta: { status: 503, inkRoute: input.route, error: (result.message ?? "").slice(0, 160) },
   });
   return { response: billingUnavailableResponse() };
+}
+
+/* ------------------------------------------------------------------------- */
+/* SAT mode's free tutor                                                      */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * The SECURITY DEFINER function (20261022000000_sat_mode.sql), run AS THE USER:
+ * `sat_tutor_spend(p_question_id text, p_units int) returns jsonb`
+ * -> `{ unlimited, allowed, reason: 'no_pass' | 'pass_used_up' | null, remaining }`.
+ */
+export const SAT_TUTOR_SPEND_RPC = "sat_tutor_spend";
+
+export const SAT_TUTOR_REFUSED_MESSAGE =
+  "The free SAT tutor isn't on for this question today. The board still works, and Agathon Unlimited lifts the cap.";
+
+/**
+ * The 402 an SAT page's live call gets without a pass: `inkEmptyResponse`'s body (same code, `remaining`,
+ * `cost`, `buyUrl`, so every client already handles it), its own words, and the additive
+ * `reason: "sat_tutor"` with `sat: "no_pass" | "pass_used_up"`.
+ */
+export function satTutorRefusedResponse(remaining: number, cost: number, why: "no_pass" | "pass_used_up"): Response {
+  return json(402, "ink_empty", SAT_TUTOR_REFUSED_MESSAGE, {
+    remaining: Math.max(0, remaining),
+    cost,
+    buyUrl: BUY_INK_PATH,
+    reason: "sat_tutor",
+    sat: why,
+  });
+}
+
+/**
+ * SAT mode (docs/SAT-MODE.md, "Server enforcement"): an SAT page's live call
+ * (`input.satQuestionId` set) from a student without Agathon Unlimited goes through only on that
+ * question's free tutor pass for today, taken by POST /api/sat/tutor, and then spends NO ink: the
+ * pass is the allowance (a free student with no ink at all is not refused). Each call adds the
+ * route's ink price to the pass's count, and a pass lets through at most 200 (sat_tutor_spend), so
+ * one pass is one question's tutoring, not a free day on other boards. Without a pass, or with it
+ * used up: the usual 402 `ink_empty` (satTutorRefusedResponse).
+ *
+ * Returns null for an Unlimited subscriber: `enforceInk` then charges as usual (no ink, the fair-use
+ * count). A database failure fails closed (503), as `enforceInk` does.
+ */
+export async function satTutorGate(
+  input: ConsumeInput & { satQuestionId: string },
+  log: { warn: (obj: object, msg: string) => void },
+  client?: RpcClient,
+): Promise<EnforceResult | null> {
+  const cost = ROUTE_COSTS[input.route];
+  if (cost === 0) return { remaining: null };
+  let data: unknown;
+  try {
+    const rpcClient = client ?? userClient(input.token);
+    const res = await rpcClient.rpc(SAT_TUTOR_SPEND_RPC, { p_question_id: input.satQuestionId, p_units: cost });
+    if (res.error) {
+      log.warn({ route: input.route, error: res.error.message }, "SAT tutor gate unavailable; failing closed");
+      return { response: billingUnavailableResponse() };
+    }
+    data = Array.isArray(res.data) ? res.data[0] : res.data;
+  } catch (err) {
+    log.warn({ route: input.route, error: err instanceof Error ? err.message : String(err) }, "SAT tutor gate threw; failing closed");
+    return { response: billingUnavailableResponse() };
+  }
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (typeof r.allowed !== "boolean") {
+    log.warn({ route: input.route }, "SAT tutor gate answered an unexpected shape; failing closed");
+    return { response: billingUnavailableResponse() };
+  }
+  if (r.unlimited === true) return null;
+  const remaining = asNumber(r.remaining) ?? 0;
+  if (r.allowed) return { remaining };
+  const why = r.reason === "pass_used_up" ? "pass_used_up" : "no_pass";
+  log.warn({ route: input.route, satQuestionId: input.satQuestionId, reason: why }, "SAT page without a free tutor pass");
+  return { response: satTutorRefusedResponse(remaining, cost, why) };
 }
