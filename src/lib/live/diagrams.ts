@@ -3,6 +3,7 @@ import type { InkLine, InkStroke, Rect, StrokePayload } from "./contracts";
 import { clusterStrokeGroups, inkScale, median, medianStrokeHeight, unionRects } from "./strokeClusters";
 import { buildPayload, rdp, type Pt } from "./strokePayload";
 import { tableRules } from "./proof/table";
+import { separatorRules } from "./separatorRules";
 import { findStackedSums, type StackedSum } from "./stackedSums";
 
 /**
@@ -171,7 +172,7 @@ export const DIAGRAM_RULES = {
  * `operation`: a "divide both sides" bar under an equation, or the divisor under it (`DivisionBar`);
  * `stack`: a stacked sum's rows, rule and answer (`StackedSum`); `carry`: its carry and borrow marks
  */
-export type StrokeRole = "writing" | "drawing" | "mark" | "label" | "table" | "operation" | "stack" | "carry";
+export type StrokeRole = "writing" | "drawing" | "mark" | "label" | "table" | "operation" | "stack" | "carry" | "separator";
 export type DiagramKind = "triangle" | "quadrilateral" | "polygon" | "circle" | "axes" | "numberLine" | "arrow" | "segment" | "curve";
 
 export interface Diagram {
@@ -1235,6 +1236,13 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
   if (table.size > 0) {
     const split = splitInk(all.filter((s) => !table.has(s.id)), previous, opts);
     for (const id of table) split.roles.set(id, { role: "table", reason: "a proof's table rule" });
+    return split;
+  }
+  // A line drawn right across the work under a step (an equation over or under it): no fraction bar.
+  const separators = separatorRules(all, G);
+  if (separators.size > 0) {
+    const split = splitInk(all.filter((s) => !separators.has(s.id)), previous, opts);
+    for (const id of separators) split.roles.set(id, { role: "separator", reason: "a line under a step, across the work" });
     return split;
   }
 

@@ -77,6 +77,24 @@ public enum TrainingBench {
             }
             results.append(r)
         }
+        // a stacked sum is ONE line by design: its rows, rule and answer read as one `\begin{array}` and
+        // worked column by column (`LiveLoop+Stacks`) — its rows are no merge. The lowest (the answer)
+        // carries the sum's mark; the rows over it want none of their own
+        let stacked = Dictionary(grouping: results.indices.filter { k in
+            results[k].pieces == 0 && results[k].lineId.map(loop.trainingStacked) == true
+        }, by: { results[$0].lineId! })
+        if !stacked.isEmpty {
+            let strokes = loop.board.store.kidStrokes(on: loop.board.currentScreenID)
+            let bottom = Dictionary(strokes.map { ($0.id, $0.y.max() ?? 0) }, uniquingKeysWith: max)
+            let low = { (k: Int) in ids[k].compactMap { bottom[$0.rawValue] }.max() ?? 0 }
+            for (_, rows) in stacked {
+                let answer = rows.max { low($0) < low($1) }
+                for k in rows {
+                    results[k].pieces = 1
+                    if k != answer { results[k].mark = .none }
+                }
+            }
+        }
         return results
     }
 }
