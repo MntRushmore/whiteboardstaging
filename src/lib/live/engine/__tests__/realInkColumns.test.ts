@@ -38,3 +38,17 @@ describe("a lone number under an equation in one letter", () => {
     expect(marks({ problem: ["5x - 4 = 21"], lines: ["+4 +4", "5x = 25", "x = 5"] })).toEqual(["ok", "ok", "ok+solved"]);
   });
 });
+
+describe("a child's notes of what they do to both sides, read into the line", () => {
+  it("are not judged: the equation is (a ring was on right work)", () => {
+    expect(marks({ problem: ["\\frac{x}{4} - 4 = -1"], lines: ["+4 \\quad +4", "\\frac{x}{4}=3 \\quad \\times 4", "x=12"] })).toEqual(["ok", "ok", "ok+solved"]);
+    expect(marks({ problem: ["\\frac{x}{4} - 4 = -1"], lines: ["\\frac{x}{4}=3 \\times 4 \\times 4"] })).toEqual(["ok"]);
+    expect(marks({ problem: ["3(x - 2) = 15"], lines: ["\\begin{array}{l}\nx-2=5 \\\\\n+2+2\n\\end{array}", "x=7"] })).toEqual(["ok", "ok+solved"]);
+  });
+
+  it("never hide a slip, and a product stays a product", () => {
+    expect(marks({ problem: ["\\frac{x}{4} - 4 = -1"], lines: ["\\frac{x}{4}=5 \\quad \\times 4"] })).toEqual(["mismatch"]);
+    expect(marks({ problem: ["\\frac{x}{4} = 3"], lines: ["x = 3 \\times 4"] })).toEqual(["ok+solved"]);
+  });
+});
+

@@ -20,6 +20,7 @@
  * Small and free of mathjs: the loop imports it on the board's first load.
  */
 import type { AnalyzeContext, HelpMode, LineAnalysis, LiveEngine } from "../contracts";
+import { withoutOperationNotes } from "./annotations";
 import { parseStacked, stackedAnalysis, workStacked } from "./columnArithmetic";
 
 /** A number, as a young student writes an answer: `14`, `-3`, `2.5`, `\frac{3}{4}`, `3/4` (an `=` before it allowed). */
@@ -112,6 +113,18 @@ export interface WorkInput {
 export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): LineAnalysis {
   const { ctx } = input;
   let a = engine.analyzeLine(latex, ctx);
+  // the child's notes of what they do to both sides, read into the line (`annotations.ts`): the
+  // equation is judged without them — only to find it right; a slip is never hidden by them
+  if (a.verdict !== "ok" && !input.arithmetic) {
+    const bare = withoutOperationNotes(latex);
+    if (bare !== latex) {
+      const judged = engine.analyzeLine(bare, ctx);
+      if (judged.verdict === "ok") {
+        a = judged;
+        latex = bare;
+      }
+    }
+  }
   if (input.arithmetic) {
     const young = engine.judgeWork?.({ problem: input.arithmetic, above: input.above, latex: input.beside ?? latex, ctx });
     if (young) a = young;
