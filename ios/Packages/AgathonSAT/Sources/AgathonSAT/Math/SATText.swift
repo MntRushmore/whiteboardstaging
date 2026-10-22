@@ -59,10 +59,14 @@ public struct SATText: View {
     let color: Color
     let weight: Font.Weight
     let alignment: HorizontalAlignment
+    /// a text that is one formula (an answer choice) sets its fractions full size, as the test does
+    let fullSizeLone: Bool
 
     @Environment(\.dynamicTypeSize) private var typeSize
 
-    public init(_ source: String, size: CGFloat = 19, color: Color = DS.Color.ink, weight: Font.Weight = .regular, alignment: HorizontalAlignment = .leading) {
+    public init(_ source: String, size: CGFloat = 19, color: Color = DS.Color.ink, weight: Font.Weight = .regular, alignment: HorizontalAlignment = .leading,
+                fullSizeLone: Bool = false) {
+        self.fullSizeLone = fullSizeLone
         self.source = source
         self.size = size
         self.color = color
@@ -103,7 +107,9 @@ public struct SATText: View {
     private var font: Font { .custom(DSFonts.uiPostScriptName(weight: weight == .regular ? 400 : 600), fixedSize: scaled) }
 
     private func line(_ nodes: [SATInline]) -> some View {
-        inline(nodes, bold: weight != .regular)
+        var nodes = nodes
+        if fullSizeLone, nodes.count == 1, case .math(let m) = nodes[0], m.contains("frac") { nodes = [.math("\\displaystyle " + m)] }
+        return inline(nodes, bold: weight != .regular)
             .font(font)
             .lineSpacing(scaled * 0.32)
             .fixedSize(horizontal: false, vertical: true)
@@ -119,7 +125,7 @@ public struct SATText: View {
                 return acc + inline(c, bold: true)
             case .math(let latex):
                 // Latin Modern runs small beside Lexend: a little bigger, a fraction bigger still
-                let k: CGFloat = latex.contains("frac") ? 1.32 : 1.14
+                let k: CGFloat = latex.contains("frac") && !latex.hasPrefix("\\displaystyle") ? 1.32 : 1.14
                 if let r = SATMathImage.render(latex, size: scaled * k, color: UIColor(color)) {
                     return acc + Text(Image(uiImage: r.image)).baselineOffset(-r.descent)
                 }

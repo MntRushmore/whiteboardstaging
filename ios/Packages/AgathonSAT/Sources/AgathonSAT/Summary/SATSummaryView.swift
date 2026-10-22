@@ -39,6 +39,9 @@ public struct SATSummaryView: View {
                 if summary.rightSecondTry > 0 {
                     Text(SATCopy.secondTries(summary.rightSecondTry)).dsFont(.callout).foregroundStyle(DS.Color.inkSecondary)
                 }
+                // what to do next, before the list: it never sits below the fold
+                actionsRow
+                    .padding(.vertical, DS.Space.xs)
                 bar
                 VStack(spacing: 0) {
                     ForEach(Array(summary.rows.enumerated()), id: \.element.id) { i, row in
@@ -49,7 +52,6 @@ public struct SATSummaryView: View {
                     }
                 }
                 .background(RoundedRectangle(cornerRadius: DS.Radius.tile, style: .continuous).fill(DS.Color.paper))
-                actionsRow
             }
             .padding(DS.Space.xl)
             .frame(maxWidth: 720)
@@ -128,12 +130,12 @@ public struct SATSummaryView: View {
     }
 
     @ViewBuilder private var buttons: some View {
-        PillButton(busy ? "Getting questions…" : SATCopy.practiceMore, icon: .play, kind: .primary, size: .large, action: more)
+        PillButton(busy ? "Getting questions…" : SATCopy.practiceMore, kind: .primary, action: more)
             .disabled(busy)
             .fixedSize()
             .accessibilityIdentifier("sat.summary.more")
         if !summary.toReview.isEmpty {
-            PillButton(SATCopy.reviewMissed, icon: .lookAgain, kind: .secondary, size: .large, action: review)
+            PillButton(SATCopy.reviewMissed, kind: .secondary, action: review)
                 .fixedSize()
                 .accessibilityIdentifier("sat.summary.review")
         }

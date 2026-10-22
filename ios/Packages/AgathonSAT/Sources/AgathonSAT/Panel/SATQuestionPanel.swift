@@ -106,9 +106,19 @@ public struct SATQuestionPanel: View {
             Spacer(minLength: DS.Space.xs)
             markButton
             if let collapse = actions.collapse {
-                RoundButton(.back, fill: .chalk, diameter: 44, label: SATCopy.hidePanel, action: collapse)
-                    .rotationEffect(.degrees(collapseTurn))
-                    .accessibilityIdentifier("sat.collapse")
+                Button(action: collapse) {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 17, weight: .semibold))
+                        .rotationEffect(.degrees(collapseTurn))
+                        .foregroundStyle(DS.Color.ink)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(DS.Color.surfaceSunken))
+                        .frame(width: DS.Size.minTarget, height: DS.Size.minTarget)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(SATPress())
+                .accessibilityLabel(SATCopy.hidePanel)
+                .accessibilityIdentifier("sat.collapse")
             }
         }
         .padding(.horizontal, DS.Space.l)
@@ -329,7 +339,7 @@ public struct SATQuestionPanel: View {
                 .fixedSize()
                 .accessibilityIdentifier("sat.results")
         } else {
-            PillButton(SATCopy.next, icon: .forward, kind: .primary) {
+            PillButton(SATCopy.next, kind: .primary) {
                 practice.next()
                 actions.moved()
             }
@@ -361,7 +371,7 @@ struct SATTutorLine: View {
                     .accessibilityIdentifier("sat.tutor.words")
                 if capped {
                     Text(SATCopy.boardStillWorks).dsFont(.caption).foregroundStyle(DS.Color.inkSecondary)
-                    PillButton(SATCopy.cappedAction(hasAccount: account.hasAccount), kind: .secondaryOnPaper, action: capTapped)
+                    PillButton(SATCopy.cappedAction(hasAccount: account.hasAccount), kind: .secondary, action: capTapped)
                         .fixedSize()
                         .accessibilityIdentifier("sat.tutor.capAction")
                 } else if tutor == .unavailable {

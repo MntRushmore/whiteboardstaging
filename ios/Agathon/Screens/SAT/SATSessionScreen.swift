@@ -24,8 +24,15 @@ struct SATSessionScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// the panel's share of the width (sideways) or height (upright)
-    @State private var share: CGFloat = 0.38
+    /// the panel's share of the width (sideways: about 38 %) or of the height (upright: half, so a
+    /// grid-in's keypad shows whole)
+    @State private var shareSideways: CGFloat = 0.38
+    @State private var shareUpright: CGFloat = 0.5
+    @State private var sideways = true
+    private var share: CGFloat {
+        get { sideways ? shareSideways : shareUpright }
+        nonmutating set { if sideways { shareSideways = newValue } else { shareUpright = newValue } }
+    }
     @State private var dragStart: CGFloat?
     @State private var collapsed = false
 
@@ -40,6 +47,7 @@ struct SATSessionScreen: View {
         GeometryReader { geo in
             let sideways = geo.size.width > geo.size.height
             ZStack {
+                Color.clear.onAppear { self.sideways = sideways }.onChange(of: sideways) { _, now in self.sideways = now }
                 DS.Color.ground.ignoresSafeArea()
                 if sideways {
                     HStack(spacing: 0) {

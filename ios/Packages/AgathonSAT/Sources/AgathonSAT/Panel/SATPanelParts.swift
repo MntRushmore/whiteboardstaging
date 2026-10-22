@@ -34,7 +34,7 @@ struct SATChoiceRow: View {
             Button(action: choose) {
                 HStack(alignment: .center, spacing: 14) {
                     letter
-                    SATText(choice.text, size: 18, color: look == .struck ? DS.Color.inkSecondary : DS.Color.ink)
+                    SATText(choice.text, size: 18, color: look == .struck ? DS.Color.inkSecondary : DS.Color.ink, fullSizeLone: true)
                         .strikethrough(look == .struck, color: DS.Color.inkSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

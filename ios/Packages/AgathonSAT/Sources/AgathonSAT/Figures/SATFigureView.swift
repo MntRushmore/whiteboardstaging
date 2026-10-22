@@ -49,7 +49,6 @@ struct SATTableView: View {
                     cell(c < table.headers.count ? table.headers[c] : "", header: true)
                 }
             }
-            .background(DS.Color.surfaceSunken)
             ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
                 Rectangle().fill(DS.Color.line).frame(height: 1).gridCellUnsizedAxes(.horizontal)
                 GridRow {
@@ -68,10 +67,16 @@ struct SATTableView: View {
     }
 
     private func cell(_ text: String, header: Bool) -> some View {
-        SATText(text.isEmpty ? " " : text, size: 17, weight: header ? .semibold : .regular, alignment: .center)
+        SATText(text.isEmpty ? " " : Self.numeral(text), size: 17, weight: header ? .semibold : .regular, alignment: .center)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, minHeight: 44)
+            .background(header ? DS.Color.surfaceSunken : DS.Color.surface)
+    }
+
+    /// A plain negative number with a real minus sign ("-3" → "−3"); maths and words as they are.
+    static func numeral(_ text: String) -> String {
+        text.range(of: #"^-\d"#, options: .regularExpression) != nil ? "−" + text.dropFirst() : text
     }
 
     private var spoken: String {

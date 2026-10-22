@@ -13,11 +13,14 @@ import UIKit
 @MainActor
 @Suite(.serialized)
 struct SATSessionTests {
+    /// the session holds its backend weakly (as the board screen does): the test keeps it
+    let backend = AgathonBackend.preview()
+
     func session(cap: Int = 20, used: Int = 0) async throws -> (SATSessionModel, SATStubService, BoardCanvasView) {
         let stub = SATStubService(cap: cap, usedBefore: used)
         let context = SATContext(service: stub, isStub: true, stubAccount: .free)
         let model = SATSessionModel(context: context, questions: try await stub.next(SATNextRequest()))
-        await model.open(backend: AgathonBackend.preview())
+        await model.open(backend: backend)
         let session = try #require(model.phase.session)
         let canvas = BoardCanvasView(controller: session.controller)
         canvas.frame = CGRect(x: 0, y: 0, width: 800, height: 834)
