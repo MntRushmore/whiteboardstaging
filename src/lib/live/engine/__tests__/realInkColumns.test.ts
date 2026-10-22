@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { LiveEngine } from "../../contracts";
 import { getEngine } from "..";
+import { youngReadOf } from "@/lib/brain";
 import { judgeColumn } from "../columnWork";
 
 /**
@@ -52,3 +53,25 @@ describe("a child's notes of what they do to both sides, read into the line", ()
   });
 });
 
+
+/**
+ * Open: found by the real-ink bench, not fixed yet. `it.fails` passes while the tutor still gets it
+ * wrong and fails the day it is put right — then make it an `it`.
+ */
+describe("open classes (known issues)", () => {
+  it.fails("a function's value worked in one chained line is judged: `= 4(1) + 1 = 5` for h(1)", () => {
+    expect(marks({ problem: ["h(x) = 4x + 1", "h(1)"], lines: ["= 4(1) + 1 = 5"] })).toEqual(["ok+solved"]);
+  });
+
+  it.fails("…and a wrong substitution in it is a slip: `= -2(4) + 4 = -4` for h(4) when h(x) = -2x + 1", () => {
+    expect(marks({ problem: ["h(x) = -2x + 1", "h(4)"], lines: ["= -2(4) + 4 = -4"] })).toEqual(["mismatch"]);
+  });
+
+  it.fails("her own tick after the answer, read as a dash, is dropped (a \"?\" was on her right answer)", () => {
+    expect(youngReadOf({ latex: "-4 \\quad-", problem: ["-7 + 3"] }).latex.trim()).toBe("-4");
+  });
+
+  it.fails("…or read as a comma and a letter", () => {
+    expect(youngReadOf({ latex: "27^{\\circ}, \\quad x", problem: ["x + 63^{\\circ} = 90^{\\circ}"] }).latex.replace(/\s/g, "")).toBe("27^{\\circ}");
+  });
+});

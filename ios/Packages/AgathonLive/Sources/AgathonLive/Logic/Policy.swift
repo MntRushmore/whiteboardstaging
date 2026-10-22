@@ -193,10 +193,21 @@ public enum LivePolicy {
         if provider == .none && analysis == nil { return nil }
         if isAnswerStart(latex) { return nil }
         if latex.trimmingCharacters(in: .whitespaces).isEmpty || confidence < LiveLimits.minConfidence { return "unread" }
+        // no digit and no letter: brackets drawn round the problem, an arrow, her own tick — a child's
+        // mark, not a line to ask about (the real-ink bench: "( )" got a "?")
+        if isMarkOnly(latex) { return nil }
         guard let analysis else { return nil }
         if analysis.bareAnswer == true { return nil }
         if isSingleSymbolLatex(latex) || unjudgedKinds.contains(analysis.kind) { return "unjudged" }
         return nil
+    }
+
+    /// A read with no digit and no letter once its commands are gone (`\\text { ( ) }`, `\\rightarrow`, `\\checkmark`).
+    public static func isMarkOnly(_ latex: String) -> Bool {
+        if latex.contains("\\pi") || latex.contains("\\infty") { return false }
+        var s = latex.replacingOccurrences(of: #"\\(?:text|mathrm|textrm|mbox|operatorname)\s*\{([^{}]*)\}"#, with: " $1 ", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"\\[a-zA-Z]+"#, with: " ", options: .regularExpression)
+        return s.range(of: "[A-Za-z0-9]", options: .regularExpression) == nil
     }
 
     /// Prose (a word problem): a `\text{…}` with words in it (`readCheck.ts` `isProse`).
