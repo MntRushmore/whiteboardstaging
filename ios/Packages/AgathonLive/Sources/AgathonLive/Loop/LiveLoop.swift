@@ -96,6 +96,10 @@ public final class LiveLoop: ObservableObject {
     // MARK: lifecycle state
 
     var started = false
+    /// A loop on another page of the problem on show ("More room", `LiveLoop+MoreRoom`): it judges
+    /// that page where it is and writes its marks there, and nothing else — no capabilities call, no
+    /// learning of its own (the board's loop tells the record), no Now you try, no settings saved.
+    var passive = false
     /// bumped by every reset (a screen left, the loop stopped): work begun before it is dropped
     var generation = 0
     var engineReady = false
@@ -282,10 +286,10 @@ public final class LiveLoop: ObservableObject {
         lastOnline = connectivity.isOnline
         subscription = board.store.observe { [weak self] change in self?.storeChanged(change) }
         screenSeen = board.currentScreenID
-        if hintWriter == nil && HintWording.debugEnabled { hintWriter = HintWording.onDevice() }
-        if LivePages.secondOpinionDebug { pages.secondOpinion = true }
+        if !passive && hintWriter == nil && HintWording.debugEnabled { hintWriter = HintWording.onDevice() }
+        if !passive && LivePages.secondOpinionDebug { pages.secondOpinion = true }
         // the learning record: the signed-in student's, when the services know the backend
-        if learning.connectsAutomatically, learning.recorder == nil, let backend = (services as? LiveAPIServices)?.backend {
+        if !passive, learning.connectsAutomatically, learning.recorder == nil, let backend = (services as? LiveAPIServices)?.backend {
             learning.connect(backend: backend)
         }
         track { [weak self] in
@@ -298,7 +302,7 @@ public final class LiveLoop: ObservableObject {
                 Self.log.error("live: the brain did not load: \(String(describing: error), privacy: .public)")
             }
         }
-        fetchCapabilities()
+        if !passive { fetchCapabilities() }
         refreshActivity()
     }
 
@@ -315,6 +319,8 @@ public final class LiveLoop: ObservableObject {
         resetRuntime()
         for t in tasks.values { t.cancel() }
         tasks.removeAll()
+        // (a loop on another page of the problem saves nothing and closes nothing of the board's)
+        guard !passive else { return }
         settings.save(boardId: boardId)
         // the board is closed: the problems on it are over, and saved, as far as the record goes
         learnClosed()
@@ -422,12 +428,15 @@ public final class LiveLoop: ObservableObject {
     /// its records (no re-reading, no model call).
     func switchScreen() {
         guard started, board.currentScreenID != screenSeen else { return }
+        // (another page of the same problem: the kid's last ink there still counts for the pause)
+        let from = screenSeen, lastInk = pages.lastInkAt
         resetRuntime()
         screenSeen = board.currentScreenID
         // the learning record: the problems on the screen the student left are over (for now)
         learnScreen()
         offer = nil
         rebuild()
+        arrived(from: from, lastInk: lastInk)
     }
 
     // MARK: - settings

@@ -282,6 +282,24 @@ struct BigPageButton: View {
     }
 }
 
+/// "More room": the page is getting full, so this problem goes on on a new page. Chalk on the page
+/// (quieter than Check, which is the page's go button), as big as a page button gets (64 pt), a plus in
+/// its badge.
+public struct MoreRoomButton: View {
+    let action: () -> Void
+
+    public init(action: @escaping () -> Void) {
+        self.action = action
+    }
+
+    public var body: some View {
+        PillButton(LiveCopy.Pages.moreRoom, icon: .plus, kind: .secondaryOnPaper, size: .large, action: action)
+            .fixedSize()
+            .accessibilityLabel(LiveCopy.Pages.moreRoomLabel)
+            .accessibilityIdentifier("live.moreRoom")
+    }
+}
+
 /// "New page for this one" under a second problem's first line, and a quiet "Keep it here".
 public struct NewPageOfferBar: View {
     let take: () -> Void

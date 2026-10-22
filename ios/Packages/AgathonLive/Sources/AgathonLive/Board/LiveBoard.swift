@@ -49,6 +49,9 @@ public protocol LiveBoard: AnyObject {
     /// it, shifted by `offset`, with `meta` on the page and `alsoRemove` gone, as ONE kid undo step;
     /// the board shows the new page. Nil when it cannot.
     func moveToNewScreen(_ ids: [RecordID], offset: Vec2, meta: Meta, alsoRemove: [RecordID]) -> RecordID?
+    /// "More room": the problem on show goes on on a new page right after its last one (AgathonBoard's
+    /// `MoreRoom`), as ONE kid undo step; the board shows the new page. Nil when it cannot.
+    func moreRoom() -> RecordID?
 }
 
 extension LiveBoard {
@@ -66,11 +69,9 @@ extension LiveBoard {
     public func insertScreen(after: RecordID?, meta: Meta, go: Bool) -> RecordID? {
         let screens = store.screens
         guard screens.count < ScreenRecord.maxScreens else { return nil }
-        let anchor = after ?? currentScreenID
-        let i = screens.firstIndex { $0.id == anchor }
-        let next = i.flatMap { $0 + 1 < screens.count ? screens[$0 + 1].order : nil }
-        let order = (i.flatMap { try? OrderKey.between(screens[$0].order, next) }) ?? OrderKey.after(screens.last?.order)
-        let s = ScreenRecord(order: order, meta: meta)
+        // (after this page: after the last page of its problem, when it needed more room)
+        let anchor = after ?? store.lastPageOfProblem(currentScreenID)
+        let s = ScreenRecord(order: store.screenOrder(after: anchor), meta: meta)
         store.put(.screen(s), origin: .tutor)
         if go { goToScreen(s.id) }
         return s.id
@@ -84,6 +85,14 @@ extension LiveBoard {
 
     /// A board without its controller cannot move ink to a page of its own.
     public func moveToNewScreen(_ ids: [RecordID], offset: Vec2, meta: Meta, alsoRemove: [RecordID]) -> RecordID? { nil }
+
+    /// "More room" on the board's records, as the controller does it (one kid change), then the new page.
+    public func moreRoom() -> RecordID? {
+        guard let plan = MoreRoom.plan(store, from: currentScreenID) else { return nil }
+        let id = MoreRoom.apply(plan, to: store, origin: .kid)
+        goToScreen(id)
+        return id
+    }
 
     /// The page on show as a problem page (or the All done page), if it is one.
     public var currentProblemPage: ProblemPage? { store[currentScreenID]?.screen?.problemPage }
