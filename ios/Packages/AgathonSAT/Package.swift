@@ -39,7 +39,9 @@ let package = Package(
         .testTarget(
             name: "AgathonSATCoreTests",
             dependencies: ["AgathonSATCore", .product(name: "AgathonKit", package: "AgathonKit")],
-            path: "Tests/AgathonSATCoreTests"
+            path: "Tests/AgathonSATCoreTests",
+            // the bank lane's hand-checked sample (docs/sat/sample-20.json on feat/sat-bank), as the server sends it
+            resources: [.copy("Resources/bank-sample-20.json")]
         ),
         .testTarget(
             name: "AgathonSATTests",
