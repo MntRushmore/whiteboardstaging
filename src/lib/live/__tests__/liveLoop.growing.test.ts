@@ -23,7 +23,7 @@ const engine: LiveEngine = {
     kind: "equation",
     math: latex,
     resultLatex: "",
-    verdict: latex === "2x=12" ? "ok" : latex === "2x=1" ? "mismatch" : "unknown",
+    verdict: latex === "2x=12" || latex === "x=1" ? "ok" : latex === "2x=1" || latex === "x=12" ? "mismatch" : "unknown",
     note: "",
   }),
   compileExpr: () => () => 0,
@@ -157,6 +157,34 @@ describe("live loop — a ring on a line the student is still writing", () => {
     // before: the ring stayed off for good (only a read puts one back)
     expect(rings().length).toBeGreaterThan(0);
     expect(new Set(rings().map((s) => (s.meta as Record<string, unknown>).lineId))).toEqual(new Set(ringed));
+  });
+
+  it("a tick on a half line comes off at its next stroke; the finished line's ring waits for it to look finished", async () => {
+    // the answer is 1: `x = 1` is ticked — and then it was the start of `x = 12`
+    const line = writeLine("x=12", 100, 200);
+    const tail = line.pop()!;
+    reads = ["x=1", "x=12"];
+    editor.putUser(line);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
+    await settle(8);
+    await frames(120);
+    expect(ticks().length).toBeGreaterThan(0);
+    editor.putUser([tail]);
+    await settle(4);
+    // at the stroke, before the line is read again
+    expect(ticks()).toHaveLength(0);
+    expect(rings()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.rewriteQuietMs + LIVE_TIMING.quietMs + 1);
+    await settle(8);
+    await frames(6);
+    // read as `x = 12`, wrong: no ring while it might still be growing
+    expect(ticks()).toHaveLength(0);
+    expect(rings()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.doubtHoldMs);
+    await settle(8);
+    await frames(120);
+    expect(rings().length).toBeGreaterThan(0);
+    expect(ticks()).toHaveLength(0);
   });
 
   it("a stroke on the next line leaves the ring where it is", async () => {
