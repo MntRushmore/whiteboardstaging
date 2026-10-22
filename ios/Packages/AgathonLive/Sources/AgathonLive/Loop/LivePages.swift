@@ -94,7 +94,7 @@ public final class LivePages: ObservableObject {
     var carry: PageCarry?
     var columnEnds: [Int: PageCarry] = [:]
     /// the problem's other pages, as the board's records say (cached by the store's change count)
-    var elsewhere: (seq: UInt64, screen: RecordID, held: Bool, solved: Bool)?
+    var elsewhere: (seq: UInt64, screen: RecordID, held: Bool, solvedBefore: Bool, solvedAfter: Bool, ringedLater: Bool)?
 
     public init() {}
 

@@ -127,12 +127,14 @@ extension LiveLoop {
         let previous = lines.values.map(\.ink)
         let previousDiagrams = diagrams
         let zoom = board.fitZoom
+        let context = clusterContext()
         let gen = generation
         let seq = inkSeq
         let answerWanted = answerAfterEqualsWanted
         track { [weak self] in
             guard let self else { return }
-            guard let result = try? await self.brain.clusterStrokes(ClusterRequest(strokes: strokes, previousLines: previous, previousDiagrams: previousDiagrams, zoom: zoom)),
+            guard let result = try? await self.brain.clusterStrokes(ClusterRequest(strokes: strokes, previousLines: previous, previousDiagrams: previousDiagrams, zoom: zoom,
+                                                                                  equations: context.equations, cells: context.cells, mates: context.mates)),
                   self.stillQuiet(gen, seq, screen),
                   let line = result.lines.first(where: { $0.strokeIds.contains(target.id) }) else { return }
             let ids = Set(line.strokeIds)

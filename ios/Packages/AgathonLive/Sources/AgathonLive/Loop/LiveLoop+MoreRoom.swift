@@ -184,26 +184,58 @@ extension LiveLoop {
     // MARK: - the problem's other pages
 
     /// The problem's other pages, as their records say: work still held there (check when done), and a
-    /// line there that solved the problem (checked). Cached by the store's change count.
-    func elsewhere() -> (held: Bool, solved: Bool) {
-        guard !passive, let group = pageGroup else { return (false, false) }
+    /// line there that solved the problem (checked). Read in the problem's page order, like a column:
+    /// a ring on a page after the one that solved it means the answer the kid ended on is wrong
+    /// (`solved`: a page before this one solved it and nothing since is ringed, here or after; or a page
+    /// after this one did and nothing after that is ringed). `ringedLater`: a page after this one has a
+    /// ring, so a solving line here is not the end of it. Cached by the store's change count.
+    func elsewhere() -> (held: Bool, solved: Bool, ringedLater: Bool) {
+        guard !passive, let group = pageGroup else { return (false, false, false) }
         let here = board.currentScreenID
         let store = board.store
-        if let e = pages.elsewhere, e.seq == store.seq, e.screen == here { return (e.held, e.solved) }
+        if let e = pages.elsewhere, e.seq == store.seq, e.screen == here {
+            return (e.held, e.solvedAfter || (e.solvedBefore && !e.ringedLater && !ringedHere()), e.ringedLater)
+        }
         var held = false
-        var solved = false
-        for page in group.pages where page != here {
-            for case .line(let l) in store.semantic(on: page) where !l.latex.isEmpty {
+        var solvedBefore = false
+        var solvedAfter = false
+        var ringedLater = false
+        var past = false
+        for page in group.pages {
+            if page == here {
+                past = true
+                continue
+            }
+            // (top to bottom: a ring counts only if it comes after what solved)
+            let onPage = store.semantic(on: page).compactMap { r -> (LineRecord, Double)? in
+                guard case .line(let l) = r, !l.latex.isEmpty else { return nil }
                 // (its ink still on that page)
-                guard l.strokes.contains(where: { store[$0]?.screenID == page }) else { continue }
+                let ink = l.strokes.compactMap { id -> Double? in
+                    guard case .stroke(let s)? = store[id], s.screen == page else { return nil }
+                    return s.points.lazy.map { s.pagePoint($0).y }.min()
+                }
+                guard let top = ink.min() else { return nil }
+                return (l, top)
+            }.sorted { $0.1 < $1.1 }.map(\.0)
+            for l in onPage {
                 let checked = l.meta[PageMeta.checked]?.stringValue == l.latex
                 if !checked { held = true }
-                if l.verdict == .solved && (checked || !checksWhenDone) { solved = true }
+                let judged = checked || !checksWhenDone
+                if l.verdict == .solved && judged {
+                    if past { solvedAfter = true } else { solvedBefore = true }
+                } else if l.verdict == .warn && judged {
+                    if past { solvedAfter = false; ringedLater = true } else { solvedBefore = false }
+                }
             }
         }
         if !checksWhenDone { held = false }
-        pages.elsewhere = (store.seq, here, held, solved)
-        return (held, solved)
+        pages.elsewhere = (store.seq, here, held, solvedBefore, solvedAfter, ringedLater)
+        return (held, solvedAfter || (solvedBefore && !ringedLater && !ringedHere()), ringedLater)
+    }
+
+    /// A line on the page on show is ringed.
+    func ringedHere() -> Bool {
+        lines.values.contains { rt[$0.id]?.markKey?.hasPrefix("circle:") == true }
     }
 
     func heldOnOtherPages() -> Bool { elsewhere().held }

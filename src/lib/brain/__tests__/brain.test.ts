@@ -17,6 +17,7 @@ import {
   marks,
   nowYouTry,
   recognizerPayload,
+  stackedLineOf,
   toInkStroke,
   variantOf,
   weakSpotPractice,
@@ -28,6 +29,7 @@ import { getEngine } from "@/lib/live/engine";
 import type { InkLine, InkStroke } from "@/lib/live/contracts";
 import { barGroups, splitInk } from "@/lib/live/diagrams";
 import { stackGroups } from "@/lib/live/stackedSums";
+import { toInkStrokes as fixtureInk, writeStack } from "@/lib/live/__fixtures__/strokes";
 import { clusterLines, unionRects } from "@/lib/live/strokeClusters";
 import { buildPayload, hashPayload } from "@/lib/live/strokePayload";
 import { localSolve } from "@/lib/live/localSolve";
@@ -162,6 +164,85 @@ describe("ink", () => {
     expect(a.lines[0].id).toMatch(/^ln_[0-9a-f]{8}$/);
     const again = clusterStrokes({ strokes, previousLines: a.lines });
     expect(again.lines.map((l) => l.id)).toEqual(a.lines.map((l) => l.id));
+  });
+});
+
+describe("the board's flush (cells, mates, strays)", () => {
+  /** `latex` in the clean hand, its ink's top-left at (x, y), with ids `p…`. */
+  function line(latex: string, x: number, y: number, prefix: string): BrainStroke[] {
+    const strokes = toBrainStrokes(handInk(latex, VARIANTS[0]).strokes);
+    const x0 = Math.min(...strokes.flatMap((s) => s.x));
+    const y0 = Math.min(...strokes.flatMap((s) => s.y));
+    return strokes.map((s, i) => ({ id: `${prefix}${i}`, x: s.x.map((v) => v - x0 + x), y: s.y.map((v) => v - y0 + y) }));
+  }
+  /** a problem page's cell: the whole page, the problem at its top */
+  const page = { key: "page", n: 1, lines: ["3x - 5 = 10"], head: { x: 88, y: 60, w: 400, h: 70 }, cell: { x: 40, y: 40, w: 1520, h: 840 } };
+  const columnsOf = (lines: InkLine[]) => lines.map((l) => [l.strokeIds[0].replace(/\d+$/, ""), l.column, l.row]);
+
+  it("the work in one problem's cell is one column, however far apart its lines are", () => {
+    // `3x = 15` on the first guide line, `x = 5` three guide lines under it (a blank gap of a new problem's)
+    const strokes = [...line("3x = 15", 140, 236, "a"), ...line("x = 5", 140, 470, "b")];
+    expect(columnsOf(clusterStrokes({ strokes, idSeed: 1 }).lines)).toEqual([["a", 0, 0], ["b", 1, 0]]);
+    expect(columnsOf(clusterStrokes({ strokes, idSeed: 1, cells: [page] }).lines)).toEqual([["a", 0, 0], ["b", 0, 1]]);
+    // lines that were one problem stay one (`mates`), with no cell
+    const first = clusterStrokes({ strokes, idSeed: 1 }).lines;
+    const again = clusterStrokes({ strokes, previousLines: first, mates: [first.map((l) => l.id)] }).lines;
+    expect(new Set(again.map((l) => l.column)).size).toBe(1);
+  });
+
+  it("strays are no line: taps of the pen anywhere, an answer's signs and her own tick under a problem", () => {
+    const tap = { id: "t0", x: [700, 701, 700], y: [500, 501, 501] };
+    const work = line("2x = 8", 140, 236, "a");
+    const withTap = clusterStrokes({ strokes: [...work, tap], idSeed: 2, cells: [] }).lines;
+    expect(withTap.flatMap((l) => l.strokeIds)).not.toContain("t0");
+    expect(clusterStrokes({ strokes: [...work, tap], idSeed: 2 }).lines.flatMap((l) => l.strokeIds)).toContain("t0");
+    // `=` alone under the problem, its number still to come
+    const sum = { ...page, lines: ["4 + 3"] };
+    const signs = line("=", 140, 400, "e");
+    expect(clusterStrokes({ strokes: [...work, ...signs], idSeed: 3, cells: [sum] }).lines.flatMap((l) => l.strokeIds).some((id) => id.startsWith("e"))).toBe(false);
+  });
+
+  it("a bar with a number under it is divide both sides", () => {
+    expect(call("youngRead", JSON.stringify({ latex: "3", bar: true }))).toBe('{"ok":true,"result":{"latex":"\\\\div 3"}}');
+    expect(call("youngRead", JSON.stringify({ latex: "3" }))).toBe('{"ok":true,"result":{"latex":"3"}}');
+  });
+});
+
+describe("stacked sums", () => {
+  /** A stacked sum written in the tutor's hand as a student, clustered as the board clusters it: its stack and its line. */
+  function stacked(rows: string[], answer: string | null) {
+    const ink = fixtureInk(writeStack(rows, answer).all);
+    const got = clusterStrokes({ strokes: ink.map((s) => ({ id: s.id as string, x: s.segments[0].map((p) => p.x), y: s.segments[0].map((p) => p.y) })) });
+    expect(got.stacks).toHaveLength(1);
+    return got.stacks[0];
+  }
+
+  it("a stacked sum is worked column by column, as the board works it: a tick, a ring round the wrong digit, nothing yet", () => {
+    const stack = stacked(["286", "+680"], "966");
+    const right = stackedLineOf({ latex: "\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 966 \\end{array}", confidence: 0.99, stack });
+    expect(right.stacked).toBe(true);
+    expect(right.analysis).toMatchObject({ verdict: "ok", solved: true });
+    // the tick after the answer row, level with it
+    expect(right.tick?.y).toBeCloseTo(stack.answer!.rect.y);
+    const wrongStack = stacked(["286", "+680"], "866");
+    const wrong = stackedLineOf({ latex: "\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 866 \\end{array}", confidence: 0.99, stack: wrongStack });
+    expect(wrong.analysis).toMatchObject({ verdict: "mismatch", note: "Add the 1 you carried to the hundreds." });
+    // the ring round the hundreds digit alone
+    expect(wrong.ring!.w).toBeLessThan(wrongStack.answer!.rect.w);
+    // unsure of the read: quiet, never a ring
+    expect(stackedLineOf({ latex: "\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 866 \\end{array}", confidence: 0.6, stack: wrongStack }).analysis?.verdict).toBe("unknown");
+    // started (no answer yet): nothing
+    const open = stacked(["123", "+456"], null);
+    expect(stackedLineOf({ latex: "\\begin{array}{r} 123 \\\\ +456 \\\\ \\hline \\end{array}", stack: open }).analysis?.verdict).toBe("none");
+  });
+
+  it("a read of a stack without its layout is worked from the read; a fraction misread from one is quiet; any other line is no stack", () => {
+    expect(stackedLineOf({ latex: "\\begin{array}{r} 52 \\\\ -17 \\\\ \\hline 35 \\end{array}" }).analysis).toMatchObject({ verdict: "ok", solved: true });
+    expect(stackedLineOf({ latex: "\\frac{+680}{966}" })).toMatchObject({ stacked: true, analysis: { verdict: "unknown" } });
+    expect(stackedLineOf({ latex: "286 + 680 = 966" })).toEqual({ stacked: false, analysis: null, tick: null, ring: null });
+    // long multiplication, its rows and its sum
+    expect(stackedLineOf({ latex: "\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 138 \\\\ 920 \\\\ \\hline 1058 \\end{array}" }).analysis).toMatchObject({ verdict: "ok", solved: true });
+    expect(stackedLineOf({ latex: "\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 138 \\\\ 920 \\\\ \\hline 1048 \\end{array}" }).analysis?.verdict).toBe("mismatch");
   });
 });
 

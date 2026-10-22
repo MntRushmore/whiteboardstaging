@@ -42,6 +42,63 @@ enum ArithmeticTruth {
         return true
     }
 
+    /// True as the child means it, though not as it is read (the Training Center's bench, 2026-10-21):
+    ///
+    ///  - **two facts side by side** (`10 \times 7=70 \quad 8 \times 7=56`, or run together by the read,
+    ///    `10 \times 7=708 \times 7=56`): side work written on one row, clustered as one line — each
+    ///    fact true. It was ringed as one wrong line;
+    ///  - **an `=` read as a `-`** between two sides (`18 \times 7=70+56-126`): a wobbly `=` the read
+    ///    took for a minus, the line true with it as an `=`.
+    ///
+    /// Only rings are taken back with it (never a tick given): when unsure, the tutor stays quiet.
+    static func trueAsMeant(_ latex: String) -> Bool {
+        if sideBySide(latex) == true { return true }
+        return minusAsEquals(latex)
+    }
+
+    /// Two or more relations of plain numbers on one row, each true; nil when it is not that.
+    static func sideBySide(_ latex: String) -> Bool? {
+        // set apart by a space the read kept
+        let spaced = latex.replacingOccurrences(of: #"\\q?quad|\\[;:]|\\hspace\s*\{[^{}]*\}"#, with: "\u{1}", options: .regularExpression)
+        let pieces = spaced.split(separator: "\u{1}").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        if pieces.count >= 2, pieces.allSatisfy({ $0.contains("=") }) {
+            var all = true
+            for p in pieces {
+                guard let ok = holds(p) else { return nil }
+                all = all && ok
+            }
+            return all
+        }
+        // run together: `A=B C=D` read `A=BC=D`, the middle side's digits shared by the two facts
+        let line = tidy(latex)
+        let sides = line.split(separator: "=", omittingEmptySubsequences: false).map(String.init)
+        guard sides.count == 3, sides.allSatisfy({ !$0.isEmpty }) else { return nil }
+        let middle = Array(sides[1])
+        var k = 0
+        while k < middle.count, middle[k].isNumber || middle[k] == "." { k += 1 }
+        guard k >= 2, k < middle.count else { return nil }
+        for cut in 1..<k {
+            let first = sides[0] + "=" + String(middle[..<cut])
+            let second = String(middle[cut...]) + "=" + sides[2]
+            if holds(first) == true, holds(second) == true { return true }
+        }
+        return nil
+    }
+
+    /// The line is false as read, and true with one of its minus signs between two numbers read as an `=`.
+    static func minusAsEquals(_ latex: String) -> Bool {
+        let line = tidy(latex)
+        guard line.contains("="), holds(line) == false else { return false }
+        let chars = Array(line)
+        for i in chars.indices where chars[i] == "-" && i > 0 && i + 1 < chars.count {
+            guard chars[i - 1].isNumber || chars[i - 1] == ")", chars[i + 1].isNumber || chars[i + 1] == "(" else { continue }
+            var swapped = chars
+            swapped[i] = "="
+            if holds(String(swapped)) == true { return true }
+        }
+        return false
+    }
+
     /// `30+12` → 30: the number a side starts with.
     private static func leadingNumber(_ side: String) -> Double? {
         let digits = side.prefix { $0.isNumber || $0 == "." }

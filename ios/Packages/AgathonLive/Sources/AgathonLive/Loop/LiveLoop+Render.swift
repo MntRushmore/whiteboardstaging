@@ -62,6 +62,22 @@ extension LiveLoop {
             }
             for st in columnLines(column) {
                 guard !st.latex.isEmpty else { continue }
+                // a stacked sum: worked as a sum by the brain, never as a line, and no step of the
+                // column — the lines under it are not judged against it (`LiveLoop+Stacks`)
+                if let s = await stackedAnalysis(st, problem: problem) {
+                    guard gen == generation, var cur = lines[st.id], cur.latex == st.latex else {
+                        analyzeAgain.insert(column)
+                        break
+                    }
+                    if cur.analysis != s {
+                        cur.rewritesWithWarn = s.verdict == "mismatch" ? cur.rewritesWithWarn + (cur.analysis?.verdict == "mismatch" ? 1 : 0) : 0
+                        cur.analysis = s
+                        lines[st.id] = cur
+                        changed.append(st.id)
+                    }
+                    if s.solved == true { solvedAbove = true }
+                    continue
+                }
                 // a running total (`+3 = 767`) is judged as the child means it, `764 + 3 = 767`; with
                 // nothing above to go on from it is never judged (read alone it is `3 = 767`, false)
                 let judged: String?
@@ -97,7 +113,9 @@ extension LiveLoop {
                 // never ring a correct line: a true relation of plain numbers (`=431` going on from
                 // `767-336` above it too) is at worst quiet, whatever problem the column was judged
                 // against (`ArithmeticTruth`)
-                if raw.verdict == "mismatch", ArithmeticTruth.holds(judged ?? st.latex, above: above.last) == true {
+                // — nor one true as the child means it (two facts side by side, an `=` read as a `-`)
+                if raw.verdict == "mismatch",
+                   ArithmeticTruth.holds(judged ?? st.latex, above: above.last) == true || ArithmeticTruth.trueAsMeant(judged ?? st.latex) {
                     raw.verdict = "none"
                     raw.carried = nil
                 }
@@ -272,6 +290,8 @@ extension LiveLoop {
     /// and scratch numbers.
     func questionFor(_ st: LiveLine) -> String? {
         guard settings.enabled, settings.mode != .off, head(for: st.column) != nil else { return nil }
+        // a stacked sum the engine cannot work is read back, never marked (the web's `stackAnalysis`)
+        if stackLike(st) { return nil }
         if rt[st.id]?.readRefused == true || rt[st.id]?.checkTask != nil { return nil }
         if reading.contains(st.id) || offlineQueue.contains(st.id) || pendingChecks[st.id] != nil { return nil }
         if liveShapeCount() >= LiveLimits.maxLiveShapesPerBoard { return nil }
@@ -300,7 +320,8 @@ extension LiveLoop {
         if learn { learnLine(st, kind) }
         let id = st.id
         var r = rt[id] ?? LineRuntime()
-        let want = kind.map { LiveMarks.key($0, st.bounds) }
+        // (round the line, or after it; a stacked sum's after its answer row, round its wrong digit)
+        let want = kind.map { LiveMarks.key($0, markBox($0, st)) }
         if r.markDecided && r.markKey == want { return }
         r.markDecided = true
         r.markKey = want
@@ -343,8 +364,8 @@ extension LiveLoop {
         if kind == .question { meta[LiveMeta.markWhy] = .string(why ?? "unread") }
         // a ring beside one of the tutor's problems keeps off its ink
         let besideHead = head(for: st.column).map(\.rect).flatMap { Self.besideProblem(st.bounds, $0) ? $0 : nil }
-        let markBox = kind == .circle ? LiveMarks.ringBox(st.bounds, clearOf: besideHead) : st.bounds
-        let line = TutorLine(strokes: LiveMarks.strokes(kind, line: markBox, lineId: id))
+        let box = kind == .circle ? LiveMarks.ringBox(markBox(.circle, st), clearOf: besideHead) : markBox(kind, st)
+        let line = TutorLine(strokes: LiveMarks.strokes(kind, line: box, lineId: id))
         var penRef: TutorPen?
         penRef = board.write([line], meta: meta) { [weak self] in
             guard let self else { return }
