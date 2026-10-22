@@ -446,6 +446,8 @@ extension LiveLoop {
         // problem of plain numbers an answer's signs are its ink's (`-54` from a wobbly `=` is `= 54`)
         let raw = reread ?? res.latex
         var read = raw
+        // a stacked sum read whole as something else, built again from its rows (`stackFromRows`)
+        var rowsConfidence: Double?
         if !raw.isEmpty {
             let ids = Set(before.ink.strokeIds)
             let ink = board.store.kidStrokes(on: board.currentScreenID).filter { ids.contains($0.id) }
@@ -454,6 +456,10 @@ extension LiveLoop {
             read = (try? await brain.youngRead(raw, problem: head(for: before.column)?.lines ?? [], strokes: ink, bar: bar)) ?? raw
             // what a messy read may have been, as the ink shows it (`readAsInkShows`)
             if let v = await readAsInkShows(before, read, ink) { read = v }
+            if reread == nil, let built = await stackFromRows(before, read, ink) {
+                read = built.latex
+                rowsConfidence = built.confidence
+            }
         }
         guard var st = lines[id] else { return }
         // ink read in this session: new work for the learning record
@@ -461,7 +467,7 @@ extension LiveLoop {
         // the kid's own reading of this ink stands over any read of it ("Fix what I read")
         let fixed = fixedReading(id, hash: st.ink.hash)
         st.latex = fixed ?? read
-        st.confidence = fixed != nil ? 1 : reread == nil ? res.confidence : max(res.confidence, LiveLimits.minConfidence)
+        st.confidence = fixed != nil ? 1 : reread == nil ? (rowsConfidence ?? res.confidence) : max(res.confidence, LiveLimits.minConfidence)
         st.provider = fixed != nil ? .fixed : reread == nil ? (res.provider == "vision" ? .vision : .mathpix) : .reread
         noteSecondOpinion(id, res, read: st.latex)
         st.updatedAt = scheduler.now
@@ -487,6 +493,109 @@ extension LiveLoop {
     }
 
     /// "The tutor saw it": the line's readback shows for a moment.
+    // MARK: - a stacked sum read row by row
+
+    /// A stacked sum in the ink (`stackOf`) whose read is no column sum — Mathpix took the rows for a
+    /// fraction (`\frac{18}{26}`, `\frac{627}{\times 243}`, `\frac{13}{+4}`): each row read on its own
+    /// (one read a row, only on that disagreement, cached like any read) and the sum built from them,
+    /// `\begin{array}{r} 13 \\ +4 \\ \hline 17 \end{array}`. Its confidence is the least sure row's:
+    /// a wrong digit is ringed only when every row read is sure (`STACK_RING_CONFIDENCE`), else the sum
+    /// is ticked or left quiet. Nil when a row reads as no number, offline, or for long multiplication.
+    func stackFromRows(_ st: LiveLine, _ read: String, _ ink: [BrainStroke]) async -> (latex: String, confidence: Double)? {
+        guard let stack = stackOf(st), !Self.isColumnRead(read), stack["more"] != .bool(true),
+              case .array(let rowValues)? = stack["rows"],
+              let answer = stack["answer"]?["rect"].flatMap(Self.rectOf) else { return nil }
+        let rects = rowValues.compactMap { $0["rect"].flatMap(Self.rectOf) }
+        guard rects.count >= 2, rects.count == rowValues.count else { return nil }
+        var skip = Set<String>()
+        if let rule = stack["rule"]?.stringValue { skip.insert(rule) }
+        if case .array(let marks)? = stack["marks"] { marks.compactMap(\.stringValue).forEach { skip.insert($0) } }
+        var rows: [String] = []
+        var least = 1.0
+        for r in rects + [answer] {
+            // the row's strokes: their middles in its band, its operator a little to its left
+            let strokes = ink.filter { s in
+                guard !skip.contains(s.id), let minX = s.x.min(), let maxX = s.x.max(), let minY = s.y.min(), let maxY = s.y.max() else { return false }
+                let cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
+                return cy >= r.y - 0.15 * r.h && cy <= r.y + 1.15 * r.h && cx >= r.x - 2 * r.h && cx <= r.x + r.w + 0.5 * r.h
+            }
+            guard !strokes.isEmpty, let payload = try? await brain.recognizerPayload(strokes) else { return nil }
+            let res: RecognizeResponse
+            if let hit = cache[payload.hash] {
+                res = hit
+            } else {
+                guard connectivity.isOnline else { return nil }
+                await acquireReadSlot()
+                count("recognize")
+                let reply = try? await services.recognize(RecognizeRequest(boardId: boardId, lineId: st.id, payload: payload))
+                releaseReadSlot()
+                guard let reply else { return nil }
+                cache[payload.hash] = reply
+                res = reply
+            }
+            guard let row = Self.stackRowLatex(res.latex) else { return nil }
+            rows.append(row)
+            least = min(least, res.confidence)
+        }
+        guard let last = rows.popLast() else { return nil }
+        // the rows as the problem has them: a carry written into the first row's line (`627` for
+        // `27`), the operator the kid left out (`18` over `7` for `18 × 7`). Only rows that are the
+        // problem's own numbers may ring; any other row-built read is ticked or left quiet
+        var confidence = LiveLimits.minConfidence
+        if let aligned = Self.alignedToProblem(rows, problem: head(for: st.column)?.lines ?? []) {
+            rows = aligned
+            // every row sure: a wrong digit may be ringed; else, read enough to tick (not a "?")
+            confidence = max(least, LiveLimits.minConfidence)
+        }
+        Self.log.notice("live: a stacked sum read again row by row")
+        return ("\\begin{array}{r} \(rows.joined(separator: " \\\\ ")) \\\\ \\hline \(last) \\end{array}", confidence)
+    }
+
+    /// Two rows read from a stacked sum, as the one-line problem `A op B` it works (`27 \times 9`):
+    /// each row the problem's number, or that number with one digit before it (a carry written into
+    /// the row), the second row's operator its own or else the problem's. Nil when they are not the
+    /// problem's numbers.
+    static func alignedToProblem(_ rows: [String], problem: [String]) -> [String]? {
+        guard rows.count == 2, problem.count == 1 else { return nil }
+        let flat = problem[0].replacingOccurrences(of: " ", with: "")
+        let ns = flat as NSString
+        guard let m = try? NSRegularExpression(pattern: #"^(\d+)(\+|-|\\times|\\cdot|×|x)(\d+)$"#)
+            .firstMatch(in: flat, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        let a = ns.substring(with: m.range(at: 1)), op = ns.substring(with: m.range(at: 2)), b = ns.substring(with: m.range(at: 3))
+        func digits(_ row: String) -> String { row.filter(\.isNumber) }
+        func same(_ row: String, _ n: String) -> Bool {
+            let d = digits(row)
+            return d == n || (d.hasSuffix(n) && d.count == n.count + 1)
+        }
+        guard same(rows[0], a), same(rows[1], b) else { return nil }
+        let own = rows[1].hasPrefix("\\times") ? "\\times " : rows[1].hasPrefix("+") ? "+" : rows[1].hasPrefix("-") ? "-" : nil
+        let theirs = op == "+" ? "+" : op == "-" ? "-" : "\\times "
+        return [a, (own ?? theirs) + b]
+    }
+
+    /// A read that is a column sum already: an array with a rule.
+    static func isColumnRead(_ latex: String) -> Bool {
+        latex.range(of: #"^\s*\\begin\{(?:array|aligned|gathered)\}"#, options: .regularExpression) != nil
+            && latex.range(of: #"\\hline|\\underline"#, options: .regularExpression) != nil
+    }
+
+    /// One row of a stacked sum as read: a whole number, its operator before it (`+47`, `\times 243`,
+    /// `-6`); nil for anything else.
+    static func stackRowLatex(_ latex: String) -> String? {
+        var t = latex.replacingOccurrences(of: #"\\(?:mathrm|text)\s*\{\s*([^{}]*)\s*\}"#, with: "$1", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression)
+        guard let m = t.range(of: #"^(?:\+|-|\\times|\\cdot|×|x)?\d+(?:\.\d+)?$"#, options: .regularExpression), m == t.startIndex..<t.endIndex else { return nil }
+        if t.hasPrefix("×") || t.hasPrefix("x") { t = "\\times " + t.dropFirst() }
+        else if t.hasPrefix("\\times") { t = "\\times " + t.dropFirst(6) }
+        else if t.hasPrefix("\\cdot") { t = "\\times " + t.dropFirst(5) }
+        return t
+    }
+
+    static func rectOf(_ v: AgathonBrain.JSONValue) -> BrainRect? {
+        guard let x = v["x"]?.numberValue, let y = v["y"]?.numberValue, let w = v["w"]?.numberValue, let h = v["h"]?.numberValue, w > 0, h > 0 else { return nil }
+        return BrainRect(x: x, y: y, w: w, h: h)
+    }
+
     /// What a messy read of a step may have been, as its ink shows it (`Brain.readVariants`: the minus
     /// her ink starts with that the read left out, a plus written high, her `x` read as `\times`, a side
     /// note behind a left arrow): taken only when the read as given does not follow from the line above

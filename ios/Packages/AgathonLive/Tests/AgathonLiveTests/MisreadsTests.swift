@@ -38,6 +38,27 @@ struct MisreadsTests {
         #expect(h.board.mark(on: "3 x=-15") == nil)
     }
 
+    @Test func aStackedSumsRowsAreReadAsNumbersWithTheirOperator() {
+        #expect(LiveLoop.stackRowLatex("13") == "13")
+        #expect(LiveLoop.stackRowLatex("+ 4") == "+4")
+        #expect(LiveLoop.stackRowLatex("\\times 243") == "\\times 243")
+        #expect(LiveLoop.stackRowLatex("x 4") == "\\times 4")
+        #expect(LiveLoop.stackRowLatex("\\frac{1}{2}") == nil)
+        #expect(LiveLoop.stackRowLatex("4 x") == nil)
+        #expect(LiveLoop.isColumnRead("\\begin{array}{r} 13 \\\\ +4 \\\\ \\hline 17 \\end{array}"))
+        #expect(!LiveLoop.isColumnRead("\\frac{13}{+4}"))
+    }
+
+    @Test func rowsReadFromAStackAreTheProblemsNumbersOrTheyMayNotRing() {
+        // the operator she left out is the problem's; a carry written into the row is left out
+        #expect(LiveLoop.alignedToProblem(["18", "7"], problem: ["18 \\times 7"]) == ["18", "\\times 7"])
+        #expect(LiveLoop.alignedToProblem(["627", "\\times 9"], problem: ["27 \\times 9"]) == ["27", "\\times 9"])
+        #expect(LiveLoop.alignedToProblem(["128", "+47"], problem: ["128 + 47"]) == ["128", "+47"])
+        // a row that is not the problem's number (a misread `9` as `4`): no alignment, so no ring
+        #expect(LiveLoop.alignedToProblem(["627", "4"], problem: ["27 \\times 9"]) == nil)
+        #expect(LiveLoop.alignedToProblem(["18", "7"], problem: []) == nil)
+    }
+
     @Test func aStepThatForgotItsMinusIsStillRinged() async throws {
         let h = await step(withMinus: false)
         #expect(h.board.mark(on: "3 x=-15") == .ring, "\(h.board.lineRecords.map(\.latex))")
