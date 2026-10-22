@@ -41,7 +41,10 @@ describe("reading the array", () => {
     ["\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 966 \\\\ \\hline 12 \\end{array}", "two rules under a sum"],
     ["\\begin{array}{r} 23 \\\\ \\times 4 \\\\ \\hline 12 \\\\ 80 \\end{array}", "rows under a product by one digit"],
     ["\\begin{array}{r} 23 \\\\ \\times 45 \\\\ \\hline 115 \\\\ 9.2 \\\\ \\hline 1035 \\end{array}", "a row with a point"],
-    ["\\begin{array}{r} 286 \\\\ 680 \\\\ \\hline 966 \\end{array}", "no operator"],
+    ["\\begin{array}{r} 286 \\\\ 680 \\\\ \\hline 965 \\end{array}", "no operator, and no operator makes the answer"],
+    ["\\begin{array}{r} 286 \\\\ 680 \\\\ \\hline \\end{array}", "no operator, and no answer to tell it by"],
+    ["\\begin{array}{r} 2 \\\\ 2 \\\\ \\hline 4 \\end{array}", "no operator, and two make the answer (2 + 2, 2 × 2)"],
+    ["\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 966 \\\\ 965 \\end{array}", "two different rows under a sum"],
     ["\\begin{array}{r} +286 \\\\ +680 \\\\ \\hline 966 \\end{array}", "an operator on the first number"],
     ["\\begin{array}{r} 286 \\\\ +680 \\\\ -12 \\\\ \\hline 954 \\end{array}", "two kinds of operator"],
     ["\\begin{array}{r} 52 \\\\ -17 \\\\ -3 \\\\ \\hline 32 \\end{array}", "taking away twice"],
@@ -54,6 +57,17 @@ describe("reading the array", () => {
     ["286+680=966", "a line"],
   ])("not a stacked sum: %s (%s)", (latex) => {
     expect(parseStacked(latex)).toBeNull();
+  });
+
+  // the real-ink bench: a child's `×` lost in the read, her answer copied out again under itself
+  it.each<[string, StackedRead]>([
+    ["\\begin{array}{r} 267 \\\\ 8 \\\\ \\hline 2136 \\end{array}", { op: "×", operands: ["267", "8"], answer: "2136" }],
+    ["\\begin{array}{r} 286 \\\\ 680 \\\\ \\hline 966 \\end{array}", { op: "+", operands: ["286", "680"], answer: "966" }],
+    ["\\begin{array}{r} 52 \\\\ 17 \\\\ \\hline 35 \\end{array}", { op: "-", operands: ["52", "17"], answer: "35" }],
+    ["\\begin{array}{r} 267 \\\\ \\times 8 \\\\ \\hline 2136 \\\\ 2136 \\end{array}", { op: "×", operands: ["267", "8"], answer: "2136" }],
+    ["\\begin{array}{r} 267 \\\\ 8 \\\\ \\hline 2136 \\\\ 2136 \\end{array}", { op: "×", operands: ["267", "8"], answer: "2136" }],
+  ])("the operator her answer makes, the answer once: %s", (latex, want) => {
+    expect(parseStacked(latex)).toEqual(want);
   });
 });
 

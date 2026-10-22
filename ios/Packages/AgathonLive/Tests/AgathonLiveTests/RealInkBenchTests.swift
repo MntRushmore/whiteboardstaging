@@ -284,8 +284,10 @@ struct RealInkBenchTests {
             let others = Set(ids.enumerated().filter { $0.offset != k }.flatMap { $0.element.map(\.rawValue) })
             let obs = loop.trainingObserve(strokes: ids[k], others: others)
             owned.formUnion(obs.lineIds)
-            let marks = obs.lineIds.map { loop.trainingMark(on: $0) }
             let r = judged.lines[k]
+            // a row of a stacked sum: the sum's mark is its answer row's (`TrainingBench.observe`)
+            let stackRow = obs.lineIds.count == 1 && loop.trainingStacked(obs.lineIds[0])
+            let marks = stackRow ? [r.mark] : obs.lineIds.map { loop.trainingMark(on: $0) }
             let right = line.expect != .ring
             lines.append(LineOutcome(written: line.latex, expect: line.expect, read: r.read, readRight: r.readRight, pieces: obs.lineIds.count,
                                      marks: marks, falseRing: right && marks.contains(.ring), missedRing: !right && !marks.contains(.ring),

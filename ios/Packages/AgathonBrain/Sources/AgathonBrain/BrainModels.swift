@@ -66,7 +66,7 @@ public struct Diagram: Codable, Hashable, Sendable {
 }
 
 public struct StrokeVerdict: Codable, Hashable, Sendable {
-    /// writing, drawing, mark, label, table, operation, stack, carry
+    /// writing, drawing, mark, label, table, operation, stack, carry, separator, struck
     public var role: String
     public var reason: String
     public var diagram: Int?
