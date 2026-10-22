@@ -193,9 +193,43 @@ struct RealInkBenchTests {
         let clock = HeadlessBench.Clock(loop: loop, scheduler: scheduler)
         let written = Written()
         written.lines = c.lines.map { (Set<String>(), $0.latex) }
+        // every stroke written, in order (the newest strokes of a read may not be in its line yet)
+        var order: [String] = []
+        let total = c.lines.indices.map { k in c.strokes.filter { $0.line == k }.count }
         var reader: (@MainActor (RecognizeRequest) async -> String?)?
         if oracle {
-            reader = { @MainActor request in await Oracle.read(request, written: written.lines, board: board) }
+            // perfect reads of real ink: the labeled lines the read holds whole and finished, as written;
+            // ink no line owns (a stray, her own tick) is invisible; a line held in part or still being
+            // written is unreadable
+            reader = { @MainActor [weak loop] request in
+                guard let loop else { return nil }
+                // the read's line; an early read's line is the clusterer's, not the loop's yet: its ink is
+                // the early read in flight with as many strokes
+                var held: Set<String>
+                if let line = loop.lines[request.lineId] {
+                    held = Set(line.ink.strokeIds)
+                } else if let early = loop.earlyReads.values.filter({ $0.strokeIds.count == request.strokes.x.count })
+                    .max(by: { $0.startedAt < $1.startedAt }) {
+                    held = early.strokeIds
+                } else {
+                    held = []
+                }
+                // the read was asked for with new strokes the line does not hold yet: the newest ones
+                if request.strokes.x.count > held.count {
+                    for id in order.reversed() where held.count < request.strokes.x.count && !held.contains(id) { held.insert(id) }
+                }
+                var whole: [String] = []
+                var partial = false
+                for (k, line) in written.lines.enumerated() where !line.strokes.isEmpty && !line.strokes.isDisjoint(with: held) {
+                    if !line.strokes.isSubset(of: held) || line.strokes.count < total[k] { partial = true; break }
+                    whole.append(Oracle.spoken(line.latex))
+                }
+                if ProcessInfo.processInfo.environment["AGATHON_REALINK_DEBUG"] == "1" {
+                    print("ORACLE \(request.lineId) inLines=\(loop.lines[request.lineId] != nil) held=\(held.count) req=\(request.strokes.x.count) "
+                          + "partial=\(partial) whole=\(whole) lines=\(written.lines.map { "\($0.strokes.intersection(held).count)/\($0.strokes.count)" })")
+                }
+                return partial || whole.isEmpty ? nil : whole.joined(separator: " ")
+            }
         }
         services.begin(boardId, oracle: reader)
         loop.start()
@@ -216,6 +250,7 @@ struct RealInkBenchTests {
             if wait > 0 { await clock.pass(wait) }
             let pts = zip(s.x, s.y).map { ProblemPageLayout.place(Vec2(origin.x + $0, origin.y + $1), on: board.screenRect.box) }
             let made = board.kidWrites([pts])
+            order += made.map(\.rawValue)
             if s.line >= 0 && s.line < c.lines.count {
                 ids[s.line] += made
                 written.lines[s.line].strokes.formUnion(made.map(\.rawValue))
@@ -263,6 +298,21 @@ struct RealInkBenchTests {
 
     // MARK: - the report
 
+    /// A case right as a teacher sees the page: every line's pieces carry the mark it wants (a tick on an
+    /// answer, a ring on a slip, never a ring or a "?" on right work), no stray ringed, and the page
+    /// solved as it should be. A stacked sum read as one block is right when its marks are.
+    static func teacherRight(_ c: CaseOutcome) -> Bool {
+        guard c.strayRings == 0, c.solvedExpected == nil || c.solvedExpected == c.solvedGot else { return false }
+        return c.lines.allSatisfy { l in
+            if l.expect != .ring && (l.marks.contains(.ring) || l.marks.contains(.question)) { return false }
+            switch l.expect {
+            case .tick: return l.marks.contains(.tick)
+            case .ring: return l.marks.contains(.ring)
+            case .calm, .quiet: return true
+            }
+        }
+    }
+
     static func summary(_ cases: [CaseOutcome], counts: BenchServices.Counts, label: String, stopped: Bool) -> String {
         func pct(_ a: Int, _ b: Int) -> String { b == 0 ? "-" : String(format: "%.1f%%", 100 * Double(a) / Double(b)) }
         let lines = cases.flatMap(\.lines)
@@ -270,6 +320,8 @@ struct RealInkBenchTests {
         let slips = lines.filter { $0.expect == .ring }
         let read = lines.filter { $0.readRight != nil }
         var s = "REALINK \(label)\(stopped ? " (stopped: budget)" : "")\n"
+        let teacherRight = cases.filter(Self.teacherRight).count
+        s += "TEACHER-RIGHT: \(teacherRight)/\(cases.count) = \(pct(teacherRight, cases.count))\n"
         s += "cases \(cases.count): pass \(pct(cases.filter { $0.pass == true }.count, cases.count))"
         s += "; no ring on right work \(pct(cases.filter { c in !c.lines.contains(where: \.falseRing) && c.strayRings == 0 }.count, cases.count))\n"
         s += "lines \(lines.count): judged right \(pct(lines.filter { $0.pass == true }.count, lines.count))"

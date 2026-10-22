@@ -145,7 +145,8 @@ import { withoutStrays } from "./strays";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, stackedAnalysis, workStacked, type StackedWork } from "./engine/columnArithmetic";
-import { bracketLine, isArithmetic, isSlip, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "./engine/columnWork";
+import { keepsKnownNumbers, knownNumbers, SURE_READ } from "./chainGuard";
+import { arithmeticOf, bracketLine, isArithmetic, isSlip, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "./engine/columnWork";
 import { stackGrid, stackGroups, type StackGrid, type StackedSum } from "./stackedSums";
 import { parseDomainPiece } from "./engine/domain";
 import { figureAnswer, isValueLabel, labelKey, looksLikeUnknown } from "./figure";
@@ -2651,7 +2652,7 @@ export class LiveLoop implements LiveController {
   private arithmeticLines(state: LiveLineState): string[] | null {
     const head = this.columnHeads.get(state.line.column);
     const lines = head ? head.lines : [this.columnLines(state.line.column).find((s) => s.latex && s.line.row <= state.line.row)?.latex ?? state.latex];
-    return lines.length > 0 && lines.every(isArithmetic) ? [...lines] : null;
+    return arithmeticOf(lines);
   }
 
   /**
@@ -2731,7 +2732,17 @@ export class LiveLoop implements LiveController {
           return null;
         }
         const reply = await this.askAgain(s.line, s, { signal: "chain", above: [], below: [] });
-        const latex = reply && this.engine ? acceptChainReread(this.engine, s.latex, reply.latex, others) : null;
+        let latex = reply && this.engine ? acceptChainReread(this.engine, s.latex, reply.latex, others) : null;
+        // never a number the page knows (the problem's; the line above's, for the step) — `chainGuard.ts`
+        const step = liveStore.lines.get()[lineId];
+        const aboveOfStep = step ? this.previousLine(step) : null;
+        const known = knownNumbers(this.columnHeads.get(s.line.column)?.lines ?? [], s.line.id === lineId && aboveOfStep ? aboveOfStep.latex : null);
+        if (latex && !keepsKnownNumbers(s.latex, latex, known)) latex = null;
+        // a sure read is changed only when a second look says the same
+        if (latex && s.confidence >= SURE_READ) {
+          const again = await this.askAgain(s.line, s, { signal: "chain", above: [], below: [] });
+          if (!again || !this.engine || acceptChainReread(this.engine, s.latex, again.latex, others) !== latex) latex = null;
+        }
         return reply ? { state: s, reply, latex } : null;
       }),
     );
@@ -6015,6 +6026,12 @@ export class LiveLoop implements LiveController {
     const at = kind ? this.markRect(state, kind) : state.line.bounds;
     const want = kind && this.deps.handwritingEnabled() ? markKey(kind, at) : null;
     if (rt.markKey === want) return;
+    // a ring taken back takes what it brought: its hint card, its queued step (the iPad's `ringWithdrawn`)
+    if (rt.markKey?.startsWith("circle") && kind !== "circle") {
+      this.pendingSuggestions.delete(lineId);
+      const hints = liveStore.openHints.get();
+      if (hints.some((h) => h.lineId === lineId)) liveStore.openHints.set(hints.filter((h) => h.lineId !== lineId));
+    }
     rt.markKey = want;
     rt.markWriter?.cancel();
     rt.markWriter = null;

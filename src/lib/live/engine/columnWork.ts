@@ -79,6 +79,37 @@ export function isArithmetic(latex: string): boolean {
   return /\d/.test(bare) && !/[a-zA-Z\\]/.test(bare);
 }
 
+/** `h(x) = 4x + 1` (a function of one letter) … */
+const FUNCTION_DEF = /^\s*([a-zA-Z])\s*\(\s*([a-zA-Z])\s*\)\s*=\s*(.+)$/;
+/** … and `h(1)`: its value at a number. */
+const FUNCTION_CALL = /^\s*([a-zA-Z])\s*\(\s*(-?\s*\d+(?:\.\d+)?)\s*\)\s*$/;
+/** A line that starts by naming that value (`h(1) = 5`): the rest is the working. */
+const LEADING_CALL = /^\s*[a-zA-Z]\s*\(\s*-?\s*\d+(?:\.\d+)?\s*\)\s*(?==)/;
+
+/**
+ * The problem as arithmetic, when it is: its own lines when every one is (`isArithmetic`), and a
+ * function's value at a number — `h(x) = 4x + 1` with `h(1)` — as the sum it comes to, `4(1) + 1`
+ * (the real-ink bench: children work it in one chained line, `= 4(1) + 1 = 5`, and got a "?").
+ * Null for any other problem.
+ */
+export function arithmeticOf(problem: readonly string[] | null | undefined): string[] | null {
+  if (!problem || problem.length === 0) return null;
+  if (problem.every(isArithmetic)) return [...problem];
+  const lines = problem.flatMap((l) => l.split(/\s*;\s*/)).filter((l) => l.trim().length > 0);
+  if (lines.length !== 2) return null;
+  const def = FUNCTION_DEF.exec(lines[0]);
+  const call = FUNCTION_CALL.exec(lines[1]);
+  if (!def || !call || def[1] !== call[1]) return null;
+  const at = call[2].replace(/\s+/g, "");
+  const sum = def[3].replace(new RegExp(`(?<![\\\\a-zA-Z])${def[2]}(?![a-zA-Z])`, "g"), `(${at})`).trim();
+  return isArithmetic(sum) ? [sum] : null;
+}
+
+/** `h(1) = 4(1) + 1 = 5` → `= 4(1) + 1 = 5`: in a function's value worked as arithmetic, its name is no sum. */
+export function withoutLeadingCall(latex: string): string {
+  return latex.replace(LEADING_CALL, "");
+}
+
 /** A step the engine rings (it does not follow), or one carried on from such a step (`LineAnalysis.carried`). */
 export function isSlip(a: LineAnalysis): boolean {
   return a.verdict === "mismatch" || Boolean(a.carried);
@@ -126,6 +157,11 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
     }
   }
   if (input.arithmetic) {
+    const named = withoutLeadingCall(latex);
+    if (named !== latex) {
+      latex = named;
+      a = engine.analyzeLine(latex, ctx);
+    }
     const young = engine.judgeWork?.({ problem: input.arithmetic, above: input.above, latex: input.beside ?? latex, ctx });
     if (young) a = young;
     else {
@@ -255,7 +291,7 @@ export function judgeColumn(engine: LiveEngine, column: WorkColumn, mode: HelpMo
     out.push(
       judgeLine(engine, latex, {
         ctx: { previous, original, mode },
-        arithmetic: head.length > 0 && head.every(isArithmetic) ? head : null,
+        arithmetic: arithmeticOf(head),
         above: lines.slice(0, i).filter((l) => l && !isStackRead(l)),
         slip: last && isSlip(last) ? last : undefined,
       }),

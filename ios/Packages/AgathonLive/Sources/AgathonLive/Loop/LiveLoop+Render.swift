@@ -368,7 +368,10 @@ extension LiveLoop {
             return nil
         }
         if !staleStrokes.isEmpty || !staleRecords.isEmpty {
-            if marks.contains(where: { $0.meta.string(LiveMeta.mark).hasPrefix("circle:") && $0.meta.string(LiveMeta.mark) != want }) { settler.removed(id) }
+            if marks.contains(where: { $0.meta.string(LiveMeta.mark).hasPrefix("circle:") && $0.meta.string(LiveMeta.mark) != want }) {
+                settler.removed(id)
+                if kind != .circle { ringWithdrawn(id) }
+            }
             store.remove(staleStrokes + staleRecords, origin: .tutor)
         }
         guard let want, let kind, !marks.contains(where: { $0.meta.string(LiveMeta.mark) == want }) else {
