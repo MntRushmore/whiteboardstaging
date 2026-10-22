@@ -51,6 +51,20 @@ extension LiveLoop {
             var running: String?
             for st in columnLines(column) {
                 guard !st.latex.isEmpty else { continue }
+                // a line crossed out: never judged, and no step of the column (`LiveLoop+Chain`)
+                if isStruck(st) {
+                    guard gen == generation, var cur = lines[st.id], cur.latex == st.latex else {
+                        analyzeAgain.insert(column)
+                        break
+                    }
+                    if cur.analysis != LineAnalysis.quiet {
+                        cur.analysis = LineAnalysis.quiet
+                        cur.rewritesWithWarn = 0
+                        lines[st.id] = cur
+                        changed.append(st.id)
+                    }
+                    continue
+                }
                 // a stacked sum: worked as a sum by the brain, never as a line, and no step of the
                 // column — the lines under it are not judged against it (`LiveLoop+Stacks`)
                 if let s = await stackedAnalysis(st, problem: problem) {
@@ -254,6 +268,18 @@ extension LiveLoop {
         let doubt = pages.extras && (readingInDoubt(st) || pages.ownHeads.contains(st.id))
         if marked == "warn" && doubt { marked = "none" }
         let ring = marked == "warn" || (marked != "ok" && marked != "solved" && st.isModelFlagged && !unsureOfProblem(st) && !doubt)
+        // a crossed-out line is never marked
+        if isStruck(st) {
+            syncMark(st, nil, learn: false)
+            updateVerdict(st, "none")
+            return
+        }
+        // a step about to be ringed waits while it and the line above are read again (`holdRing`)
+        if ring && holdRing(st) {
+            syncMark(st, nil, learn: false)
+            updateVerdict(st, "none")
+            return
+        }
         let tick = marked == "ok" || marked == "solved"
         let why = ring || tick ? nil : questionNow(st)
         syncMark(st, ring ? .circle : tick ? .check : why != nil ? .question : nil, why)
@@ -278,6 +304,8 @@ extension LiveLoop {
         guard settings.enabled, settings.mode != .off, head(for: st.column) != nil else { return nil }
         // a stacked sum the engine cannot work is read back, never marked (the web's `stackAnalysis`)
         if stackLike(st) { return nil }
+        // nor is a line crossed out
+        if isStruck(st) { return nil }
         if rt[st.id]?.readRefused == true || rt[st.id]?.checkTask != nil { return nil }
         if reading.contains(st.id) || offlineQueue.contains(st.id) || pendingChecks[st.id] != nil { return nil }
         if liveShapeCount() >= LiveLimits.maxLiveShapesPerBoard { return nil }

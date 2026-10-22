@@ -63,7 +63,7 @@ struct BenchFixesTests {
 
     @Test func twoFactsSideBySideAreNoSlip() async throws {
         let r = try await Self.run("sp-side-column-ok")
-        #expect(!r.lines.contains { $0.mark == .ring }, Self.describe(r))
+        #expect(!r.lines.contains { $0.mark == .ring }, "\(Self.describe(r))")
         #expect(ArithmeticTruth.trueAsMeant("10 \\times 7=70 \\quad 8 \\times 7=56"))
         #expect(ArithmeticTruth.trueAsMeant("10 \\times 7=708 \\times 7=56"))
         #expect(!ArithmeticTruth.trueAsMeant("10 \\times 7=70 \\quad 8 \\times 7=58"))
@@ -82,7 +82,7 @@ struct BenchFixesTests {
 
     @Test func theProblemsLetterGivenAWrongValueIsRingedAndThePageNotSolved() async throws {
         let r = try await Self.run("n-eq-slip")
-        #expect(r.pass == true, Self.describe(r))
+        #expect(r.pass == true, "\(Self.describe(r))")
         #expect(r.solvedGot == false)
     }
 }
