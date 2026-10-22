@@ -112,6 +112,8 @@ public final class LiveLoop: ObservableObject {
 
     var quietTimer: LiveTimer?
     var settleTimer: LiveTimer?
+    /// "check as I go": lines whose marks wait for them to look finished (`stillGrowing`)
+    var growthTimers: [String: LiveTimer] = [:]
     var stuckTimer: LiveTimer?
     var helpWaitTimer: LiveTimer?
     var readingLabelTimer: LiveTimer?

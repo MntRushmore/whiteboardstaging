@@ -247,6 +247,12 @@ extension LiveLoop {
             return
         }
         defer { refreshPage() }
+        // check as I go: nothing on a line still being written (`stillGrowing`)
+        if let wait = stillGrowing(st) {
+            syncMark(st, nil, learn: false)
+            renderWhenFinished(id, after: wait)
+            return
+        }
         let d = decision(st, userAsked: userAsked)
         // a right answer Mathpix was unsure of: no "?" while one more look decides (`lookAgainAtUnsureAnswer`)
         if !d.echo && lookAgainAtUnsureAnswer(st) { return }

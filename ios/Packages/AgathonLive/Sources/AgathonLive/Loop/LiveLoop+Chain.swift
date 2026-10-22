@@ -166,6 +166,27 @@ extension LiveLoop {
         return !bare.contains("=") && bare.count <= 3
     }
 
+    /// "Check as I go": a line still being written shows nothing — no tick, ring or "?" on `7^{2} = 4`
+    /// before its 9 (the real-ink bench: 15 rings on half-written lines). Its marks come once it looks
+    /// finished: the pen off it and no new stroke in it for `PageTiming.unfinishedMs`. The ms left, nil
+    /// when it looks finished (and always nil when checking when done: lines are held until then).
+    func stillGrowing(_ st: LiveLine) -> Double? {
+        guard !checksWhenDone else { return nil }
+        if (penDown || board.isPenDown) && penLineId == st.id { return PageTiming.unfinishedMs }
+        let last = st.ink.strokeIds.compactMap { pages.strokeAt[$0] }.max() ?? -.infinity
+        let age = scheduler.now - last
+        return age < PageTiming.unfinishedMs ? PageTiming.unfinishedMs - age : nil
+    }
+
+    /// Draws the line again when it should look finished (`stillGrowing`).
+    func renderWhenFinished(_ id: String, after ms: Double) {
+        growthTimers[id]?.cancel()
+        growthTimers[id] = scheduler.after(ms + 10) { [weak self] in
+            self?.growthTimers[id] = nil
+            self?.render(id)
+        }
+    }
+
     /// A right answer Mathpix was unsure of (a "?" the real-ink bench saw on a pen 56): one more look.
     /// Ticked only when that look, on its own, reads the same value — a kid's 58 misread as a right 56
     /// must never be ticked, so a different read (or none) keeps the "?". Only a lone answer of digits
