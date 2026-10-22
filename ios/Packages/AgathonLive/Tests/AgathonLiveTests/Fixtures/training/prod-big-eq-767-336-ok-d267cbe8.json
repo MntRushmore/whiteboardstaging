@@ -878,8 +878,8 @@
     "mode": "feedback"
   },
   "solved": true,
-  "status": "fixed",
+  "status": "open",
   "title": "767 - 336",
   "version": 1,
-  "why": "Taken together with another line: read \\begin{array}{l}\n767-336 \\\\\n=431\n\\end{array}."
+  "why": "Still open (2026-10-22): a big hand's 767 - 336 and = 431 under it are clustered as one line (read as an array); no ring, but not counted solved."
 }

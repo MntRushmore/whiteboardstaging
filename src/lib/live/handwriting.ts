@@ -12,6 +12,7 @@ import {
 } from "tldraw";
 import {
   STROKE_GAP_MS,
+  composeHandwriting,
   layoutSteps,
   placeStrokes,
   strokeBounds,
@@ -391,6 +392,58 @@ export function planFromStrokes(label: string, strokes: readonly Stroke[], size:
     bounds: { x: b.minX, y: b.minY, w: b.width, h: b.height },
     size,
     totalMs: durationMs,
+  };
+}
+
+/**
+ * Words in the tutor's hand as a plan the board's pen writes — a word problem at the top of its
+ * page (the iPad's problem pages). Each entry is one sentence, wrapped at `maxWidth` and written
+ * under the one before, `origin` the top-left of the block. Unlike `planHandwriting` this is
+ * prose on purpose: the caller has decided these words belong on the page (the board's maths
+ * steps still never carry sentences).
+ */
+export function planWords(
+  sentences: readonly string[],
+  opts: { size: number; seed: number; maxWidth: number; origin?: { x: number; y: number }; gap?: number },
+): HandPlan | null {
+  const origin = opts.origin ?? { x: 0, y: 0 };
+  const gap = opts.gap ?? opts.size * 0.45;
+  const lines: HandLinePlan[] = [];
+  let t = 0;
+  let y = origin.y;
+  let maxX = origin.x;
+  for (let i = 0; i < sentences.length; i++) {
+    const text = sentences[i].trim();
+    if (!text) continue;
+    // a word's gap grows with the hand (the notes' 8 px is for their 22 px hand): words, not letters, stand apart
+    const wordGap = Math.max(8, opts.size * 0.42);
+    const composed = composeHandwriting(text, { maxWidth: opts.maxWidth, size: opts.size, seed: opts.seed + i * 101, wordGap });
+    const strokes: Stroke[] = composed.segments
+      .filter((g) => g.points.length >= 2)
+      .map((g, order) => ({ points: g.points.map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0.5 })), order, kind: "glyph" }));
+    const b = strokeBounds(strokes);
+    if (!b) continue;
+    const placed = placeStrokes(strokes, { x: -b.minX, y: -b.minY }).map((st) => ({
+      ...st,
+      points: densify(st.points, HAND_WRITE.resampleStepPx),
+    }));
+    const durationMs = totalDurationMs(placed);
+    const x = origin.x + b.minX;
+    lines.push({ latex: text, x, y, baseline: b.height, strokes: placed, startMs: t, durationMs });
+    t += durationMs + HAND_WRITE.lineGapMs;
+    maxX = Math.max(maxX, x + b.width);
+    y += b.height + gap;
+  }
+  if (lines.length === 0) return null;
+  const last = lines[lines.length - 1];
+  const bottom = last.y + Math.max(...last.strokes.flatMap((st) => st.points.map((p) => p.y)));
+  const naturalMs = Math.max(0, t - HAND_WRITE.lineGapMs);
+  return {
+    lines,
+    bounds: { x: origin.x, y: origin.y, w: maxX - origin.x, h: bottom - origin.y },
+    size: opts.size,
+    totalMs: naturalMs,
+    pace: paceFor(naturalMs),
   };
 }
 

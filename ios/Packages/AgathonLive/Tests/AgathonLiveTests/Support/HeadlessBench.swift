@@ -32,7 +32,17 @@ enum HeadlessBench {
             loop.problemsChanged()
             return ProblemPageLayout.defaultWorkTop
         }
-        guard let checked = await deskCheck(problem, brain: brain) else { return nil }
+        guard let checked = await deskCheck(problem, brain: brain) else {
+            // a word problem: its words at the top, heading no column (`ProblemPageWriter`)
+            guard let sentences = WordProblem.sentences(problem),
+                  let plan = await WordProblem.plan(sentences, brain: brain, seedKey: "page:bench:1:\(sentences.joined(separator: ";"))") else { return nil }
+            let page = ProblemPage(kind: .problem, setId: "bench", index: 1, count: 1, origin: "practice",
+                                   workTop: ProblemPageLayout.workTop(problemBottom: plan.bounds.y + plan.bounds.h), answer: ProblemPagesRollout.secondPart)
+            board.setProblemPage(page, on: screen)
+            InstantPen(store: board.store, screen: screen).write(tutorLines(plan), meta: [WordProblem.meta: true, "lineId": "chat", "live": true, "source": "ai"])
+            loop.problemsChanged()
+            return page.resolvedWorkTop
+        }
         let L = ProblemPageLayout.self
         var size = 72.0
         var plan: HandPlan?

@@ -1067,8 +1067,8 @@
     "mode": "feedback"
   },
   "solved": true,
-  "status": "fixed",
+  "status": "open",
   "title": "18 \\times 7",
   "version": 1,
-  "why": "Taken together with another line: read 10 \\times 7=70 \\quad 8 \\times 7=56."
+  "why": "Partly fixed (2026-10-22): two facts side by side are no longer ringed (ArithmeticTruth.trueAsMeant), but they stay one line — as on the web, one row with nothing under its right half is one line (splitAtGutters)."
 }

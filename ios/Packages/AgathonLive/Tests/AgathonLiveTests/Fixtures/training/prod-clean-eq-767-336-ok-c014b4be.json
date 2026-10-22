@@ -704,8 +704,8 @@
     "mode": "feedback"
   },
   "solved": true,
-  "status": "fixed",
+  "status": "open",
   "title": "767 - 336",
   "version": 1,
-  "why": "A question mark: the tutor could not read it (wrote 767 - 336, read \\text { 767-336 })."
+  "why": "Still open (2026-10-22): its recorded reads no longer match the ink as the board now groups it (strays, cells), so the replay reads nothing; the live bench passes the case."
 }
