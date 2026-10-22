@@ -15,7 +15,7 @@ Files that go with it:
 | `ios/ExportOptions.plist` | how the archive is exported for App Store Connect |
 | `ios/Agathon/Resources/PrivacyInfo.xcprivacy` | the privacy manifest (required-reason APIs, collected data) |
 | `scripts/ios-appstore-shots.sh`, `ios/AgathonUITests/AppStoreScreenshotUITests.swift`, `scripts/lib/appstore-demo-seed.sql` | the screenshots, made on the local stack |
-| `docs/app-store/screenshots/` | the iPad screenshots to upload (13-inch, 2752 × 2064) |
+| `docs/app-store/screenshots/` | the eight iPad screenshots to upload, numbered in order (13-inch, 2752 × 2064) |
 | `docs/app-store/iap-review-screenshot.png` | the plan screen, for the subscription's review screenshot |
 | `src/app/(platform)/privacy`, `terms`, `refunds` | the Privacy Policy, Terms and Refund Policy, now covering the iPad app (in this branch; live once merged) |
 
@@ -483,28 +483,22 @@ four weeks of practice seeded into the local database; status bar 9:41, full bat
 PNG is upright, 2752 × 2064, sRGB, no alpha; the simulator's iPadOS 26 window-resize grabber (system
 chrome in windowed-apps mode) is painted out of the bottom-right corner.
 
-**In `docs/app-store/screenshots/` now (clean, ready to upload):**
+**In `docs/app-store/screenshots/` (all eight from one run on 2026-10-22, demo family `demo-family-be2b5a@example.com` on the local stack; upload in this order):**
 
 | # | File | Shows |
 |---|---|---|
-| 1 | `01-first-run-try.png` | The first run's try: "Your turn, Maya." 2x + 5 = 17 in the tutor's blue, her 2x = 12 and x = 6 ticked, "You got it.", her first star |
-| 2 | `02-home.png` | Maya's Home: Today's practice, a 12-day streak, her 7th grade path, boards with thumbnails |
-| 3 | `03-progress.png` | Progress: this week (72 minutes, 25 problems), the last four weeks, skills |
-| 4 | `04-progress-skills.png` | Progress, scrolled: skills with stars and Practice, recent problems |
-| 5 | `05-all-done.png` | Today's practice finished: All done, the stars, "Not yet" on the one to look at again |
+| 1 | `01-hint-on-a-slip.png` | A problem page, "Problem 1 of 3": 2x + 3 = 11 in the tutor's blue, 2x = 8 ticked, the slip x = 5 circled, the hint card open |
+| 2 | `02-problem-page-ticked.png` | "Problem 2 of 3": 3x = 15 and x = 5 ticked, Next problem |
+| 3 | `03-ask-draws.png` | Ask beside the board: "Why is 3/4 bigger than 5/8? Can you show me?", the answer, and the fraction bars it drew |
+| 4 | `04-first-run-try.png` | The first run's try: "Your turn, Maya." 2x + 5 = 17, 2x = 12 and x = 6 ticked, "You got it.", her first star |
+| 5 | `05-home.png` | Maya's Home: Today's practice, a 12-day streak, her 7th grade path, boards with thumbnails |
+| 6 | `06-progress.png` | Progress: this week (72 minutes, 25 problems), the last four weeks, skills |
+| 7 | `07-progress-skills.png` | Progress, scrolled: skills with stars and Practice (optional) |
+| 8 | `08-all-done.png` | Today's practice finished (optional: it shows two "Not yet", fine but not a hero shot) |
 
-**Still to make (the run was stopped before it finished, 2026-10-21):** the hero board shots. The
-first pass's board shots showed Debug's autowrite pill in the top bar, so they were not kept; the test
-now writes each page in its own launch so the pill is gone before every shot (`test2aHintOnASlip`,
-`test2bPageSolved`, `test3AskDraws`). Run `scripts/ios-appstore-shots.sh` (fresh family, ~20 minutes
-when the simulator is free) and add:
-
-- `hint-on-a-slip`: a problem page, 2x = 8 ticked, the slip x = 5 circled, the hint card (put it first);
-- `problem-page-ticked`: "Problem 2 of 3", both lines ticked, Next problem;
-- `ask-draws`: Ask's answer beside the board with fraction bars drawn ("Why is 3/4 bigger than 5/8?").
-
-Suggested order in App Store Connect: hint-on-a-slip, problem-page-ticked, ask-draws, 01, 02, 03, 05
-(04 optional). The hint text is the model's own words: re-run if one reads badly.
+Each is 2752 × 2064 landscape (the 13-inch size, which covers every iPad), sRGB, no alpha. The hint
+text is the model's own words: re-run `scripts/ios-appstore-shots.sh` if a later run reads better.
+The "I READ" chips are the app's own read-back, not Debug chrome.
 
 ---
 
@@ -526,7 +520,7 @@ must contain it.
 | 8 | Your Mac, the repo | Make the API key (§5, role Admin), then `scripts/ios-release.sh --upload --no-bump` (1.0 (1)). Wait for "processed" in TestFlight (5–30 min; do steps 9–11 meanwhile). Commit `ios/project.yml` if the number changed. | 15 min + wait |
 | 9 | App Privacy | §6, data type by data type; publish. | 15 min |
 | 10 | Users and Access › Sandbox › Testers | One sandbox Apple Account (a fresh email) for your own test. | 5 min |
-| 11 | The version page (1.0) | Screenshots (§11: drag the 13-inch set in order), promotional text, description, keywords, support and marketing URLs, copyright (§10). | 20 min |
+| 11 | The version page (1.0) | Screenshots (§11: drag `01`–`06`, and `07`–`08` if you like, from `docs/app-store/screenshots/` in order), promotional text, description, keywords, support and marketing URLs, copyright (§10). | 20 min |
 | 12 | TestFlight, on your iPad | Install the build; sign in to the sandbox account in Settings › App Store › Sandbox Account; run the first run, start the free week (Sandbox), check the plan shows as on (Account › Plan) and `select provider, status from unlimited_subscriptions order by updated_at desc limit 1;` says `apple`, `trialing`. Then delete that test account in the app (Account › Delete my account). | 20 min |
 | 13 | Your iPad (TestFlight) + production SQL | The demo account for App Review (§9): the first run as a grown-up with Maya, Not now on the plan, PIN 2468, a few ticked lines; `grant_ink` 2,000. Sign out. | 15 min |
 | 14 | The version page › App Review Information | Sign-in required: the demo email and password; contact details; the notes (§9). Build: pick 1.0 (1). Tick the subscription under In-App Purchases and Subscriptions. Release: "Manually release this version" (so you choose the day). | 10 min |
