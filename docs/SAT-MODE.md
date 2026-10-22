@@ -110,7 +110,8 @@ used on that day (the day is in the user's time zone, sent by the client as `tz`
 - **`POST /api/sat/attempts`** answers `{ok: true, correct}`: the server decides `correct` from the
   bank's answer (an mcq key, or a grid-in in any accepted form or an equal value like `6/8` for
   `3/4`) and stores that, whatever the app sent. `404 not_found` for a question that isn't live.
-- **`POST /api/sat/tutor`**: `tz` must be an IANA zone (`400` otherwise); `404` for a question that
+- **`POST /api/sat/tutor`**: the iPad calls it on the first stroke on a question's page (not when
+  the question opens); `tz` must be an IANA zone (`400` otherwise); `404` for a question that
   isn't live; Unlimited is always allowed and its pass is still recorded (so `used_today` counts it).
 - **`GET /api/sat/progress`**: `tz` defaults to UTC. `estimate` is `{low, high, note}` or null;
   `note` is the honest label to show with it ("A rough estimate from practice questions, not an SAT
@@ -173,9 +174,12 @@ used on that day (the day is in the user's time zone, sent by the client as `tz`
     its own problem page. The page's problem is the SAT question, so the tutor judges the student's
     ink against it. The page header is small (`Q3 · Linear functions`), because the question itself
     lives in the panel.
-  - **Tutor:** opening a question calls `POST /api/sat/tutor`. If it's allowed, the live tutor is on
-    for that page. If not, it shows a quiet line ("Free tutor used up for today: 5 of 5. The board
-    still works. Unlimited lifts it.") and the tutor stays off.
+  - **Tutor:** the student's FIRST STROKE on a question's page calls `POST /api/sat/tutor` (owner,
+    2026-10-22: "we just want ppl to use it"). Opening, browsing, choosing or checking an answer
+    without writing on the board uses no pass. Asking again for the same question the same day is
+    free (the pass is idempotent per question per day). If it's allowed, the live tutor is on for
+    that page from that stroke. If not, it shows a quiet line ("Free tutor used up for today: 5 of
+    5. The board still works. Unlimited lifts it.") and the tutor stays off.
   - **Check:** right turns green and shows "See the solution". Wrong lets them try again once, then
     offers the solution. The solution shows its steps, plus the Desmos tip when there is one. Every
     answer posts an attempt.
