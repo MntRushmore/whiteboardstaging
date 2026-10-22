@@ -165,8 +165,11 @@ public final class AuthService {
     @discardableResult
     public func upgradeAnonymous(email: String, password: String) async throws -> SignUpOutcome {
         guard isAnonymous else { throw APIError.notSignedIn }
+        // the Terms acceptance FIRST, as a sign-up sends it: the database refuses to make an anonymous
+        // user permanent without it (docs/SAT-MODE.md, "Upgrading")
+        _ = try await client.auth.update(user: UserAttributes(data: Self.signUpMetadata))
         let user = try await client.auth.update(user: UserAttributes(
-            email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password, data: Self.signUpMetadata))
+            email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password))
         if let session = client.auth.currentSession { apply(event: .userUpdated, session: session) }
         isAnonymous = user.isAnonymous
         self.email = user.email ?? self.email

@@ -82,7 +82,6 @@ struct SATSessionScreen: View {
                 .environment(backend)
                 .environment(planStore)
         }
-        .accessibilityIdentifier("sat.session")
     }
 
     private func close() {
@@ -125,7 +124,7 @@ struct SATSessionScreen: View {
         actions.close = close
         actions.beforeCheck = { model.beforeCheck() }
         return SATQuestionPanel(practice: model.practice, account: model.context.account(backend), actions: actions, collapsesUp: !sideways)
-            .ignoresSafeArea(.container, edges: sideways ? [.top, .bottom] : [.top])
+            .background(DS.Color.paper.ignoresSafeArea())
     }
 
     /// The draggable divider: a hairline with a grip, the whole strip a 24 pt target.
@@ -273,7 +272,8 @@ private struct SATBoardRoom: View {
             topTrailing: {
                 HStack(spacing: DS.Space.xs) {
                     if !model.context.isStub { BoardSaveStatus(session: session, showsWords: false) }
-                    if let loop = model.tutor?.loop { LiveStatusView(loop: loop).fixedSize() }
+                    // the tutor's status only while it is on for this page (off, the panel's line says why)
+                    if let loop = model.tutor?.loop, model.tutorOnHere { LiveStatusView(loop: loop).fixedSize() }
                 }
             },
             helpButton: {

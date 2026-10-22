@@ -317,10 +317,11 @@ struct SATSkillChip: View {
             .dsFont(.caption, size: 14)
             .fontWeight(.medium)
             .foregroundStyle(DS.Color.ink)
-            .lineLimit(1)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(Capsule().fill(DS.Color.surfaceSunken))
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(DS.Color.surfaceSunken))
             .accessibilityLabel("Skill: \(question.skillTitle), \(question.domain.title)")
             .accessibilityIdentifier("sat.skill")
     }

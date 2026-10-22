@@ -57,7 +57,6 @@ struct SATAccountFlow: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .background(DS.Color.ground.ignoresSafeArea())
-        .accessibilityIdentifier("sat.account")
     }
 
     // MARK: 1 · age

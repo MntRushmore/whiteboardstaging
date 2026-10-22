@@ -35,8 +35,8 @@ public enum SATCopy {
     // the free tutor (caps by tier, the owner 2026-10-22: no account 5, a free account 20, Unlimited
     // none; always the server's `cap`)
     public static func tutorReady(left: Int?, cap: Int) -> String {
-        guard let left else { return "The tutor checks your work when you write here." }
-        return "The tutor starts when you write here. \(left) of \(cap) free tutor questions left today."
+        guard let left else { return "The tutor checks your work once you write on the board." }
+        return "The tutor starts once you write on the board. \(left) of \(cap) free tutor questions left today."
     }
     public static func tutorOn(left: Int?, cap: Int) -> String {
         guard let left else { return "The tutor is on for this question." }

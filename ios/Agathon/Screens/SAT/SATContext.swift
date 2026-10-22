@@ -56,6 +56,26 @@ enum SATBoardHome {
         f.setLocalizedDateFormatFromTemplate("EEEE")
         return "SAT practice · \(f.string(from: day))"
     }
+
+    /// The student's SAT board of the day, when there is one on this iPad.
+    static func kept(for userId: String?, now: Date = Date(), defaults: UserDefaults = .standard) -> String? {
+        guard let userId, let v = defaults.dictionary(forKey: key(userId)), let id = v["id"] as? String,
+              v["day"] as? String == day(now) else { return nil }
+        return id
+    }
+
+    static func keep(_ boardId: String, for userId: String?, now: Date = Date(), defaults: UserDefaults = .standard) {
+        guard let userId else { return }
+        defaults.set(["id": boardId, "day": day(now)], forKey: key(userId))
+    }
+
+    static func key(_ userId: String) -> String { "agathon.sat.board.\(userId)" }
+
+    static func day(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: d)
+    }
 }
 
 /// A board row that lives only in memory (a stub run): nothing is fetched or written anywhere.

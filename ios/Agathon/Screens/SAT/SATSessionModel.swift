@@ -49,6 +49,8 @@ final class SATSessionModel: ObservableObject {
     @Published var cover: Cover?
     @Published private(set) var fetchingMore = false
     @Published var notice: String?
+    /// the live tutor is on for the page on show
+    @Published private(set) var tutorOnHere = false
 
     let practice: SATPractice
     let context: SATContext
@@ -86,21 +88,39 @@ final class SATSessionModel: ObservableObject {
         if context.isStub {
             boardId = "sat-stub-\(practice.sessionId.prefix(8))"
             session = BoardSession(boardId: boardId, remote: MemoryBoardRemote(), assets: MemoryBoardAssetStore(), backup: nil)
+            await session.open()
         } else {
-            do {
-                let board = try await backend.boards.create(title: SATBoardHome.title())
-                boardId = board.id
-            } catch {
-                phase = .failed("Couldn't make a board for this set. Check the Wi-Fi, then try again.")
-                return
+            // the day's SAT board again while it has room (an account-less student may keep at most 10
+            // boards, and Home stays tidy); else a new one
+            var opened: BoardSession?
+            if let kept = SATBoardHome.kept(for: backend.auth.userId), let s = BoardSession.make(boardId: kept, backend: backend) {
+                await s.open()
+                if s.phase == .ready, s.controller.store.screens.count + practice.questions.count <= ScreenRecord.maxScreens {
+                    boardId = kept
+                    opened = s
+                } else {
+                    await s.close()
+                }
             }
-            guard let made = BoardSession.make(boardId: boardId, backend: backend) else {
-                phase = .failed("Sign in again to practice.")
-                return
+            if opened == nil {
+                do {
+                    let board = try await backend.boards.create(title: SATBoardHome.title())
+                    boardId = board.id
+                } catch {
+                    phase = .failed("Couldn't make a board for this set. Check the Wi-Fi, then try again.")
+                    return
+                }
+                guard let made = BoardSession.make(boardId: boardId, backend: backend) else {
+                    phase = .failed("Sign in again to practice.")
+                    return
+                }
+                await made.open()
+                opened = made
+                SATBoardHome.keep(boardId, for: backend.auth.userId)
             }
-            session = made
+            guard let opened else { return }
+            session = opened
         }
-        await session.open()
         guard !closed else {
             await session.close()
             return
@@ -170,19 +190,15 @@ final class SATSessionModel: ObservableObject {
         } else {
             services = LiveAPIServices(backend: backend, tag: tag)
         }
-        let isStub = context.isStub
         let boardId = self.boardId
+        let api = backend.api
         let tutor = BoardTutor(controller: session.controller, canvas: canvas, boardId: boardId, services: services) { board, helper in
-            // Ask is not shown in SAT practice; its parts are the board's writer for the tutor
-            #if DEBUG
-            if isStub {
-                let driver = AskBoardDriver(canvasBoard: board, helper: helper)
-                let speech = AskSpeech(voice: AskVoice(source: nil), grade: nil)
-                let chat = AskSession(boardId: boardId, transport: ScriptedAskTransport(), board: driver, speech: speech.queue, grade: nil)
-                return (AskParts(session: chat, speech: speech, mic: AskMic(stt: ScriptedSpeechToText())), driver)
-            }
-            #endif
-            return AskParts.live(backend: backend, boardId: boardId, board: board, helper: helper, userId: backend.auth.userId, grade: nil)
+            // Ask is not shown in SAT practice (and an account-less student may not call it): its parts
+            // are only the board's writer for the tutor, on a transport that calls nothing
+            let driver = AskBoardDriver(canvasBoard: board, helper: helper)
+            let speech = AskSpeech(voice: AskVoice(source: nil), grade: nil)
+            let chat = AskSession(boardId: boardId, transport: SATNoAskTransport(), board: driver, speech: speech.queue, grade: nil)
+            return (AskParts(session: chat, speech: speech, mic: AskMic(stt: LiveSpeechToText(api: api))), driver)
         }
         // SAT answers are SAT's own record, not the K–8 learning record
         tutor.loop.learning.connectsAutomatically = false
@@ -231,8 +247,10 @@ final class SATSessionModel: ObservableObject {
         callsAtShow[practice.index] = Self.calls(loop)
         guard let i, practice.items.indices.contains(i), practice.items[i].tutor.isOn else {
             if loop.settings.enabled { loop.settings.enabled = false }
+            tutorOnHere = false
             return
         }
+        tutorOnHere = true
         tag.satQuestionId = practice.questions[i].id
         if !loop.settings.enabled {
             loop.settings.enabled = true
@@ -424,4 +442,15 @@ extension SATPractice {
     func endReviewIfOutside(_ i: Int) {
         if let list = reviewing, !list.contains(i) { endReview() }
     }
+}
+
+/// Ask's transport in SAT practice: nothing is asked, no history read (Ask is not on SAT's screen).
+final class SATNoAskTransport: AskTransport {
+    func ask(_ request: AskRequest) -> AsyncThrowingStream<AskEvent, Error> {
+        AsyncThrowingStream { $0.finish() }
+    }
+
+    func history(boardId: String, screen: AskHistoryScreen?) async -> (history: AskHistoryResponse?, retry: Bool) { (nil, false) }
+
+    func move(boardId: String, turnIds: [String], screenId: String) async -> Bool { false }
 }
