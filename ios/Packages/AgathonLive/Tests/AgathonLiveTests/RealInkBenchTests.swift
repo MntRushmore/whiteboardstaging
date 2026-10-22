@@ -295,6 +295,12 @@ struct RealInkBenchTests {
                                      readMs: r.readMs, markMs: r.markMs))
         }
         let strayRings = loop.lines.keys.filter { !owned.contains($0) && loop.trainingMark(on: $0) == .ring }.count
+        if ProcessInfo.processInfo.environment["AGATHON_REALINK_DEBUG"] == "1" {
+            for st in loop.lines.values.sorted(by: { ($0.column, $0.row) < ($1.column, $1.row) }) {
+                print("LINE \(c.id) \(owned.contains(st.id) ? "labeled" : "STRAY") col\(st.column) row\(st.row) \(st.latex) conf=\(st.confidence) "
+                      + "[\(st.analysis?.verdict ?? "-")\(st.analysis?.misreadLikely == true ? " misread?" : "")] mark=\(loop.trainingMark(on: st.id).rawValue) strokes=\(st.ink.strokeIds.count) box=\(st.bounds)")
+            }
+        }
         let solved = loop.trainingSolved
         let (_, calls) = services.end(boardId)
         loop.stop()
