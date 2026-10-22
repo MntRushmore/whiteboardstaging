@@ -154,10 +154,13 @@ extension LiveLoop {
     func rightNextStep(_ st: LiveLine) async -> String? {
         let good = lastGoodLineAbove(st)
         let head = head(for: st.column)?.lines ?? []
-        guard good != nil || !head.isEmpty else { return nil }
+        // (the first lines of a page that continues a problem: the work went right as far as the
+        // page before's last right step, "More room")
+        let carried = good == nil ? (carryIn(column: st.column)?.previousLatex).map { [$0] } ?? [] : []
+        guard good != nil || !head.isEmpty || !carried.isEmpty else { return nil }
         let column = columnLines(st.column).filter { !$0.latex.isEmpty }
         let upto = good.map { g in column.filter { $0.row <= g.row }.map(\.latex) } ?? []
-        let work = head + upto
+        let work = head + carried + upto
         let own = Set(column.map { SolveSteps.key($0.latex) })
         guard let local = try? await brain.localSolve(work, options: LocalSolveOptions(targetIndex: work.count - 1, handwriting: true)) else { return nil }
         return local.steps.first { !own.contains(SolveSteps.key($0)) }

@@ -27,10 +27,12 @@ extension LiveLoop {
         refreshPage()
     }
 
-    /// Work on the page not checked yet (or still being read).
+    /// Work on the page not checked yet (or still being read) — or on another page of its problem
+    /// ("More room": a check here checks there too).
     func hasUncheckedWork() -> Bool {
         guard checksWhenDone else { return false }
         return lines.values.contains { !$0.latex.isEmpty && isHeld($0) } || !reading.isEmpty || !pages.applying.isEmpty || !dirtyStrokes.isEmpty
+            || heldOnOtherPages()
     }
 
     // MARK: - checking
@@ -51,7 +53,12 @@ extension LiveLoop {
             pages.answerTimer = nil
         }
         if lines.isEmpty && dirtyStrokes.isEmpty {
-            if reason == .button { say(LiveCopy.Pages.nothingToCheck) }
+            // nothing here yet: the work on the problem's other pages ("More room")
+            if heldOnOtherPages() {
+                checkOtherPages(reason)
+            } else if reason == .button {
+                say(LiveCopy.Pages.nothingToCheck)
+            }
             return
         }
         if !reading.isEmpty || !pages.applying.isEmpty || !dirtyStrokes.isEmpty || (rt.values.contains { $0.readRetryTimer != nil }) {
@@ -91,6 +98,8 @@ extension LiveLoop {
         defer {
             pauseAgainAfterCheck()
             armSafetyNet()
+            // a problem over more pages ("More room"): its other pages are checked too
+            checkOtherPages(reason)
         }
         var released: [LiveLine] = []
         for st in lines.values.sorted(by: { ($0.column, $0.row) < ($1.column, $1.row) }) where !st.latex.isEmpty {
@@ -99,7 +108,7 @@ extension LiveLoop {
             released.append(st)
         }
         guard !released.isEmpty else {
-            if reason == .button { say(LiveCopy.Pages.nothingToCheck) }
+            if reason == .button && !heldOnOtherPages() { say(LiveCopy.Pages.nothingToCheck) }
             refreshPage()
             return
         }
@@ -247,7 +256,7 @@ extension LiveLoop {
             pages.netTimer = scheduler.after(1_000) { [weak self] in self?.safetyNetCheck() }
             return
         }
-        guard hasUncheckedWork(), lines.values.contains(where: { !$0.latex.isEmpty && isHeld($0) }) else { return }
+        guard hasUncheckedWork(), lines.values.contains(where: { !$0.latex.isEmpty && isHeld($0) }) || heldOnOtherPages() else { return }
         pages.netFiredFor = pages.lastInkAt
         let why = checkDiagnosis
         pages.lastSafetyNet = why
@@ -280,7 +289,8 @@ extension LiveLoop {
 
     /// `box` (page units) is written in the page's answer spot.
     func inAnswerSpot(_ box: BrainRect) -> Bool {
-        guard let page = board.currentProblemPage, page.kind == .problem, page.answer else { return false }
+        // (on the problem's last page: "More room" moves it on)
+        guard let page = board.currentProblemPage, page.kind == .problem, page.hasAnswerSpot else { return false }
         let local = ProblemPageLayout.unplace(box.box, from: board.screenRect.box)
         return ProblemPageLayout.isInAnswer(local)
     }
@@ -293,21 +303,25 @@ extension LiveLoop {
         guard started else { return }
         let page = board.currentProblemPage
         if pages.page != page { pages.page = page }
-        let solved = lines.values.contains { st in
+        let solvedHere = lines.values.contains { st in
             st.analysis?.solved == true && !isHeld(st) && ownHeadAbove(st) == nil && rt[st.id]?.markKey?.hasPrefix("check:") == true
                 && !ringedAfter(st)
         }
+        let solved = solvedHere && !elsewhere().ringedLater || solvedOnOtherPages()
         pages.solved = solved
         let action: PageAction?
         if let page, page.kind == .problem, page.inSet, solved {
             action = .next(last: page.isLast)
         } else if settings.enabled && settings.mode != .off && page?.kind != .done && hasUncheckedWork()
-                    && lines.values.contains(where: { !$0.latex.isEmpty }) {
+                    && (lines.values.contains(where: { !$0.latex.isEmpty }) || heldOnOtherPages()) {
             action = .check
         } else {
             action = nil
         }
         if pages.action != action { pages.action = action }
+        // "More room": the page is getting full
+        let room = wantsMoreRoom(page, solved: solved)
+        if pages.moreRoom != room { pages.moreRoom = room }
         refreshReadings()
         refreshOffer()
         if page?.kind == .done { refreshSetProblems() } else if !pages.setProblems.isEmpty { pages.setProblems = [] }

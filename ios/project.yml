@@ -115,14 +115,16 @@ targets:
         # localhost only, for a Debug run pointed at `npm run dev` (AGATHON_API_URL in the scheme).
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
-        # Ask's hold-to-talk mic and Lecture mode.
-        NSMicrophoneUsageDescription: Agathon listens while you hold the mic to ask a question out loud, and during Lecture mode.
-        # Ask's mic when its speech service is resting (on-device recognition), and Lecture mode.
-        NSSpeechRecognitionUsageDescription: Agathon turns what you say into words when you talk to Ask, and what the teacher says into notes during Lecture mode.
-        # The picture button's "Take Photo" (a file input accepting images offers the camera).
+        # Ask's hold-to-talk mic (AgathonAsk/Services/AskMic.swift): a clip recorded only while the mic is
+        # held, sent to /api/live/transcribe and not kept. (Lecture mode is not in the iPad app.)
+        NSMicrophoneUsageDescription: Agathon listens only while you hold the mic, so you can ask your question out loud.
+        # Ask's mic when the transcribe route is resting: the iPad's own recognizer (SFSpeechRecognizer).
+        NSSpeechRecognitionUsageDescription: Agathon turns what you say into words while you hold the mic to ask a question.
+        # The board's picture menu, Take Photo (AgathonBoardUI/Pictures/PictureImport.swift, CameraPicker).
+        # Without this key the camera crashes the app.
         NSCameraUsageDescription: Take a photo of a worksheet or a drawing to put it on your board.
-        # "Save Video" / "Save Image" from the share sheet after saving a replay or a picture.
-        NSPhotoLibraryAddUsageDescription: Agathon saves your board replays and pictures to your photo library.
+        # No photo-library keys: pictures come from the Photos picker (no permission needed) and the app
+        # never saves to the photo library. Add NSPhotoLibraryAddUsageDescription with a feature that does.
     scheme:
       # Xcode's local StoreKit testing: the plan, its price and the 7-day free trial without App Store
       # Connect (Debug > StoreKit > Manage Transactions to renew, expire or refund). Payloads it signs are

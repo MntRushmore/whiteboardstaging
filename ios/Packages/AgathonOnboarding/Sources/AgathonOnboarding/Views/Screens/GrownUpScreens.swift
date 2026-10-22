@@ -170,6 +170,10 @@ struct AccountScreen: View {
                         }
                         .frame(maxWidth: 440)
                         VStack(alignment: .leading, spacing: 14) {
+                            Text(c.aiDisclosure).dsFont(.callout, size: 15).foregroundStyle(DS.Color.inkSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("onboarding.account.ai")
+                                .reveal(3)
                             Toggle(isOn: $agreed) {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(c.consent).dsFont(.callout, size: 15).foregroundStyle(DS.Color.ink)

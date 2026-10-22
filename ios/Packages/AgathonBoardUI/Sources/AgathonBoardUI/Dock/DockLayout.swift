@@ -42,11 +42,18 @@ public enum DockCopy {
     public static func problemOf(_ n: Int, _ count: Int) -> String { "Problem \(n) of \(count)" }
     public static let allDone = "All done"
 
-    /// What the top bar says under the board's name: "Problem 2 of 5" on a problem page in a set,
-    /// "All done" on the page that ends one, else "Page 2 of 6".
-    public static func whereAmI(_ page: ProblemPage?, screen n: Int, of count: Int) -> String {
+    /// a page of a problem that needed more room ("More room"): "Problem 2 · page 2 of 2"
+    public static func problemPage(_ n: Int?, part: Int, of parts: Int) -> String {
+        "\(n.map { "Problem \($0)" } ?? "This problem") · page \(part) of \(parts)"
+    }
+
+    /// What the top bar says under the board's name: "Problem 2 of 5" on a problem page in a set
+    /// ("Problem 2 · page 2 of 2" when that problem needed more room: `part` is its page and its
+    /// pages), "All done" on the page that ends one, else "Page 2 of 6".
+    public static func whereAmI(_ page: ProblemPage?, part: (Int, Int)? = nil, screen n: Int, of count: Int) -> String {
         if let page {
             if page.kind == .done && page.setId != nil { return allDone }
+            if page.kind == .problem, let part, part.1 > 1 { return problemPage(page.inSet ? page.index : nil, part: part.0, of: part.1) }
             if page.kind == .problem, page.inSet, let i = page.index, let c = page.count { return problemOf(i, c) }
         }
         return pageOf(n, count)

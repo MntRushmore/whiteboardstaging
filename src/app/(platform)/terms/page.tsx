@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ContactBlock, ContactEmail, LegalPage, LegalSection } from "@/components/legal/LegalPage";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
+import { MAX_KIDS } from "@/lib/family/contracts";
 import { LEGAL } from "@/lib/legal";
 
 export const metadata: Metadata = {
@@ -19,7 +20,10 @@ const fairUse = LEGAL.unlimited.fairUseActionsPerDay.toLocaleString("en-US");
 // Every statement about the plan is what the code does: the Payment Link (free trial, card up front,
 // monthly renewal), the customer portal (cancel at the period end), has_unlimited() (past_due spends
 // ink), unlimited_fair_use_per_day(), delete_own_account() (refuses while a plan would charge again)
-// and the trial-reminder cron (src/lib/email/trialReminders.ts).
+// and the trial-reminder cron (src/lib/email/trialReminders.ts). In the iPad app the plan is sold through
+// Apple (StoreKit 2: supabase/migrations/20261017200000_apple_subscriptions.sql, docs/RUNBOOK-billing.md
+// section 16): `#app-store` says what Apple handles instead; `#apple` is Apple's minimum terms for an app's
+// own EULA. Kid profiles share the grown-up's plan (src/lib/family/contracts.ts, MAX_KIDS).
 export default function TermsPage() {
   return (
     <LegalPage
@@ -35,6 +39,11 @@ export default function TermsPage() {
             nothing (<a href="#unlimited">how it works</a>).
           </li>
           <li>
+            In the iPad app, {plan} is bought through Apple, at the App Store’s price, with Apple’s free trial. Apple
+            renews it each month until you cancel in the iPad’s Settings, and refunds go through Apple (
+            <a href="#app-store">in the iPad app</a>).
+          </li>
+          <li>
             Ink packs are no longer sold. See the <Link href="/refunds">Refund Policy</Link> for the plan, and for ink
             bought before.
           </li>
@@ -43,7 +52,8 @@ export default function TermsPage() {
     >
       <LegalSection id="who" title="Who we are">
         <p>
-          {LEGAL.productName} (at {LEGAL.siteHost}) is run by {LEGAL.operatorName} (“we”, “us”).
+          {LEGAL.productName} (at {LEGAL.siteHost}, and the {LEGAL.productName} app for iPad) is run by{" "}
+          {LEGAL.operatorName} (“we”, “us”).
           These terms are an agreement between you and us about using {LEGAL.productName}. By creating an account or
           using {LEGAL.productName} you agree to them, and to our <Link href="/privacy">Privacy Policy</Link> and{" "}
           <Link href="/refunds">Refund Policy</Link>.
@@ -89,6 +99,11 @@ export default function TermsPage() {
           <li>One person per account. You are responsible for what happens under your account; tell us if you think
             someone else is using it.</li>
           <li>
+            <strong>Family profiles:</strong> a grown-up can add up to {MAX_KIDS} kid profiles to their account, one for
+            each of their children. The kids share the grown-up’s {plan}. The grown-up is responsible for them, and for
+            keeping the family PIN to themselves.
+          </li>
+          <li>
             Keep your email address up to date. It is where we send password resets and notice of changes to these
             terms or to prices. Emails about {plan}’s payments go to the email used at checkout.
           </li>
@@ -117,7 +132,7 @@ export default function TermsPage() {
             try to get around the plan, ink, the fair-use limit, rate limits or security, or access other people’s
             accounts or boards;
           </li>
-          <li>share one account, or one plan, between several people;</li>
+          <li>share one account, or one plan, between several people, apart from the kid profiles of one family;</li>
           <li>scrape, copy or resell the service, or access it with bots or scripts;</li>
           <li>try to make the AI produce harmful content, or overload or disrupt the service;</li>
           <li>reverse-engineer the service, except where the law allows it.</li>
@@ -200,6 +215,62 @@ export default function TermsPage() {
             Deleting your {LEGAL.productName} account does not cancel the plan, so cancel it first. The app will not
             delete an account whose plan would charge the card again.
           </li>
+          <li>
+            Bought in the iPad app? Cancel it in the iPad’s Settings instead (see{" "}
+            <a href="#app-store">In the iPad app</a>).
+          </li>
+        </ul>
+
+        <h3 id="app-store">In the iPad app (through Apple)</h3>
+        <p>
+          In the {LEGAL.productName} app for iPad, {plan} is sold through Apple’s in-app purchase, not Stripe. The rest of
+          these terms apply to it, except what Apple handles, where Apple’s rules apply instead:
+        </p>
+        <ul>
+          <li>
+            <strong>Price:</strong> the price the App Store shows before you buy, in your currency, plus any tax. Apple
+            charges it to the payment method of your Apple Account.
+          </li>
+          <li>
+            <strong>Free trial:</strong> Apple’s free trial of {trialDays} days, for an Apple Account that has not had it
+            before. When it ends, Apple charges the first month, unless you cancel at least 24 hours before it ends.
+          </li>
+          <li>
+            <strong>It renews every month</strong> until you cancel. Apple charges each renewal in the 24 hours before
+            the month ends, unless you cancel at least 24 hours before it ends. Apple confirms the free trial when it
+            starts, and about 2 to 3 days before it ends we email the account’s email address with the date and how to
+            cancel.
+          </li>
+          <li>
+            <strong>To cancel:</strong> on the iPad, open Settings, tap your name, then Subscriptions, and choose{" "}
+            {plan}. Cancel at least 24 hours before the free trial or the month ends to stop the next charge; the plan
+            stays on until then. Only you can cancel it: we cannot cancel an App Store subscription for you.
+          </li>
+          <li>
+            <strong>Refunds</strong> are Apple’s to give: ask Apple at{" "}
+            <a href="https://reportaproblem.apple.com">reportaproblem.apple.com</a>. Our{" "}
+            <Link href="/refunds">Refund Policy</Link> does not cover purchases made through Apple.
+          </li>
+          <li>
+            <strong>If a payment does not go through,</strong> Apple tries again for a while. Until it does, help uses
+            ink again; if it never does, the plan ends.
+          </li>
+          <li>
+            <strong>Price changes</strong> follow Apple’s rules: Apple tells you before a new price applies and, where
+            its rules say so, asks you to agree to it first.
+          </li>
+          <li>
+            A grown-up buys the plan, after a grown-ups-only check in the app. Apple’s Ask to Buy and Screen Time
+            settings apply too.
+          </li>
+          <li>
+            Deleting your {LEGAL.productName} account does not cancel a plan bought through Apple, and the app lets you
+            delete it anyway, so cancel the plan in Settings first.
+          </li>
+          <li>
+            Apple’s <a href="https://www.apple.com/legal/internet-services/itunes/">Media Services Terms</a> also apply
+            to buying and using the app.
+          </li>
         </ul>
 
         <h3 id="fair-use">Fair use</h3>
@@ -232,17 +303,23 @@ export default function TermsPage() {
             agrees to these terms for the plan and is responsible for its charges.
           </li>
           <li>
-            Payments are processed by Stripe, under the seller name <strong>“{LEGAL.stripeSellerName}”</strong>; your
+            On the web, payments are processed by Stripe, under the seller name{" "}
+            <strong>“{LEGAL.stripeSellerName}”</strong>; your
             card statement shows the plan’s charges as <strong>“{LEGAL.statementDescriptors.unlimited}”</strong>.
             Stripe’s billing page shows the plan, its invoices and the card. We never see or store your full card
             number.
+          </li>
+          <li>
+            In the iPad app, Apple takes the payment from your Apple Account, and your statement shows Apple. We never
+            see your card.
           </li>
         </ul>
 
         <h3>Free trials</h3>
         <p>
           The free trial is for new subscribers. We may limit it to one per person, family or card. If we find a repeat
-          free trial, we may cancel it (nothing is charged) or not offer one.
+          free trial, we may cancel it (nothing is charged) or not offer one. In the iPad app, Apple decides who is
+          offered its free trial.
         </p>
 
         <h3>Your ink, and if we shut down</h3>
@@ -254,9 +331,10 @@ export default function TermsPage() {
 
       <LegalSection id="ending" title="Ending your account">
         <p>
-          You can delete your account at any time from your Account page. Deleting it removes your boards and ink
-          balance and cannot be undone; ask for a refund of unused ink first if you are within the refund window. If you
-          have {plan}, cancel it first (see <a href="#unlimited">above</a>).
+          You can delete your account at any time from your Account page, on the web or in the iPad app. Deleting it
+          removes your boards, your kid profiles and their boards, and your ink balance, and cannot be undone; ask for a
+          refund of unused ink first if you are within the refund window. If you have {plan}, cancel it first (see{" "}
+          <a href="#unlimited">above</a>; bought in the iPad app, <a href="#app-store">in Settings</a>).
         </p>
         <p>
           We may suspend or close an account that breaks these terms. If we do, we cancel its plan so it is not charged
@@ -279,6 +357,38 @@ export default function TermsPage() {
           us in the 12 months before the claim. Some places do not allow these limits, so they may not all apply to you.
           Nothing in these terms takes away rights you have under consumer protection law.
         </p>
+      </LegalSection>
+
+      <LegalSection id="apple" title="If you got the app from the App Store">
+        <ul>
+          <li>
+            These terms are between you and {LEGAL.operatorName}, not Apple. We, not Apple, are responsible for the app
+            and what is in it.
+          </li>
+          <li>
+            You may use the app on Apple devices you own or control, as the Usage Rules in Apple’s Media Services Terms
+            allow.
+          </li>
+          <li>Apple has no duty to support or maintain the app. For help, contact us (below).</li>
+          <li>
+            If the app does not meet a warranty that applies to it, you may tell Apple, and Apple will refund what you
+            paid for the app, if anything. Apart from that, and to the extent the law allows, Apple has no warranty
+            duty for the app.
+          </li>
+          <li>
+            We, not Apple, deal with any claim about the app, such as product liability, a claim that it does not meet
+            a legal or regulatory requirement, a consumer protection or privacy claim, or a claim that the app or your
+            use of it infringes someone’s intellectual property.
+          </li>
+          <li>
+            You confirm that you are not in a country under a US government embargo or named by the US government as
+            supporting terrorism, and that you are not on a US government list of prohibited or restricted parties.
+          </li>
+          <li>
+            Apple and its subsidiaries are third-party beneficiaries of these terms and, once you accept them, may
+            enforce them against you.
+          </li>
+        </ul>
       </LegalSection>
 
       <LegalSection id="law" title="Governing law">

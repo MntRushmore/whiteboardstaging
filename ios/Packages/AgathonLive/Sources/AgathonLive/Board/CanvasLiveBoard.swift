@@ -100,6 +100,10 @@ public final class CanvasLiveBoard: LiveBoard, LiveCanvasGeometry {
         controller.moveToNewScreen(ids, offset: offset, meta: meta, alsoRemove: alsoRemove)
     }
 
+    public func moreRoom() -> RecordID? {
+        controller.addMoreRoom()
+    }
+
     // MARK: LiveCanvasGeometry
 
     public func viewPoint(_ page: AgathonBrain.Point) -> CGPoint {
