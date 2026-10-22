@@ -84,6 +84,23 @@ struct RealInkFixesTests {
         #expect(!r.lines.contains { $0.mark == .ring }, "\(Self.describe(r))")
     }
 
+    // MARK: - a misread is asked about, never ringed
+
+    @Test func anAnswerWrongTheWayAMisreadIsIsAskedAboutNotRinged() async throws {
+        // production read her 14 (7 × 2) as 4, and 65 (58 + 7) as b5: both were ringed on right work
+        for (problem, written, read) in [("7 \\times 2", "14", "4"), ("58 + 7", "= 65", "=b5")] {
+            let f = try await Self.fixture(problem: [problem], lines: [(written, .calm, .answer)], reads: [read], solved: nil)
+            let r = await TrainingFixtureTests.replay(f)
+            #expect(!r.lines.contains { $0.mark == .ring }, "\(problem): \(Self.describe(r))")
+        }
+    }
+
+    @Test func aSlipThatIsASlipKeepsItsRing() async throws {
+        let f = try await Self.fixture(problem: ["58 + 7"], lines: [("= 64", .ring, .answer)], solved: false)
+        let r = await TrainingFixtureTests.replay(f)
+        #expect(r.lines.first?.mark == .ring, "\(Self.describe(r))")
+    }
+
     // MARK: - her notes of what she does to both sides
 
     @Test func notesReadIntoTheLineAreNotJudged() async throws {

@@ -214,6 +214,8 @@ public struct LineAnalysis: Codable, Hashable, Sendable {
     public var substituted: String?
     public var nextStep: String?
     public var branch: Branch?
+    /// a slip in arithmetic that looks more like a misread (a letter in the answer, a digit dropped): asked about, never ringed
+    public var misreadLikely: Bool?
 }
 
 /// The column around a line (`AnalyzeContext`): the line above it, the column's first relation.

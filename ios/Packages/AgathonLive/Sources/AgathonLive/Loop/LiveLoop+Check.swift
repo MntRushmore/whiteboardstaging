@@ -161,7 +161,8 @@ extension LiveLoop {
             (st.analysis?.verdict == "mismatch" || st.isModelFlagged) && !unsureOfProblem(st) && !pages.ownHeads.contains(st.id)
         }
         if let slip {
-            if readingInDoubt(slip) {
+            // a misread more likely than a slip (`misreadLikely`: 14 read as 4) is asked about, not hinted at
+            if readingInDoubt(slip) || slip.analysis?.misreadLikely == true {
                 askAboutReading(slip)
             } else if settings.mode == .feedback && hints.isEmpty {
                 hint(slip)

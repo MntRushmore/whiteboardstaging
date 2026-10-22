@@ -113,3 +113,18 @@ describe("open classes (known issues)", () => {
     expect(youngReadOf({ latex: "27^{\\circ}, \\quad x", problem: ["x + 63^{\\circ} = 90^{\\circ}"] }).latex.replace(/\s/g, "")).toBe("27^{\\circ}");
   });
 });
+
+describe("an arithmetic answer wrong the way a misread is", () => {
+  const flag = (c: { problem: string[]; lines: string[] }) => judgeColumn(engine, c).map((a) => a?.misreadLikely === true);
+  it("is flagged to be asked about, not ringed: a digit dropped (14 read as 4), a letter (65 read as b5)", () => {
+    expect(flag({ problem: ["7 \\times 2"], lines: ["4"] })).toEqual([true]);
+    expect(flag({ problem: ["58 + 7"], lines: ["=b5"] })).toEqual([true]);
+    expect(flag({ problem: ["7 \\times 2"], lines: ["= 104"] })).toEqual([true]);
+  });
+
+  it("a slip that is a slip stays one", () => {
+    expect(flag({ problem: ["58 + 7"], lines: ["= 64"] })).toEqual([false]);
+    expect(flag({ problem: ["7 \\times 2"], lines: ["13"] })).toEqual([false]);
+    expect(flag({ problem: ["7 \\times 2"], lines: ["41"] })).toEqual([false]);
+  });
+});

@@ -188,6 +188,7 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
       }
       if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(latex))) a = { ...a, solved: true };
     }
+    if (a.verdict === "mismatch" && looksMisread(engine, latex, input.arithmetic)) a = { ...a, misreadLikely: true };
   } else if (ctx.previous?.substituted && !input.given) {
     // the line above asks for its value with the column's givens put in (`2x + 5 =` under `x = 3`,
     // `LineAnalysis.substituted`): a lone number is that value (`11`, judged as `= 11`), and a right
@@ -353,4 +354,25 @@ export function simplestForm(math: string): boolean {
     seen.add(key);
   }
   return true;
+}
+
+/**
+ * An arithmetic answer that is "wrong" the way a misread is, not the way a slip is (the real-ink bench:
+ * a 14 read as 4, a 65 read as b5, both ringed on right work): a letter where only a number can be, or
+ * the right value with one digit dropped or added. Only for a one-line problem with a whole-number answer.
+ */
+function looksMisread(engine: LiveEngine, latex: string, problem: readonly string[]): boolean {
+  if (problem.length !== 1) return false;
+  const end = lastSide(latex).replace(/\\(?:text|mathrm|mathbb|mathbf)\s*\{([^{}]*)\}/g, "$1").replace(/\\[a-zA-Z]+/g, " ");
+  if (/[a-zA-Z]/.test(end) && /\d/.test(end)) return true;
+  const read = (end.match(/\d+/g) ?? []).join("");
+  if (!read) return false;
+  const right = engine.analyzeLine(`x = ${problem[0]}`, { mode: "feedback" }).solutions?.[0]?.replace(/\s/g, "");
+  if (!right || !/^-?\d+$/.test(right)) return false;
+  const digits = right.replace("-", "");
+  const [short, long] = read.length < digits.length ? [read, digits] : [digits, read];
+  if (long.length - short.length !== 1) return false;
+  let i = 0;
+  for (const ch of long) if (i < short.length && ch === short[i]) i++;
+  return i === short.length;
 }

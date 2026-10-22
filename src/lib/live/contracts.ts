@@ -212,6 +212,12 @@ export interface LineAnalysis {
    */
   bareAnswer?: boolean;
   /**
+   * A slip in arithmetic that looks more like a misread than a mistake (`judgeLine`): a letter in a
+   * number answer, or the right answer with one digit dropped or added (`4` for 14). The loop asks
+   * "Is this right?" instead of ringing it.
+   */
+  misreadLikely?: boolean;
+  /**
    * Where the unknown lives, written with the equation (`2\cos x = 1, 0^{\circ} \le x < 360^{\circ}`)
    * or on a line of its own (`engine/domain.ts`). Carried down the column: an answer under it must
    * lie inside, and lists all of its solutions there to count as solved.

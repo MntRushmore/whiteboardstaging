@@ -279,7 +279,7 @@ extension LiveLoop {
         if marked == "warn" && unsureOfProblem(st) { marked = "none" }
         // nor a read the tutor is not sure of (it asks first: "Is this right?"), nor a problem of the
         // kid's own (docs/PROBLEM-PAGES.md)
-        let doubt = pages.extras && (readingInDoubt(st) || pages.ownHeads.contains(st.id))
+        let doubt = pages.extras && (readingInDoubt(st) || pages.ownHeads.contains(st.id) || st.analysis?.misreadLikely == true)
         if marked == "warn" && doubt { marked = "none" }
         let ring = marked == "warn" || (marked != "ok" && marked != "solved" && st.isModelFlagged && !unsureOfProblem(st) && !doubt)
         // a crossed-out line is never marked
