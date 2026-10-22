@@ -105,6 +105,37 @@ struct ProblemPageWriterTests {
         #expect(none.outcomes.first?.ok == false && none.problemsWritten == 0)
     }
 
+    /// A word problem: the desk writes maths only, so the page gets the words, in the tutor's hand,
+    /// heading no column (the kid's first line is the problem their work is judged against).
+    @Test func aWordProblemGetsAPageWithItsWords() async throws {
+        let board = MemoryBoard()
+        let d = driver(board)
+        let report = await d.run([action(#"{"type":"write_problems","set":"ask:words","origin":"chat","problems":[["\\text{Sam has 3 bags of 4 apples.}","\\text{How many apples?}"],["2x + 3 = 11"]]}"#)]) { _ in }
+        #expect(report.problemsWritten == 2 && report.problemsDropped == 0)
+        let ids = board.store.screenIDs
+        #expect(ids.count == 3, "two problem pages and All done")
+        let page = try #require(board.store[ids[0]]?.screen?.problemPage)
+        #expect(page.kind == .problem && page.index == 1 && page.count == 2)
+        let ink = tutorStrokes(board, on: ids[0])
+        #expect(!ink.isEmpty, "the words are written")
+        #expect(ink.allSatisfy { $0.meta[WordProblem.meta]?.boolValue == true && $0.meta["chatProblem"] == nil })
+        let lines = Set(ink.compactMap { $0.meta[HandPace.lineMeta]?.stringValue })
+        #expect(lines == ["Sam has 3 bags of 4 apples.", "How many apples?"], "plain words, never \\text: \(lines)")
+        let box = try #require(AskBoardDriver.pointsBox(ink.flatMap { s in s.points.map { s.pagePoint($0) } }))
+        #expect(abs(box.x - ProblemPageLayout.problemOrigin.x) < 12 && box.x + box.w <= ProblemPageLayout.ruleRight + 1, "on the page: \(box)")
+        #expect(page.resolvedWorkTop >= box.y + box.h + ProblemPageLayout.workGap, "the work starts under the words")
+        // the maths problem on the next page is as before
+        #expect(tutorStrokes(board, on: ids[1]).first?.meta["chatProblem"] != nil)
+    }
+
+    /// A problem with something in it the page would show as LaTeX is still left out.
+    @Test func aWordProblemThatWouldShowLaTeXIsLeftOut() async throws {
+        let board = MemoryBoard()
+        let d = driver(board)
+        let report = await d.run([action(#"{"type":"write_problems","problems":[["\\text{Work out } \\binom{5}{2}"]]}"#)]) { _ in }
+        #expect(report.problemsWritten == 0 && report.problemsDropped == 1)
+    }
+
     @Test func otherActionsGoThroughTheDeskInOrder() async throws {
         let board = MemoryBoard()
         let d = driver(board)

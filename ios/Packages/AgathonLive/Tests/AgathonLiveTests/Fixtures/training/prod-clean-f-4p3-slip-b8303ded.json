@@ -196,8 +196,8 @@
     "mode": "feedback"
   },
   "solved": false,
-  "status": "fixed",
+  "status": "open",
   "title": "4 + 3",
   "version": 1,
-  "why": "One line taken as 2 lines (8)."
+  "why": "Still open (2026-10-22): the answer 8 is cut in two lines (its strokes far apart in the answer spot)."
 }

@@ -88,7 +88,7 @@ function strokeToLocal(points: Pt[], ox: number, oy: number, scale: number, seed
 /** Compose a teacher-hand string as tldraw draw segments (local coords). */
 export function composeHandwriting(
   text: string,
-  opts: { maxWidth: number; seed?: number; size?: number },
+  opts: { maxWidth: number; seed?: number; size?: number; wordGap?: number },
 ): ComposedInk {
   const scale = (opts.size ?? HAND_SIZE) / EM_HEIGHT;
   const lineHeight = LINE_HEIGHT * scale;
@@ -127,7 +127,7 @@ export function composeHandwriting(
     }
 
     if (w < words.length - 1) {
-      x += WORD_GAP_PX;
+      x += opts.wordGap ?? WORD_GAP_PX;
       if (x > maxX) maxX = x;
     }
   }

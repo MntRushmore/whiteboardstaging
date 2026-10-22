@@ -58,6 +58,9 @@ public enum ReadCheck {
         let bare = bareMath(line)
         if has(#"\d\s*[oO](?![a-zA-Z])|(?<![a-zA-Z])[oO]\s*\d"#, bare) { return "digit-letter" }
         if has(#"\\frac\s*\{[^{}]*\}\s*\{\s*0\s*\}"#, line) { return "zero-denominator" }
+        // a fraction read without its top: `\bar{2}`, `\overline{3}`, `\frac{}{6}` (`\frac{1}{2} = \frac{3}{6}`
+        // re-read `\bar{2}=\bar{6}`, judged 2 = 6 and ringed)
+        if has(#"(?<![\d.]|[\d.]\s)\\(?:bar|overline)\s*\{\s*\d+\s*\}|\\frac\s*\{\s*\}"#, line) { return "lost-numerator" }
         let sides = mathOnly(line).trimmingCharacters(in: .whitespaces).split(separator: "=", omittingEmptySubsequences: false)
         if sides.count == 2, !has(#"<|>|\\(?:le|ge|leq|geq|neq|ne|approx)(?![a-zA-Z])"#, line) {
             let a = sides[0].trimmingCharacters(in: .whitespaces), b = sides[1].trimmingCharacters(in: .whitespaces)
