@@ -145,7 +145,7 @@ import { withoutStrays } from "./strays";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, stackedAnalysis, workStacked, type StackedWork } from "./engine/columnArithmetic";
-import { bracketLine, isArithmetic, isSlip, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "./engine/columnWork";
+import { arithmeticOf, bracketLine, isArithmetic, isSlip, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "./engine/columnWork";
 import { stackGrid, stackGroups, type StackGrid, type StackedSum } from "./stackedSums";
 import { parseDomainPiece } from "./engine/domain";
 import { figureAnswer, isValueLabel, labelKey, looksLikeUnknown } from "./figure";
@@ -2651,7 +2651,7 @@ export class LiveLoop implements LiveController {
   private arithmeticLines(state: LiveLineState): string[] | null {
     const head = this.columnHeads.get(state.line.column);
     const lines = head ? head.lines : [this.columnLines(state.line.column).find((s) => s.latex && s.line.row <= state.line.row)?.latex ?? state.latex];
-    return lines.length > 0 && lines.every(isArithmetic) ? [...lines] : null;
+    return arithmeticOf(lines);
   }
 
   /**
