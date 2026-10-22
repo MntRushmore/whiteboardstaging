@@ -54,6 +54,38 @@ public enum LiveCopy {
         /// the engine's own words when the model has none: where, never what
         public static let lookAgain = "Look again at this step."
         public static let unread = "I couldn't read this line. Try writing it a bit bigger."
+
+        /// A hint points with the ink, never by counting: the card sits beside the line, and a kid
+        /// does not number their lines (the kid sessions, 2026-10-22: "…the right side of line 4", where
+        /// line 4 counted the tutor's problem). "line 4" → "this line", "lines 2 and 3" → "these lines",
+        /// "step 3" → "this step"; the web's `pointWithInk` (src/lib/server/live-rules.ts) does the same.
+        public static func pointing(_ text: String) -> String {
+            var s = text
+            let rules: [(String, String)] = [
+                (#"\b([Ll])ines\s+\d+(?:\s*(?:,|and|&|-|–|to)\s*\d+)+\b"#, "these lines"),
+                (#"\b([Ss])teps\s+\d+(?:\s*(?:,|and|&|-|–|to)\s*\d+)+\b"#, "these steps"),
+                (#"\b([Ll])ine\s*(?:#|no\.?\s*)?\d+\b"#, "this line"),
+                (#"\b([Ss])tep\s*(?:#|no\.?\s*)?\d+\b"#, "this step"),
+                (#"(?i)\b(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|last)\s+line\b"#, "this line"),
+            ]
+            for (pattern, words) in rules {
+                guard let re = try? NSRegularExpression(pattern: pattern) else { continue }
+                let ns = s as NSString
+                var out = ""
+                var last = 0
+                for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)) {
+                    out += ns.substring(with: NSRange(location: last, length: m.range.location - last))
+                    // a sentence's first word keeps its capital
+                    let before = out.trimmingCharacters(in: .whitespaces)
+                    let starts = before.isEmpty || before.hasSuffix(".") || before.hasSuffix("?") || before.hasSuffix(":")
+                    out += starts ? words.prefix(1).uppercased() + words.dropFirst() : words
+                    last = m.range.location + m.range.length
+                }
+                out += ns.substring(from: last)
+                s = out
+            }
+            return s
+        }
     }
 
     public enum Cheers {

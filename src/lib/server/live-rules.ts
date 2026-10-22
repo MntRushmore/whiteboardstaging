@@ -49,6 +49,35 @@ export function classifyKind(latex: string, isMath = true): RecognizeResponse["k
  * - never contradict a local `ok` with a `warn`
  * - feedback mode: strip `question` / `latex`
  */
+/**
+ * A hint points with the ink, never by counting: its card sits beside the line, and a kid does not
+ * number their lines (the iPad's kid sessions, 2026-10-22: "Check the addition on the right side of
+ * line 4", where line 4 counted the tutor's problem). "line 4" -> "this line", "lines 2 and 3" ->
+ * "these lines", "step 3" -> "this step", "the second line" -> "this line". The iPad's
+ * `LiveCopy.Hint.pointing` does the same to whatever reaches a card.
+ */
+export function pointWithInk(text: string): string {
+  const rules: [RegExp, string][] = [
+    [/\blines\s+\d+(?:\s*(?:,|and|&|-|–|to)\s*\d+)+\b/gi, "these lines"],
+    [/\bsteps\s+\d+(?:\s*(?:,|and|&|-|–|to)\s*\d+)+\b/gi, "these steps"],
+    [/\bline\s*(?:#|no\.?\s*)?\d+\b/gi, "this line"],
+    [/\bstep\s*(?:#|no\.?\s*)?\d+\b/gi, "this step"],
+    [/\b(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|last)\s+line\b/gi, "this line"],
+  ];
+  let out = text;
+  for (const [re, words] of rules) {
+    out = out.replace(re, (_m, ...rest) => {
+      const offset = rest[rest.length - 2] as number;
+      const whole = rest[rest.length - 1] as string;
+      const before = whole.slice(0, offset).trimEnd();
+      // a sentence's first word keeps its capital
+      const starts = before === "" || /[.?:!]$/.test(before);
+      return starts ? words[0].toUpperCase() + words.slice(1) : words;
+    });
+  }
+  return out;
+}
+
 export function filterAnnotation(a: Annotation, req: Pick<CheckRequest, "lines" | "mode">): Annotation | null {
   const ids = new Set(req.lines.map((l) => l.id));
   if (a.lineId !== null && !ids.has(a.lineId)) return null;
@@ -62,6 +91,8 @@ export function filterAnnotation(a: Annotation, req: Pick<CheckRequest, "lines" 
     const line = req.lines.find((l) => l.id === a.lineId);
     if (line && line.local.verdict === "ok") return null;
   }
+
+  a = { ...a, message: pointWithInk(a.message), ...(a.question !== undefined ? { question: pointWithInk(a.question) } : {}) };
 
   if (req.mode === "feedback") {
     const stripped: Annotation = { ...a };
@@ -79,5 +110,5 @@ export function filterAnnotation(a: Annotation, req: Pick<CheckRequest, "lines" 
 /** Re-index a step and make sure a final step is boxed. */
 export function normalizeStep(step: SolveStep, index: number): SolveStep {
   const latex = step.final && !/\\boxed\{/.test(step.latex) ? `\\boxed{${step.latex}}` : step.latex;
-  return { ...step, index, latex };
+  return { ...step, index, latex, explanation: pointWithInk(step.explanation) };
 }

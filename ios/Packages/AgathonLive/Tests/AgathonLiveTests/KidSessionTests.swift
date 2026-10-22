@@ -119,3 +119,45 @@ struct KidSessionTests {
         }
     }
 }
+
+/// Hints point with the ink, never "line 4" (the kid sessions, 2026-10-22): every place a hint's words
+/// come from — the server's check, the iPad's own model, the loop's own templates — reaches the card
+/// through `LiveCopy.Hint.pointing` (in `openHint`), and the on-device words through `HintWording.accept`.
+@MainActor
+struct HintPointingTests {
+    @Test(arguments: [
+        ("Look again at the right side of line 3", "Look again at the right side of this line"),
+        ("Check the addition on the right side of line 4.", "Check the addition on the right side of this line."),
+        ("Check the sign of your result on the right side of line 3", "Check the sign of your result on the right side of this line"),
+        ("Line 2: what is 9 + 7?", "This line: what is 9 + 7?"),
+        ("Look at line 2: what is 9 + 7?", "Look at this line: what is 9 + 7?"),
+        ("Compare lines 2 and 3.", "Compare these lines."),
+        ("Lines 1-2 are fine. Check line #3.", "These lines are fine. Check this line."),
+        ("Step 2 drops the minus sign.", "This step drops the minus sign."),
+        ("Look again at the second line", "Look again at this line"),
+        ("The last line needs another look.", "This line needs another look."),
+    ])
+    func aHintNeverCountsLines(input: String, want: String) {
+        #expect(LiveCopy.Hint.pointing(input) == want)
+    }
+
+    @Test func mathsAndPlainWordsStay() {
+        for s in ["What is 8 divided by 2?", "Write the next step 2x = 8", "Check the line with 34 × 6", "Your steps so far look right.",
+                  "Underline the 3", LiveCopy.Hint.lookAgain, LiveCopy.Hint.unread] {
+            #expect(LiveCopy.Hint.pointing(s) == s)
+        }
+    }
+
+    @Test func theLoopsOwnWordsNeverCount() {
+        let own = [LiveCopy.Hint.lookAgain, LiveCopy.Hint.unread, "Your steps so far look right.", "What could you do next?"]
+            + LiveCopy.Cheers.wins + LiveCopy.Cheers.misses + [HintWording.instructions]
+        for s in own { #expect(s.range(of: #"\b(?:line|step)s?\s*#?\d"#, options: [.regularExpression, .caseInsensitive]) == nil, "\(s)") }
+        #expect(HintWording.instructions.contains("never name a line or a step by its number"))
+    }
+
+    @Test func theIPadsOwnModelsWordsArePointedNotRefused() {
+        let facts = HintFacts(previous: "4 \\times 6 = 24", line: "180 + 24 = 214", expected: "180 + 24 = 204")
+        // "line 4" was a number not in the kid's work: refused before; now pointed, and kept
+        #expect(HintWording.accept("Check the addition on the right side of line 4", facts: facts) == "Check the addition on the right side of this line.")
+    }
+}

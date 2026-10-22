@@ -106,7 +106,7 @@ public enum HintWording {
     static let instructions = """
     You write one hint for a child, aged 5 to 13, who made a slip in a maths step. A checker has already found the slip; \
     you only say where to look. Write ONE short sentence of at most 16 words, speaking to the child as "you". \
-    Name where to look (which side, which number or sign) and nudge them to check it. \
+    Name where to look (which side, which number or sign) and nudge them to check it; never name a line or a step by its number. \
     Never give the correct answer or a corrected number, and never do arithmetic yourself. \
     Never say "wrong" or "incorrect". No exclamation marks, no emojis, no quotes. Reply with the sentence only.
     """
@@ -130,6 +130,8 @@ public enum HintWording {
         s = s.trimmingCharacters(in: CharacterSet(charactersIn: "\"“”'‘’ "))
         s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
         s = s.replacingOccurrences(of: "!", with: ".")
+        // pointed with the ink ("line 4" → "this line") before its numbers are held to the kid's
+        s = LiveCopy.Hint.pointing(s)
         let words = s.split(separator: " ")
         guard (3...22).contains(words.count) else { return nil }
         let lower = s.lowercased()
