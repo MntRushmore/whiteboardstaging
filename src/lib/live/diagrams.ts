@@ -4,6 +4,7 @@ import { clusterStrokeGroups, inkScale, median, medianStrokeHeight, unionRects }
 import { buildPayload, rdp, type Pt } from "./strokePayload";
 import { tableRules } from "./proof/table";
 import { separatorRules } from "./separatorRules";
+import { struckRows } from "./struckRows";
 import { findStackedSums, type StackedSum } from "./stackedSums";
 
 /**
@@ -172,7 +173,7 @@ export const DIAGRAM_RULES = {
  * `operation`: a "divide both sides" bar under an equation, or the divisor under it (`DivisionBar`);
  * `stack`: a stacked sum's rows, rule and answer (`StackedSum`); `carry`: its carry and borrow marks
  */
-export type StrokeRole = "writing" | "drawing" | "mark" | "label" | "table" | "operation" | "stack" | "carry" | "separator";
+export type StrokeRole = "writing" | "drawing" | "mark" | "label" | "table" | "operation" | "stack" | "carry" | "separator" | "struck";
 export type DiagramKind = "triangle" | "quadrilateral" | "polygon" | "circle" | "axes" | "numberLine" | "arrow" | "segment" | "curve";
 
 export interface Diagram {
@@ -1211,6 +1212,26 @@ const writingOnly = (strokes: InkStroke[], glyph: number, reason = "glyph"): Ink
  * pure.
  */
 export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagram[] = [], opts: SplitOptions = {}): InkSplit {
+  const split = splitParts(strokes, previous, opts);
+  // A row the kid struck out — found in the writing only, the drawings set apart first (a figure's
+  // side through its angle arcs and labels is no strike): no line, and no bridge between the steps
+  // over and under it.
+  const writingIds = new Set(split.writing.map((s) => s.id as string));
+  // a straight strike may have been taken for a small drawing first (a line, or an arrow with the
+  // last digit it went through for its head): a drawing of two strokes at most, with no labels
+  const small = new Set(split.diagrams.filter((d) => d.strokeIds.length <= 2 && d.labels.length === 0).flatMap((d) => d.strokeIds as string[]));
+  const pool = strokes.filter((s) => writingIds.has(s.id as string) || small.has(s.id as string));
+  const struck = struckRows(pool, split.glyph);
+  if (struck.size === 0) return split;
+  for (const id of struck) split.roles.set(id, { role: "struck", reason: "a row struck out" });
+  return {
+    ...split,
+    writing: split.writing.filter((s) => !struck.has(s.id as string)),
+    diagrams: split.diagrams.filter((d) => !d.strokeIds.every((id) => struck.has(id as string))),
+  };
+}
+
+function splitParts(strokes: readonly InkStroke[], previous: readonly Diagram[] = [], opts: SplitOptions = {}): InkSplit {
   const R = DIAGRAM_RULES;
   const all = [...strokes];
   const G = glyphScale(all, opts.zoom);
@@ -1221,7 +1242,7 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
   const stacks = findStackedSums(all, G);
   if (stacks.length > 0) {
     const taken = new Set<string>(stacks.flatMap((s) => [...s.strokeIds, ...s.marks]));
-    const split = splitInk(all.filter((s) => !taken.has(s.id)), previous, opts);
+    const split = splitParts(all.filter((s) => !taken.has(s.id)), previous, opts);
     for (const s of stacks) {
       for (const id of s.strokeIds) split.roles.set(id, { role: "stack", reason: "a stacked sum, read as one" });
       for (const id of s.marks) split.roles.set(id, { role: "carry", reason: "a carry or borrow mark" });
@@ -1234,14 +1255,14 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
   // A proof's T-table: its rules are set aside, so the rows it separates are read as lines.
   const table = tableRules(all, G);
   if (table.size > 0) {
-    const split = splitInk(all.filter((s) => !table.has(s.id)), previous, opts);
+    const split = splitParts(all.filter((s) => !table.has(s.id)), previous, opts);
     for (const id of table) split.roles.set(id, { role: "table", reason: "a proof's table rule" });
     return split;
   }
   // A line drawn right across the work under a step (an equation over or under it): no fraction bar.
   const separators = separatorRules(all, G);
   if (separators.size > 0) {
-    const split = splitInk(all.filter((s) => !separators.has(s.id)), previous, opts);
+    const split = splitParts(all.filter((s) => !separators.has(s.id)), previous, opts);
     for (const id of separators) split.roles.set(id, { role: "separator", reason: "a line under a step, across the work" });
     return split;
   }
@@ -1253,7 +1274,7 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
   const bars = divisionBars(geos, G, opts.equations ?? []);
   if (bars.length > 0) {
     const taken = new Set<string>(bars.flatMap((b) => [b.bar, ...b.divisor]).map((i) => all[i].id));
-    const split = splitInk(
+    const split = splitParts(
       all.filter((s) => !taken.has(s.id)),
       previous,
       opts,
