@@ -70,7 +70,6 @@ export function evalExpr(expr: string, x: number): number | null {
   if (!/^[\dx+\-*/().\s]+$/.test(expr)) return null;
   try {
     // only digits, x, + - * / ** ( ) . reach here (the test above), so this runs no other code
-    // eslint-disable-next-line no-new-func
     const v = new Function("x", `"use strict"; return (${expr});`)(x) as unknown;
     return typeof v === "number" && Number.isFinite(v) ? v : null;
   } catch {

@@ -79,7 +79,7 @@ export async function POST(req: Request) {
 
   // Charge ink before opening the stream (a 402/503 JSON body, not SSE). The charge is
   // refunded if the stream fails before the first step (runChargedStream), never after.
-  const billing = await enforceInk({ token, route: "live/solve", requestId, model: models.solve, training: ctx.training, satQuestionId: ctx.satQuestionId }, log);
+  const billing = await enforceInk({ token, route: "live/solve", requestId, model: models.solve, satQuestionId: ctx.satQuestionId, training: ctx.training }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   const messages = buildSolveMessages(data);

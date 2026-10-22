@@ -14,12 +14,12 @@ import { SAT_LIMITS } from "@/lib/sat/contracts";
  *     so the band follows what the student can do now.
  *  3. Its standard error is 1 / √(information + 1), information = Σ p(1 − p) at θ.
  *  4. Centre = 500 + 120·θ. Half-width = 120·SE + 20 (the 20 because practice here is not the test:
- *     no timing, no adaptive modules, our own questions). Low is rounded down and high up to a
- *     multiple of 10, both kept within 200..800.
+ *     no timing, no adaptive modules, our own questions). Near either end the centre moves in so the
+ *     whole band fits 200..800. Low is rounded down and high up to a multiple of 10.
  *  5. Fewer than SAT_LIMITS.estimateMinAnswered (15) answers: null, no band at all.
  *
- * With 15 answers the band is about 150 points wide; with 100 or more about 80. It narrows as the
- * student answers more and never gets narrower than about 60.
+ * With 15 answers the band is about 150 points wide, and about 90 at 120 answers (the window), its
+ * narrowest: it narrows as the student answers more.
  */
 
 export const ESTIMATE_NOTE = "A rough estimate from practice questions, not an SAT score.";
@@ -61,8 +61,10 @@ export function abilityOf(answers: readonly EstimateAnswer[]): { theta: number; 
 export function estimateBand(newestFirst: readonly EstimateAnswer[]): { low: number; high: number; note: string } | null {
   if (newestFirst.length < SAT_LIMITS.estimateMinAnswered) return null;
   const { theta, se } = abilityOf(newestFirst.slice(0, SAT_LIMITS.estimateWindow));
-  const centre = 500 + SCALE * theta;
   const half = SCALE * se + PRACTICE_SLACK;
+  // near either end the band keeps its width inside the scale (an all-right student is "about
+  // 690-800", never the single point 800)
+  const centre = Math.min(800 - half, Math.max(200 + half, 500 + SCALE * theta));
   const clamp = (n: number) => Math.min(800, Math.max(200, n));
   return { low: clamp(Math.floor((centre - half) / 10) * 10), high: clamp(Math.ceil((centre + half) / 10) * 10), note: ESTIMATE_NOTE };
 }
