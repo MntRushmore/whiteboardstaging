@@ -17,8 +17,15 @@ def cause(l):
     elif e == "ring": kind = "missed-slip" + ("(asked)" if "Asked" in (l.get("why") or "") else "(held)" if "Never checked" in (l.get("why") or "") else "")
     else: kind = "other"
     return kind, readc
+import os
+_LABELS = {c["id"]: c for c in json.load(open(os.path.join(os.path.dirname(__file__), "..", "bench", "cases.json")))}
+def relabel(cs):
+    """the current labels' solved (a run keeps the labels it ran with)"""
+    for c in cs:
+        if c.get("solvedExpected") is not None and c["id"] in _LABELS: c["solvedExpected"] = _LABELS[c["id"]]["solved"]
+    return cs
 def score(path, only=None):
-    cs = json.load(open(path))
+    cs = relabel(json.load(open(path)))
     if only: cs = [c for c in cs if c["id"] in only]
     ok = 0; causes = collections.Counter(); bycase = []
     for c in cs:
@@ -38,3 +45,14 @@ if __name__ == "__main__":
     for (k, r), v in causes.most_common(): print(f"  {v:3d}  {k:16s} {r}")
     if "-v" in sys.argv[3:]:
         for b in bycase: print("   ", b)
+
+def by_device(path, devices, only=None):
+    """teacher-right split by input device: {device: (n, ok)}"""
+    cs = relabel(json.load(open(path)))
+    if only: cs = [c for c in cs if c["id"] in only]
+    out = collections.defaultdict(lambda: [0, 0])
+    for c in cs:
+        se = c.get("solvedExpected")
+        ok = all(line_ok(l) for l in c["lines"]) and not c["strayRings"] and (se is None or se == c["solvedGot"])
+        d = devices.get(c["id"], "?"); out[d][0] += 1; out[d][1] += ok
+    return dict(out)

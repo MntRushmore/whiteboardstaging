@@ -79,6 +79,11 @@ export function isArithmetic(latex: string): boolean {
   return /\d/.test(bare) && !/[a-zA-Z\\]/.test(bare);
 }
 
+/** `4 \overline{ \, 222 \, }`: the divisor, then the dividend under the bar. */
+const OVERLINE_DIVISION = /^\s*(\d+)\s*\\overline\s*\{((?:\s|\\[,;:!]|\d)+)\}\s*$/;
+/** `55 r 2`, `55 R 2`: a remainder as children write it, for the young judge's `55 \text{ R } 2`. */
+const REMAINDER = /(\d)\s*(?:\\(?:text|mathrm)\s*\{\s*)?[rR](?:\s*\})?\s*(\d)/;
+
 /** `h(x) = 4x + 1` (a function of one letter) … */
 const FUNCTION_DEF = /^\s*([a-zA-Z])\s*\(\s*([a-zA-Z])\s*\)\s*=\s*(.+)$/;
 /** … and `h(1)`: its value at a number. */
@@ -94,6 +99,9 @@ const LEADING_CALL = /^\s*[a-zA-Z]\s*\(\s*-?\s*\d+(?:\.\d+)?\s*\)\s*(?==)/;
  */
 export function arithmeticOf(problem: readonly string[] | null | undefined): string[] | null {
   if (!problem || problem.length === 0) return null;
+  // the tutor's long division `4 \overline{ \, 222 \, }` is 222 ÷ 4
+  const divided = problem.map((l) => l.replace(OVERLINE_DIVISION, (_m, d: string, n: string) => `${n.replace(/\\[,;:!]|\s/g, "")} \\div ${d}`));
+  if (divided.every(isArithmetic)) return divided;
   if (problem.every(isArithmetic)) return [...problem];
   const lines = problem.flatMap((l) => l.split(/\s*;\s*/)).filter((l) => l.trim().length > 0);
   if (lines.length !== 2) return null;
@@ -157,6 +165,11 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
     }
   }
   if (input.arithmetic) {
+    if (REMAINDER.test(latex)) {
+      // `= 55 r 2`: the answer with its remainder, as the young judge reads one (`55 \text{ R } 2`)
+      latex = withoutRelation(latex).replace(REMAINDER, "$1 \\text{ R } $2").replace(/\\text\s*\{\s*R\s*\}\s*\\text\s*\{\s*R\s*\}/, "\\text{ R }");
+      a = engine.analyzeLine(latex, ctx);
+    }
     const named = withoutLeadingCall(latex);
     if (named !== latex) {
       latex = named;
@@ -194,6 +207,7 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
       if (answer.verdict === "ok") a = { ...answer, bareAnswer: true };
     }
   }
+  if (a.verdict === "ok" && !a.solved && !input.arithmetic && answersBySimplestForm(a, ctx)) a = { ...a, solved: true };
   if (a.verdict !== "mismatch" || a.solved) return a;
   // not right from the last right line: carried on from the slip right above it? Then the
   // mistake is that slip's (ringed already), and this step gets no mark of its own
@@ -298,4 +312,45 @@ export function judgeColumn(engine: LiveEngine, column: WorkColumn, mode: HelpMo
     );
   }
   return out;
+}
+
+/**
+ * A right line that is the problem's answer by its form, where the engine only solves equations (the
+ * real-ink bench: simplify problems, an inequality, `C = 10\pi`, `y = -4x + 7` were ticked but the page
+ * never counted solved): in a column with no equation, an expression in simplest form; a letter alone
+ * against a number (`x \ge 9`); a letter given its value in simplest form (`C = 10\pi`, `y = -4x + 7`).
+ */
+function answersBySimplestForm(a: LineAnalysis, ctx: AnalyzeContext): boolean {
+  const math = a.math.trim();
+  if (!math) return false;
+  if (a.kind === "inequality") {
+    return ctx.original?.kind === "inequality" && /^(?:[a-zA-Z]\s*(?:>=|<=|>|<)\s*-?\s*[\d.]+|-?\s*[\d.]+\s*(?:>=|<=|>|<)\s*[a-zA-Z])$/.test(math);
+  }
+  if (ctx.original) return false;
+  if (a.kind === "expression") return Boolean(ctx.previous) && simplestForm(math);
+  if (a.kind === "assignment" || a.kind === "function") {
+    const m = /^[a-zA-Z]\s*=\s*(.+)$/.exec(math);
+    return Boolean(m) && Boolean(ctx.previous) && simplestForm(m![1]);
+  }
+  return false;
+}
+
+/**
+ * The engine's math of an expression is as simple as it goes: no brackets, no term with a second
+ * number factor, no two terms alike (`9 * x - 5`, `x ^ 8`, `10 * pi`; not `5 * x + 25 - 2 * x`,
+ * `x ^ (2 + 6)`, `2 * pi * 5`, `9 * x - 5 + 0`).
+ */
+export function simplestForm(math: string): boolean {
+  if (/[()]/.test(math) || /\//.test(math)) return false;
+  const terms = math.replace(/^\s*-\s*/, "").split(/\s+[+-]\s+/);
+  const seen = new Set<string>();
+  for (const t of terms) {
+    const factors = t.split(/\s*\*\s*/).filter((f) => f.length > 0);
+    const numbers = factors.filter((f) => /^[\d.]+$/.test(f));
+    if (numbers.length > 1 || numbers.some((n) => Number(n) === 0) || (numbers.length === 1 && Number(numbers[0]) === 1 && factors.length > 1)) return false;
+    const key = factors.filter((f) => !/^[\d.]+$/.test(f)).sort().join("*");
+    if (seen.has(key)) return false;
+    seen.add(key);
+  }
+  return true;
 }

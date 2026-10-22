@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { LiveEngine } from "../../contracts";
 import { getEngine } from "..";
 import { youngReadOf } from "@/lib/brain";
-import { judgeColumn } from "../columnWork";
+import { judgeColumn, simplestForm } from "../columnWork";
 
 /**
  * Columns the real-ink bench found misjudged with perfect reads (docs/REAL-INK-BENCH.md): what real
@@ -25,8 +25,8 @@ describe("a lone number under an equation in one letter", () => {
     expect(marks({ problem: ["2x + 3 = 11"], lines: ["2x = 8", "4"] })).toEqual(["ok", "ok+solved"]);
   });
 
-  it("after a line that works out a letter's value, is that value", () => {
-    expect(marks({ problem: ["y = -\\frac{2}{3}x + 8", "x = 9"], lines: ["y = -\\frac{2}{3}(9) + 8", "y = -6 + 8", "2"] }).slice(1)).toEqual(["ok", "ok"]);
+  it("after a line that works out a letter's value, is that value — and the problem answered", () => {
+    expect(marks({ problem: ["y = -\\frac{2}{3}x + 8", "x = 9"], lines: ["y = -\\frac{2}{3}(9) + 8", "y = -6 + 8", "2"] }).slice(1)).toEqual(["ok", "ok+solved"]);
   });
 
   it("is never ringed when it is not the value: it may be a side sum (a ring there would be on right work)", () => {
@@ -69,6 +69,36 @@ describe("a child's notes of what they do to both sides, read into the line", ()
   });
 });
 
+
+describe("a page answered by its form (the engine solves equations only)", () => {
+  it("a simplify problem is answered by its simplest form", () => {
+    expect(marks({ problem: ["3x + 6x - 5"], lines: ["= 9x - 5"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["5(x + 5) - 2x"], lines: ["= 5x + 25 - 2x", "= 3x + 25"] })).toEqual(["ok", "ok+solved"]);
+    expect(marks({ problem: ["x^{2} \\cdot x^{6}"], lines: ["x^{2+6}", "x^{8}"] })).toEqual(["ok", "ok+solved"]);
+  });
+
+  it("an inequality by its letter alone, a letter's value by its simplest form", () => {
+    expect(marks({ problem: ["8x - 3 \\ge 69"], lines: ["8x \\ge 72", "x \\ge 9"] })).toEqual(["ok", "ok+solved"]);
+    expect(marks({ problem: ["C = 2\\pi \\cdot 5"], lines: ["C = 10\\pi"] })).toEqual(["ok+solved"]);
+  });
+
+  it("never a step on the way, nor a side sum under an equation", () => {
+    expect(marks({ problem: ["2x + 3 = 11"], lines: ["2x = 8"] })).toEqual(["ok"]);
+    expect(simplestForm("5 * x + 25 - 2 * x")).toBe(false);
+    expect(simplestForm("x ^ (2 + 6)")).toBe(false);
+    expect(simplestForm("2 * pi * 5")).toBe(false);
+    expect(simplestForm("9 * x - 5 + 0")).toBe(false);
+    expect(simplestForm("9 * x - 5")).toBe(true);
+  });
+});
+
+describe("a long division's answer with its remainder", () => {
+  it("is judged as children write it: = 55 r 2, under the tutor's bracket or a ÷", () => {
+    expect(marks({ problem: ["4 \\overline{ \\, 222 \\, }"], lines: ["= 55 r 2"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["222 \\div 4"], lines: ["= 55 R 2"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["222 \\div 4"], lines: ["= 54 r 2"] })).toEqual(["mismatch"]);
+  });
+});
 
 /**
  * Open: found by the real-ink bench, not fixed yet. `it.fails` passes while the tutor still gets it

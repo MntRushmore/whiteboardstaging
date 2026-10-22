@@ -59,6 +59,16 @@ struct RealInkFixesTests {
         #expect(LivePolicy.unjudgedReason(latex: "\\text { ( ) }", confidence: 0.99, provider: .mathpix, analysis: nil) == nil)
     }
 
+    @Test func herNotesOfWhatSheDoesToBothSidesGetNoQuestion() {
+        #expect(LivePolicy.isOperationNote("\\times 2"))
+        #expect(LivePolicy.isOperationNote("+4 \\quad +4"))
+        #expect(LivePolicy.isOperationNote("\\div -7"))
+        #expect(LivePolicy.isOperationNote("-9"))
+        #expect(!LivePolicy.isOperationNote("2 \\times 3"))
+        #expect(!LivePolicy.isOperationNote("x = 4"))
+        #expect(!LivePolicy.isOperationNote("+"))
+    }
+
     // MARK: - the answer without its letter
 
     @Test func aLoneRightNumberUnderAnEquationIsTheAnswer() async throws {
