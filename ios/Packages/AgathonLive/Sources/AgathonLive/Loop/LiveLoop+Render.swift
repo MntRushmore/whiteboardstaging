@@ -49,6 +49,17 @@ extension LiveLoop {
             // what the student's line above ended in (`400 + 364 = 764` → 764), for a line that goes
             // on from it (`+3 = 767`: `ContinuationLine`)
             var running: String?
+            // a page that continues a problem ("More room"): its first column goes on from where the
+            // work at the bottom of the page before ended (`LiveLoop+MoreRoom`)
+            if let c = carryIn(column: column) {
+                previous = c.previous ?? previous
+                original = c.original ?? original
+                if !c.problem.isEmpty { problem = c.problem }
+                above = c.above
+                slip = c.slip
+                running = c.running
+                solvedAbove = c.solvedAbove
+            }
             for st in columnLines(column) {
                 guard !st.latex.isEmpty else { continue }
                 // a line crossed out: never judged, and no step of the column (`LiveLoop+Chain`)
@@ -162,6 +173,9 @@ extension LiveLoop {
                 }
                 if a.solved == true { solvedAbove = true }
             }
+            // how the column ends: the next page of the problem goes on from it ("More room")
+            noteColumnEnd(column, PageCarry(previous: previous, original: original, problem: problem, above: above, slip: slip,
+                                            running: running, solvedAbove: solvedAbove))
             guard gen == generation else { return }
             for st in columnLines(column) where !st.latex.isEmpty {
                 render(st.id, quiet: quiet && !changed.contains(st.id))
@@ -440,8 +454,12 @@ extension LiveLoop {
         }
         cheers = Array(cheers.suffix(2)) + [cheer]
         if cheer.big { bigBurst += 1 }
+        refreshReadings()
         let cid = cheer.id
-        scheduler.after(2_200) { [weak self] in self?.cheers.removeAll { $0.id == cid } }
+        scheduler.after(2_200) { [weak self] in
+            self?.cheers.removeAll { $0.id == cid }
+            self?.refreshReadings()
+        }
     }
 
     // MARK: - records
@@ -499,12 +517,16 @@ extension LiveLoop {
             let col = columnLines(column).filter { !$0.latex.isEmpty }
             guard let first = col.first else { continue }
             let head = head(for: column)
-            let pid = head?.id ?? RecordID("problem:\(first.id)")
+            // (a kid's own problem begun on the page before, continued here: its record is there)
+            let carried = head == nil ? carriedProblemRecord(column) : nil
+            let pid = head?.id ?? carried ?? RecordID("problem:\(first.id)")
             let ids = col.map { RecordID("line:\($0.id)") }
-            if head == nil {
-                wanted[pid] = ProblemRecord(id: pid, screen: screen, lines: ids, latex: first.latex, origin: "student")
+            if head == nil && carried == nil {
+                // (its lines on the problem's other pages stay: "More room")
+                let old: [RecordID] = { if case .problem(let p)? = store[pid] { return p.lines } else { return [] } }()
+                wanted[pid] = ProblemRecord(id: pid, screen: screen, lines: problemLines(old, here: ids), latex: first.latex, origin: "student")
             } else if case .problem(var p)? = store[pid] {
-                p.lines = ids
+                p.lines = problemLines(p.lines, here: ids)
                 wanted[pid] = p
             }
             for l in ids { lineProblem[l] = pid }

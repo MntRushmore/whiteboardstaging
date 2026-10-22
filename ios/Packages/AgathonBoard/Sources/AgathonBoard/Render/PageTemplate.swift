@@ -3,7 +3,9 @@ import CoreText
 import Foundation
 
 /// A problem page's template as vector paths in page space (docs/PROBLEM-PAGES.md, "The page"):
-/// "Work it out here", the guide lines, the answer spot and its "Answer:". Never ink, never a
+/// "Work it out here", the guide lines, the answer spot and its "Answer:" — and, for a problem that
+/// needed more room, "Problem 2, continued" at the top of the pages after its first and "Answer on the
+/// next page" where the answer spot was on the pages before its last. Never ink, never a
 /// record: the canvas draws it under the ink (`BoardCanvasView`'s template layer, crisp at any zoom),
 /// the thumbnail draws it on white. Text is turned into glyph outlines, so it is vector too.
 public struct PageTemplate: @unchecked Sendable {
@@ -43,10 +45,15 @@ public struct PageTemplate: @unchecked Sendable {
     public let answer: CGPath
     /// filled in `answerLabel`
     public let answerLabel: CGPath
+    /// filled in `answerLabel` too: "Problem 2, continued", "Answer on the next page" ("More room")
+    public let notes: CGPath
 
     /// The work label's and the answer label's words (kid copy).
     public static let workWords = "Work it out here"
     public static let answerWords = "Answer:"
+    /// "More room": the top of a page that continues a problem, and where the answer spot was
+    public static func continuedWords(_ index: Int?) -> String { index.map { "Problem \($0), continued" } ?? "Continued" }
+    public static let answerOnNextWords = "Answer on the next page"
 
     /// The template for `page` on a screen of `rect` (page units); nil for the All done page, which
     /// draws nothing on the page.
@@ -65,9 +72,17 @@ public struct PageTemplate: @unchecked Sendable {
         self.rules = rules
         ruleWidth = CGFloat(L.ruleWidth * k)
 
-        label = Self.text(Self.workWords, size: L.workLabelSize * k, weight: .regular, baseline: at(L.ruleLeft, top + L.workLabelBaseline))
+        // a continued page says so at its top, and its work needs no invitation
+        let notes = CGMutablePath()
+        if page.isContinuation {
+            label = CGMutablePath()
+            notes.addPath(Self.text(Self.continuedWords(page.inSet ? page.index : nil), size: L.continuedSize * k, weight: .semibold,
+                                    baseline: at(L.problemOrigin.x, L.continuedBaseline)))
+        } else {
+            label = Self.text(Self.workWords, size: L.workLabelSize * k, weight: .regular, baseline: at(L.ruleLeft, top + L.workLabelBaseline))
+        }
 
-        if page.answer {
+        if page.hasAnswerSpot {
             let box = L.place(L.answer, on: rect)
             let r = CGFloat(L.answerRadius * k)
             answer = CGPath(roundedRect: box.cgRect, cornerWidth: r, cornerHeight: r, transform: nil)
@@ -78,7 +93,15 @@ public struct PageTemplate: @unchecked Sendable {
         } else {
             answer = CGMutablePath()
             answerLabel = CGMutablePath()
+            if page.more && page.answer {
+                // the answer spot moved on: where it was, a word to say so
+                let box = L.place(L.answer, on: rect)
+                let size = L.workLabelSize * k
+                notes.addPath(Self.text(Self.answerOnNextWords, size: size, weight: .semibold,
+                                        baseline: CGPoint(x: box.x, y: box.y + box.h / 2 + size * 0.36)))
+            }
         }
+        self.notes = notes
     }
 
     /// The template drawn into a page-space context (y down), under the ink.
@@ -89,6 +112,7 @@ public struct PageTemplate: @unchecked Sendable {
         ctx.fillPath()
         ctx.setFillColor(colors.answerLabel)
         ctx.addPath(answerLabel)
+        ctx.addPath(notes)
         ctx.fillPath()
         ctx.setFillColor(colors.label)
         ctx.addPath(label)

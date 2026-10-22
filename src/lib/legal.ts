@@ -31,7 +31,7 @@ export const LEGAL = {
    * privacy settings (the go-live checklist, docs/RUNBOOK-billing.md). legalPages.test.tsx pins
    * the two flags to this sentence.
    */
-  aiProviderTraining: "We ask every AI service we use not to keep or train on what we send, and we only use providers that agree.",
+  aiProviderTraining: "The AI services that read your handwriting and answer questions are set not to keep or train on what we send. ElevenLabs, which reads hints aloud and turns Ask’s microphone into words, may keep what we send for a limited time under its own privacy policy.",
   /**
    * True once the pages are published as final: the owner published them on 2026-10-03 (effective
    * 2026-10-04) for the first paying users, before a lawyer's review — when counsel reviews them,

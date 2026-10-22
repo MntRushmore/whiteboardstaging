@@ -658,10 +658,10 @@ public final class BoardController: ObservableObject {
         return true
     }
 
-    /// A blank screen put right after `after` (the current screen when nil; the end when `after` is
-    /// the last), with `meta` (a problem page's `page`), shown when `go`. One change of `origin`:
-    /// the tutor's pages (a practice set) are no step the kid undoes; the kid's own are. Nil at the
-    /// cap (50).
+    /// A blank screen put right after `after` (the current screen when nil — after the last page of
+    /// its problem, when that problem needed more room; the end when `after` is the last), with `meta`
+    /// (a problem page's `page`), shown when `go`. One change of `origin`: the tutor's pages (a
+    /// practice set) are no step the kid undoes; the kid's own are. Nil at the cap (50).
     @discardableResult
     public func insertScreen(after: RecordID? = nil, meta: Meta = [:], origin: ChangeOrigin = .kid, go: Bool = true) -> RecordID? {
         let screens = store.screens
@@ -669,14 +669,8 @@ public final class BoardController: ObservableObject {
             notice = BoardNotice(kind: .boardFull)
             return nil
         }
-        let anchor = after ?? currentScreenID
-        let order: OrderKey
-        if let i = screens.firstIndex(where: { $0.id == anchor }) {
-            let next = i + 1 < screens.count ? screens[i + 1].order : nil
-            order = (try? OrderKey.between(screens[i].order, next)) ?? OrderKey.after(screens.last?.order)
-        } else {
-            order = OrderKey.after(screens.last?.order)
-        }
+        let anchor = after ?? store.lastPageOfProblem(currentScreenID)
+        let order = store.screenOrder(after: anchor)
         let s = ScreenRecord(order: order, name: "Screen \(screens.count + 1)", meta: meta)
         store.put(.screen(s), origin: origin)
         if go { goToScreen(s.id) } else { refreshCounts() }
@@ -697,9 +691,8 @@ public final class BoardController: ObservableObject {
             notice = BoardNotice(kind: .boardFull)
             return nil
         }
-        let i = screens.firstIndex { $0.id == from }
-        let next = i.flatMap { $0 + 1 < screens.count ? screens[$0 + 1].order : nil }
-        let order = (i.flatMap { try? OrderKey.between(screens[$0].order, next) }) ?? OrderKey.after(screens.last?.order)
+        // (after the last page of this problem, when it needed more room: its pages stay together)
+        let order = store.screenOrder(after: store.lastPageOfProblem(from))
         let screen = ScreenRecord(order: order, name: "Screen \(screens.count + 1)", meta: meta)
         // z-order kept: fresh keys on the new screen, bottom to top
         let sorted = moving.sorted { ($0.order ?? .first) != ($1.order ?? .first) ? ($0.order ?? .first) < ($1.order ?? .first) : $0.id < $1.id }
@@ -730,6 +723,22 @@ public final class BoardController: ObservableObject {
         }
         goToScreen(screen.id)
         return screen.id
+    }
+
+    /// "More room" (docs/PROBLEM-PAGES.md): the problem on show goes on on a new page right after its
+    /// last one ("Problem 2, continued", the problem again small, the answer spot), the page before
+    /// losing its answer spot — ONE kid undo step — and the board shows the new page. Nil when this is
+    /// no problem page, the problem has as many pages as it may, or the board is full.
+    @discardableResult
+    public func addMoreRoom() -> RecordID? {
+        guard let plan = MoreRoom.plan(store, from: currentScreenID) else {
+            if store.screens.count >= ScreenRecord.maxScreens { notice = BoardNotice(kind: .boardFull) }
+            return nil
+        }
+        clearSelection()
+        let id = MoreRoom.apply(plan, to: store, origin: .kid)
+        goToScreen(id)
+        return id
     }
 
     /// Sets a screen's problem page (or makes it plain with nil): the tutor's, never a kid's undo step.
