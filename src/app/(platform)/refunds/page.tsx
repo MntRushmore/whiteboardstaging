@@ -24,7 +24,8 @@ const planDays = LEGAL.unlimited.refundWindowDays;
 
 // DRAFT for the owner and counsel to review (src/lib/legal.ts): both refund rules are proposals the
 // owner has to confirm. Refunds are made by hand in the Stripe Dashboard (docs/RUNBOOK-billing.md
-// sections 5 and 10); a refunded plan is also cancelled there. Static: no request data.
+// sections 5 and 10); a refunded plan is also cancelled there. A plan bought in the iPad app can only be
+// refunded by Apple (section 16). Static: no request data.
 export default function RefundsPage() {
   return (
     <LegalPage
@@ -40,6 +41,7 @@ export default function RefundsPage() {
             buying it; ink you have already used is not refundable.
           </li>
           <li>If something went wrong on our side, we put it right or refund you in full, at any time.</li>
+          <li>Bought {plan} in the iPad app? Refunds for it go through Apple.</li>
         </ul>
       }
     >
@@ -59,6 +61,11 @@ export default function RefundsPage() {
             the plan stays on until the end of the month you have paid for.
           </li>
           <li>A refund for the plan never takes any ink from your account.</li>
+          <li>
+            <strong>Bought in the iPad app?</strong> Apple took the payment, so refunds are Apple’s to give: ask Apple
+            at <a href="https://reportaproblem.apple.com">reportaproblem.apple.com</a>. We cannot refund an App Store
+            purchase.
+          </li>
         </ul>
       </LegalSection>
 
