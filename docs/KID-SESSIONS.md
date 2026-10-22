@@ -82,7 +82,15 @@ judged checks, 72 passed (plus the two reopen checks in the UI test, both passed
 - "Keep it here" (New page for this one) ran off the page's right edge when the second problem sat on
   the right half (s06); a long "I read" chip could pass the page card. Both stay inside the page.
 
-**For the tutor's reading and ringing (the blitz lane)**
+- Hints named lines by number ("…the right side of line 4"): the check prompt asked for it. The prompt
+  now points at the step itself and lists the lines by id; the server (`pointWithInk`) and the iPad
+  (`LiveCopy.Hint.pointing`) rewrite any number left. Live: "Check the addition on the right side of this line".
+- Now you try after 34 × 6 offered 81 × 2: candidates are ranked by their carries and borrows too
+  (`regroupings`). Live: 42 × 5.
+- "Now you try one" covered the answer spot and its tick: it is placed in the page's free space
+  (`NowYouTryPlacement`), never over the answer spot.
+
+**For the tutor's reading and ringing (handed to REAL-INK)**
 
 - s04, steep hand, `180 + 24 = 214`: Check **rang the slip and showed its hint**, then about 4 s later
   the second look re-read the steep `24` as `34` — `180 + 34 = 214` is true — and **the ring came off**
@@ -93,11 +101,8 @@ judged checks, 72 passed (plus the two reopen checks in the UI test, both passed
   It happened in 2 of 3 runs. The read history (rerun 2) shows Mathpix read the line right, sure of it —
   `27.1 s → 180+24=214 (mathpix 1.00)` — and the line ended `180+34=214`: the change came from the two
   `/api/live/reread` calls, the second look of feat/ipad-blitz c6cae954 ("a ring waits for a second
-  look"). Re-run: `SESSIONS="04" scripts/ios-kid-sessions.sh run report`.
-
-**For the overlay (design call)**
-
-- "Now you try one" sits bottom-centre, over a problem page's answer spot and its tick (s04).
+  look"). Re-run: `SESSIONS="04" scripts/ios-kid-sessions.sh run report`. Still there on feat/ipad-blitz
+  fa403433 (3 of 5 runs in all).
 
 **For the tutor's desk**
 
@@ -108,7 +113,3 @@ judged checks, 72 passed (plus the two reopen checks in the UI test, both passed
 
 **Smaller**
 
-- Hints name lines by number ("…the right side of line 4", "…of line 3"): a kid does not number their
-  lines, and line 4 in s04 counted the tutor's problem.
-- "Now you try" after 34 × 6 (split into tens and ones) offered 81 × 2 — easier, and a different shape
-  of work.
