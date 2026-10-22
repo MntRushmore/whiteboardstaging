@@ -14,8 +14,15 @@ app).
 
 - **Free, with a capped tutor.** Questions, the board, the answer check and the written solution are
   free forever with no Unlimited needed. The live tutor (reading lines, ticks, rings, hints, Help me)
-  is free for **5 SAT questions a day** (`SAT_FREE_TUTOR_PER_DAY`, default 5). Unlimited lifts the
-  cap. After the cap the board keeps working as plain ink, and Graph it still works.
+  is free for a number of SAT questions a day that depends on who is asking (owner, 2026-10-22):
+  **5** with no account (an anonymous session, `SAT_ANON_TUTOR_PER_DAY`, default 5), **20** for a
+  signed-in free account (`SAT_FREE_TUTOR_PER_DAY`, default 20), and **no cap** with Unlimited (a
+  trial that counts as Unlimited included). After the cap the board keeps working as plain ink, and
+  Graph it still works.
+- **No account needed.** SAT mode works before any sign-up, through a Supabase anonymous session
+  that only the real app can get (`POST /api/sat/anon`, App Attest guarded). An anonymous user can
+  use SAT mode and nothing else: no trial, no ink, no emails, and it is not counted as a real account.
+  Making the account permanent later (email link) keeps the same user id, so SAT progress carries over.
 - **Our own bank.** About 600 original SAT-style math questions. No College Board items, wording or
   figures, ever. Every answer is checked by solving it independently.
 - **Grown-up Blocks.** The same tokens, fonts and ring/dot/bar as AgathonDesign, but calmer: no
@@ -91,6 +98,36 @@ used on that day (the day is in the user's time zone, sent by the client as `tz`
   today. Otherwise the call returns the usual out-of-ink style refusal. Ordinary boards keep their
   current rules.
 
+#### `POST /api/sat/anon` — an anonymous session for SAT mode (owner, 2026-10-22)
+
+The iPad calls it when a student enters SAT mode with no session. App only: the request must carry
+the App Attest headers the app already sends to `/api/try/*` (src/lib/server/appAttest/guard.ts).
+There is no web path, and the app must never call `signInAnonymously()` itself.
+
+- Request: `POST /api/sat/anon`, `Content-Type: application/json`, body exactly the bytes the
+  assertion signs, `{}` (an empty JSON object; at most 1 KB, any other keys are ignored). Headers:
+  `X-Agathon-App-Key` (the attested key id, standard base64) and `X-Agathon-App-Assertion`
+  (standard base64 CBOR assertion with clientDataHash = SHA256(body bytes)), or, off production only,
+  `X-Agathon-App-Debug: <device uuid>` instead of both (the simulator).
+- 200: `{"access_token": "…", "refresh_token": "…", "expires_at": 1792800000, "user_id": "<uuid>"}`
+  (`expires_at` in Unix seconds). The app adopts it with supabase-swift `auth.setSession(accessToken:
+  refreshToken:)` and refreshes it like any session. The user has `is_anonymous: true`.
+- Errors (no-store, `X-Request-Id`):
+  - `403 {"error":"invalid_request","reason":"attest_required"}`: no app headers, or incomplete ones.
+  - `403 {"error":"invalid_request","reason":"attest_invalid" | "attest_unknown_key"}`: a bad
+    assertion, or a key the server doesn't know (attest a new key once, then retry).
+  - `400 {"error":"invalid_request"}`: the body is not a JSON object. `413`: over 1 KB.
+  - `429 {"error":"rate_limited","retryAfterMs":…}` with `Retry-After`: at most 20 a hour per IP and
+    5 a day per attested key (or debug device).
+  - `503 {"error":"unavailable"}`: anonymous sign-ins are off on this deployment, or the key store
+    or Supabase Auth is down.
+- With that session: `/api/sat/*` all work (`cap` is the anonymous tier's), and the live routes work
+  only with `sat_question_id` under that question's pass. Everything else refuses an anonymous user
+  (`403 {"error":"forbidden"}` on routes that need a real account; RLS keeps it to its own SAT rows
+  and its SAT board).
+- Upgrading: the app calls `auth.updateUser(email:)` and the user verifies; the user id stays, so
+  attempts, passes and the board carry over. The server then treats them as a real (free) account.
+
 #### Route details (bank lane, 2026-10-22; additive to the contract above)
 
 - **`sat_question_id` on the live routes.** Put it at the top level of the JSON body of
@@ -111,7 +148,8 @@ used on that day (the day is in the user's time zone, sent by the client as `tz`
   bank's answer (an mcq key, or a grid-in in any accepted form or an equal value like `6/8` for
   `3/4`) and stores that, whatever the app sent. `404 not_found` for a question that isn't live.
 - **`POST /api/sat/tutor`**: the iPad calls it on the first stroke on a question's page (not when
-  the question opens); `tz` must be an IANA zone (`400` otherwise); `404` for a question that
+  the question opens). `cap` is the caller's tier: 5 anonymous, 20 free, and `unlimited: true`
+  (always allowed) with Unlimited. `tz` must be an IANA zone (`400` otherwise); `404` for a question that
   isn't live; Unlimited is always allowed and its pass is still recorded (so `used_today` counts it).
 - **`GET /api/sat/progress`**: `tz` defaults to UTC. `estimate` is `{low, high, note}` or null;
   `note` is the honest label to show with it ("A rough estimate from practice questions, not an SAT
@@ -161,7 +199,7 @@ used on that day (the day is in the user's time zone, sent by the client as `tz`
 - **Entry:** a "SAT practice" card on Home, for every profile with no subscription needed. In phase 2,
   onboarding gets a "I'm studying for the SAT (13+)" path where the student makes their own account
   and lands in SAT mode.
-- **SAT home:** today (answered, free tutor questions left out of 5), a domain/skill picker,
+- **SAT home:** today (answered, free tutor questions left out of `cap`: 5, 20 or none), a domain/skill picker,
   "Practice 10" (mixed and adaptive), "Pick a skill", and progress (by domain, then skill, and the
   estimate once there is one).
 - **The session (split view, landscape first):**
