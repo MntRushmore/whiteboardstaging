@@ -142,6 +142,8 @@ public final class LiveLoop: ObservableObject {
     /// once from then on (`LiveLoop+Chain`, the web's `chainHolds` / `chainsDone`)
     var chainHolds: [String: String] = [:]
     var chainsDone = Set<String>()
+    /// right answers read unsure, looked at once more (by ink hash): nil while the look is out, then its verdict
+    var unsureAnswerLooks: [String: Bool?] = [:]
     var flushing = false
     var flushAgain = false
     /// per line: tickets, in-flight work, its mark

@@ -201,7 +201,7 @@ extension LiveLoop {
 
     func policyInput(_ st: LiveLine, userAsked: Bool = false, settled: Bool? = nil) -> LivePolicy.Input {
         LivePolicy.Input(
-            mode: settings.mode, analysis: st.analysis, confidence: st.confidence, settled: settled ?? self.settled,
+            mode: settings.mode, analysis: st.analysis, confidence: judgedConfidence(st), settled: settled ?? self.settled,
             auto: autoFor(st), userAsked: userAsked, hintsShownForLine: st.hintsShown, openHintCount: hints.count,
             rewritesWithWarn: st.rewritesWithWarn, liveShapeCount: liveShapeCount(), latex: st.latex,
             answerOnEquals: settings.answerOnEquals, held: isHeld(st))
@@ -248,6 +248,8 @@ extension LiveLoop {
         }
         defer { refreshPage() }
         let d = decision(st, userAsked: userAsked)
+        // a right answer Mathpix was unsure of: no "?" while one more look decides (`lookAgainAtUnsureAnswer`)
+        if !d.echo && lookAgainAtUnsureAnswer(st) { return }
         if !d.echo {
             if !quiet {
                 let why = questionNow(st)
@@ -277,6 +279,8 @@ extension LiveLoop {
         var marked = auto || d.capped ? d.badge : LivePolicy.badge(settings.mode, st.analysis)
         // a line the loop cannot place for sure is never ringed: a right answer is never marked wrong
         if marked == "warn" && unsureOfProblem(st) { marked = "none" }
+        // nor a stray beside the work (a digit or a mark alone, in a column no problem heads)
+        if marked == "warn" && looksLikeStray(st) { marked = "none" }
         // nor a read the tutor is not sure of (it asks first: "Is this right?"), nor a problem of the
         // kid's own (docs/PROBLEM-PAGES.md)
         let doubt = pages.extras && (readingInDoubt(st) || pages.ownHeads.contains(st.id) || st.analysis?.misreadLikely == true)
@@ -308,7 +312,13 @@ extension LiveLoop {
 
     /// A read Mathpix was unsure of: the "?" is for it (after a moment).
     func unreadableRead(_ st: LiveLine) -> Bool {
-        !st.latex.isEmpty && st.confidence < LiveLimits.minConfidence
+        !st.latex.isEmpty && judgedConfidence(st) < LiveLimits.minConfidence
+    }
+
+    /// The confidence a line is judged with: Mathpix's, or — a right answer it was unsure of that a
+    /// second look read as the same value (`lookAgainAtUnsureAnswer`) — enough to be ticked.
+    func judgedConfidence(_ st: LiveLine) -> Double {
+        unsureAnswerLooks[st.ink.hash] == .some(true) ? max(st.confidence, LiveLimits.minConfidence) : st.confidence
     }
 
     /// Under a problem the tutor wrote, a line it cannot judge gets its "?" once the kid has stopped
@@ -323,7 +333,7 @@ extension LiveLoop {
         if rt[st.id]?.readRefused == true || rt[st.id]?.checkTask != nil { return nil }
         if reading.contains(st.id) || offlineQueue.contains(st.id) || pendingChecks[st.id] != nil { return nil }
         if liveShapeCount() >= LiveLimits.maxLiveShapesPerBoard { return nil }
-        return LivePolicy.unjudgedReason(latex: st.latex, confidence: st.confidence, provider: st.provider, analysis: st.analysis)
+        return LivePolicy.unjudgedReason(latex: st.latex, confidence: judgedConfidence(st), provider: st.provider, analysis: st.analysis)
     }
 
     func questionNow(_ st: LiveLine) -> String? {

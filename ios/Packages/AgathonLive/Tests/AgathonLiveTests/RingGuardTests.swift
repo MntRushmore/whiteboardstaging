@@ -34,6 +34,51 @@ struct RingGuardTests {
         #expect(h.board.mark(on: "180 + 24 = 214") == .ring, "the slip keeps its ring: 24 is the line above's number")
     }
 
+    @Test func aStrayBesideTheWorkIsNeverRinged() async throws {
+        // the real-ink bench: a circled digit scribbled beside the sum (13 × 4) was ringed
+        let h = Harness(mode: .feedback)
+        await h.start()
+        try? await TestBrain.shared.load()
+        _ = await HeadlessBench.page(["13 \\times 4"], on: h.board, loop: h.loop, brain: TestBrain.shared)
+        await h.pass(300)
+        await h.write("2x + 3 = 11", at: Vec2(160, 300), reads: "13 \\times 4 = 52", confidence: 1.0)
+        await h.pass(700)
+        await h.write("x = 5", at: Vec2(1300, 260), reads: "7", confidence: 1.0)
+        await h.pass(6_000)
+        h.loop.checkPage()
+        await h.pass(6_000)
+        #expect(h.board.mark(on: "7") != .ring, "a digit alone beside the work is a scribble")
+        #expect(h.board.mark(on: "13 \\times 4 = 52") != .ring)
+    }
+
+    /// 8 × 7 printed; the kid's answer read 56 at low confidence; the second look reads `look`.
+    func unsureAnswer(_ look: String) async -> Harness {
+        let h = Harness(mode: .feedback)
+        h.services.rereadReplies["56"] = RereadResponse(latex: look, changed: look != "56", model: "fake", ms: 1)
+        await h.start()
+        try? await TestBrain.shared.load()
+        _ = await HeadlessBench.page(["8 \\times 7"], on: h.board, loop: h.loop, brain: TestBrain.shared)
+        await h.pass(300)
+        await h.write("x = 5", at: Vec2(160, 300), reads: "56", confidence: 0.4)
+        await h.pass(6_000)
+        h.loop.checkPage()
+        await h.pass(6_000)
+        return h
+    }
+
+    @Test func aRightAnswerReadUnsureIsTickedWhenASecondLookReadsTheSame() async throws {
+        let h = await unsureAnswer("56")
+        #expect(!h.services.rereadRequests.isEmpty, "one more look")
+        #expect(h.board.mark(on: "56") == .tick)
+    }
+
+    @Test func aRightAnswerReadUnsureKeepsItsQuestionWhenTheSecondLookDisagrees() async throws {
+        // her 58 misread as a right 56: never a tick
+        let h = await unsureAnswer("58")
+        #expect(h.board.mark(on: "56") != .tick)
+        #expect(h.board.mark(on: "56") != .ring)
+    }
+
     @Test func knownNumbersAreKept() {
         #expect(!LiveLoop.keepsKnownNumbers(mathpix: "180+24=214", reread: "180+34=214", known: ["180 + 24"]))
         #expect(LiveLoop.keepsKnownNumbers(mathpix: "180+24=214", reread: "180+24=204", known: ["180 + 24"]))

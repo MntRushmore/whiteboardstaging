@@ -1,3 +1,4 @@
+import AgathonBoard
 import AgathonBrain
 import Foundation
 
@@ -140,6 +141,56 @@ extension LiveLoop {
         guard let re = try? NSRegularExpression(pattern: #"\d+(?:\.\d+)?"#) else { return [] }
         let ns = latex as NSString
         return re.matches(in: latex, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range) }
+    }
+
+    /// A stray, never ringed (the real-ink bench: a kid's side scribbles — a circled digit, a cross —
+    /// beside a stacked sum were ringed): on a page with a printed problem, a short read alone (a
+    /// number or a symbol or two, no `=`) set well apart from the kid's work on that problem (its lines
+    /// that say something) — more than three of its own heights to the side. The answer spot's line
+    /// is the answer; a page of short answers only has no strays; side work that says something
+    /// (`8 \times 7 = 56`) is judged as ever.
+    func looksLikeStray(_ st: LiveLine) -> Bool {
+        guard !heads.isEmpty, Self.isShortRead(st.latex) else { return false }
+        if ProblemPageLayout.isInAnswer(Box(x: st.bounds.x, y: st.bounds.y, w: st.bounds.w, h: st.bounds.h)) { return false }
+        let head = columnHeads[st.column]
+        let work = lines.values.filter { $0.id != st.id && !$0.latex.isEmpty && columnHeads[$0.column] == head && !Self.isShortRead($0.latex) }
+        guard !work.isEmpty else { return false }
+        let gap = work.map { w in max(0, max(w.bounds.x - st.bounds.maxX, st.bounds.x - w.bounds.maxX)) }.min() ?? 0
+        return gap > 3 * max(st.bounds.h, 20)
+    }
+
+    /// A number or a symbol or two, no `=`: `5`, `x`, `\text { 千 }`.
+    static func isShortRead(_ latex: String) -> Bool {
+        let bare = latex.replacingOccurrences(of: #"\\(?:text|mathrm|mathbb)\s*\{([^{}]*)\}"#, with: "$1", options: .regularExpression)
+            .replacingOccurrences(of: #"\s"#, with: "", options: .regularExpression)
+        return !bare.contains("=") && bare.count <= 3
+    }
+
+    /// A right answer Mathpix was unsure of (a "?" the real-ink bench saw on a pen 56): one more look.
+    /// Ticked only when that look, on its own, reads the same value — a kid's 58 misread as a right 56
+    /// must never be ticked, so a different read (or none) keeps the "?". Only a lone answer of digits
+    /// (`56`, `= 56`) the engine judges right and the problem's; once per ink; never offline. True while
+    /// the look is out (the line waits, no "?").
+    func lookAgainAtUnsureAnswer(_ st: LiveLine) -> Bool {
+        let hash = st.ink.hash
+        guard !hash.isEmpty, st.provider == .mathpix, st.confidence < LiveLimits.minConfidence,
+              st.analysis?.verdict == "ok", st.analysis?.solved == true,
+              st.latex.range(of: #"^\s*=?\s*-?\s*\d+\s*$"#, options: .regularExpression) != nil else { return false }
+        if let look = unsureAnswerLooks[hash] { return look == nil }
+        guard engineReady, started, connectivity.isOnline, !inkOut, let crop = crop(st.id) else { return false }
+        unsureAnswerLooks[hash] = .some(nil)
+        let id = st.id
+        let request = RereadRequest(boardId: boardId, lineId: id, crop: crop, latex: st.latex, above: [], below: [])
+        let services = self.services
+        track { [weak self] in
+            let reply = try? await services.reread(request).latex
+            guard let self else { return }
+            self.count("reread")
+            let same = reply.map { Self.numbers(in: $0) == Self.numbers(in: st.latex) } ?? false
+            self.unsureAnswerLooks[hash] = .some(same)
+            if self.lines[id]?.ink.hash == hash { self.render(id) }
+        }
+        return true
     }
 
     /// A ring came off (a second look, a fix, a new read): what it brought goes with it — its hint card,

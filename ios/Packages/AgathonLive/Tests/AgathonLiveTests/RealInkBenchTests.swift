@@ -83,6 +83,9 @@ struct RealInkBenchTests {
         var why: String?
         var calls: [String: Int]
         var ms: Double
+        /// marks seen on a labeled line before all its strokes were written (`kind@line`): kid-visible
+        /// noise on a half-written line ("check as I go")
+        var earlyMarks: [String] = []
     }
 
     @Test func realInk() async throws {
@@ -101,6 +104,7 @@ struct RealInkBenchTests {
         let picked = Self.pick(all, env["AGATHON_REALINK_ONLY"] ?? "")
         let fast = env["AGATHON_REALINK_PACE"] == "fast"
         let linePace = env["AGATHON_REALINK_PACE"] == "line"
+        let checking = CheckTiming(rawValue: env["AGATHON_REALINK_CHECK"] ?? "") ?? .whenDone
         let cacheURL = env["AGATHON_BENCH_CACHE"].map { URL(fileURLWithPath: $0) }
         var cache = BenchServices.Cache()
         if let cacheURL, let data = try? Data(contentsOf: cacheURL) { cache = try JSONDecoder().decode(BenchServices.Cache.self, from: data) }
@@ -142,7 +146,7 @@ struct RealInkBenchTests {
                 }
                 let i = next
                 next += 1
-                group.addTask { @MainActor in (i, await Self.run(picked[i], services: services, oracle: mode == .oracle, fast: fast, linePace: linePace)) }
+                group.addTask { @MainActor in (i, await Self.run(picked[i], services: services, oracle: mode == .oracle, fast: fast, linePace: linePace, checking: checking)) }
             }
             for _ in 0..<parallel { add() }
             while let (i, r) = await group.next() {
@@ -185,17 +189,18 @@ struct RealInkBenchTests {
 
     /// One attempt on its own board and loop: the page (the problem in the tutor's hand, or the kid's
     /// own page), every stroke where the kid put it with the pause before it, then Check.
-    static func run(_ c: Case, services: BenchServices, oracle: Bool, fast: Bool, linePace: Bool = false) async -> CaseOutcome? {
+    static func run(_ c: Case, services: BenchServices, oracle: Bool, fast: Bool, linePace: Bool = false, checking: CheckTiming = .whenDone) async -> CaseOutcome? {
         let started = Date()
         let boardId = "realink-\(UUID().uuidString.lowercased().prefix(8))"
         let board = TestBoard()
         let scheduler = ManualScheduler()
         let loop = LiveLoop(board: board, boardId: boardId, services: services,
                             settings: LiveSettings(enabled: true, mode: .feedback, auto: true, handwriting: true, celebrations: false,
-                                                   checking: .whenDone, showReadings: true),
+                                                   checking: checking, showReadings: true),
                             brain: TestBrain.shared, background: TestBrain.background, scheduler: scheduler, connectivity: ManualConnectivity())
         let clock = HeadlessBench.Clock(loop: loop, scheduler: scheduler)
         let written = Written()
+        var earlyMarks: [String] = []
         written.lines = c.lines.map { (Set<String>(), $0.latex) }
         // every stroke written, in order (the newest strokes of a read may not be in its line yet)
         var order: [String] = []
@@ -255,6 +260,13 @@ struct RealInkBenchTests {
             let wait = linePace ? (s.line != lastLine ? HeadlessBench.lineBreakMs : 0) : fast ? min(s.dt, 400) + min(s.dur, 300) : s.dt + s.dur
             lastLine = s.line
             if wait > 0 { await clock.pass(wait) }
+            // a mark on a labeled line not finished yet: what the kid sees mid-line
+            for (k, line) in written.lines.enumerated() where !line.strokes.isEmpty && line.strokes.count < total[k] {
+                for st in loop.lines.values where !line.strokes.isDisjoint(with: Set(st.ink.strokeIds)) {
+                    let m = loop.trainingMark(on: st.id)
+                    if m != .none, !earlyMarks.contains("\(m.rawValue)@\(k)") { earlyMarks.append("\(m.rawValue)@\(k)") }
+                }
+            }
             let pts = zip(s.x, s.y).map { ProblemPageLayout.place(Vec2(origin.x + $0, origin.y + $1), on: board.screenRect.box) }
             let made = board.kidWrites([pts])
             order += made.map(\.rawValue)
@@ -264,7 +276,7 @@ struct RealInkBenchTests {
             }
         }
         await clock.pass(HeadlessBench.beforeCheckMs)
-        loop.checkPage()
+        if checking == .whenDone { loop.checkPage() }
         await clock.pass(HeadlessBench.afterCheckMs)
         if services.spent && services.snapshot.counts.refused > 0 {
             _ = services.end(boardId)
@@ -306,7 +318,7 @@ struct RealInkBenchTests {
         loop.stop()
         return CaseOutcome(id: c.id, grade: c.grade, category: c.category, tags: c.tags, ownPage: ownPage, lines: lines, strayRings: strayRings,
                            solvedExpected: solvedExpected, solvedGot: solved, pass: judged.pass, why: judged.why?.text, calls: calls,
-                           ms: Date().timeIntervalSince(started) * 1000)
+                           ms: Date().timeIntervalSince(started) * 1000, earlyMarks: earlyMarks)
     }
 
     // MARK: - the report
@@ -346,6 +358,8 @@ struct RealInkBenchTests {
         let readMs = lines.compactMap(\.readMs).sorted()
         let markMs = lines.compactMap(\.markMs).sorted()
         func median(_ a: [Double]) -> String { a.isEmpty ? "-" : String(format: "%.0f ms", a[a.count / 2]) }
+        let early = cases.flatMap(\.earlyMarks)
+        s += "marks on half-written lines: \(early.count) in \(cases.filter { !$0.earlyMarks.isEmpty }.count) cases (\(Dictionary(grouping: early) { $0.split(separator: "@").first.map(String.init) ?? "" }.mapValues(\.count)))\n"
         s += "read after pen-up median \(median(readMs)); mark after pen-up median \(median(markMs))\n"
         var byTag: [String: (Int, Int)] = [:]
         for c in cases {
