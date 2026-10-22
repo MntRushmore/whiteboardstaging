@@ -236,6 +236,39 @@ Each run writes these files to `OUT`:
 - `<label>-calls.json`;
 - `fixtures/`: a regression fixture for every failure.
 
+### Results (production, the whole catalogue in six hands + 20 practice problems)
+
+| run | pages right | lines right | rings on right work (report) | every ring on a right line* | calls |
+|---|---|---|---|---|---|
+| `prod-before` (2026-10-21, `68b0c57`) | 607/824 (73.7%) | 1193/1385 (86.1%) | 23 | 36 | 1140 reads, 6 re-reads |
+| `prod-after` (2026-10-22, `b3bc48ac`) | 710/824 (86.2%) | 1298/1385 (93.7%) | 1 | 9 | 0 reads (all cached), 128 re-reads |
+| `prod-after` replayed with the `lost-numerator` check (production's own answers, no calls) | 710/824 (86.2%) | 1298/1385 (93.7%) | 1 | 7 | none |
+
+\* The report's count leaves out a ring it blames on a misread (`misread`); this column counts every
+ring on a line that wants a tick, no mark or quiet. Reads right stayed 91–92%, since the same ink was
+read from the cache. The seven left: one on a wrong answer whose slip line was merged (`rt-767-slip`,
+big), and six misreads in the messy and steep hands that the second look could not fix (`= 47` read
+`-97`, `8` read `0`, `2.75` read `275`, a stacked `138` read `130`).
+
+What moved it, by kind of writing: stacked sums 0% → 89% (pages), their own problem 33% → 100%, long
+division 53% → 83%, a kid's own tick 56% → 89%, running totals 67% → 90%, rewrites 79% → 100%, negatives
+69% → 80%. The fixes:
+
+- `a1ee1a9a`: stacked sums worked as sums, the board's flush (cells, mates, strays), division bars, and a
+  child's numbers read as words (`\text{ 767-336 }`, a tick read as `\sqrt{}`);
+- `9f07114c`: the answer spot is the work's last step, a page of the kid's own heads its work, two facts
+  side by side and an `=` read as a minus are never ringed (`ArithmeticTruth.trueAsMeant`);
+- `c6cae954`: a crossed-out line is never judged (`StruckLine`), and a ring waits for a second look at
+  the step and the line above it (`LiveLoop+Chain`, the web's `holdRing`);
+- the `lost-numerator` read check (web and iPad): `\bar{2}=\bar{6}` for `\frac{1}{2} = \frac{3}{6}` is
+  not believed (it made the only two new rings in `prod-after`).
+
+Still open (each a fixture marked open, `TrainingFixtureTests`): word problems (30 pages: the desk will
+not write `\text{}` problems on a page), side-by-side facts kept as one line (deliberate, as on the
+web), a big hand's two rows clustered as one, a steep hand's fractions and a lone answer cut in two,
+misreads the second reader cannot fix (`2.75` read `275`, `8` read `0`), and `3x + 4 - 2x = x + 4`
+ticked.
+
 ### The QA account (production)
 
 The bench signs in to production only as **`qa-bench@agathon.app`**, an admin made for benches

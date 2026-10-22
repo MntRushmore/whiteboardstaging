@@ -66,6 +66,15 @@ struct ChainTests {
         #expect(ReadCheck.distance("", "ab") == 2)
     }
 
+    @Test func aFractionReadWithoutItsTopIsNotBelieved() {
+        #expect(ReadCheck.suspicious("\\bar{2}=\\bar{6}", others: []) == "lost-numerator")
+        #expect(ReadCheck.suspicious("\\overline{2}=\\frac{}{6}", others: []) == "lost-numerator")
+        #expect(ReadCheck.suspicious("0.\\overline{3}=\\frac{1}{3}", others: []) == nil)
+        #expect(ReadCheck.suspicious("0.1\\overline{6}", others: []) == nil)
+        // the second reader's `\bar{2}=\bar{6}` for Mathpix's `\overline{2}=\frac{}{6}` is not taken
+        #expect(ReadCheck.candidate(mathpix: "\\overline{2}=\\frac{}{6}", reread: "\\bar{2}=\\bar{6}", others: []) == nil)
+    }
+
     func slip(_ h: Harness) async {
         await h.write("2x + 3 = 11", at: Vec2(200, 120))
         await h.pass(700)
