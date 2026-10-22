@@ -62,6 +62,8 @@ struct DockLayoutTests {
         // of no set, says the page
         #expect(DockCopy.whereAmI(ProblemPage(setId: "daily:x", index: 2, count: 5), screen: 3, of: 7) == "Problem 2 of 5")
         #expect(DockCopy.whereAmI(ProblemPage(kind: .done, setId: "daily:x"), screen: 7, of: 7) == "All done")
+        // an SAT set says the test's own word (docs/SAT-MODE.md)
+        #expect(DockCopy.whereAmI(ProblemPage(setId: "sat:s1:1", index: 3, count: 10), screen: 3, of: 10) == "Question 3 of 10")
         #expect(DockCopy.whereAmI(ProblemPage(origin: "student"), screen: 4, of: 7) == "Page 4 of 7")
         #expect(DockCopy.whereAmI(ProblemPage(setId: "nyt:1", index: 1, count: 1), screen: 2, of: 2) == "Page 2 of 2")
         #expect(DockCopy.whereAmI(nil, screen: 1, of: 1) == "Page 1 of 1")

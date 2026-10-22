@@ -50,7 +50,7 @@ struct ClientTests {
     @Test func attemptsTutorAndProgress() async throws {
         let t = Transport([(200, #"{"ok":true}"#), (200, #"{"allowed":true,"used_today":3,"cap":5,"unlimited":false}"#), (200, #"{"answered":0,"correct":0}"#)])
         let c = client(t)
-        try await c.record(SATAttempt(questionId: "psda-percentages-0001", chosen: "3/4", correct: true, seconds: 30, usedTutor: false))
+        _ = try await c.record(SATAttempt(questionId: "psda-percentages-0001", chosen: "3/4", correct: true, seconds: 30, usedTutor: false))
         let pass = try await c.tutorPass(questionId: "psda-percentages-0001")
         let progress = try await c.progress()
         #expect(t.requests[0].url?.path == "/api/sat/attempts")

@@ -6,8 +6,8 @@ import Foundation
 public protocol SATService: Sendable {
     /// GET /api/sat/next: a set, adaptive (unseen first, weak skills weighted up)
     func next(_ request: SATNextRequest) async throws -> [SATQuestion]
-    /// POST /api/sat/attempts: one checked answer
-    func record(_ attempt: SATAttempt) async throws
+    /// POST /api/sat/attempts: one checked answer; the server's own verdict comes back
+    func record(_ attempt: SATAttempt) async throws -> SATAttemptReply
     /// POST /api/sat/tutor: may the live tutor help on this question today (idempotent per day)
     func tutorPass(questionId: String) async throws -> SATTutorPass
     /// GET /api/sat/progress
@@ -60,8 +60,8 @@ public final class SATClient: SATService {
         return reply.questions
     }
 
-    public func record(_ attempt: SATAttempt) async throws {
-        _ = try await api.post(Self.attemptsPath, body: attempt, as: EmptyResponse.self)
+    public func record(_ attempt: SATAttempt) async throws -> SATAttemptReply {
+        try await api.post(Self.attemptsPath, body: attempt, as: SATAttemptReply.self)
     }
 
     public func tutorPass(questionId: String) async throws -> SATTutorPass {

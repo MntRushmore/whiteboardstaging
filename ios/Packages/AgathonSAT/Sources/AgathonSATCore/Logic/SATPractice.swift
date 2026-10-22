@@ -12,8 +12,10 @@ import Observation
 ///  - **Choices:** tap to choose; strike a choice out (Bluebook's eliminator). Choosing a struck
 ///    choice brings it back; striking the chosen one unchooses it.
 ///  - **Grid-in:** typed through the keypad's rules (`SATGridIn`).
-///  - **The tutor:** opening a question asks for its pass (`POST /api/sat/tutor`, idempotent per
-///    question and day); the answer is kept per question.
+///  - **The tutor:** a question's free tutor pass is claimed on the student's FIRST INK on its page
+///    (the owner, 2026-10-22: "we just want ppl to use it!"), never by opening, browsing, choosing or
+///    checking. `claimTutorPass(for:)` is the one place that asks (`POST /api/sat/tutor`, idempotent per
+///    question and day); the app calls it from one trigger (`SATSessionModel.firstInk`).
 ///  - **Sets:** "Practice 10 more" adds a set to the same session (one board, a page a question).
 @MainActor
 @Observable
@@ -40,8 +42,8 @@ public final class SATPractice {
 
     /// The live tutor on a question's page.
     public enum Tutor: Hashable, Sendable {
-        /// not asked yet
-        case unknown
+        /// ready, not claimed: the first ink on the page claims the pass
+        case ready
         /// asking the server for the pass
         case asking
         /// on for this question (a free pass, or Unlimited)
@@ -86,7 +88,7 @@ public final class SATPractice {
         public var marked = false
         /// seconds on the question before it was last shown
         public var seconds: Double = 0
-        public var tutor: Tutor = .unknown
+        public var tutor: Tutor = .ready
         /// the tutor read or helped while this question was on show (the app tells the session)
         public var usedTutor = false
         /// its set (0-based) and its place in it (1-based) of how many
@@ -131,6 +133,8 @@ public final class SATPractice {
     public private(set) var reviewing: [Int]?
     /// the newest tutor pass (how many free tutor questions are left today)
     public private(set) var lastPass: SATTutorPass?
+    /// today as /api/sat/progress last said (free tutor questions used, the cap, Unlimited)
+    public var today: SATProgress.Today?
     /// attempts not yet sent
     public private(set) var unsent: [SATAttempt] = []
 
@@ -371,7 +375,7 @@ public final class SATPractice {
         lastFlushFailed = false
         while let first = unsent.first {
             do {
-                try await service.record(first)
+                _ = try await service.record(first)
                 if unsent.first == first { unsent.removeFirst() }
             } catch {
                 lastFlushFailed = true
@@ -387,11 +391,22 @@ public final class SATPractice {
 
     // MARK: - the free tutor
 
-    /// Asks for the tutor's pass for question `i` (the server's answer is kept; asked again only when
-    /// it was not on, or couldn't be asked).
+    /// Whether ink on question `i`'s page should claim its pass now: not yet claimed, or the last ask
+    /// couldn't reach the server. A capped question stays off (the cap line says why).
+    public func needsTutorClaim(_ i: Int) -> Bool {
+        guard items.indices.contains(i) else { return false }
+        switch items[i].tutor {
+        case .ready, .unavailable: return true
+        case .asking, .on, .capped: return false
+        }
+    }
+
+    /// Claims the free tutor's pass for question `i`: THE one place SAT practice asks
+    /// `POST /api/sat/tutor` (the app calls it on the first ink on the question's page). The server's
+    /// answer is kept per question; a pass already held is not asked for again.
     @discardableResult
-    public func openTutor(at i: Int) async -> Tutor {
-        guard questions.indices.contains(i) else { return .unknown }
+    public func claimTutorPass(for i: Int) async -> Tutor {
+        guard questions.indices.contains(i) else { return .ready }
         if case .on = items[i].tutor { return items[i].tutor }
         if case .asking = items[i].tutor { return .asking }
         items[i].tutor = .asking
@@ -399,10 +414,10 @@ public final class SATPractice {
         do {
             let pass = try await service.tutorPass(questionId: id)
             lastPass = pass
-            guard items.indices.contains(i), questions[i].id == id else { return .unknown }
+            guard items.indices.contains(i), questions[i].id == id else { return .ready }
             items[i].tutor = pass.allowed ? .on(pass) : .capped(pass)
         } catch {
-            guard items.indices.contains(i) else { return .unknown }
+            guard items.indices.contains(i) else { return .ready }
             items[i].tutor = .unavailable
         }
         return items[i].tutor
@@ -417,11 +432,24 @@ public final class SATPractice {
         items[i].tutor = .capped(pass)
     }
 
-    /// Forgets a question's answer from the server, so the next `openTutor` asks again.
+    /// Forgets a question's answer from the server, so the next ink claims again (after Unlimited).
     public func resetTutor(at i: Int) {
         guard items.indices.contains(i) else { return }
-        items[i].tutor = .unknown
+        items[i].tutor = .ready
     }
+
+    /// Free tutor questions left today (nil with Unlimited, or before anything is known): the newest
+    /// pass's count, else /progress's.
+    public var tutorLeft: Int? {
+        if let p = lastPass { return p.left }
+        return today?.tutorLeft
+    }
+
+    /// The day's free tutor questions (5).
+    public var tutorCap: Int { lastPass?.cap ?? today?.cap ?? SATLimits.freeTutorPerDay }
+
+    /// Unlimited: the tutor is never capped.
+    public var unlimited: Bool { lastPass?.unlimited ?? today?.unlimited ?? false }
 
     // MARK: - the end of a set
 

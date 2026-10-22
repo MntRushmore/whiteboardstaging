@@ -171,6 +171,28 @@
                ReferencedContainer = "container:Packages/AgathonOnboarding">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AgathonSATCoreTests"
+               BuildableName = "AgathonSATCoreTests"
+               BlueprintName = "AgathonSATCoreTests"
+               ReferencedContainer = "container:Packages/AgathonSAT">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AgathonSATTests"
+               BuildableName = "AgathonSATTests"
+               BlueprintName = "AgathonSATTests"
+               ReferencedContainer = "container:Packages/AgathonSAT">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

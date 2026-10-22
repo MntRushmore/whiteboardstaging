@@ -192,25 +192,59 @@ struct PracticeTests {
 
     // MARK: - the free tutor
 
+    /// The owner (2026-10-22): the pass is taken on the first ink, never by opening, browsing,
+    /// choosing or checking.
+    @Test func openingSixQuestionsWithoutWritingUsesNoPassAndWritingOnOneUsesOne() async throws {
+        let stub = SATStubService(cap: 5)
+        let p = try await practice(stub)
+        for i in 0..<6 {
+            p.show(i)
+            #expect(p.item.tutor == .ready)
+            #expect(p.needsTutorClaim(i))
+        }
+        p.show(0)
+        p.choose("C")
+        p.check()
+        p.show(1)
+        p.toggleEliminated("B")
+        await p.settle()
+        #expect(stub.tutorAsked.isEmpty)
+        #expect(try await stub.progress().today.tutorUsed == 0)
+        // the first ink on question 4's page claims its pass; more ink there claims nothing more
+        #expect(await p.claimTutorPass(for: 3).isOn)
+        #expect(!p.needsTutorClaim(3))
+        #expect(await p.claimTutorPass(for: 3).isOn)
+        #expect(stub.tutorAsked == ["algebra-linear-two-var-9004"])
+        #expect(p.tutorLeft == 4)
+    }
+
+    @Test func whatIsLeftComesFromProgressUntilAPassIsClaimed() async throws {
+        let p = try await practice(SATStubService(cap: 5, usedBefore: 2))
+        p.today = try await p.service.progress().today
+        #expect(p.tutorLeft == 3 && p.tutorCap == 5 && !p.unlimited)
+        _ = await p.claimTutorPass(for: 0)
+        #expect(p.tutorLeft == 2)
+    }
+
     @Test func fiveFreeTutorQuestionsADayThenTheBoardIsPlainInk() async throws {
         let stub = SATStubService(cap: 5)
         let p = try await practice(stub)
         for i in 0..<5 {
-            guard case .on(let pass) = await p.openTutor(at: i) else { Issue.record("question \(i) had no tutor"); return }
+            guard case .on(let pass) = await p.claimTutorPass(for: i) else { Issue.record("question \(i) had no tutor"); return }
             #expect(pass.usedToday == i + 1)
         }
-        guard case .capped(let pass) = await p.openTutor(at: 5) else { Issue.record("the sixth was not capped"); return }
+        guard case .capped(let pass) = await p.claimTutorPass(for: 5) else { Issue.record("the sixth was not capped"); return }
         #expect(pass.usedToday == 5 && pass.cap == 5)
         #expect(p.lastPass?.left == 0)
         // a question opened again keeps its pass (idempotent per question and day)
-        #expect(await p.openTutor(at: 2).isOn)
+        #expect(await p.claimTutorPass(for: 2).isOn)
         #expect(stub.tutorAsked.count == 5)
     }
 
     @Test func unlimitedLiftsTheCap() async throws {
         let stub = SATStubService(cap: 5, usedBefore: 5, unlimited: true)
         let p = try await practice(stub)
-        guard case .on(let pass) = await p.openTutor(at: 7) else { Issue.record("no tutor with Unlimited"); return }
+        guard case .on(let pass) = await p.claimTutorPass(for: 7) else { Issue.record("no tutor with Unlimited"); return }
         #expect(pass.unlimited)
         #expect(pass.left == nil)
     }
@@ -218,15 +252,15 @@ struct PracticeTests {
     @Test func alreadyCappedTodayAndOffline() async throws {
         let stub = SATStubService(cap: 5, usedBefore: 5)
         let p = try await practice(stub)
-        if case .capped = await p.openTutor(at: 0) {} else { Issue.record("not capped") }
+        if case .capped = await p.claimTutorPass(for: 0) {} else { Issue.record("not capped") }
         stub.offline = true
         p.resetTutor(at: 1)
-        #expect(await p.openTutor(at: 1) == .unavailable)
+        #expect(await p.claimTutorPass(for: 1) == .unavailable)
         // a refusal on a live call: off on that question
         stub.offline = false
         let q = SATStubService(cap: 5)
         let p2 = try await practice(q)
-        #expect(await p2.openTutor(at: 0).isOn)
+        #expect(await p2.claimTutorPass(for: 0).isOn)
         p2.tutorRefused(at: 0)
         if case .capped = p2.items[0].tutor {} else { Issue.record("still on after a refusal") }
     }
@@ -234,12 +268,12 @@ struct PracticeTests {
     @Test func usedTutorIsSentOnlyWhenTheTutorWasOn() async throws {
         let stub = SATStubService(cap: 1)
         let p = try await practice(stub)
-        _ = await p.openTutor(at: 0)
+        _ = await p.claimTutorPass(for: 0)
         p.noteTutorUsed(at: 0)
         p.choose("C")
         p.check()
         // the second question has no pass: helping there is impossible, so it is never "used"
-        _ = await p.openTutor(at: 1)
+        _ = await p.claimTutorPass(for: 1)
         p.noteTutorUsed(at: 1)
         p.show(1)
         p.choose("A")
@@ -256,13 +290,13 @@ struct PracticeTests {
         #expect(progress.answered == 0)
         #expect(progress.estimate == nil)
         for q in SATFixtures.questions.prefix(14) {
-            try await stub.record(SATAttempt(questionId: q.id, chosen: "A", correct: true, seconds: 10, usedTutor: false))
+            _ = try await stub.record(SATAttempt(questionId: q.id, chosen: "A", correct: true, seconds: 10, usedTutor: false))
         }
         progress = try await stub.progress()
         #expect(progress.answered == 14)
         #expect(progress.estimate == nil)
         let q = SATFixtures.questions[14]
-        try await stub.record(SATAttempt(questionId: q.id, chosen: "A", correct: false, seconds: 10, usedTutor: false))
+        _ = try await stub.record(SATAttempt(questionId: q.id, chosen: "A", correct: false, seconds: 10, usedTutor: false))
         progress = try await stub.progress()
         let band = try #require(progress.estimate)
         #expect(band.low >= 200 && band.high <= 800 && band.low < band.high)

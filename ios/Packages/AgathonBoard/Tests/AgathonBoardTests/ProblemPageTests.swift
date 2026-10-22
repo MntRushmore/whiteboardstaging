@@ -29,6 +29,23 @@ struct ProblemPageTests {
         #expect(ProblemPage(meta: ["page": ["kind": "done", "set": "s"]])?.kind == .done)
     }
 
+    /// SAT mode (docs/SAT-MODE.md): the question lives in the panel; the page carries a small heading
+    /// in the problem's place ("Q3 · Linear functions"), no answer spot, and more rows.
+    @Test func anSATPageHasAHeadingAndNoAnswerSpot() throws {
+        let page = ProblemPage(setId: "sat:s1:1", index: 3, count: 10, origin: "sat", workTop: 110, answer: false, heading: "Q3 · Linear functions")
+        var screen = ScreenRecord(id: "screen:q3", order: "a1")
+        screen.problemPage = page
+        let read = try #require(screen.problemPage)
+        #expect(read.heading == "Q3 · Linear functions" && !read.hasAnswerSpot)
+        #expect(try BoardDocument.decode(BoardDocument([.screen(screen)]).encoded()).screens.first?.problemPage == read)
+        let template = try #require(PageTemplate(page: read, screen: .screen))
+        #expect(!template.notes.isEmpty, "the heading is drawn")
+        #expect(template.answer.isEmpty)
+        #expect(ProblemPageLayout.rules(workTop: 110).count == 7)
+        // a page without one draws no note
+        #expect(try #require(PageTemplate(page: ProblemPage(), screen: .screen)).notes.isEmpty)
+    }
+
     @Test func theLayoutLeavesSixRowsUnderAOneLineProblemAndAlwaysTwo() {
         let L = ProblemPageLayout.self
         #expect(L.defaultWorkTop == 186)

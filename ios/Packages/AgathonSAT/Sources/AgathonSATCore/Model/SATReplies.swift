@@ -28,6 +28,26 @@ public struct SATAttempt: Codable, Hashable, Sendable {
     }
 }
 
+/// POST /api/sat/attempts' answer: `{ok, correct}`, the server's own verdict from the bank's answer
+/// (it stores that, whatever the app sent; docs/SAT-MODE.md "Route details").
+public struct SATAttemptReply: Codable, Hashable, Sendable {
+    public var ok: Bool
+    public var correct: Bool?
+
+    public init(ok: Bool = true, correct: Bool? = nil) {
+        self.ok = ok
+        self.correct = correct
+    }
+
+    enum CodingKeys: String, CodingKey { case ok, correct }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try c.decodeIfPresent(Bool.self, forKey: .ok) ?? true
+        correct = try c.decodeIfPresent(Bool.self, forKey: .correct)
+    }
+}
+
 /// POST /api/sat/tutor's answer: may the live tutor help on this question today.
 public struct SATTutorPass: Codable, Hashable, Sendable {
     public var allowed: Bool

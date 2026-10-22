@@ -63,9 +63,10 @@ public final class SATStubService: SATService, @unchecked Sendable {
         }
     }
 
-    public func record(_ attempt: SATAttempt) async throws {
+    public func record(_ attempt: SATAttempt) async throws -> SATAttemptReply {
         try await wait()
         lock.withLock { _attempts.append(attempt) }
+        return SATAttemptReply(ok: true, correct: attempt.correct)
     }
 
     public func tutorPass(questionId: String) async throws -> SATTutorPass {

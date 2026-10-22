@@ -80,6 +80,10 @@ public struct PageTemplate: @unchecked Sendable {
                                     baseline: at(L.problemOrigin.x, L.continuedBaseline)))
         } else {
             label = Self.text(Self.workWords, size: L.workLabelSize * k, weight: .regular, baseline: at(L.ruleLeft, top + L.workLabelBaseline))
+            // a page whose problem is shown elsewhere says which it is, small (SAT mode: "Q3 · Linear functions")
+            if let heading = page.heading, !heading.isEmpty {
+                notes.addPath(Self.text(heading, size: L.continuedSize * k, weight: .semibold, baseline: at(L.problemOrigin.x, L.continuedBaseline)))
+            }
         }
 
         if page.hasAnswerSpot {

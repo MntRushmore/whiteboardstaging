@@ -41,6 +41,8 @@ public enum DockCopy {
     /// a problem page in a set (docs/PROBLEM-PAGES.md)
     public static func problemOf(_ n: Int, _ count: Int) -> String { "Problem \(n) of \(count)" }
     public static let allDone = "All done"
+    /// a page of an SAT set (docs/SAT-MODE.md): the test's own word
+    public static func questionOf(_ n: Int, _ count: Int) -> String { "Question \(n) of \(count)" }
 
     /// a page of a problem that needed more room ("More room"): "Problem 2 · page 2 of 2"
     public static func problemPage(_ n: Int?, part: Int, of parts: Int) -> String {
@@ -54,7 +56,9 @@ public enum DockCopy {
         if let page {
             if page.kind == .done && page.setId != nil { return allDone }
             if page.kind == .problem, let part, part.1 > 1 { return problemPage(page.inSet ? page.index : nil, part: part.0, of: part.1) }
-            if page.kind == .problem, page.inSet, let i = page.index, let c = page.count { return problemOf(i, c) }
+            if page.kind == .problem, page.inSet, let i = page.index, let c = page.count {
+                return page.setId?.hasPrefix("sat:") == true ? questionOf(i, c) : problemOf(i, c)
+            }
         }
         return pageOf(n, count)
     }

@@ -129,6 +129,11 @@ struct ModelTests {
         #expect(early.today.cap == 5)
     }
 
+    @Test func theAttemptsReplyCarriesTheServersVerdict() throws {
+        #expect(try JSONDecoder().decode(SATAttemptReply.self, from: Data(#"{"ok":true,"correct":false}"#.utf8)) == SATAttemptReply(ok: true, correct: false))
+        #expect(try JSONDecoder().decode(SATAttemptReply.self, from: Data(#"{"ok":true}"#.utf8)).correct == nil)
+    }
+
     @Test func anAttemptIsSentAsTheRouteReadsIt() throws {
         let a = SATAttempt(questionId: "algebra-linear-functions-0042", chosen: "B", correct: false, seconds: 74, usedTutor: true)
         let json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(a)) as? [String: Any])

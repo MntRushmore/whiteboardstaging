@@ -15,7 +15,8 @@ struct LiveRequestTagTests {
         return LiveAPIServices(api: api, live: LiveAPI(sse: SSEClient(api: api)), tag: tag)
     }
 
-    static let payload = RecognizerPayload(strokes: .init(x: [[0, 10]], y: [[0, 0]]), bounds: .init(w: 10, h: 1), hash: "h")
+    // (the payload has no public initialiser: the brain makes it)
+    static let payload = try! JSONDecoder().decode(RecognizerPayload.self, from: Data(#"{"strokes":{"x":[[0,10]],"y":[[0,0]]},"bounds":{"w":10,"h":1},"hash":"h","points":2}"#.utf8))
 
     @Test func everyLiveBodyCarriesTheQuestionOnAnSATPage() async throws {
         let t = ScriptedTransport()
