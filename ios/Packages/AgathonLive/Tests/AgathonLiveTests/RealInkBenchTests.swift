@@ -193,20 +193,42 @@ struct RealInkBenchTests {
         let clock = HeadlessBench.Clock(loop: loop, scheduler: scheduler)
         let written = Written()
         written.lines = c.lines.map { (Set<String>(), $0.latex) }
+        // every stroke written, in order (the newest strokes of a read may not be in its line yet)
+        var order: [String] = []
+        let total = c.lines.indices.map { k in c.strokes.filter { $0.line == k }.count }
         var reader: (@MainActor (RecognizeRequest) async -> String?)?
         if oracle {
-            // perfect reads of real ink: the labeled lines the read's line holds whole, as written; ink no
-            // line owns (a stray, her own tick) is invisible; a line held in part is unreadable (it is
-            // still being written)
+            // perfect reads of real ink: the labeled lines the read holds whole and finished, as written;
+            // ink no line owns (a stray, her own tick) is invisible; a line held in part or still being
+            // written is unreadable
             reader = { @MainActor [weak loop] request in
-                guard let ink = loop?.lines[request.lineId]?.ink.strokeIds else { return nil }
-                let held = Set(ink)
+                guard let loop else { return nil }
+                // the read's line; an early read's line is the clusterer's, not the loop's yet: its ink is
+                // the early read in flight with as many strokes
+                var held: Set<String>
+                if let line = loop.lines[request.lineId] {
+                    held = Set(line.ink.strokeIds)
+                } else if let early = loop.earlyReads.values.filter({ $0.strokeIds.count == request.strokes.x.count })
+                    .max(by: { $0.startedAt < $1.startedAt }) {
+                    held = early.strokeIds
+                } else {
+                    held = []
+                }
+                // the read was asked for with new strokes the line does not hold yet: the newest ones
+                if request.strokes.x.count > held.count {
+                    for id in order.reversed() where held.count < request.strokes.x.count && !held.contains(id) { held.insert(id) }
+                }
                 var whole: [String] = []
-                for line in written.lines where !line.strokes.isEmpty && !line.strokes.isDisjoint(with: held) {
-                    guard line.strokes.isSubset(of: held) else { return nil }
+                var partial = false
+                for (k, line) in written.lines.enumerated() where !line.strokes.isEmpty && !line.strokes.isDisjoint(with: held) {
+                    if !line.strokes.isSubset(of: held) || line.strokes.count < total[k] { partial = true; break }
                     whole.append(Oracle.spoken(line.latex))
                 }
-                return whole.isEmpty ? nil : whole.joined(separator: " ")
+                if ProcessInfo.processInfo.environment["AGATHON_REALINK_DEBUG"] == "1" {
+                    print("ORACLE \(request.lineId) inLines=\(loop.lines[request.lineId] != nil) held=\(held.count) req=\(request.strokes.x.count) "
+                          + "partial=\(partial) whole=\(whole) lines=\(written.lines.map { "\($0.strokes.intersection(held).count)/\($0.strokes.count)" })")
+                }
+                return partial || whole.isEmpty ? nil : whole.joined(separator: " ")
             }
         }
         services.begin(boardId, oracle: reader)
@@ -228,6 +250,7 @@ struct RealInkBenchTests {
             if wait > 0 { await clock.pass(wait) }
             let pts = zip(s.x, s.y).map { ProblemPageLayout.place(Vec2(origin.x + $0, origin.y + $1), on: board.screenRect.box) }
             let made = board.kidWrites([pts])
+            order += made.map(\.rawValue)
             if s.line >= 0 && s.line < c.lines.count {
                 ids[s.line] += made
                 written.lines[s.line].strokes.formUnion(made.map(\.rawValue))
