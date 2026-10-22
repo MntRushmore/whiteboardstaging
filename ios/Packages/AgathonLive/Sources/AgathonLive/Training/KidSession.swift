@@ -390,17 +390,15 @@ public enum KidSessions {
             .done(wait: 14),
             .shot("fixed"),
         ]),
-        // the two-step "Maya has 3 bags of 12 apples. She gives away 9. How many are left?" was refused by the
-        // tutor's desk (2026-10-22, reported): the session uses one it writes
-        KidSession("s12-word-edge", "a word problem, big writing down to the page's edge", grade: 4, hand: .big,
+        // the tutor's desk writes no word problem it cannot check (2026-10-22: "Maya has 3 bags of 12 apples…"
+        // and "A pen costs 2 dollars…" both refused, reported): the kid works one from their paper homework
+        KidSession("s12-word-edge", "a word problem from paper, big writing down to the page's edge", grade: 4, hand: .big,
                    mess: KidMess(tilt: 2, slope: 0.02, growth: 0.1, jitter: 14, gap: 60), [
-            .tutorProblem(["\\text{A pen costs 2 dollars.}", "\\text{How much do 7 pens cost?}"]),
-            .line(L("2 + 2 + 2 + 2 + 2 + 2 + 2 = 14", .calm), .below),
+            .line(L("3 \\times 12 = 36", .calm), .below),
             .pause(6),
-            .line(L("7 \\times 2 = 14", .calm), .nearBottom),
+            .line(L("36 - 9 = 27", .calm), .nearBottom),
             .shot("edge"),
-            .line(L("14", .tick, place: .answer), .answer),
-            .done(wait: 14),
+            .done(wait: 16),
             .shot("checked"),
         ]),
     ]

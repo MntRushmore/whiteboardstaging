@@ -301,6 +301,17 @@ private final class KidSessionRun {
             let y = column.bottom < 0 ? max(start, column.top) : column.bottom + gap
             origin = Vec2(column.x + dx, y)
         }
+        // a kid writes under whatever the tutor wrote in their column (Help me's step), not on it
+        if spot == .below || (spot == .answer && !onProblemPage) {
+            let rect = controller.currentScreen?.rect ?? .screen
+            let tutorBottom = controller.store.drawables(on: controller.currentScreenID).compactMap { r -> Double? in
+                guard r.author == .tutor, (r.meta["mark"]?.stringValue ?? "").isEmpty, r.meta["chatProblem"] == nil,
+                      let b = RenderGeometry.item(for: r)?.bounds else { return nil }
+                let u = ProblemPageLayout.unplace(b, from: rect)
+                return u.maxX > origin.x && u.x < origin.x + w && u.maxY > origin.y - gap && u.y < origin.y + h ? u.maxY : nil
+            }.max()
+            if let tutorBottom { origin.y = max(origin.y, tutorBottom + gap) }
+        }
         // room over a stacked sum for its carries
         if marks.contains(where: { if case .cross = $0 { false } else { true } }) { origin.y += 40 }
         origin.x = min(max(40, origin.x), Box.screen.w - 40 - w)

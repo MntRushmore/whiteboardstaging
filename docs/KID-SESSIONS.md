@@ -68,3 +68,43 @@ One session by hand: a Debug build, signed in, launched with
 `-kidSession s06-side-by-side -liveTraining 20`; open a new board and it plays (the Check / New page
 taps wait 40 s for someone to answer `debug.session.ack`, then the player does them itself and fails
 the button check).
+
+## First run — 2026-10-22 (production, 12 sessions, 72 tutor calls)
+
+Every session played to the end; the board saved and opened again with every stroke (s04, s11). Of 77
+judged checks, 72 passed (plus the two reopen checks in the UI test, both passed). What the sessions found:
+
+**Fixed in this branch**
+
+- "I read" beside a stacked sum showed the kid the array's LaTeX — `beginarrayr 47 \\ +38 \\ hline 85
+  endarray` — running off the page (s01). `MathText.plain` reads it `47 + 38 = 85`; a division bracket
+  `144 ÷ 9 = 16`.
+- "Keep it here" (New page for this one) ran off the page's right edge when the second problem sat on
+  the right half (s06); a long "I read" chip could pass the page card. Both stay inside the page.
+
+**For the tutor's reading and ringing (the blitz lane)**
+
+- s04, steep hand, `180 + 24 = 214`: Check **rang the slip and showed its hint**, then about 4 s later
+  the second look re-read the steep `24` as `34` — `180 + 34 = 214` is true — and **the ring came off**
+  while the hint card ("Check the addition on the right side of line 4") stayed up. Help me then wrote
+  `= 180 + 24` in the tutor's ink under the kid's line: a correction of a 34 the kid never wrote. A
+  re-read that turns a ringed slip into a true line should not win on its own (keep the ring, or ask
+  "Is this right?"). Recording: qa-sessions/2026-10-22/video/s04.mp4 at 0:48–1:20.
+
+**For the overlay (design call)**
+
+- "Now you try one" sits bottom-centre, over a problem page's answer spot and its tick (s04).
+
+**For the tutor's desk**
+
+- The word problem "Maya has 3 bags of 12 apples. / She gives away 9. How many are left?" was refused
+  by `write_problems` (s12): nothing was written, so the kid's work had no problem to be judged against
+  and the answer `27` got no mark. Two-step word problems a practice set or Ask might give need the
+  desk to check them.
+
+**Smaller**
+
+- Hints name lines by number ("…the right side of line 4", "…of line 3"): a kid does not number their
+  lines, and line 4 in s04 counted the tutor's problem.
+- "Now you try" after 34 × 6 (split into tens and ones) offered 81 × 2 — easier, and a different shape
+  of work.
