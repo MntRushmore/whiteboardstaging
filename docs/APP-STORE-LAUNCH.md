@@ -195,7 +195,7 @@ change both together.
 
 Two things to settle (owner), neither blocks the answers above:
 
-- **ElevenLabs and the Privacy Policy's AI sentence.** The policy says "We ask every AI service we use
+- **ElevenLabs and the Privacy Policy's AI sentence.** _Done 2026-10-22: the sentence now names ElevenLabs' own retention (`LEGAL.aiProviderTraining`); use "AI services that don't train on it" in any listing copy unless ElevenLabs zero retention is switched on._ Original note: The policy says "We ask every AI service we use
   not to keep or train on what we send, and we only use providers that agree" (`LEGAL.aiProviderTraining`).
   True for OpenRouter (`zdr: true`, `data_collection: "deny"`) and Mathpix (`improve_mathpix: false`);
   **not** backed for ElevenLabs, where kids' voice clips and the tutor's phrases go with default

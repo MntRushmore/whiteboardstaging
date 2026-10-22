@@ -326,6 +326,8 @@ struct ConsentBox: View {
     let openPage: (URL) -> Void
 
     static let ageLine = "I'm 13 or older, or I'm a parent or guardian setting this up for my child."
+    /// What goes to AI services, agreed to in this box (App Review 5.1.2(i)).
+    static let aiLine = "To check work and answer questions, Agathon sends what you or your kid write, say and ask to AI services that read it and answer (the Privacy Policy lists them). Never a name or email."
 
     var body: some View {
         HStack(alignment: .top, spacing: DS.Space.s) {
@@ -348,19 +350,23 @@ struct ConsentBox: View {
             .buttonStyle(.plain)
             .padding(.leading, -12)
             .padding(.top, -12)
-            .accessibilityLabel("I agree to the Terms and the Privacy Policy. \(Self.ageLine)")
+            .accessibilityLabel("I agree to the Terms and the Privacy Policy, including the AI services. \(Self.ageLine) \(Self.aiLine)")
             .accessibilityValue(agreed ? "Ticked" : "Not ticked")
             .accessibilityAddTraits(agreed ? [.isSelected] : [])
             .accessibilityIdentifier("signin.consent")
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(LocalizedStringKey("I agree to the [Terms](\(AppLinks.terms.absoluteString)) and the [Privacy Policy](\(AppLinks.privacy.absoluteString))."))
+                Text(LocalizedStringKey("I agree to the [Terms](\(AppLinks.terms.absoluteString)) and the [Privacy Policy](\(AppLinks.privacy.absoluteString)), including the AI services."))
                     .tint(DS.Color.tutorInk)
                     .environment(\.openURL, OpenURLAction { url in
                         openPage(url)
                         return .handled
                     })
                 Text(Self.ageLine)
+                    .onTapGesture { agreed.toggle() }
+                    .accessibilityHidden(true)
+                Text(Self.aiLine)
+                    .foregroundStyle(DS.Color.inkSecondary)
                     .onTapGesture { agreed.toggle() }
                     .accessibilityHidden(true)
             }
