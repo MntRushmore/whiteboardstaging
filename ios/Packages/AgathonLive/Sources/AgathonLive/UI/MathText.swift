@@ -30,8 +30,10 @@ public enum MathText {
         let rows = latex[begin.upperBound..<end.lowerBound].components(separatedBy: "\\\\")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         // a division bracket: the quotient over `divisor )\overline{dividend}`
-        if rows.count == 2, let m = rows[1].firstMatch(of: /^([^)]+?)\s*\)\s*\\overline\s*\{([^{}]+)\}$/) {
-            return "\(m.2) \\div \(m.1.trimmingCharacters(in: .whitespaces)) = \(rows[0])"
+        if rows.count == 2, let re = try? NSRegularExpression(pattern: #"^([^)]+?)\s*\)\s*\\overline\s*\{([^{}]+)\}$"#),
+           let m = re.firstMatch(in: rows[1], range: NSRange(rows[1].startIndex..., in: rows[1])),
+           let divisor = Range(m.range(at: 1), in: rows[1]), let dividend = Range(m.range(at: 2), in: rows[1]) {
+            return "\(rows[1][dividend]) \\div \(rows[1][divisor].trimmingCharacters(in: .whitespaces)) = \(rows[0])"
         }
         // sections between the bars: each one's rows (a row without a sign is added)
         var sections: [[String]] = [[]]
