@@ -454,6 +454,18 @@ describe("readVariants: what a messy read of a child's step may have been (only 
     expect(readVariants("\\leftarrow 9")).toEqual([]);
   });
 
+  it("a minus beside a 5 whose tail curls out under it is a minus; a plus, an equals, a 5's own top bar are not", () => {
+    const stroke = (pts: Array<[number, number]>) => youngInk([pts.map(([x, y]) => ({ x, y }))])[0];
+    // re-drawn: a short bar at mid height, then a 5 (stem, belly curling back left under the bar, top bar)
+    const five = [stroke([[142, 14], [142, 40], [170, 42], [184, 60], [170, 78], [127, 74]]), stroke([[142, 11], [176, 11]])];
+    const minus = stroke([[134, 40], [144, 40]]);
+    expect(inkLeadsWithMinus([minus, ...five])).toBe(true);
+    expect(inkLeadsWithMinus(five)).toBe(false);
+    // a + (a stroke through the bar), an = (a bar under it)
+    expect(inkLeadsWithMinus([minus, stroke([[139, 32], [139, 48]]), ...five])).toBe(false);
+    expect(inkLeadsWithMinus([minus, stroke([[134, 50], [144, 50]]), ...five])).toBe(false);
+  });
+
   it("a minus in the ink is hers only right before the first glyph", () => {
     const ink = youngInk(youngLine("-5", 200, 100));
     expect(inkLeadsWithMinus(ink)).toBe(true);

@@ -452,6 +452,8 @@ extension LiveLoop {
             // a division bar and the number under it: "divide both sides" (`\div 3`; the web's `barDivisionLatex`)
             let bar = before.ink.strokeIds.contains(where: barStrokeIds.contains)
             read = (try? await brain.youngRead(raw, problem: head(for: before.column)?.lines ?? [], strokes: ink, bar: bar)) ?? raw
+            // what a messy read may have been, as the ink shows it (`readAsInkShows`)
+            if let v = await readAsInkShows(before, read, ink) { read = v }
         }
         guard var st = lines[id] else { return }
         // ink read in this session: new work for the learning record
@@ -485,6 +487,37 @@ extension LiveLoop {
     }
 
     /// "The tutor saw it": the line's readback shows for a moment.
+    /// What a messy read of a step may have been, as its ink shows it (`Brain.readVariants`: the minus
+    /// her ink starts with that the read left out, a plus written high, her `x` read as `\times`, a side
+    /// note behind a left arrow): taken only when the read as given does not follow from the line above
+    /// (or from the problem, for the first step under it) and the variant does. It can only take a mark
+    /// away — the right step `-5x + 20 - 6x` read `5 x^{+} 20-6 x` was ringed — never make a ring: a kid
+    /// who really left the minus out has no minus stroke, and is ringed (MisreadsTests).
+    func readAsInkShows(_ st: LiveLine, _ read: String, _ ink: [BrainStroke]) async -> String? {
+        let above = previousLine(st)
+        let problem = head(for: st.column)?.lines ?? []
+        guard above != nil || !problem.isEmpty else { return nil }
+        let keep = (above.map { [$0.latex] } ?? []) + problem
+        guard let variants = try? await brain.readVariants(read, strokes: ink, keep: keep), !variants.isEmpty else { return nil }
+        if await stepFollows(st, above, problem, read) { return nil }
+        for v in variants where await stepFollows(st, above, problem, v) {
+            Self.log.notice("live: a read taken as its ink shows it")
+            return v
+        }
+        return nil
+    }
+
+    /// Would the step follow, read as `latex`: from the line above it, else from the problem's last line.
+    func stepFollows(_ st: LiveLine, _ above: LiveLine?, _ problem: [String], _ latex: String) async -> Bool {
+        if let above { return await follows(st, above, above.latex, latex) }
+        guard let last = problem.last else { return false }
+        let mode = settings.mode
+        let previous = try? await brain.analyzeLine(last, context: AnalyzeContext(mode: mode))
+        let ctx = AnalyzeContext(mode: mode, previous: previous, original: previous)
+        guard let a = try? await brain.judgeLine(latex, context: ctx, problem: problem, above: [], slip: nil, beside: false) else { return false }
+        return a.verdict == "ok" || a.solved == true
+    }
+
     func showReadback(_ id: String) {
         // "I read" beside every line instead, when the grown-ups have it on (problem pages)
         if settings.showReadings {

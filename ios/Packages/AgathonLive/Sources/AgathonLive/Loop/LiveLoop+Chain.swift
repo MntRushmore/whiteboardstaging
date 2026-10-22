@@ -56,46 +56,12 @@ extension LiveLoop {
         guard let above = previousLine(st), !above.ink.hash.isEmpty, !st.ink.hash.isEmpty else { return false }
         let key = "\(above.ink.hash)|\(st.ink.hash)"
         if chainHolds[st.id] == key { return true }
-        if chainsDone.contains(key) || !engineReady || !started || inkOut { return false }
-        // first a look at the read itself, on the iPad (no call, offline too): a plus written high,
-        // her `x` read as `\times`, the minus her ink starts with that the read dropped
-        if localLooks[key] == nil {
-            if localLooks.count > LiveLimits.cacheEntries { localLooks.removeAll() }
-            localLooks[key] = true
-            chainHolds[st.id] = key
-            lookAgainLocally(st.id, key, above: above.id)
-            return true
-        }
-        if !connectivity.isOnline { return false }
+        if chainsDone.contains(key) || !engineReady || !started || !connectivity.isOnline || inkOut { return false }
         let due = [above, st].filter { $0.provider == .mathpix && rereads[$0.ink.hash] == nil }
         if due.isEmpty { return false }
         chainHolds[st.id] = key
         checkChain(st.id, key, due: due, above: above.id)
         return true
-    }
-
-    /// The step's read looked at again on the iPad (`Brain.readVariants`): a variant is taken only when
-    /// it makes the step follow — so it can take a ring back, never make one. Then the ring's hold is
-    /// let go, and the step drawn again: on to the second reader if it still does not follow.
-    func lookAgainLocally(_ lineId: String, _ key: String, above aboveId: String) {
-        track { [weak self] in
-            guard let self, let st = self.lines[lineId], let above = self.lines[aboveId] else { return }
-            let ids = Set(st.ink.strokeIds)
-            let ink = self.board.store.kidStrokes(on: self.board.currentScreenID).filter { ids.contains($0.id) }
-            let keep = [above.latex] + (self.head(for: st.column)?.lines ?? [])
-            let variants = (try? await self.brain.readVariants(st.latex, strokes: ink, keep: keep)) ?? []
-            for v in variants {
-                guard await self.follows(st, above, above.latex, v) else { continue }
-                guard let cur = self.lines[lineId], cur.ink.hash == st.ink.hash, cur.latex == st.latex else { break }
-                Self.log.notice("live: a look at the read before a ring took a variant")
-                await self.applyRecognition(lineId, RecognizeResponse(latex: v, confidence: max(st.confidence, LiveLimits.minConfidence), provider: "mathpix"), reread: v)
-                break
-            }
-            guard self.chainHolds[lineId] == key else { return }
-            self.chainHolds[lineId] = nil
-            guard self.started, self.lines[lineId] != nil else { return }
-            self.render(lineId)
-        }
     }
 
     /// The step and the line it follows, read again side by side (without the column: shown the next

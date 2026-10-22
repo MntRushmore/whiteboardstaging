@@ -208,16 +208,37 @@ export function leadingSigns(strokes: readonly InkStroke[]): string | null {
 }
 
 /**
- * The line's ink starts with a minus (`leadingSigns` says `-`) whose bar ends within a glyph's height
- * of the line's first glyph: the sign of what follows, not a stray dash further off.
+ * The line's ink starts with a minus: its leftmost level bar in the middle of the line's height, no
+ * other ink to the left of it at that height (a `5` whose tail curls out under it is fine), no bar
+ * over or under it (an `=`), no stroke through it (a `+`), and writing within a glyph's height to its
+ * right. The stroke a read that starts with no sign has left out (`readVariants`' `minus`).
  */
 export function inkLeadsWithMinus(strokes: readonly InkStroke[]): boolean {
-  if (leadingSigns(strokes) !== "-") return false;
   const ink = strokes.filter((s) => !isDotStroke(s));
   const glyphs = ink.filter((s) => !isLevelBar(s.bounds));
-  const lead = glyphs.reduce((m, s) => (s.bounds.x < m.bounds.x ? s : m)).bounds;
-  const bar = ink.filter((s) => isLevelBar(s.bounds) && s.bounds.x + s.bounds.w <= lead.x + 0.3 * lead.w).reduce((m, s) => (s.bounds.x > m.bounds.x ? s : m)).bounds;
-  return lead.x - (bar.x + bar.w) <= lead.h;
+  if (glyphs.length === 0) return false;
+  const top = Math.min(...glyphs.map((s) => s.bounds.y));
+  const h = Math.max(...glyphs.map((s) => s.bounds.y + s.bounds.h)) - top;
+  const bars = ink
+    .filter((s) => isLevelBar(s.bounds))
+    .filter((s) => {
+      const cy = s.bounds.y + s.bounds.h / 2;
+      return cy >= top + 0.25 * h && cy <= top + 0.8 * h;
+    })
+    .sort((p, q) => p.bounds.x - q.bounds.x);
+  const bar = bars[0];
+  if (!bar) return false;
+  const { x, w } = bar.bounds;
+  const cy = bar.bounds.y + bar.bounds.h / 2;
+  const points = (s: InkStroke) => s.segments.flat();
+  const others = ink.filter((s) => s !== bar);
+  // nothing further left at its height, nothing through it
+  if (others.some((s) => points(s).some((p) => p.x < x + 0.7 * w && Math.abs(p.y - cy) <= 0.2 * h))) return false;
+  // no bar over or under it
+  if (others.some((s) => isLevelBar(s.bounds) && Math.min(s.bounds.x + s.bounds.w, x + w) - Math.max(s.bounds.x, x) >= Math.min(s.bounds.w, w) / 3)) return false;
+  // writing right after it
+  const next = Math.min(...glyphs.flatMap((s) => points(s).filter((p) => p.x >= x + 0.5 * w && Math.abs(p.y - cy) <= 0.5 * h).map((p) => p.x)));
+  return Number.isFinite(next) && next - (x + w) <= h;
 }
 
 /**
