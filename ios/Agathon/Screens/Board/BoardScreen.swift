@@ -197,6 +197,7 @@ private struct BoardTopTrailing: View {
             // at its right end: on the left of the row it moved each time the save and tutor pills came
             // and went, and a UI test's tap could land on the board between them (a finger's dot of ink)
             BoardAutowriteButton(model: model)
+            KidSessionControls(model: model)
             #endif
         }
     }

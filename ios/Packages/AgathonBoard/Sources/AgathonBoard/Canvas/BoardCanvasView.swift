@@ -1176,8 +1176,11 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
 
     /// Draws `points` (view coordinates) as a stroke of `duration` seconds through the same path a
     /// touch takes, one sample per display frame, at Pencil-like 240 Hz coalesced sampling. The tool
-    /// in hand decides what it does (ink, rub out, a shape, a lasso or a move).
-    public func simulateStroke(_ points: [CGPoint], duration: TimeInterval, pencil: Bool = true, completion: @escaping () -> Void) {
+    /// in hand decides what it does (ink, rub out, a shape, a lasso or a move). A hand's own pen
+    /// (the kid sessions) can give each point its `pressures` and when it is reached (`times`: 0…1 of
+    /// the duration, rising); otherwise an even pace and a gentle swell.
+    public func simulateStroke(_ points: [CGPoint], duration: TimeInterval, pencil: Bool = true, pressures: [Double]? = nil, times: [Double]? = nil,
+                               completion: @escaping () -> Void) {
         guard points.count >= 2 else {
             completion()
             return
@@ -1186,12 +1189,19 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         var sent = 0
         func samples(upTo now: CFTimeInterval) -> [Sample] {
             let frac = min(1, (now - start) / duration)
-            let n = max(1, Int((frac * Double(points.count - 1)).rounded(.down)) + 1)
+            let n: Int
+            if let times, times.count == points.count {
+                n = max(1, times.firstIndex { $0 > frac } ?? points.count)
+            } else {
+                n = max(1, Int((frac * Double(points.count - 1)).rounded(.down)) + 1)
+            }
             var out: [Sample] = []
             while sent < n {
                 let i = sent
-                let t = start + duration * Double(i) / Double(points.count - 1)
-                let pressure = pencil ? 0.45 + 0.35 * sin(Double(i) / Double(points.count) * .pi) : 0.5
+                let at = times.flatMap { $0.count == points.count ? $0[i] : nil } ?? Double(i) / Double(points.count - 1)
+                let t = start + duration * at
+                let swell = 0.45 + 0.35 * sin(Double(i) / Double(points.count) * .pi)
+                let pressure = pencil ? (pressures.flatMap { $0.count == points.count ? $0[i] : nil } ?? swell) : 0.5
                 out.append(Sample(view: points[i], pressure: pressure, altitude: pencil && controller.storesTilt ? 1.1 : -1, azimuth: pencil && controller.storesTilt ? 0.6 : 0, timestamp: t))
                 sent += 1
             }

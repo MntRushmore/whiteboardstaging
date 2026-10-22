@@ -178,7 +178,9 @@ struct BoardDebugProbe: View {
         case nil: action = "none"
         }
         let read = pages.readings.map { "\($0.latex)=\($0.state.rawValue)" }.joined(separator: "; ")
-        return "lines: \(lines.joined(separator: "; ")) | hints \(tutor.loop.hints.count) | chat \(chat) | problems \(problems) | activity \(tutor.loop.activity) | page \(page) | action \(action) | checking \(tutor.loop.settings.checking.rawValue) | why \(tutor.loop.checkDiagnosis) | read \(read) | screens \(store.screenIDs.count) | save \(save)"
+        // every page's kid strokes (the kid sessions' saved-and-opened-again check)
+        let ink = store.records.values.filter { if case .stroke(let s) = $0 { s.author == .kid } else { false } }.count
+        return "lines: \(lines.joined(separator: "; ")) | ink \(ink) | hints \(tutor.loop.hints.count) | chat \(chat) | problems \(problems) | activity \(tutor.loop.activity) | page \(page) | action \(action) | checking \(tutor.loop.settings.checking.rawValue) | why \(tutor.loop.checkDiagnosis) | read \(read) | screens \(store.screenIDs.count) | save \(save)"
     }
 }
 #endif
