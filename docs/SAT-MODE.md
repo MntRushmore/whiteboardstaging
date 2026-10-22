@@ -1,0 +1,149 @@
+# SAT mode (iPad)
+
+2026-10-22, branch `feat/sat-mode` (off `feat/ipad-app` 70ab3bc7). Lanes: `feat/sat-bank`
+(server + question bank) and `feat/sat-ios` (the iPad screens), merged back here.
+
+## Why
+
+Desmos is what high schoolers rely on because it's free, it's fast, and it's on test day. SAT mode is
+our way in: a free place to practise SAT math, with the question on one side and a real whiteboard on
+the other, plus the tutor that teaches instead of handing over answers. It's iPad only (not the web
+app).
+
+## The owner's calls (2026-10-22)
+
+- **Free, with a capped tutor.** Questions, the board, the answer check and the written solution are
+  free forever with no Unlimited needed. The live tutor (reading lines, ticks, rings, hints, Help me)
+  is free for **5 SAT questions a day** (`SAT_FREE_TUTOR_PER_DAY`, default 5). Unlimited lifts the
+  cap. After the cap the board keeps working as plain ink, and Graph it still works.
+- **Our own bank.** About 600 original SAT-style math questions. No College Board items, wording or
+  figures, ever. Every answer is checked by solving it independently.
+- **Grown-up Blocks.** The same tokens, fonts and ring/dot/bar as AgathonDesign, but calmer: no
+  mascot faces, no stickers, no confetti. It should feel like a serious, friendly study tool for
+  15–18 year olds.
+- **Math only first.** Reading & Writing could come later as its own mode. ACT is not in scope.
+
+## The SAT math we mirror (public test spec, our own content)
+
+The four domains and their skills (about 35/35/15/15% of the section):
+
+| domain key      | skills |
+|-----------------|--------|
+| `algebra`       | linear equations in one variable; linear equations in two variables; linear functions; systems of two linear equations; linear inequalities |
+| `advanced_math` | equivalent expressions; nonlinear equations and systems; nonlinear functions |
+| `psda`          | ratios, rates, proportions, units; percentages; one-variable data (distributions, centre, spread); two-variable data (models, scatterplots); probability; inference from samples and margin of error; evaluating statistical claims |
+| `geometry_trig` | area and volume; lines, angles, triangles; right triangles and trigonometry; circles |
+
+The two formats are `mcq` (four choices, A–D) and `spr` (student-produced response, "grid-in"). About
+25% of questions are `spr`. SPR rules: a positive answer is at most 5 characters, a negative one at
+most 6 including the minus sign. Fractions and decimals are both fine, mixed numbers are not, and a
+decimal must be as precise as the space allows. Difficulty is 1 (easy), 2 (medium) or 3 (hard), with
+the bank split roughly 1/3 each.
+
+## Contract between the lanes
+
+### Tables (Supabase, migration `2026102200000x_sat_mode.sql`, LOCAL ONLY until the owner OKs prod)
+
+`sat_questions`
+- `id text pk`: `<domain>-<skill-slug>-<nnnn>`, stable forever
+- `domain text`: one of the four keys above
+- `skill text`: the skill name exactly as written in the table above
+- `difficulty smallint`: 1–3
+- `format text`: `mcq` | `spr`
+- `stem text`: Markdown with inline `$…$` / display `$$…$$` LaTeX. Plain enough for SwiftMath:
+  `\frac \sqrt ^ _ \cdot \le \ge \ne \pi \theta \sin \cos \tan \circ \overline \angle \triangle`
+- `figure jsonb null`: see Figures
+- `choices jsonb null` (mcq): `[{"key":"A","text":"…"}, …]`, the same Markdown and LaTeX as `stem`
+- `answer jsonb`: mcq `{"key":"C"}`. spr `{"accepted":["3/4","0.75",".75"]}`, which lists every
+  form a correct grid-in could take
+- `solution jsonb`: `{"steps":[{"text":"…","math":"…"|null}], "desmos_tip":"…"|null}`. That's 2–6
+  short steps, and the tip says how to do it on the test-day graphing calculator (Desmos), when that
+  really helps
+- `status text`: `live` | `draft` | `retired`. The app only ever sees `live`
+- `version int`, `created_at`
+- RLS: any signed-in user can read `live` rows. Writes come only from the service role.
+
+`sat_attempts`: `id uuid`, `user_id`, `profile_id` (as the rest of the app does it), `question_id`,
+`chosen text` (`"B"` or the typed grid-in), `correct bool`, `used_tutor bool`, `seconds int`,
+`created_at`. Owner-only RLS.
+
+`sat_tutor_passes`: `(profile_id, question_id, day date)` pk. One row is one free tutor question
+used on that day (the day is in the user's time zone, sent by the client as `tz`).
+
+### Routes (Next.js, `src/app/api/sat/…`, the app's usual auth)
+
+- `GET /api/sat/next?count=10&domain=&skill=&difficulty=` returns `{questions:[SATQuestion]}`
+  with the answer and solution included (it's free practice, and that lets checks happen offline and
+  instantly). Pick questions adaptively: unseen first, weak skills weighted up, difficulty following
+  the last ~10 answers in that domain. Never repeat a question within 30 days unless the bank is
+  exhausted.
+- `POST /api/sat/attempts {question_id, chosen, correct, seconds, used_tutor}` returns `{ok}`.
+- `POST /api/sat/tutor {question_id, tz}` returns
+  `{allowed, used_today, cap, unlimited}`. It's idempotent: the same question on the same day
+  doesn't use a second pass. When `allowed` is false the app keeps the tutor off for that page.
+- `GET /api/sat/progress?tz=` returns
+  `{answered, correct, by_domain:[{domain, answered, correct}], by_skill:[…], streak_days,
+  today:{answered, tutor_used, cap, unlimited}, estimate:{low, high}|null}`. `estimate` is a
+  200–800 math-section band, `null` until 15 questions are answered, and the band narrows as more
+  are answered. It must be honest: label it as a rough estimate from practice, never as a score.
+- **Server enforcement:** when an SAT page's live calls (recognize/check/hint/Help me) send
+  `sat_question_id`, a user without Unlimited is allowed only if a `sat_tutor_passes` row exists for
+  today. Otherwise the call returns the usual out-of-ink style refusal. Ordinary boards keep their
+  current rules.
+
+### Figures (`figure` jsonb, drawn natively by the iPad with Canvas, never an image)
+
+```jsonc
+{ "kind": "table", "headers": ["x","f(x)"], "rows": [["0","3"],["1","5"]] }
+{ "kind": "plot",                        // a coordinate plane, line/scatter/bar data
+  "x": {"min":-5,"max":5,"step":1,"label":"x"}, "y": {"min":-5,"max":5,"step":1,"label":"y"},
+  "grid": true,
+  "items": [
+    {"type":"function","expr":"2*x+1"},            // JS-style expression in x
+    {"type":"segment","from":[0,0],"to":[3,4]},
+    {"type":"point","at":[2,5],"label":"(2, 5)"},
+    {"type":"bar","x":1,"height":12,"label":"Mon"}
+  ] }
+{ "kind": "shape",                        // geometry, its own units, y up
+  "items": [
+    {"type":"polygon","points":[[0,0],[4,0],[0,3]]},
+    {"type":"circle","center":[0,0],"r":2},
+    {"type":"segment","from":[0,0],"to":[2,0],"dashed":true},
+    {"type":"label","at":[2,-0.3],"text":"4"},
+    {"type":"right_angle","at":[0,0],"dirs":[[1,0],[0,1]]},
+    {"type":"arc_angle","at":[4,0],"from":180,"to":143,"label":"$x^\\circ$"}
+  ],
+  "note": "Note: Figure not drawn to scale." }
+```
+
+## The iPad screens
+
+- **Entry:** a "SAT practice" card on Home, for every profile with no subscription needed. In phase 2,
+  onboarding gets a "I'm studying for the SAT (13+)" path where the student makes their own account
+  and lands in SAT mode.
+- **SAT home:** today (answered, free tutor questions left out of 5), a domain/skill picker,
+  "Practice 10" (mixed and adaptive), "Pick a skill", and progress (by domain, then skill, and the
+  estimate once there is one).
+- **The session (split view, landscape first):**
+  - **Left, the question panel** (~38%, a draggable divider, collapsible to a tab): "Question 3 of
+    10", the skill chip, Mark for review, the stem and its figure, then either
+    - mcq: four choices with tap to choose and a Bluebook-style eliminator (strike a choice out), or
+    - spr: a grid-in field that follows the SPR rules.
+    Then a Check button.
+  - **Right, the board:** the real `BoardEditorView`. A session is one board, and each question gets
+    its own problem page. The page's problem is the SAT question, so the tutor judges the student's
+    ink against it. The page header is small (`Q3 · Linear functions`), because the question itself
+    lives in the panel.
+  - **Tutor:** opening a question calls `POST /api/sat/tutor`. If it's allowed, the live tutor is on
+    for that page. If not, it shows a quiet line ("Free tutor used up for today: 5 of 5. The board
+    still works. Unlimited lifts it.") and the tutor stays off.
+  - **Check:** right turns green and shows "See the solution". Wrong lets them try again once, then
+    offers the solution. The solution shows its steps, plus the Desmos tip when there is one. Every
+    answer posts an attempt.
+  - **End of set:** score n/10, each question's result, review the missed ones, "Practice 10 more".
+- **Portrait:** the panel sits on top (resizable), with the board below.
+
+## Not now
+
+Reading & Writing, ACT, full timed practice tests (two adaptive modules, 22 questions each), an
+in-app Desmos (its API licence needs a deal), teacher classes.
