@@ -99,6 +99,32 @@ describe("readYoungHand: a wobbly `=` as Mathpix reads it", () => {
     expect(readYoungHand("=9 \\vee", ANYWHERE)).toBe("=9 \\vee");
   });
 
+  it("numbers Mathpix took for words are maths; words stay words (the Training Center's bench, 2026-10-21)", () => {
+    expect(readYoungHand("\\text { 767-336 }", ANYWHERE)).toBe("767-336");
+    expect(readYoungHand("\\text { = } 431", ARITHMETIC)).toBe("= 431");
+    expect(readYoungHand("\\text { 5/6 }", ANYWHERE)).toBe("5/6");
+    expect(readYoungHand("\\text { -9 }", ANYWHERE)).toBe("-9");
+    expect(readYoungHand("\\text { 3R3 }", ARITHMETIC)).toBe("3R3");
+    for (const words of ["\\text { O }", "\\text{apples}", "3 \\text { cm }", "\\text { 3 bags }"]) expect(readYoungHand(words, ANYWHERE), words).toBe(words);
+  });
+
+  it("a long-division bracket read as words and a fraction is the bracket, its quotient over it", () => {
+    const bracket = "\\begin{array}{r} 16 \\\\ 9)\\overline{144} \\end{array}";
+    expect(readYoungHand("\\text { 9) } \\frac{16}{144}", ARITHMETIC)).toBe(bracket);
+    expect(readYoungHand("\\text { g) } \\frac{16}{144}", ARITHMETIC)).toBe(bracket);
+    expect(readYoungHand("9) \\frac{16}{144}", ANYWHERE)).toBe(bracket);
+    // a fraction alone, or after anything else, stays
+    expect(readYoungHand("\\frac{16}{144}", ARITHMETIC)).toBe("\\frac{16}{144}");
+    expect(readYoungHand("x) \\frac{16}{144}", ANYWHERE)).toBe("x) \\frac{16}{144}");
+  });
+
+  it("in algebra too, a tick no maths could be is no part of the answer; a `v` may be a letter", () => {
+    expect(readYoungHand("x=4 \\sqrt{ }", ANYWHERE)).toBe("x=4");
+    expect(readYoungHand("x = 4 \\checkmark", ANYWHERE)).toBe("x = 4");
+    expect(readYoungHand("x = \\sqrt{2}", ANYWHERE)).toBe("x = \\sqrt{2}");
+    expect(readYoungHand("x = 2v", ANYWHERE)).toBe("x = 2v");
+  });
+
   it("leaves every line of the eval corpus as it is (algebra, geometry, trigonometry, calculus, statistics …)", () => {
     const changed: string[] = [];
     for (const p of CORPUS) {

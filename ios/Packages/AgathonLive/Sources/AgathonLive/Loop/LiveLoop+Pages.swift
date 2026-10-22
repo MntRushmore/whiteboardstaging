@@ -78,7 +78,11 @@ extension LiveLoop {
         if a.verdict != "ok", a.solved != true, a.bareAnswer != true,
            a.kind == "equation" || a.kind == "inequality" {
             let otherLetters = !mine.isEmpty && !theirs.isEmpty && mine.isDisjoint(with: theirs)
-            if solvedAbove || otherLetters {
+            // the problem's letter given a value again (`x = 4` under `x = 3 - 7`): its answer worked on,
+            // judged — not a problem of the kid's own (it went unringed, and the page counted solved)
+            let sameAnswer = mine.count == 1 && theirs.isSuperset(of: mine)
+                && judged.range(of: #"^\s*[a-zA-Z]\s*=[^=]*$"#, options: .regularExpression) != nil
+            if (solvedAbove && !sameAnswer) || otherLetters {
                 var r = a
                 r.verdict = "none"
                 r.note = ""

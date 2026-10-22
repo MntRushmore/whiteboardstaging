@@ -449,7 +449,9 @@ extension LiveLoop {
         if !raw.isEmpty {
             let ids = Set(before.ink.strokeIds)
             let ink = board.store.kidStrokes(on: board.currentScreenID).filter { ids.contains($0.id) }
-            read = (try? await brain.youngRead(raw, problem: head(for: before.column)?.lines ?? [], strokes: ink)) ?? raw
+            // a division bar and the number under it: "divide both sides" (`\div 3`; the web's `barDivisionLatex`)
+            let bar = before.ink.strokeIds.contains(where: barStrokeIds.contains)
+            read = (try? await brain.youngRead(raw, problem: head(for: before.column)?.lines ?? [], strokes: ink, bar: bar)) ?? raw
         }
         guard var st = lines[id] else { return }
         // ink read in this session: new work for the learning record
@@ -507,7 +509,7 @@ extension LiveLoop {
     /// never offline, never for a read that is not Mathpix's, silent when it fails.
     func secondRead(_ ink: InkLine, _ res: RecognizeResponse) {
         guard engineReady, !ink.hash.isEmpty, res.provider == "mathpix", rereads[ink.hash] == nil, connectivity.isOnline, !inkOut,
-              let st = lines[ink.id], st.latex == res.latex, st.provider != .fixed else { return }
+              let st = lines[ink.id], st.latex == res.latex, st.provider != .fixed, !stackLike(st) else { return }
         let col = columnLines(st.column).filter { $0.id != st.id && !$0.latex.isEmpty }
         let above = col.filter { $0.row < st.row }.map(\.latex)
         let below = col.filter { $0.row >= st.row }.map(\.latex)

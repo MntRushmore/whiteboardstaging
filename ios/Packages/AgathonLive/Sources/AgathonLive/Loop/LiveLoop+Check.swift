@@ -295,6 +295,7 @@ extension LiveLoop {
         if pages.page != page { pages.page = page }
         let solved = lines.values.contains { st in
             st.analysis?.solved == true && !isHeld(st) && ownHeadAbove(st) == nil && rt[st.id]?.markKey?.hasPrefix("check:") == true
+                && !ringedAfter(st)
         }
         pages.solved = solved
         let action: PageAction?
@@ -310,6 +311,12 @@ extension LiveLoop {
         refreshReadings()
         refreshOffer()
         if page?.kind == .done { refreshSetProblems() } else if !pages.setProblems.isEmpty { pages.setProblems = [] }
+    }
+
+    /// A line after this one in its column is ringed: the answer the kid ended on is wrong, whatever a
+    /// line above it solved (`x = 3 - 7` ticked, then `x = 4` ringed: no Next yet).
+    func ringedAfter(_ st: LiveLine) -> Bool {
+        columnLines(st.column).contains { $0.row > st.row && rt[$0.id]?.markKey?.hasPrefix("circle:") == true }
     }
 
     /// The "I read" chips step aside while the pen writes, and come back a moment after.

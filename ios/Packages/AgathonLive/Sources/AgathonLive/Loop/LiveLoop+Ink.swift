@@ -201,6 +201,7 @@ extension LiveLoop {
         let previous = lines.values.map(\.ink)
         let previousDiagrams = diagrams
         let zoom = board.fitZoom
+        let context = clusterContext()
         flushing = true
         track { [weak self] in
             guard let self else { return }
@@ -213,7 +214,8 @@ extension LiveLoop {
             }
             let result: ClusterResult
             do {
-                result = try await self.brain.clusterStrokes(ClusterRequest(strokes: strokes, previousLines: previous, previousDiagrams: previousDiagrams, zoom: zoom))
+                result = try await self.brain.clusterStrokes(ClusterRequest(strokes: strokes, previousLines: previous, previousDiagrams: previousDiagrams, zoom: zoom,
+                                                                            equations: context.equations, cells: context.cells, mates: context.mates))
             } catch {
                 Self.log.error("live: clustering failed: \(String(describing: error), privacy: .public)")
                 return
@@ -225,9 +227,12 @@ extension LiveLoop {
 
     func apply(_ result: ClusterResult, dirty: Set<String>, force: Set<String>, strokes: [BrainStroke]) {
         diagrams = result.diagrams
+        stacks = result.stacks
+        barStrokeIds = Set(result.bars.map(\.bar))
         // the tutor's problems cut the columns: work beside or under one is judged against it
         refreshHeads()
         let next = anchorAtProblems(result.lines)
+        rememberProblems(next)
         let nextIds = Set(next.map(\.id))
         for id in Array(lines.keys) where !nextIds.contains(id) { dropLine(id) }
 
@@ -263,6 +268,7 @@ extension LiveLoop {
             r.readRetryTimer?.cancel()
         }
         rt[id] = nil
+        stackMarks[id] = nil
         reading.remove(id)
         offlineQueue.remove(id)
         pendingSuggestions.remove(id)
@@ -324,13 +330,19 @@ extension LiveLoop {
         let strokes = store.kidStrokes(on: screen)
         let gen = generation
         let zoom = board.fitZoom
+        refreshHeads()
+        let context = clusterContext()
         track { [weak self] in
             guard let self else { return }
-            guard let result = try? await self.brain.clusterStrokes(ClusterRequest(strokes: strokes, previousLines: seeds, zoom: zoom)),
+            guard let result = try? await self.brain.clusterStrokes(ClusterRequest(strokes: strokes, previousLines: seeds, zoom: zoom, equations: context.equations,
+                                                                                  cells: context.cells, mates: context.mates)),
                   gen == self.generation, screen == self.board.currentScreenID else { return }
             self.diagrams = result.diagrams
+            self.stacks = result.stacks
+            self.barStrokeIds = Set(result.bars.map(\.bar))
             self.refreshHeads()
             let anchored = self.anchorAtProblems(result.lines)
+            self.rememberProblems(anchored)
             var unread: [InkLine] = []
             for ink in anchored {
                 var line = LiveLine(ink: ink, updatedAt: self.scheduler.now)
@@ -385,7 +397,10 @@ extension LiveLoop {
     /// to right, rows top to bottom; `columnHeads` says which problem heads which column.
     func anchorAtProblems(_ input: [InkLine]) -> [InkLine] {
         columnHeads = [:]
-        guard !heads.isEmpty, !input.isEmpty else { return input }
+        guard !heads.isEmpty, !input.isEmpty else {
+            // a page of the kid's own: its answer spot's line is the last step of the work above it
+            return board.currentProblemPage?.kind == .problem ? joinAnswerSpot(input) : input
+        }
         // a problem page: all its ink is the page's problem's work, wherever it is (docs/PROBLEM-PAGES.md)
         let onPage = pageHomes(input)
         var homes = onPage ?? input.map { problemHome(for: $0.bounds) }
@@ -397,9 +412,11 @@ extension LiveLoop {
             let top = input.indices.filter { input[$0].column == l.column && homes[$0] == home }.map { input[$0].bounds.y }.min() ?? l.bounds.y
             if top - head.rect.maxY >= 360 { homes[i] = nil }
         }
+        // on a problem page the answer spot's line is the last step of the work above it (`LiveLoop+Columns`)
+        let brainColumns = onPage != nil ? answerSpotColumns(input) : input.map(\.column)
         var groups: [(key: String, head: RecordID?, lines: [InkLine])] = []
-        for (l, home) in zip(input, homes) {
-            let key = "\(l.column)|\(home?.rawValue ?? "")"
+        for (i, (l, home)) in zip(input, homes).enumerated() {
+            let key = "\(brainColumns[i])|\(home?.rawValue ?? "")"
             if let i = groups.firstIndex(where: { $0.key == key }) { groups[i].lines.append(l) } else { groups.append((key, home, [l])) }
         }
         groups.sort { a, b in

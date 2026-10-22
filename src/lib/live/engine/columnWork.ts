@@ -35,6 +35,14 @@ const PLAIN_NUMBER = /^\s*-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d
  */
 export const MISREAD_STACK = /^\s*\\frac\s*\{\s*(?:\+|\\times(?![a-zA-Z])|\\cdot(?![a-zA-Z]))/;
 
+/**
+ * A wrong digit in a stacked sum is ringed only on a read this sure of it: a child's sum ringed for
+ * a digit Mathpix misread is worse than one left unmarked (the second reader, which re-reads a line
+ * before its ring, reads one line, not a block). Mathpix read every stacked block at ~1. The board
+ * (`LiveLoop.stackAnalysis`) and the iPad's brain (`stackedLine`) both judge by it.
+ */
+export const STACK_RING_CONFIDENCE = 0.85;
+
 /** What follows a line's last `=` (the whole line when it has none). */
 function lastSide(latex: string): string {
   const at = latex.lastIndexOf("=");
