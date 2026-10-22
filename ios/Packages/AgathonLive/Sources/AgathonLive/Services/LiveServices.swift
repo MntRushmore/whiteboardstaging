@@ -33,18 +33,22 @@ public final class LiveAPIServices: LiveServices {
     /// Debug only (the UI tests, `-liveMisread "3x = 15=>3 \\times = 15"`): a read rewritten before the
     /// loop sees it, the second reader's too, so a misread can be shown on purpose. Nil in the app.
     public let misread: (from: String, to: String)?
+    /// Fields every body carries besides its own (SAT mode's `sat_question_id`, docs/SAT-MODE.md); empty
+    /// on an ordinary board.
+    public let tag: LiveRequestTag
 
     public init(api: APIClient, live: LiveAPI, recognizeTimeout: Duration = .milliseconds(Int(LiveTiming.recognizeTimeoutMs)),
-                backend: AgathonBackend? = nil, misread: (from: String, to: String)? = nil) {
+                backend: AgathonBackend? = nil, misread: (from: String, to: String)? = nil, tag: LiveRequestTag = LiveRequestTag()) {
         self.api = api
         self.live = live
         self.recognizeTimeout = recognizeTimeout
         self.backend = backend
         self.misread = misread
+        self.tag = tag
     }
 
-    @MainActor public convenience init(backend: AgathonBackend, misread: (from: String, to: String)? = nil) {
-        self.init(api: backend.api, live: backend.live, backend: backend, misread: misread)
+    @MainActor public convenience init(backend: AgathonBackend, misread: (from: String, to: String)? = nil, tag: LiveRequestTag = LiveRequestTag()) {
+        self.init(api: backend.api, live: backend.live, backend: backend, misread: misread, tag: tag)
     }
 
     static func flat(_ latex: String) -> String {
@@ -66,31 +70,34 @@ public final class LiveAPIServices: LiveServices {
 
     public func recognize(_ request: RecognizeRequest) async throws -> RecognizeResponse {
         let api = self.api
+        let body = tag.wrap(request)
         var res = try await Self.withTimeout(recognizeTimeout) {
-            try await api.post(Self.recognizePath, body: request, as: RecognizeResponse.self)
+            try await api.post(Self.recognizePath, body: body, as: RecognizeResponse.self)
         }
         if let wrong = misreading(res.latex) { res.latex = wrong }
         return res
     }
 
     public func reread(_ request: RereadRequest) async throws -> RereadResponse {
-        var res = try await api.post(Self.rereadPath, body: request, as: RereadResponse.self)
+        var res = try await api.post(Self.rereadPath, body: tag.wrap(request), as: RereadResponse.self)
         if let wrong = misreading(res.latex) { res.latex = wrong }
         return res
     }
 
     public func setup(_ request: SetupRequest) async throws -> SetupResponse {
-        try await api.post(Self.setupPath, body: request, as: SetupResponse.self)
+        try await api.post(Self.setupPath, body: tag.wrap(request), as: SetupResponse.self)
     }
 
     public func check(_ request: CheckRequest) -> LiveEventStream {
         let live = self.live
-        return Self.stream { try live.check(request) }
+        let body = tag.wrap(request)
+        return Self.stream { try live.check(body) }
     }
 
     public func solve(_ request: SolveRequest) -> LiveEventStream {
         let live = self.live
-        return Self.stream { try live.solve(request) }
+        let body = tag.wrap(request)
+        return Self.stream { try live.solve(body) }
     }
 
     /// The server's events as one stream; stopping the iteration (or cancelling its task) cancels
