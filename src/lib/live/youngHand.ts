@@ -263,6 +263,9 @@ export function isSignsOnly(strokes: readonly InkStroke[]): boolean {
  */
 const OVERLINED_ANSWER_RE = /^(\s*=?\s*-?\s*)\\overline\s*\{\s*(\d+)\s*\}\s*$/;
 
+/** Letters a child's digit is read as (a small or written-over `9` as `G`, a `0` as `O`). */
+const LOOKALIKE_DIGITS: Record<string, string> = { G: "9", g: "9", q: "9", O: "0", o: "0", D: "0", l: "1", I: "1", S: "5", s: "5", Z: "2", z: "2", b: "6", B: "8" };
+
 /** A number's commas as thousands separators: `1,500`, `12,345,678` (and no comma at all). */
 const THOUSANDS_RE = /^\d{1,3}(?:,\d{3})+$/;
 
@@ -272,7 +275,8 @@ const THOUSANDS_RE = /^\d{1,3}(?:,\d{3})+$/;
  *  - a comma between digits that no thousands separator could be (`9,08`): a short `1` (or a tap
  *    of the pen) read as a comma — `9108`, `908`;
  *  - a spaced tail of a stroke or two after the number (`-4 \quad-`, `27 \quad ,`): her own tick
- *    or a stray, read into the answer — the number alone.
+ *    or a stray, read into the answer — the number alone; so is a trailing `=` (`=30=`);
+ *  - a lone letter a digit looks like (`=\mathbb{G}` for `= 9`, `O` for 0).
  * Plain numbers only (`ANSWER_NUMBER`); empty when nothing applies.
  */
 export function misreadVariants(read: string): string[] {
@@ -284,6 +288,13 @@ export function misreadVariants(read: string): string[] {
     out.add(lead + number.replace(/(?<=\d),(?=\d)/g, "1"));
     out.add(lead + number.replace(/(?<=\d),(?=\d)/g, ""));
   }
+  // a doubled or trailing `=` after the number (`=30=`)
+  const trailing = /^(-?\s*\d+(?:\.\d+)?)\s*=\s*$/.exec(body);
+  if (trailing) out.add(lead + trailing[1].trim());
+  // a digit read as a letter that looks like it (`=\mathbb{G}` for `= 9`)
+  const letter = /^(?:\\math(?:bb|rm|bf|cal)\s*\{\s*([A-Za-z])\s*\}|([A-Za-z]))$/.exec(body);
+  const digit = letter ? LOOKALIKE_DIGITS[letter[1] ?? letter[2]] : undefined;
+  if (digit) out.add(lead + digit);
   const tail = /^(-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}))\s*(?:\\q?quad|\\[,;:]|~)\s*[-,.'`^~|/]?\s*(?:\\(?:prime|vee|wedge))?\s*$/.exec(body);
   if (tail) out.add(lead + tail[1].trim());
   return [...out].filter((v) => v !== read && ANSWER_NUMBER.test(v.slice(lead.length)));
@@ -364,6 +375,8 @@ function numbersIn(latex: string): string[] {
 export function readYoungHand(latex: string, ctx: YoungReadContext): string {
   // her numbers read as words, her long division's bracket read as words and a fraction
   let s = bracketOfRead(mathsOfText(latex)).replace(/⌣/g, "\\smile ").replace(/⌢/g, "\\frown ");
+  // an empty `\text { }` (a tap of the pen read as text) is nothing: `\text { } \approx 12` is `\approx 12`
+  s = s.replace(/\\text\s*\{\s*\}/g, " ");
   // two bars read stacked, and a curved bar wherever it is
   s = tidy(s.replace(STACKED_RE, " = ").replace(CURVED_RE, " = "));
   if (LONE_STRONG_RE.test(s) || (ctx.arithmetic && LONE_ANY_RE.test(s))) return "=";

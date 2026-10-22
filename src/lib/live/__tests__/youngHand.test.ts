@@ -423,6 +423,16 @@ describe("misreadVariants / rightAnswer: a nonsense read of her answer that can 
     expect(rightAnswerTo(engine, ["4 + 3", "2 + 1"])).toBeUndefined();
   });
 
+  it("a trailing `=`, a digit read as a letter, an empty text before a wavy `=` (real-ink bench, pen)", () => {
+    const right = (problem: string) => ({ arithmetic: true, rightAnswer: rightAnswerTo(engine, [problem]) });
+    expect(readYoungHand("=30=", right("2 \\times 5 \\times 3"))).toBe("=30");
+    expect(readYoungHand("=\\mathbb{G}", right("7+2"))).toBe("=9");
+    expect(readYoungHand("\\text { } \\approx 12", right("3 \\times 4"))).toBe("= 12");
+    // never toward a wrong answer
+    expect(readYoungHand("=\\mathbb{G}", right("7+3"))).toBe("=\\mathbb{G}");
+    expect(readYoungHand("=31=", right("2 \\times 5 \\times 3"))).toBe("=31=");
+  });
+
   it("in arithmetic a whole number under a rule read with its bar over it is the number", () => {
     expect(readYoungHand("\\overline{544}", ARITHMETIC)).toBe("544");
     expect(readYoungHand("= \\overline{544}", ARITHMETIC)).toBe("= 544");
