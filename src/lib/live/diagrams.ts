@@ -438,8 +438,9 @@ function geometry(stroke: InkStroke, i: number, G: number): Geo {
  * A fraction written with a long slanted bar (its top over the bar's left half, its bottom under the
  * right half: a child's `12` / `5` spanning five glyphs, real-ink bench 2026-10-22 — never read, a
  * "long diagonal"): a straight diagonal rising to the right, no steeper than 40°, glyph ink just over
- * its upper side and just under its lower side within its span, and no other long or big stroke near
- * it (a triangle's side, an axis, a graph's line has those). Writing, not a drawing.
+ * its upper side and just under its lower side within its span, nothing else near it — no glyph
+ * beside it, no other long or big stroke (a triangle's side, an axis, a graph's line has those).
+ * Writing, not a drawing.
  */
 function slantedFraction(g: Geo, geos: readonly Geo[], G: number): number[] | null {
   if (g.cls !== "diagonal") return null;
@@ -465,8 +466,10 @@ function slantedFraction(g: Geo, geos: readonly Geo[], G: number): number[] | nu
     return t >= 0.35 ? 1 : NaN;
   };
   const sides = glyphs.map(side);
-  if (sides.some(Number.isNaN) || !sides.includes(-1) || !sides.includes(1) || glyphs.some((o) => pathCrossesSeg(o.path, l, r, 0))) return null;
-  return [g.i, ...glyphs.filter((_, k) => sides[k] !== 0).map((o) => o.i)];
+  // alone: every glyph near the bar is its top or its bottom — one beside it (a `+`, another
+  // fraction) makes it a term of a longer line, which the clusterer keeps whole
+  if (sides.some((v) => Number.isNaN(v) || v === 0) || !sides.includes(-1) || !sides.includes(1) || glyphs.some((o) => pathCrossesSeg(o.path, l, r, 0))) return null;
+  return [g.i, ...glyphs.map((o) => o.i)];
 }
 
 /** One open curve, big, no closed shape and no straight rule (a rule's arrow has its own barbs): a hand-drawn arrow's shaft. */
@@ -474,12 +477,20 @@ function arrowLike(g: Geo): boolean {
   return g.cls === "big" && !g.closed && !g.rule;
 }
 
-/** `rect` lies within `reach` of one end of `g` and further than that from its middle. */
+/** `rect` lies within `reach` of one end of `g`, and half as far again from the point halfway along it. */
 function atAnEnd(g: Geo, rect: Rect, reach: number): boolean {
-  const near = (p: Pt) => rectGap(rect, { x: p.x, y: p.y, w: 0, h: 0 }) <= reach;
-  const pts = g.path.flat();
-  const mid = pts[Math.floor(pts.length / 2)];
-  return (near(g.ends[0]) || near(g.ends[1])) && !near(mid);
+  const gap = (p: Pt) => rectGap(rect, { x: p.x, y: p.y, w: 0, h: 0 });
+  const pts = g.stroke.segments.flat();
+  let total = 0;
+  for (let k = 1; k < pts.length; k++) total += dist(pts[k - 1], pts[k]);
+  let along = 0;
+  let mid = pts[0];
+  for (let k = 1; k < pts.length && along < total / 2; k++) {
+    along += dist(pts[k - 1], pts[k]);
+    mid = pts[k];
+  }
+  const end = Math.min(gap(g.ends[0]), gap(g.ends[1]));
+  return end <= reach && gap(mid) >= 1.5 * Math.max(end, 1);
 }
 
 /** Each slanted fraction on the screen (`slantedFraction`): its bar's index first, then its glyphs'. */
