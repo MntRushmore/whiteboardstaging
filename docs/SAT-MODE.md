@@ -251,9 +251,10 @@ In this order, on the production project:
    `select rolconfig from pg_roles where rolname = 'authenticator';` (shows
    `pgrst.db_pre_request=public.anonymous_request_guard`).
 2. **Load the bank**: `scripts/sat/upsert.ts` refuses any non-local URL on purpose. For production,
-   run it with the production URL and service role key after removing that guard for the one run,
-   or load `data/sat/bank.json` with the SQL it prints (`--dry-run` shows what it would write). Only
-   `live` rows reach the app.
+   write the load as SQL (`JITI_ALIAS='{"@/":"'$PWD'/src/"}' npx jiti scripts/sat/upsert.ts --sql
+   sat-bank.sql`, no database touched) and run that file with psql against
+   `$POSTGRES_URL_NON_POOLING` (or paste it in the SQL editor). It is one transaction and idempotent.
+   Only `live` rows reach the app.
 3. **Env vars** (Vercel, Production): `SAT_FREE_TUTOR_PER_DAY` (empty = 20) and
    `SAT_ANON_TUTOR_PER_DAY` (empty = 5) only if the defaults should change.
    `SUPABASE_SERVICE_ROLE_KEY` must be set (POST /api/sat/tutor takes passes with it; it already is

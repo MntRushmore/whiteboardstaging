@@ -1,0 +1,101 @@
+{
+ "at": "2026-10-22T22:01:02.634Z",
+ "models": {
+  "writer": "anthropic/claude-opus-5.5",
+  "solver": "openai/gpt-5.4-mini",
+  "tiebreak": "openai/gpt-5.4"
+ },
+ "planned": 640,
+ "writer_batches": 150,
+ "generated": 369,
+ "samples": 20,
+ "total": 389,
+ "live": 353,
+ "draft": 36,
+ "draft_reasons": {
+  "lint": 17,
+  "numeric check": 5,
+  "near-duplicate of algebra-linear-one-var-0132": 2,
+  "independent solve": 5,
+  "near-duplicate of algebra-linear-functions-0119": 1,
+  "near-duplicate of algebra-linear-systems-0001": 2,
+  "near-duplicate of algebra-linear-systems-0119": 2,
+  "near-duplicate of advanced_math-equivalent-expressions-0102": 1,
+  "near-duplicate of advanced_math-equivalent-expressions-0001": 2,
+  "near-duplicate of advanced_math-equivalent-expressions-0108": 2,
+  "near-duplicate of advanced_math-equivalent-expressions-0120": 1,
+  "near-duplicate of advanced_math-equivalent-expressions-0137": 1,
+  "near-duplicate of advanced_math-nonlinear-equations-0112": 1,
+  "near-duplicate of advanced_math-nonlinear-equations-0108": 1,
+  "near-duplicate of advanced_math-nonlinear-equations-0145": 1,
+  "near-duplicate of advanced_math-nonlinear-equations-0134": 1
+ },
+ "solve_verdicts": {
+  "agree": 371,
+  "disagree": 5
+ },
+ "numeric_check": {
+  "pass": 280,
+  "skipped": 82,
+  "fail": 5
+ },
+ "live_by_domain": {
+  "advanced_math": 125,
+  "algebra": 203,
+  "geometry_trig": 8,
+  "psda": 17
+ },
+ "live_by_skill": {
+  "equivalent expressions": 67,
+  "nonlinear equations and systems": 56,
+  "nonlinear functions": 2,
+  "linear functions": 46,
+  "linear inequalities": 40,
+  "linear equations in one variable": 38,
+  "systems of two linear equations": 44,
+  "linear equations in two variables": 35,
+  "area and volume": 1,
+  "circles": 1,
+  "lines, angles, triangles": 1,
+  "right triangles and trigonometry": 5,
+  "one-variable data (distributions, centre, spread)": 1,
+  "percentages": 1,
+  "probability": 8,
+  "ratios, rates, proportions, units": 1,
+  "two-variable data (models, scatterplots)": 6
+ },
+ "live_by_difficulty": {
+  "1": 127,
+  "2": 118,
+  "3": 108
+ },
+ "live_by_format": {
+  "mcq": 249,
+  "spr": 104
+ },
+ "live_by_figure": {
+  "none": 283,
+  "plot": 42,
+  "table": 23,
+  "shape": 5
+ },
+ "spend_usd": {
+  "total": 6.5778,
+  "this_run": 0.0819,
+  "cap": 35,
+  "by_model": {
+   "openai/gpt-5.4-mini": {
+    "usd": 0.3857324625,
+    "calls": 390
+   },
+   "anthropic/claude-opus-5.5": {
+    "usd": 6.153348960000001,
+    "calls": 153
+   },
+   "openai/gpt-5.4": {
+    "usd": 0.038751074999999996,
+    "calls": 6
+   }
+  }
+ }
+}

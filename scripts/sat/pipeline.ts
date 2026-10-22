@@ -8,6 +8,7 @@
  *   --samples   only run the hand-written docs/sat/sample-20.json through the solver (the pipeline check)
  *   --limit N   only the first N writer batches (of 150)
  *   --offline   cached replies only (no network, no spend)
+ *   --no-write  the writer from the cache only (no new questions); the solvers still run
  *
  * Models (OpenRouter): the WRITER is Claude Opus 5.5; the SOLVER, a different family, is GPT-5.4
  * mini, and it never sees the answer. When it disagrees with the writer or flags a problem, GPT-5.4
@@ -50,18 +51,24 @@ export const MODELS = {
 
 let OFFLINE = false;
 
+/** The cached reply to exactly this call, or a `budget`-style miss that is never cached (no network, no spend). */
+export function cachedOnly(spec: CallSpec, ctx: CallContext): Promise<CallRecord> {
+  const hit = cachedCall(spec, ctx);
+  return Promise.resolve(
+    hit ?? { model: spec.model, key: "", ok: false, failure: "budget", error: "offline: not cached", content: "", latencyMs: 0, promptTokens: 0, completionTokens: 0, reasoningTokens: 0, costUsd: 0, costSource: "none", attempts: 0, at: new Date().toISOString(), cached: false },
+  );
+}
+
 /**
  * One cached, priced model call (the bench's `callModel`), with two changes for a long run that may
- * be stopped and resumed: a cached TRANSIENT failure (timeout, network, 429, 5xx) is dropped and
- * tried again, and `--offline` answers from the cache only (a miss is a `budget`-style failure that
- * is never cached).
+ * be stopped and resumed: a cached TRANSIENT failure (timeout, network, 402 account out of credits,
+ * 429, 5xx) is dropped and tried again, and `--offline` answers from the cache only.
  */
 export async function callModel(spec: CallSpec, ctx: CallContext): Promise<CallRecord> {
-  if (OFFLINE) {
-    return cachedCall(spec, ctx) ?? { model: spec.model, key: "", ok: false, failure: "budget", error: "offline: not cached", content: "", latencyMs: 0, promptTokens: 0, completionTokens: 0, reasoningTokens: 0, costUsd: 0, costSource: "none", attempts: 0, at: new Date().toISOString(), cached: false };
-  }
+  if (OFFLINE) return cachedOnly(spec, ctx);
   const hit = cachedCall(spec, ctx);
-  const transient = hit && !hit.ok && (hit.failure === "timeout" || hit.failure === "network" || (hit.failure === "http" && (hit.status === 429 || (hit.status ?? 0) >= 500 || hit.status === undefined)));
+  // 402: the OpenRouter account itself was out of credits at the time; worth asking again once topped up
+  const transient = hit && !hit.ok && (hit.failure === "timeout" || hit.failure === "network" || (hit.failure === "http" && (hit.status === 402 || hit.status === 429 || (hit.status ?? 0) >= 500 || hit.status === undefined)));
   if (transient) {
     const file = join(ctx.cacheDir ?? CACHE_DIR, spec.model.replace(/[^a-zA-Z0-9._-]+/g, "_"), `${requestKey(buildBody(spec, ctx.catalog.get(spec.model)))}.json`);
     if (existsSync(file)) rmSync(file);
@@ -98,7 +105,8 @@ export function parseJsonObject(text: string): Record<string, unknown> | null {
 
 /**
  * Mechanical clean-ups before the lint (the subset's equivalents, never a change of meaning):
- * \dfrac and \tfrac are \frac, \times is \cdot, \div is /, \left and \right go, a thin space \, goes.
+ * \dfrac and \tfrac are \frac, \times is \cdot, \div is /, \left and \right go, a thin space \, goes,
+ * a step's \quad / \Rightarrow connectives become a comma, \ldots is "...", and \text{cm} is cm.
  */
 export function normalizeLatex(text: string): string {
   return text
@@ -108,6 +116,12 @@ export function normalizeLatex(text: string): string {
     .replace(/\\left\s*([(|[])/g, "$1")
     .replace(/\\right\s*([)|\]])/g, "$1")
     .replace(/\\,/g, " ")
+    // step connectives the subset lacks: "2x = 6 \quad \Rightarrow \quad x = 3" reads as "2x = 6, x = 3"
+    .replace(/\s*(\\q?quad\s*)*\\(Rightarrow|implies|to)\s*(\\q?quad\s*)*/g, ", ")
+    .replace(/\s*\\q?quad\s*/g, ", ")
+    .replace(/\\ldots|\\cdots|\\dots/g, "...")
+    // a unit or word in \text{...} is written as itself
+    .replace(/\\text\{([A-Za-z ]{1,24})\}/g, "$1")
     .replace(/\\leq\b/g, "\\le")
     .replace(/\\geq\b/g, "\\ge")
     .replace(/\\neq\b/g, "\\ne");
@@ -228,6 +242,7 @@ async function main(): Promise<void> {
   loadDotEnvLocal(ROOT);
   const offline = process.argv.includes("--offline");
   const samplesOnly = process.argv.includes("--samples");
+  const noWrite = process.argv.includes("--no-write");
   const limit = arg("--limit") ? Number(arg("--limit")) : Infinity;
 
   mkdirSync(CACHE_DIR, { recursive: true });
@@ -265,11 +280,12 @@ async function main(): Promise<void> {
   const generated = new Map<string, { q: SatQuestion; verify: Verify | null; distractors: Record<string, string> | null }>();
   await pool(groups, 4, async (batch, i) => {
     if (budgetStop) return;
-    const rec = await callModel(
+    const call = noWrite ? cachedOnly : callModel;
+    const rec = await call(
       { model: MODELS.writer, messages: [{ role: "system", content: WRITER_SYSTEM }, { role: "user", content: writerPrompt(batch) }], maxTokens: 14000, json: true, reasoning: "low", timeoutMs: 300_000 },
       ctx,
     );
-    if (rec.failure === "budget") {
+    if (rec.failure === "budget" && !noWrite) {
       budgetStop = true;
       log("SPEND CAP reached: stopping generation");
       return;
