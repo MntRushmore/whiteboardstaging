@@ -153,6 +153,11 @@ describe("suspiciousRead", () => {
     expect(suspiciousRead("6^{x}=10")).toBe("lookalike-base");
     expect(suspiciousRead("0=5")).toBe("false-number");
     expect(suspiciousRead("\\frac{9}{0}")).toBe("zero-denominator");
+    // a fraction read without its top; a repeating decimal's bar is no such thing
+    expect(suspiciousRead("\\bar{2}=\\bar{6}")).toBe("lost-numerator");
+    expect(suspiciousRead("\\overline{2}=\\frac{}{6}")).toBe("lost-numerator");
+    expect(suspiciousRead("0.\\overline{3}=\\frac{1}{3}")).toBeNull();
+    expect(suspiciousRead("0.1\\overline{6}")).toBeNull();
     expect(suspiciousRead("(0+b)^{2}")).toBe("zero-term");
     expect(suspiciousRead("2x + z = 8", ["x + y = 10", "x - y = 2"])).toBe("stray-letter");
   });

@@ -335,6 +335,29 @@ public struct HandwritingRequest: Codable, Hashable, Sendable {
     }
 }
 
+/// Sentences in the tutor's hand (`layoutWords`): each wrapped at `maxWidth`, under the one before.
+public struct WordsRequest: Codable, Hashable, Sendable {
+    public var sentences: [String]
+    public var maxWidth: Double
+    public var size: Double
+    public var seedKey: String?
+    public var origin: Point?
+    public init(sentences: [String], maxWidth: Double, size: Double, seedKey: String? = nil, origin: Point? = nil) {
+        self.sentences = sentences
+        self.maxWidth = maxWidth
+        self.size = size
+        self.seedKey = seedKey
+        self.origin = origin
+    }
+}
+
+public struct WordsResult: Codable, Hashable, Sendable {
+    /// nil when nothing could be drawn
+    public var plan: HandPlan?
+    public var size: Double
+    public var seed: Int
+}
+
 public struct HandwritingResult: Codable, Hashable, Sendable {
     /// nil when nothing can be drawn
     public var plan: HandPlan?

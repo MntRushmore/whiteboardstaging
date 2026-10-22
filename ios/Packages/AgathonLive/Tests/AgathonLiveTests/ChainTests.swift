@@ -66,6 +66,15 @@ struct ChainTests {
         #expect(ReadCheck.distance("", "ab") == 2)
     }
 
+    @Test func aFractionReadWithoutItsTopIsNotBelieved() {
+        #expect(ReadCheck.suspicious("\\bar{2}=\\bar{6}", others: []) == "lost-numerator")
+        #expect(ReadCheck.suspicious("\\overline{2}=\\frac{}{6}", others: []) == "lost-numerator")
+        #expect(ReadCheck.suspicious("0.\\overline{3}=\\frac{1}{3}", others: []) == nil)
+        #expect(ReadCheck.suspicious("0.1\\overline{6}", others: []) == nil)
+        // the second reader's `\bar{2}=\bar{6}` for Mathpix's `\overline{2}=\frac{}{6}` is not taken
+        #expect(ReadCheck.candidate(mathpix: "\\overline{2}=\\frac{}{6}", reread: "\\bar{2}=\\bar{6}", others: []) == nil)
+    }
+
     func slip(_ h: Harness) async {
         await h.write("2x + 3 = 11", at: Vec2(200, 120))
         await h.pass(700)
@@ -78,7 +87,7 @@ struct ChainTests {
     @Test func aRingWaitsForASecondLookThatCanTakeItBack() async throws {
         let h = Harness(mode: .feedback)
         // the second reader sees the kid's `4` that Mathpix read as a `5`
-        h.services.rereadReply = RereadResponse(latex: "x = 4", changed: true, model: "fake", ms: 1)
+        h.services.rereadReplies["x = 5"] = RereadResponse(latex: "x = 4", changed: true, model: "fake", ms: 1)
         await h.start()
         await slip(h)
         #expect(!h.services.rereadRequests.isEmpty, "the step and the line above were read again")
@@ -88,7 +97,7 @@ struct ChainTests {
 
     @Test func aSecondLookThatLeavesTheStepWrongLeavesTheRing() async throws {
         let h = Harness(mode: .feedback)
-        h.services.rereadReply = RereadResponse(latex: "x = 6", changed: true, model: "fake", ms: 1)
+        h.services.rereadReplies["x = 5"] = RereadResponse(latex: "x = 6", changed: true, model: "fake", ms: 1)
         await h.start()
         await slip(h)
         #expect(h.board.mark(on: "x = 5") == .ring)

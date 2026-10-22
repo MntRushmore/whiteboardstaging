@@ -197,6 +197,8 @@ final class FakeServices: LiveServices, @unchecked Sendable {
     private var checkCancelled = 0
     var setupReply: SetupResponse?
     var rereadReply: RereadResponse?
+    /// the second reader's reply for one read (Mathpix's LaTeX → its reply), before `rereadReply`
+    var rereadReplies: [String: RereadResponse] = [:]
 
     var recognizeRequests: [RecognizeRequest] { lock.withLock { _recognizeRequests } }
     var checkRequests: [CheckRequest] { lock.withLock { _checkRequests } }
@@ -252,6 +254,7 @@ final class FakeServices: LiveServices, @unchecked Sendable {
 
     func reread(_ request: RereadRequest) async throws -> RereadResponse {
         lock.withLock { _rereadRequests.append(request) }
+        if let r = rereadReplies[request.latex] { return r }
         if let r = rereadReply { return r }
         return RereadResponse(latex: request.latex, changed: false, model: "fake", ms: 1)
     }

@@ -523,8 +523,8 @@
     "mode": "feedback"
   },
   "solved": false,
-  "status": "fixed",
+  "status": "open",
   "title": "3(x + 4) - 2x",
   "version": 1,
-  "why": "Missed the slip: 3x + 4 - 2x = x + 4 got a tick."
+  "why": "Still open (2026-10-22): 3x + 4 - 2x = x + 4 (the 3 not multiplied into the 4) is ticked, not ringed."
 }
