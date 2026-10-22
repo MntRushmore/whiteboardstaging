@@ -10,12 +10,19 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct RingGuardTests {
-    /// The s04 page: the problem copied, then the slip under it.
+    /// The s04 page: 34 × 6 printed by the tutor; the kid works it out in parts and slips adding them.
     func s04(_ h: Harness) async {
-        await h.write("2x + 3 = 11", at: Vec2(200, 120), reads: "180 + 24", confidence: 1.0)
+        try? await TestBrain.shared.load()
+        _ = await HeadlessBench.page(["34 \\times 6"], on: h.board, loop: h.loop, brain: TestBrain.shared)
+        await h.pass(300)
+        await h.write("2x + 3 = 11", at: Vec2(200, 300), reads: "30 \\times 6 = 180", confidence: 1.0)
         await h.pass(700)
-        await h.write("2x = 8", at: Vec2(200, 220), reads: "180 + 24 = 214", confidence: 1.0)
-        await h.pass(5_000)
+        await h.write("2x = 8", at: Vec2(200, 400), reads: "4 \\times 6 = 24", confidence: 1.0)
+        await h.pass(700)
+        await h.write("x = 5", at: Vec2(200, 500), reads: "180 + 24 = 214", confidence: 1.0)
+        await h.pass(6_000)
+        h.loop.checkPage()
+        await h.pass(6_000)
     }
 
     @Test func aReReadNeverChangesANumberThePageKnows() async throws {
@@ -23,7 +30,8 @@ struct RingGuardTests {
         h.services.rereadReplies["180 + 24 = 214"] = RereadResponse(latex: "180 + 34 = 214", changed: true, model: "fake", ms: 1)
         await h.start()
         await s04(h)
-        #expect(h.board.mark(on: "2x = 8") == .ring, "the slip keeps its ring: 24 is the problem's number")
+        #expect(!h.services.rereadRequests.isEmpty, "the second look ran")
+        #expect(h.board.mark(on: "180 + 24 = 214") == .ring, "the slip keeps its ring: 24 is the line above's number")
     }
 
     @Test func knownNumbersAreKept() {
