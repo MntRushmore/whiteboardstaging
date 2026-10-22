@@ -122,6 +122,8 @@ struct KidSessionResult: Codable {
     var texts: [String] = []
     var shots: [String] = []
     var notes: [String] = []
+    /// every read the recognizer gave, in order (a line read again shows each read)
+    var reads: [String] = []
     var ink = 0
     var checking = ""
 
@@ -204,6 +206,10 @@ private final class KidSessionRun {
         finish()
         result.seconds = Date().timeIntervalSince(t0)
         result.calls = BoardTutor.trainingServices?.calls ?? [:]
+        result.reads = (BoardTutor.trainingServices?.reads ?? []).map { r in
+            String(format: "%.1f s %@ → %@ (%@ %.2f)%@", r.at, String(r.lineId.prefix(8)), r.latex ?? "-", r.provider ?? "-", r.confidence ?? 0,
+                   r.error.map { " " + $0 } ?? "")
+        }
         result.ink = controller.store.records.values.filter { if case .stroke(let s) = $0 { s.author == .kid } else { false } }.count
         save()
         Self.log(result)
@@ -339,7 +345,7 @@ private final class KidSessionRun {
             case .above(let c, let s):
                 guard c < digits.count else { continue }
                 let d = digits[c]
-                out += await small(s, at: Vec2(d.x + d.w * 0.15, d.y - 36))
+                out += await small(s, at: Vec2(d.x + d.w * 0.15, d.y - 44))
             case .cross(let c):
                 guard c < digits.count else { continue }
                 let d = digits[c]
@@ -347,7 +353,7 @@ private final class KidSessionRun {
             case .before(let c, let s):
                 guard c < digits.count else { continue }
                 let d = digits[c]
-                out += await small(s, at: Vec2(d.x - 18, d.y - 10))
+                out += await small(s, at: Vec2(d.x - 16, d.y - 18))
             }
         }
         return out

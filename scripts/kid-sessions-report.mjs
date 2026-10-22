@@ -56,6 +56,7 @@ const section = (r) => {
   ${r.lines.map((l) => `<tr><td>${l.problem}</td><td><code>${esc(l.written)}</code></td><td><code>${esc(l.read ?? "—")}</code></td><td>${esc(l.mark)}</td><td>${esc(l.expect ?? "—")}</td><td>${l.pass === false ? `<span class="bad">${esc(l.why ?? "fail")}</span>` : l.pass ? "ok" : ""}</td></tr>`).join("")}</table>
   ${r.texts?.length ? `<p class="said"><b>Said to the kid:</b> ${r.texts.map(esc).join(" · ")}</p>` : ""}
   ${r.notes?.length ? `<p class="said"><b>Notes:</b> ${r.notes.map(esc).join(" · ")}</p>` : ""}
+  ${r.reads?.length ? `<details><summary>Every read (${r.reads.length})</summary><pre>${r.reads.map(esc).join("\n")}</pre></details>` : ""}
   ${video ? `<video controls preload="none" src="video/${video}"></video>` : ""}
   <div class="shots">${shots.map((s) => `<a href="${esc(s)}"><img loading="lazy" src="${esc(s)}" alt="${esc(path.basename(s))}"><span>${esc(path.basename(s, ".png"))}</span></a>`).join("")}</div>
 </section>`;

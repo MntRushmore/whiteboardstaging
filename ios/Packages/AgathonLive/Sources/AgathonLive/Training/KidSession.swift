@@ -253,7 +253,7 @@ public enum KidSessions {
         KidSession("s01-carry", "47 + 38 stacked, a carry over the tens", grade: 2, hand: .big, pace: .slow, mess: .little, [
             .tutorProblem(["47 + 38"]),
             .expect(.onProblemPage),
-            .stacked(L(stack("47 \\\\ +38 \\\\ \\hline 85"), .calm, means: "47 + 38 = 85"), [.above(1, "1")], .below),
+            .stacked(L(stack("47 \\\\ +38 \\\\ \\hline 85"), .calm), [.above(1, "1")], .below),
             .shot("worked"),
             .pause(2.5),
             .line(L("85", .tick, place: .answer), .answer),
@@ -262,7 +262,7 @@ public enum KidSessions {
         ]),
         KidSession("s02-borrow", "52 − 27 stacked, the 5 crossed out to borrow", grade: 2, hand: .messy, mess: .little, [
             .tutorProblem(["52 - 27"]),
-            .stacked(L(stack("52 \\\\ -27 \\\\ \\hline 25"), .calm, means: "52 - 27 = 25"), [.cross(1), .above(1, "4"), .before(0, "1")], .below),
+            .stacked(L(stack("52 \\\\ -27 \\\\ \\hline 25"), .calm), [.cross(1), .above(1, "4"), .before(0, "1")], .below),
             .shot("worked"),
             .pause(3),
             .line(L("25", .tick, place: .answer), .answer),
@@ -390,14 +390,16 @@ public enum KidSessions {
             .done(wait: 14),
             .shot("fixed"),
         ]),
+        // the two-step "Maya has 3 bags of 12 apples. She gives away 9. How many are left?" was refused by the
+        // tutor's desk (2026-10-22, reported): the session uses one it writes
         KidSession("s12-word-edge", "a word problem, big writing down to the page's edge", grade: 4, hand: .big,
                    mess: KidMess(tilt: 2, slope: 0.02, growth: 0.1, jitter: 14, gap: 60), [
-            .tutorProblem(["\\text{Maya has 3 bags of 12 apples.}", "\\text{She gives away 9. How many are left?}"]),
-            .line(L("3 \\times 12 = 36", .calm), .below),
+            .tutorProblem(["\\text{A pen costs 2 dollars.}", "\\text{How much do 7 pens cost?}"]),
+            .line(L("2 + 2 + 2 + 2 + 2 + 2 + 2 = 14", .calm), .below),
             .pause(6),
-            .line(L("36 - 9 = 27", .calm), .nearBottom),
+            .line(L("7 \\times 2 = 14", .calm), .nearBottom),
             .shot("edge"),
-            .line(L("27", .tick, place: .answer), .answer),
+            .line(L("14", .tick, place: .answer), .answer),
             .done(wait: 14),
             .shot("checked"),
         ]),

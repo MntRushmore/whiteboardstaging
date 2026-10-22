@@ -197,17 +197,21 @@ struct PagesLayer: View {
 
     private func chip(_ r: LineReading) -> some View {
         let at = point(r.at.x, r.at.y)
-        let size = geometry.viewSize
+        // inside the page (a long reading beside a line near its right edge comes back in)
+        let right = min(geometry.viewSize.width, pageFrame.maxX)
         return ReadbackChip(reading: r) { loop.openFix(r.id) }
-            .alignmentGuide(.leading) { d in -min(at.x, max(8, size.width - d.width - 8)) }
+            .alignmentGuide(.leading) { d in -min(at.x, max(8, right - d.width - 8)) }
             .alignmentGuide(.top) { d in -(at.y - d.height / 2) }
             .transition(.opacity)
     }
 
     private func offerBar(_ offer: NewPageOffer) -> some View {
         let at = point(offer.anchor.x, offer.anchor.y + offer.anchor.h)
+        // under the problem's first line, inside the page (a problem on the page's right half: the
+        // kid sessions' side-by-side page had "Keep it here" off the page's edge)
+        let page = pageFrame
         return NewPageOfferBar(take: { loop.takeNewPage() }, keep: { loop.keepHere() })
-            .alignmentGuide(.leading) { _ in -at.x }
+            .alignmentGuide(.leading) { d in -max(page.minX + 8, min(at.x, page.maxX - d.width - 8)) }
             .alignmentGuide(.top) { _ in -(at.y + 12) }
             .transition(.opacity)
     }
