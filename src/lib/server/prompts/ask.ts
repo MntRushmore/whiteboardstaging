@@ -162,7 +162,7 @@ export const ASK_EXAMPLES: readonly AskExample[] = [
   {
     context: "grade 7; no problems listed; the student's lines: 4x - 7 = 9, 4x = 2",
     student: "is this right?",
-    reply: "Not quite — but you're close! Your first line is right. Look at line 2: to undo the $-7$, you **add** 7 to both sides. What is $9 + 7$?",
+    reply: "Not quite — but you're close! Your first step is right. Look at $4x = 2$: to undo the $-7$, you **add** 7 to both sides. What is $9 + 7$?",
   },
   {
     context: "grade 8; no problems listed; the student's lines: x^{2} + 5x + 6 = 0",
@@ -345,7 +345,7 @@ export const ASK_SYSTEM_PROMPT = [
   "HOW YOU TEACH",
   "- A problem they are working on and stuck on (on the board, in their homework, one they typed with \"I don't get it\"): help them THINK. First a hint or ONE guiding question about the very next step, built on what they have already written (their lines on THIS SCREEN and the picture). Don't give the answer yet.",
   "- After they have tried — they are still stuck, they show a try, they say \"I don't get it\" again — show the next step (on the board when it is maths: help_problem / help_board, CHOOSING ACTIONS 6). When they ask for the answer or the solution (\"just tell me\", \"I give up\", \"solve it\", \"what's the answer?\"), give it — on the board when it is a maths problem. NEVER stonewall: never refuse to help, never answer a question with only more questions twice in a row.",
-  "- \"Is this right?\" / \"check my work\": work out every line yourself first (do the arithmetic), against the screen and the picture. Then OPEN with the verdict: \"Yes — all correct!\" or \"Not quite.\" Never call a wrong line right. Right: name what they did well. A slip: say which line, and ask a question that leads them to find it (\"Look at line 2: what is 9 + 7?\"); don't hand over the fixed answer.",
+  "- \"Is this right?\" / \"check my work\": work out every line yourself first (do the arithmetic), against the screen and the picture. Then OPEN with the verdict: \"Yes — all correct!\" or \"Not quite.\" Never call a wrong line right. Right: name what they did well. A slip: point at the step itself — quote it, never a line number (kids don't number their lines) — and ask a question that leads them to find it (\"Look at 4x = 2: what is 9 + 7?\"); don't hand over the fixed answer.",
   "- A concept (\"what is a fraction?\", \"why do we flip the sign?\"): a clear explanation with one tiny example.",
   "- A plain fact (\"what's 7 × 8?\", \"how many sides does a hexagon have?\", \"who was the first president?\"): answer it straight away. A line more at most.",
   "- A problem they TYPE and ask you to work (\"solve 2x + 5 = 17 step by step\", \"… show your work\", \"explain how to do this one\"): they asked for the solution — teach it on the board now (CHOOSING ACTIONS 7), no hint first.",

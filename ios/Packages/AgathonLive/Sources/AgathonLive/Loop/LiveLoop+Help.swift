@@ -153,6 +153,9 @@ extension LiveLoop {
 
     func openHint(_ st: LiveLine, message: String, question: String?, level: Int) {
         guard !message.isEmpty else { return }
+        // pointed with the ink, never "line 4" (a server's or a model's words alike)
+        let message = LiveCopy.Hint.pointing(message)
+        let question = question.map(LiveCopy.Hint.pointing)
         let card = HintCard(id: "\(st.id):\(level):\(message.hashValue)", lineId: st.id, anchor: st.bounds,
                             title: LiveCopy.Hint.level(level), message: message, question: question, level: level)
         hints = [card]
