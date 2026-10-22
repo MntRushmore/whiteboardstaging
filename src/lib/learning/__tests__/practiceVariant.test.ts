@@ -19,7 +19,7 @@ import { localSolve } from "@/lib/live/localSolve";
 import { STARTER_PROBLEMS } from "@/lib/onboarding/courses";
 import type { PracticeProblem } from "../contracts";
 import { looseSkeleton, skeletonOf, tidy } from "../generators/shape";
-import { answerKey, answerShape, findVariant, VARIANT_LIMITS } from "../generators/variant";
+import { answerKey, answerShape, findVariant, regroupings, VARIANT_LIMITS } from "../generators/variant";
 import { practiceProblems, variantOf } from "../practice";
 import { classifyProblem } from "../skills";
 
@@ -224,5 +224,38 @@ describe("variantOf", () => {
     const late = () => (t += VARIANT_LIMITS.capMs);
     const fallback = practiceProblems("quadratic_equations", 2, 4);
     expect(findVariant(engine, ["x^{2} - 5x + 6 = 0"], 4, { fallback: () => fallback, now: late })).toEqual(fallback[0]);
+  });
+});
+
+describe("Now you try: as hard as the original (the kid sessions, 2026-10-22: 34 × 6 → 81 × 2)", () => {
+  it("counts the carries and borrows a column method makes", () => {
+    expect(regroupings(["34 \\times 6"])).toBe(2);
+    expect(regroupings(["81 \\times 2"])).toBe(1);
+    expect(regroupings(["21 \\times 3"])).toBe(0);
+    expect(regroupings(["47 + 38"])).toBe(1);
+    expect(regroupings(["41 + 38"])).toBe(0);
+    expect(regroupings(["52 - 27"])).toBe(1);
+    expect(regroupings(["58 - 27"])).toBe(0);
+    expect(regroupings(["46 \\times 23"])).toBe(regroupings(["46 \\times 2"])! + regroupings(["46 \\times 3"])!);
+    expect(regroupings(["2x + 3 = 11"])).toBeNull();
+    expect(regroupings(["\\frac{1}{2} + \\frac{1}{3}"])).toBeNull();
+  });
+
+  it.each([
+    ["34 \\times 6"],
+    ["47 + 38"],
+    ["52 - 27"],
+    ["286 + 680"],
+    ["46 \\times 7"],
+  ])("%s: the same kind, as many digits, regrouping as much", (problem) => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const v = findVariant(engine, [problem], seed, { fallback: () => [], now: still });
+      expect(v, `seed ${seed}`).not.toBeNull();
+      const line = v![0].replace(/\s+/g, "");
+      const op = problem.includes("times") ? "\\times" : problem.includes("+") ? "+" : "-";
+      expect(line, `seed ${seed}`).toContain(op);
+      expect(skeletonOf(v!.map(tidy)), `seed ${seed}: ${line}`).toBe(skeletonOf([tidy(problem)]));
+      expect(regroupings(v!), `seed ${seed}: ${line}`).toBe(regroupings([problem]));
+    }
   });
 });
