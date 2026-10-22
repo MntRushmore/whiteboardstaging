@@ -169,10 +169,12 @@ struct RealInkBenchTests {
     static func pick(_ all: [Case], _ filter: String) -> [Case] {
         let keys = filter.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         guard !keys.isEmpty else { return all }
+        let ids = Set(all.map(\.id))
         return all.filter { c in
             keys.contains { k in
                 if k.hasPrefix("tag:") { return c.tags.contains(String(k.dropFirst(4))) }
-                return c.id == k || c.id.hasPrefix(k)
+                // an id is itself (b31babbf3_a1 is not b31babbf3_a10); a prefix only when no case is it
+                return c.id == k || (!ids.contains(k) && c.id.hasPrefix(k))
             }
         }
     }
