@@ -17,7 +17,7 @@ Files that go with it:
 | `scripts/ios-appstore-shots.sh`, `ios/AgathonUITests/AppStoreScreenshotUITests.swift`, `scripts/lib/appstore-demo-seed.sql` | the screenshots, made on the local stack |
 | `docs/app-store/screenshots/` | the iPad screenshots to upload (13-inch, 2752 × 2064) |
 | `docs/app-store/iap-review-screenshot.png` | the plan screen, for the subscription's review screenshot |
-| `docs/app-store/privacy-terms.patch` | the Privacy Policy and Terms edits the app needs (for the lead to review; a live web page) |
+| `src/app/(platform)/privacy`, `terms`, `refunds` | the Privacy Policy, Terms and Refund Policy, now covering the iPad app (in this branch; live once merged) |
 
 ---
 
@@ -35,9 +35,9 @@ archive step is verified; the export runs the first time the owner signs in or s
 
 **Blocks launch until done (in §12's order):**
 
-1. **The Privacy Policy and Terms must cover the iPad app** (Apple requires the policy to describe
-   the app's collection, and the Terms link in the app points at `/terms#unlimited`, which today
-   describes Stripe billing only). The patch is ready; the lead reviews and merges it (§7).
+1. **The Privacy Policy and Terms must be live on production** (Apple requires the policy to describe
+   the app's collection, and the Terms link in the app points at `/terms#unlimited`). Done in this
+   branch (commit 736451c6); it goes live when `feat/ipad-launch` is merged and deployed (§7).
 2. **Explicit permission before sending a kid's work to third-party AI** (App Review Guideline
    5.1.2(i), as updated in November 2025: "clearly disclose where personal data will be shared with
    third parties, including with third-party AI, and obtain explicit permission"). See §9, risk 1.
@@ -213,9 +213,9 @@ third parties protect it as well, retention and deletion, and how to withdraw co
 link on the plan screen opens `/terms#unlimited`. Today both pages cover only the website (`agathon.app`)
 and Stripe billing.
 
-**The patch:** `docs/app-store/privacy-terms.patch` (4 files, 48 edits; `git apply --check` passes on
-this branch; `legalPages.test.tsx` and `landing.test.tsx` pass with it applied, eslint and tsc clean).
-It is a live page, so the lead reviews and merges it; it must be on production **before** submitting.
+**Applied in this branch** (2026-10-22, commit 736451c6; 4 files: privacy, terms, refunds, `LegalPage.tsx`).
+`legalPages.test.tsx`, `legal.test.ts` and `landing.test.tsx` pass (44 tests), eslint and tsc clean. It is a live
+page: it must be on production **before** submitting.
 
 - **Privacy Policy:** covers the iPad app throughout; adds Cloudflare and Apple to the recipients (in-app
   purchase, App Attest, the iPad's speech recognizer); family and kid profiles (name, grade, picture,
@@ -240,7 +240,7 @@ It is a live page, so the lead reviews and merges it; it must be on production *
   database refuses a version dated after tomorrow, which would stop every sign-up); **decide before
   uploading build 1.0 (1)**, so the iPad sends the same version (older builds sending 2026-10-11 still
   work). There is no re-consent flow: tell existing users by email, as the Changes section promises.
-- **Not in the patch (owner's call):** the ElevenLabs sentence (§6), and the Terms' "in beta" wording
+- **Not in this change (owner's call):** the ElevenLabs sentence (§6), and the Terms' "in beta" wording
   (fine for review, but some reviewers read "beta" as unfinished under 2.2; consider dropping it from
   the summary for the App Store launch).
 
@@ -510,7 +510,7 @@ Suggested order in App Store Connect: hint-on-a-slip, problem-page-ticked, ask-d
 
 ## 12. The owner's step-by-step (one sitting, about 3½ hours; less if the agreements are already active)
 
-Before you start: the lead has merged the Privacy Policy and Terms patch (§7) and deployed it, and
+Before you start: `feat/ipad-launch` (with the Privacy Policy and Terms, §7) is merged and deployed, and
 decided on the AI-permission line (§9, risk 1); if that line ships, the build you upload in step 8
 must contain it.
 
