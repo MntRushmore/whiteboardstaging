@@ -536,3 +536,55 @@ describe("splitInk: a bar under a whole equation is \"divide both sides\" (`divi
     expect(split.diagrams.flatMap((d) => d.kinds)).toContain("numberLine");
   });
 });
+
+describe("splitInk: a fraction written with a long slanted bar (real-ink bench, re-drawn)", () => {
+  // the top over the bar's left part, the bottom under its right part, the bar five glyphs long
+  const slanted = (variant = VARIANTS[0]) => {
+    const pen = new Pen("sl", 5);
+    const top = writeAt("12", 105, 245, variant);
+    const bar = pen.stroke({ x: 100, y: 300 }, { x: 230, y: 240 });
+    const bottom = writeAt("5", 190, 280, variant);
+    return { ink: [...top, bar, ...bottom], top, bar, bottom };
+  };
+
+  it.each(VARIANTS.map((v) => [v.name, v] as const))("is one line of writing, not a drawing (%s hand)", (_name, variant) => {
+    const { ink, bar } = slanted(variant);
+    const split = splitInk(ink);
+    expect(split.diagrams).toEqual([]);
+    expect(roleOf(split, bar)).toBe("writing");
+    expect(split.fractions).toEqual([[bar.id, ...ink.filter((s) => s !== bar).map((s) => s.id)]]);
+    expect(split.writing).toHaveLength(0);
+  });
+
+  it("a slanted segment labelled at its ends, or the side of a triangle, stays a drawing", () => {
+    const pen = new Pen("seg", 6);
+    const seg = pen.stroke({ x: 100, y: 300 }, { x: 230, y: 240 });
+    const labelled = [seg, ...writeAt("A", 95, 305), ...writeAt("B", 225, 205)];
+    const split = splitInk(labelled);
+    expect(split.fractions ?? []).toEqual([]);
+    expect(roleOf(split, seg)).toBe("drawing");
+    const tri = [pen.stroke({ x: 100, y: 300 }, { x: 230, y: 240 }), pen.stroke({ x: 230, y: 240 }, { x: 230, y: 300 }), pen.stroke({ x: 230, y: 300 }, { x: 100, y: 300 })];
+    const withLabels = [...tri, ...writeAt("12", 105, 245), ...writeAt("5", 190, 270)];
+    expect(splitInk(withLabels).fractions ?? []).toEqual([]);
+  });
+});
+
+describe("splitInk: an answer at the end of a hand-drawn arrow (real-ink bench, re-drawn)", () => {
+  it("is writing; the arrow stays a drawing", () => {
+    const pen = new Pen("ar", 7);
+    // a long curve from the top right down and round to the left, the answer written just past its end
+    const arrow = pen.stroke({ x: 400, y: 100 }, { x: 420, y: 200 }, { x: 380, y: 300 }, { x: 250, y: 360 }, { x: 160, y: 380 }, { x: 150, y: 420 }, { x: 220, y: 450 });
+    const answer = writeAt("50", 250, 440);
+    const split = splitInk([arrow, ...answer]);
+    expect(roleOf(split, arrow)).toBe("drawing");
+    expect(answer.map((s) => roleOf(split, s))).toEqual(answer.map(() => "writing"));
+  });
+
+  it("a label beside the middle of a curve is still a label", () => {
+    const pen = new Pen("ar2", 8);
+    const curve = pen.stroke({ x: 100, y: 400 }, { x: 180, y: 250 }, { x: 260, y: 200 }, { x: 340, y: 250 }, { x: 420, y: 400 });
+    const label = writeAt("5", 250, 160);
+    const split = splitInk([curve, ...label]);
+    expect(label.map((s) => roleOf(split, s))).toEqual(label.map(() => "label"));
+  });
+});

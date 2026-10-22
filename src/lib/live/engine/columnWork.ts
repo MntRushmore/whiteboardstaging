@@ -21,6 +21,7 @@
  */
 import type { AnalyzeContext, HelpMode, LineAnalysis, LiveEngine } from "../contracts";
 import { withoutOperationNotes } from "./annotations";
+import { readVariants } from "../youngHand";
 import { parseStacked, stackedAnalysis, workStacked } from "./columnArithmetic";
 
 /** A number, as a young student writes an answer: `14`, `-3`, `2.5`, `\frac{3}{4}`, `3/4` (an `=` before it allowed). */
@@ -161,6 +162,20 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
       if (judged.verdict === "ok") {
         a = judged;
         latex = bare;
+      }
+    }
+  }
+  // what a messy read may have been (`readVariants`: a plus written high, her `x` read as `\times`, a
+  // side note behind a left arrow) — only to find the step right, never dropping a number the problem
+  // or the lines above have (MISREADS; the minus her ink starts with is the loop's to offer: it needs the ink)
+  if (a.verdict !== "ok" && !input.arithmetic) {
+    const keep = [...input.above, ctx.previous?.math ?? "", ctx.original?.math ?? ""];
+    for (const v of readVariants(latex, false, keep)) {
+      const judged = engine.analyzeLine(v, ctx);
+      if (judged.verdict === "ok") {
+        a = judged;
+        latex = v;
+        break;
       }
     }
   }

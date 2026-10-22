@@ -6,7 +6,7 @@ import { getEngine } from "../engine";
 import { analyzeColumn } from "../localSolve";
 import { isLoneRelation } from "../policy";
 import { clusterLines, isEqualsPair, medianStrokeHeight, unionRects } from "../strokeClusters";
-import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, isTickStroke, leadingSigns, ownTicks, readYoungHand } from "../youngHand";
+import { answerAfterRestatedEnd, inkLeadsWithMinus, isSignsOnly, isSpeckLine, isTickStroke, leadingSigns, misreadVariants, ownTicks, readVariants, readYoungHand, rightAnswerTo } from "../youngHand";
 import { negativeAnswers, PHOTO_HEADS, youngGlyphs, youngInk, youngLine, type Pt } from "../__fixtures__/youngInk";
 import { CORPUS } from "@/__eval__/corpus";
 
@@ -171,6 +171,12 @@ describe("isTickStroke / ownTicks: her own tick after her answer", () => {
     expect(isTickStroke(down)).toBe(true);
     // the way an adult draws it: short arm first, then up the long one
     expect(isTickStroke(one([[300, 140], [310, 150], [330, 175], [350, 150], [380, 120], [400, 100]]))).toBe(true);
+  });
+
+  it("a ✓ whose short arm comes straight down is a tick too (real-ink bench: read into `-4` as `-4 \\quad-`)", () => {
+    // re-drawn, not a child's ink: straight down a quarter of its height, then a long slant up right
+    expect(isTickStroke(one([[300, 138], [300, 144], [301, 150], [315, 142], [340, 125], [368, 101]]))).toBe(true);
+    expect(isTickStroke(one([[368, 101], [340, 125], [315, 142], [301, 150], [300, 144], [300, 138]]))).toBe(true);
   });
 
   it("a 7, a 2, an L, a v, a U, a 1 are not", () => {
@@ -379,5 +385,104 @@ describe("negative answers: the signs as the ink has them", () => {
     expect(isEqualsPair(three[0].bounds, three[2].bounds, three.map((s) => s.bounds))).toBe(false);
     // each in its problem's cell
     for (const [k, strokes] of [one, two, three, four].entries()) expect(cellOf(unionRects(strokes.map((s) => s.bounds)), cells)?.n).toBe(k + 1);
+  });
+});
+
+describe("misreadVariants / rightAnswer: a nonsense read of her answer that can only have been the right number", () => {
+  let engine: LiveEngine;
+  beforeAll(async () => {
+    engine = await getEngine();
+  }, 60_000);
+
+  it("a comma no thousands separator could be is a short 1 (or a tap); a spaced tail after the number is her tick", () => {
+    expect(misreadVariants("9,08")).toEqual(["9108", "908"]);
+    expect(misreadVariants("= 9,08")).toEqual(["= 9108", "= 908"]);
+    expect(misreadVariants("-4 \\quad-")).toEqual(["-4"]);
+    expect(misreadVariants("27 \\quad ,")).toEqual(["27"]);
+    // a number as it is, a thousands separator, maths, words: nothing to try
+    expect(misreadVariants("1,500")).toEqual([]);
+    expect(misreadVariants("12,345")).toEqual([]);
+    expect(misreadVariants("9108")).toEqual([]);
+    expect(misreadVariants("4 + 3")).toEqual([]);
+    expect(misreadVariants("x \\quad -")).toEqual([]);
+  });
+
+  it("is taken only when it is the right answer: a nonsense read never becomes a wrong one", () => {
+    const right = (problem: string) => ({ arithmetic: true, rightAnswer: rightAnswerTo(engine, [problem]) });
+    expect(readYoungHand("9,08", right("414 \\times 22"))).toBe("9108");
+    expect(readYoungHand("-4 \\quad-", right("-7 + 3"))).toBe("-4");
+    expect(readYoungHand("= 9,08", right("414 \\times 22"))).toBe("= 9108");
+    // no variant is right: the read stands (the loop asks or waits, as before) — never a ring
+    expect(readYoungHand("9,08", right("414 \\times 23"))).toBe("9,08");
+    expect(readYoungHand("-5 \\quad-", right("-7 + 3"))).toBe("-5 \\quad-");
+    // a read that is right already, or a thousands separator, is left alone
+    expect(readYoungHand("1,500", right("1000 + 500"))).toBe("1,500");
+    // in algebra nothing is tried
+    expect(readYoungHand("-4 \\quad-", { arithmetic: false, rightAnswer: () => true })).toBe("-4 \\quad-");
+    // a problem of more than one line has no single answer to check against
+    expect(rightAnswerTo(engine, ["4 + 3", "2 + 1"])).toBeUndefined();
+  });
+
+  it("a trailing `=`, a digit read as a letter, an empty text before a wavy `=` (real-ink bench, pen)", () => {
+    const right = (problem: string) => ({ arithmetic: true, rightAnswer: rightAnswerTo(engine, [problem]) });
+    expect(readYoungHand("=30=", right("2 \\times 5 \\times 3"))).toBe("=30");
+    expect(readYoungHand("=\\mathbb{G}", right("7+2"))).toBe("=9");
+    expect(readYoungHand("=b5", right("58 + 7"))).toBe("=65");
+    expect(readYoungHand("=b5", right("58 + 8"))).toBe("=b5");
+    expect(readYoungHand("\\text { } \\approx 12", right("3 \\times 4"))).toBe("= 12");
+    // never toward a wrong answer
+    expect(readYoungHand("=\\mathbb{G}", right("7+3"))).toBe("=\\mathbb{G}");
+    expect(readYoungHand("=31=", right("2 \\times 5 \\times 3"))).toBe("=31=");
+  });
+
+  it("in arithmetic a whole number under a rule read with its bar over it is the number", () => {
+    expect(readYoungHand("\\overline{544}", ARITHMETIC)).toBe("544");
+    expect(readYoungHand("= \\overline{544}", ARITHMETIC)).toBe("= 544");
+    // a long-division bracket, a repeating decimal, algebra's division bar: left alone
+    expect(readYoungHand("9)\\overline{144}", ARITHMETIC)).toBe("9)\\overline{144}");
+    expect(readYoungHand("0.\\overline{3}", ARITHMETIC)).toBe("0.\\overline{3}");
+    expect(readYoungHand("\\overline{2}", ANYWHERE)).toBe("\\overline{2}");
+  });
+});
+
+describe("readVariants: what a messy read of a child's step may have been (only ever taken to find it right)", () => {
+  it("a plus written high, her x read as a times sign, a side note behind a left arrow", () => {
+    expect(readVariants("-5 x^{+} 20-6 x")).toContain("-5 x + 20-6 x");
+    expect(readVariants("\\times=2")).toContain("x=2");
+    expect(readVariants("2 x=11-3 \\Longleftarrow 9")).toContain("2 x=11-3");
+  });
+
+  it("her minus that the read dropped, only when her ink starts with one; all fixes together too", () => {
+    expect(readVariants("5 x^{+} 20-6 x", true)).toEqual(["5 x + 20-6 x", "-5 x^{+} 20-6 x", "-5 x + 20-6 x"]);
+    expect(readVariants("5 x+20-6 x")).toEqual([]);
+    expect(readVariants("=5", true)).toEqual([]);
+  });
+
+  it("leaves alone what is meant: a product, an ion's charge, a right arrow between steps, a bare arrow", () => {
+    expect(readVariants("3 \\times 4=12")).toEqual([]);
+    expect(readVariants("\\mathrm{Na}^{+}")).toEqual([]);
+    expect(readVariants("x^{2}+1")).toEqual([]);
+    expect(readVariants("2 x=8 \\Rightarrow x=4")).toEqual([]);
+    expect(readVariants("\\leftarrow 9")).toEqual([]);
+  });
+
+  it("a minus beside a 5 whose tail curls out under it is a minus; a plus, an equals, a 5's own top bar are not", () => {
+    const stroke = (pts: Array<[number, number]>) => youngInk([pts.map(([x, y]) => ({ x, y }))])[0];
+    // re-drawn: a short bar at mid height, then a 5 (stem, belly curling back left under the bar, top bar)
+    const five = [stroke([[142, 14], [142, 40], [170, 42], [184, 60], [170, 78], [127, 74]]), stroke([[142, 11], [176, 11]])];
+    const minus = stroke([[134, 40], [144, 40]]);
+    expect(inkLeadsWithMinus([minus, ...five])).toBe(true);
+    expect(inkLeadsWithMinus(five)).toBe(false);
+    // a + (a stroke through the bar), an = (a bar under it)
+    expect(inkLeadsWithMinus([minus, stroke([[139, 32], [139, 48]]), ...five])).toBe(false);
+    expect(inkLeadsWithMinus([minus, stroke([[134, 50], [144, 50]]), ...five])).toBe(false);
+  });
+
+  it("a minus in the ink is hers only right before the first glyph", () => {
+    const ink = youngInk(youngLine("-5", 200, 100));
+    expect(inkLeadsWithMinus(ink)).toBe(true);
+    const far = ink.map((s, k) => (k === 0 ? { ...s, bounds: { ...s.bounds, x: s.bounds.x - 300 } } : s));
+    expect(inkLeadsWithMinus(far)).toBe(false);
+    expect(inkLeadsWithMinus(youngInk(youngLine("5", 200, 100)))).toBe(false);
   });
 });

@@ -27,9 +27,9 @@ import type { TLShapeId } from "tldraw";
 import { createEngine } from "@/lib/live/engine";
 import { arithmeticOf, bracketLine, isArithmetic, isStackRead, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "@/lib/live/engine/columnWork";
 import { parseStacked, rowPlaces, stackedAnalysis, workStacked } from "@/lib/live/engine/columnArithmetic";
-import { answerAfterRestatedEnd, leadingSigns, readYoungHand } from "@/lib/live/youngHand";
+import { answerAfterRestatedEnd, inkLeadsWithMinus, leadingSigns, readVariants, readYoungHand, rightAnswerTo } from "@/lib/live/youngHand";
 import type { AnalyzeContext, GraphForOptions, HelpMode, InkLine, InkStroke, LineAnalysis, LiveEngine, Rect } from "@/lib/live/contracts";
-import { barGroups, splitInk, type Diagram, type StrokeVerdict } from "@/lib/live/diagrams";
+import { barGroups, fractionGroups, splitInk, type Diagram, type StrokeVerdict } from "@/lib/live/diagrams";
 import { stackGrid, stackGroups, type StackedSum } from "@/lib/live/stackedSums";
 import { clusterLines, unionRects, type ColumnOptions } from "@/lib/live/strokeClusters";
 import { cellOf, splitAcrossProblems, type ProblemCell } from "@/lib/live/chat/cells";
@@ -208,10 +208,24 @@ export function youngReadOf(args: { latex: string; problem?: string[] | null; st
   const problem = Array.isArray(args.problem) ? args.problem.filter((l) => typeof l === "string" && l.trim().length > 0) : [];
   const arithmetic = problem.length > 0 && problem.every(isArithmetic);
   const signs = arithmetic && Array.isArray(args.strokes) && args.strokes.length > 0 ? leadingSigns(args.strokes.map(toInkStroke)) : null;
-  const read = readYoungHand(args.latex, { arithmetic, signs });
+  // a nonsense read of her answer that can only have been the right number (`misreadVariants`)
+  const rightAnswer = arithmetic ? rightAnswerTo(engine(), problem) : undefined;
+  const read = readYoungHand(args.latex, { arithmetic, signs, rightAnswer });
   // a division bar and the number under it (`bar`: one of the line's strokes is a `bars`' bar): Mathpix
   // drops the bar and reads `2` — the line is "divide both sides by 2" (`LiveLoop.applyRecognition`)
   return { latex: args.bar === true ? (barDivisionLatex(read) ?? read) : read };
+}
+
+/**
+ * What a messy read of a child's step may have been (`readVariants`: a plus written high, her `x` read
+ * as `\times`, a side note behind a left arrow, the minus her ink starts with that the read dropped),
+ * for the loop's second look before a ring (`LiveLoop.holdRing`): taken only when one makes the step follow.
+ */
+export function readVariantsOf(args: { latex: string; strokes?: BrainStroke[]; keep?: string[] }): { variants: string[] } {
+  need(typeof args.latex === "string", "latex is a string");
+  const ink = Array.isArray(args.strokes) && args.strokes.length > 0 ? args.strokes.map(toInkStroke) : [];
+  const keep = Array.isArray(args.keep) ? args.keep.filter((l) => typeof l === "string") : [];
+  return { variants: readVariants(args.latex, ink.length > 0 && inkLeadsWithMinus(ink), keep) };
 }
 
 export interface StackedLineArgs {
@@ -375,7 +389,7 @@ export function clusterStrokes(args: ClusterArgs): ClusterResult {
     return { lines, diagrams: [], bars: [], stacks: [], glyph: 0, roles: {} };
   }
   const split = splitInk(ink, args.previousDiagrams ?? [], { zoom: args.zoom, equations: args.equations, newId: idSource("dg", args.idSeed) });
-  const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink)];
+  const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink), ...fractionGroups(split.fractions, ink)];
   const cells = Array.isArray(args.cells) ? args.cells : [];
   const columns = columnOptionsOf(cells, args.mates);
   const apart = cells.length > 1 ? (group: InkStroke[]) => splitAcrossProblems(group, cells) : undefined;
@@ -709,6 +723,7 @@ export const METHODS: Readonly<Record<string, Method>> = {
   clusterStrokes: { run: clusterStrokes },
   recognizerPayload: { run: recognizerPayload, plain: true },
   youngRead: { run: youngReadOf, plain: true },
+  readVariants: { run: readVariantsOf, plain: true },
   layoutHandwriting: { run: layoutHandwriting, plain: true },
   layoutMath: { run: layoutMathOf, plain: true },
   writeText: { run: writeText, plain: true },
