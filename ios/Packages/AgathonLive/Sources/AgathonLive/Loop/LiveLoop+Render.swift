@@ -247,12 +247,6 @@ extension LiveLoop {
             return
         }
         defer { refreshPage() }
-        // check as I go: nothing on a line still being written (`stillGrowing`)
-        if let wait = stillGrowing(st) {
-            syncMark(st, nil, learn: false)
-            renderWhenFinished(id, after: wait)
-            return
-        }
         let d = decision(st, userAsked: userAsked)
         // a right answer Mathpix was unsure of: no "?" while one more look decides (`lookAgainAtUnsureAnswer`)
         if !d.echo && lookAgainAtUnsureAnswer(st) { return }
@@ -260,7 +254,13 @@ extension LiveLoop {
             if !quiet {
                 let why = questionNow(st)
                 let unread = why == nil && (rt[id]?.unreadableShown ?? false) && settings.mode != .off && unreadableRead(st)
-                syncMark(st, why != nil || unread ? .question : nil, why ?? (unread ? "unread" : nil))
+                // check as I go: no "?" on a line still being written (`stillGrowing`)
+                if why != nil || unread, !userAsked, let wait = stillGrowing(st) {
+                    syncMark(st, nil, learn: false)
+                    renderWhenFinished(id, after: wait)
+                } else {
+                    syncMark(st, why != nil || unread ? .question : nil, why ?? (unread ? "unread" : nil))
+                }
             }
             if unreadableRead(st), !(rt[id]?.unreadableShown ?? false), rt[id]?.unreadableTimer == nil, !quiet {
                 scheduleUnreadableMark(id)
@@ -306,6 +306,13 @@ extension LiveLoop {
         }
         let tick = marked == "ok" || marked == "solved"
         let why = ring || tick ? nil : questionNow(st)
+        // check as I go: no ring and no "?" on a line still being written (`stillGrowing`)
+        if ring || why != nil, !userAsked, let wait = stillGrowing(st) {
+            syncMark(st, nil, learn: false)
+            updateVerdict(st, "none")
+            renderWhenFinished(id, after: wait)
+            return
+        }
         syncMark(st, ring ? .circle : tick ? .check : why != nil ? .question : nil, why)
         updateVerdict(st, ring ? "warn" : marked == "solved" ? "solved" : tick ? "ok" : "none")
         if ring && !quiet && auto { suggestNextStep(id) }

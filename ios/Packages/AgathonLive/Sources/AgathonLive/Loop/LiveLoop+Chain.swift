@@ -166,16 +166,16 @@ extension LiveLoop {
         return !bare.contains("=") && bare.count <= 3
     }
 
-    /// "Check as I go": a line still being written shows nothing — no tick, ring or "?" on `7^{2} = 4`
-    /// before its 9 (the real-ink bench: 15 rings on half-written lines). Its marks come once it looks
-    /// finished: the pen off it and no new stroke in it for `PageTiming.unfinishedMs`. The ms left, nil
-    /// when it looks finished (and always nil when checking when done: lines are held until then).
-    func stillGrowing(_ st: LiveLine) -> Double? {
+    /// "Check as I go": a ring or a "?" never lands on a line still being written (the real-ink bench:
+    /// `7^{2} = 4` ringed before its 9, `x = 1` before its 2). They come once it looks finished: the pen
+    /// off it and no new stroke in it for `holdMs` (`PageTiming.doubtHoldMs`). The ms left, nil when it
+    /// looks finished (and always nil when checking when done: lines are held until then).
+    func stillGrowing(_ st: LiveLine, holdMs: Double = PageTiming.doubtHoldMs) -> Double? {
         guard !checksWhenDone else { return nil }
-        if (penDown || board.isPenDown) && penLineId == st.id { return PageTiming.unfinishedMs }
+        if (penDown || board.isPenDown) && penLineId == st.id { return holdMs }
         let last = st.ink.strokeIds.compactMap { pages.strokeAt[$0] }.max() ?? -.infinity
         let age = scheduler.now - last
-        return age < PageTiming.unfinishedMs ? PageTiming.unfinishedMs - age : nil
+        return age < holdMs ? holdMs - age : nil
     }
 
     /// Draws the line again when it should look finished (`stillGrowing`).

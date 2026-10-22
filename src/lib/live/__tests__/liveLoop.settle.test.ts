@@ -348,7 +348,7 @@ describe("live loop — the answer waits for the student to stop writing", () =>
     expect(echoOf(solvedLine)).toMatchObject({ latex: "x=4", status: "solved" });
   });
 
-  it("rings a wrong line at once, and writes the right next step only once the student stops", async () => {
+  it("rings a wrong line once it looks finished, and writes the right next step only once the student stops", async () => {
     loop.stop();
     resetLiveStore();
     loop = makeLoop("suggest");
@@ -360,10 +360,15 @@ describe("live loop — the answer waits for the student to stop writing", () =>
     const ring = () => tutorInk().filter((s) => String((s.meta as Record<string, unknown>).mark ?? "").startsWith("circle:"));
     const beside = () => tutorInk().filter((s) => (s.meta as Record<string, unknown>).suggestFor === "x=5");
 
-    // a mark: immediate
+    // a mark: once the line looks finished (LIVE_TIMING.doubtHoldMs), not mid-line
     expect(echoOf(wrong)).toMatchObject({ latex: "x=5", status: "warn" });
+    expect(ring()).toHaveLength(0);
+    // an answer: not while they are writing (still writing, on the next line)
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.doubtHoldMs - 1000);
+    await penLine(2, "y");
+    await vi.advanceTimersByTimeAsync(1100);
+    await settle(8);
     expect(ring().length).toBeGreaterThan(0);
-    // an answer: not while they are writing
     expect(beside()).toEqual([]);
 
     await stopWriting();
