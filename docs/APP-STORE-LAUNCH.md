@@ -147,8 +147,11 @@ What it does, and stops on:
    `UPLOAD_WITH=xcodebuild` uploads from the export step instead (destination `upload`).
 
 Signing needs Apple once per Mac: either the key above (Admin) or Xcode › Settings › Accounts signed
-in as the account holder. **Dry run on 2026-10-21:** the archive and its checks pass; the export
-stopped at `No Accounts` (nobody is signed in to Xcode on this Mac and no key was given), as expected.
+in as the account holder. **Dry run on 2026-10-22** (`scripts/ios-release.sh --no-bump`, after the policy
+and screenshot commits): the archive and its checks pass (16 MB, iPadOS 17.0); the export stopped at
+`No Accounts` / `No profiles for 'app.agathon.Agathon'`. This Mac has the Apple Distribution certificate
+for SG4YJW2K5Z but no App Store profile for this bundle id, and `xcodebuild` sees no signed-in account,
+so the API key (above) is the fix: with it, the export makes the profile itself.
 Never commit the .p8; the script refuses a key inside the repo.
 
 ---
