@@ -135,6 +135,15 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
       if (answer.verdict === "ok" || answer.verdict === "mismatch") a = { ...answer, bareAnswer: true };
     }
     if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(latex))) a = { ...a, solved: true };
+  } else if (a.verdict === "none" && !input.given && BARE_NUMBER.test(latex)) {
+    // a lone number under an equation in one letter, when it is that letter's value, is the answer
+    // (`12` under `x/2 - 5 = 1`, `2` after `y = -6 + 8`: children write it without `x =`). Only a
+    // right one: a lone wrong number may be a side sum, and a ring there would be on right work.
+    const letter = ctx.previous?.variable ?? ctx.original?.variable;
+    if (letter && /^[a-zA-Z]$/.test(letter)) {
+      const answer = engine.analyzeLine(`${letter} = ${withoutRelation(latex)}`, ctx);
+      if (answer.verdict === "ok") a = { ...answer, bareAnswer: true };
+    }
   }
   if (a.verdict !== "mismatch" || a.solved) return a;
   // not right from the last right line: carried on from the slip right above it? Then the
