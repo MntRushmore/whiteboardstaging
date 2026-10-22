@@ -15,7 +15,8 @@ import Testing
 /// headless bench's server, mode, budget and cache settings (`TrainingBenchTests`) and:
 ///     AGATHON_REALINK_CASES   the corpus's bench cases (a JSON file outside the repo)
 ///     AGATHON_REALINK_ONLY    ids or id prefixes, or tag:<tag>, comma separated (default every case)
-///     AGATHON_REALINK_PACE    real (default: the board's own pauses, capped) | fast (a quick kid)
+///     AGATHON_REALINK_PACE    real (default: the board's own pauses, capped) | fast (a quick kid) | line (a line's
+///                             strokes at once, a line break between: no read of a half-written line)
 @MainActor
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["AGATHON_REALINK"] == "1", "set AGATHON_REALINK=1 (scripts/ios-realink-bench.sh)"), .serialized)
 struct RealInkBenchTests {
@@ -99,6 +100,7 @@ struct RealInkBenchTests {
         let all = try JSONDecoder().decode([Case].self, from: data)
         let picked = Self.pick(all, env["AGATHON_REALINK_ONLY"] ?? "")
         let fast = env["AGATHON_REALINK_PACE"] == "fast"
+        let linePace = env["AGATHON_REALINK_PACE"] == "line"
         let cacheURL = env["AGATHON_BENCH_CACHE"].map { URL(fileURLWithPath: $0) }
         var cache = BenchServices.Cache()
         if let cacheURL, let data = try? Data(contentsOf: cacheURL) { cache = try JSONDecoder().decode(BenchServices.Cache.self, from: data) }
@@ -140,7 +142,7 @@ struct RealInkBenchTests {
                 }
                 let i = next
                 next += 1
-                group.addTask { @MainActor in (i, await Self.run(picked[i], services: services, oracle: mode == .oracle, fast: fast)) }
+                group.addTask { @MainActor in (i, await Self.run(picked[i], services: services, oracle: mode == .oracle, fast: fast, linePace: linePace)) }
             }
             for _ in 0..<parallel { add() }
             while let (i, r) = await group.next() {
@@ -183,7 +185,7 @@ struct RealInkBenchTests {
 
     /// One attempt on its own board and loop: the page (the problem in the tutor's hand, or the kid's
     /// own page), every stroke where the kid put it with the pause before it, then Check.
-    static func run(_ c: Case, services: BenchServices, oracle: Bool, fast: Bool) async -> CaseOutcome? {
+    static func run(_ c: Case, services: BenchServices, oracle: Bool, fast: Bool, linePace: Bool = false) async -> CaseOutcome? {
         let started = Date()
         let boardId = "realink-\(UUID().uuidString.lowercased().prefix(8))"
         let board = TestBoard()
@@ -246,9 +248,12 @@ struct RealInkBenchTests {
         await clock.pass(300)
         let origin = Vec2(ProblemPageLayout.ruleLeft + 16, (workTop ?? ProblemPageLayout.defaultWorkTop) + 14)
         var ids: [[RecordID]] = Array(repeating: [], count: c.lines.count)
+        var lastLine = Int.min
         for s in c.strokes {
             if services.spent { break }
-            let wait = fast ? min(s.dt, 400) + min(s.dur, 300) : s.dt + s.dur
+            // `line`: a line's strokes all at once, a kid's line break between lines (no read mid-line)
+            let wait = linePace ? (s.line != lastLine ? HeadlessBench.lineBreakMs : 0) : fast ? min(s.dt, 400) + min(s.dur, 300) : s.dt + s.dur
+            lastLine = s.line
             if wait > 0 { await clock.pass(wait) }
             let pts = zip(s.x, s.y).map { ProblemPageLayout.place(Vec2(origin.x + $0, origin.y + $1), on: board.screenRect.box) }
             let made = board.kidWrites([pts])
