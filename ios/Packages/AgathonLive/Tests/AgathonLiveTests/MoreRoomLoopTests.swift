@@ -220,6 +220,28 @@ struct MoreRoomLoopTests {
         #expect(h.board.currentScreenID == nextProblem, "past the problem's other page")
     }
 
+    /// Solved on page 1, then a wrong answer on page 2: the answer the kid ended on is ringed, so no
+    /// Next on either page (the blitz's "a ring after the solving line" rule, across the page break).
+    @Test func aRingOnPage2AfterPage1SolvedItTakesNextAway() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        let first = h.board.currentScreenID
+        problemPage(h, ["2x + 3 = 11"])
+        await h.write("x = 4", at: Vec2(200, 600))
+        await h.pass(10_000)
+        #expect(mark(h, "x = 4", on: first) == .tick)
+        #expect(h.loop.pages.solved)
+        _ = await moreRoom(h)
+        #expect(h.loop.pages.solved, "page 1 solved it and nothing since is ringed")
+        await h.write("x = 5", at: Vec2(300, 768))
+        await h.pass(2_500)
+        #expect(mark(h, "x = 5") == .ring)
+        #expect(!h.loop.pages.solved && h.loop.pages.action != .next(last: false))
+        h.board.goToScreen(first)
+        await h.pass(500)
+        #expect(!h.loop.pages.solved, "page 2's ring comes after page 1's answer")
+    }
+
     // MARK: - "I read" and its fixes, across the page break
 
     /// Page 1's last step misread (`746`): page 2's running total goes on from the misread and is ringed.
