@@ -295,6 +295,8 @@ private final class KidSessionRun {
             let y = column.bottom < 0 ? max(start, column.top) : column.bottom + gap
             origin = Vec2(column.x + dx, y)
         }
+        // room over a stacked sum for its carries
+        if marks.contains(where: { if case .cross = $0 { false } else { true } }) { origin.y += 40 }
         origin.x = min(max(40, origin.x), Box.screen.w - 40 - w)
         let box = Box(x: origin.x, y: origin.y, w: w, h: h)
         if spot != .answer || !onProblemPage, spot != .side {
@@ -362,6 +364,8 @@ private final class KidSessionRun {
         let steps = session.pace.steps(page, rng: &rng)
         for (k, pts) in page.enumerated() where pts.count >= 2 {
             if steps[k].pauseMs > 0 && !fast { try? await Task.sleep(for: .milliseconds(Int(steps[k].pauseMs))) }
+            // the pen was up long enough for the tutor to call the work done (the long pause)
+            if lastInkEnd != .distantPast, Date().timeIntervalSince(lastInkEnd) >= PageTiming.checkPauseMs / 1_000 - 0.5 { triggerAt = Date() }
             let view = TrainingBoard.densify(pts).map { canvas.camera.toView($0) }
             let pen = KidPen.profile(count: view.count, rng: &rng)
             let seconds = fast ? max(0.25, steps[k].drawMs / 2_500) : steps[k].drawMs / 1_000 * KidPen.tempo(&rng)
@@ -414,6 +418,7 @@ private final class KidSessionRun {
 
     func newPage() {
         lineOnPage = 0
+        lastInkEnd = .distantPast
         column = (x: 140, bottom: -1, top: -1)
     }
 
