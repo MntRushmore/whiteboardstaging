@@ -143,6 +143,61 @@ function distance(a: readonly string[], b: readonly string[]): number {
 }
 
 /**
+ * How many times a whole-number sum, difference or product makes the student regroup when worked in
+ * columns — carries for `+` and `×` (every partial product's), borrows for `-` — the step a problem's
+ * difficulty turns on at this level: `34 \times 6` carries twice, `81 \times 2` never (the kid
+ * sessions, 2026-10-22: Now you try after 34 × 6 offered 81 × 2). Null for anything else.
+ */
+export function regroupings(lines: readonly string[]): number | null {
+  if (lines.length !== 1) return null;
+  const m = lines[0].replace(/\s+/g, "").match(/^(\d+)(\+|-|\\times|\\cdot|×)(\d+)$/);
+  if (!m) return null;
+  const a = m[1], b = m[3];
+  const digits = (t: string) => [...t].reverse().map(Number);
+  if (m[2] === "+") {
+    const x = digits(a), y = digits(b);
+    let carry = 0, count = 0;
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      carry = (x[i] ?? 0) + (y[i] ?? 0) + carry >= 10 ? 1 : 0;
+      count += carry;
+    }
+    return count;
+  }
+  if (m[2] === "-") {
+    const [hi, lo] = Number(a) >= Number(b) ? [a, b] : [b, a];
+    const x = digits(hi), y = digits(lo);
+    let borrow = 0, count = 0;
+    for (let i = 0; i < x.length; i++) {
+      borrow = x[i] - borrow < (y[i] ?? 0) ? 1 : 0;
+      count += borrow;
+    }
+    return count;
+  }
+  // a product: each of the shorter number's digits times the longer, as the columns are worked
+  const [long, short] = a.length >= b.length ? [a, b] : [b, a];
+  let count = 0;
+  for (const d of digits(short)) {
+    let carry = 0;
+    for (const x of digits(long)) {
+      carry = Math.floor((x * d + carry) / 10);
+      if (carry > 0) count++;
+    }
+  }
+  return count;
+}
+
+/** Candidates whose regrouping is nearest the original's first (stable: the order within is kept). */
+function byRegrouping(original: readonly string[], candidates: readonly PracticeProblem[]): PracticeProblem[] {
+  const want = regroupings(original);
+  if (want === null) return [...candidates];
+  const off = (p: PracticeProblem) => {
+    const got = regroupings(p);
+    return got === null ? 99 : Math.abs(got - want);
+  };
+  return candidates.map((p, i) => ({ p, i, d: off(p) })).sort((x, y) => x.d - y.d || x.i - y.i).map((x) => x.p);
+}
+
+/**
  * Generator problems with the original's skeleton, new numbers, nearest the original's first; then,
  * when there are too few, ones with its loose skeleton (the signs may differ). Forms of the
  * original's own skill come first (`7 + 5` gets another sum to 20, not one to 10 that is also
@@ -154,6 +209,7 @@ function sameFormCandidates(tidied: readonly string[], seed: number): PracticePr
   const original = tidied.join("; ");
   const numbers = freeNumbers(tidied);
   const skill = classifyProblem(tidied);
+  const want0 = regroupings(tidied);
   const r = makeRng(seedFrom(seed, `variant:${original}`));
   const seen = new Set([original]);
   const out: PracticeProblem[] = [];
@@ -174,7 +230,9 @@ function sameFormCandidates(tidied: readonly string[], seed: number): PracticePr
         const text = p.join("; ");
         if (seen.has(text)) continue;
         seen.add(text);
-        mine.push({ p, d: distance(numbers, freeNumbers(p)) });
+        // as hard as the original: its numbers' sizes, and as many carries or borrows
+        const regroup = want0 === null ? 0 : Math.abs((regroupings(p) ?? 99) - want0);
+        mine.push({ p, d: distance(numbers, freeNumbers(p)) + 4 * regroup });
       }
       const other = formSkill === skill ? 0 : 1;
       mine.sort((a, b) => a.d - b.d).forEach((m, rank) => found.push({ ...m, rank, other }));
@@ -499,7 +557,7 @@ export function findVariant(engine: LiveEngine, problem: readonly string[], seed
     // 2. its own numbers nudged
     if (was && !trigEquation) {
       trace("nudged");
-      const nudged = tryAll(nudgedCandidates(tidied, seed), { solves: VARIANT_LIMITS.nudgedSolves, checks: VARIANT_LIMITS.nudgedChecks });
+      const nudged = tryAll(byRegrouping(tidied, nudgedCandidates(tidied, seed)), { solves: VARIANT_LIMITS.nudgedSolves, checks: VARIANT_LIMITS.nudgedChecks });
       if (nudged) return nudged;
     }
   }
