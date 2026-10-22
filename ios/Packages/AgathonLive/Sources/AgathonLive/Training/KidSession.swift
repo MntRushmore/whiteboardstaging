@@ -282,7 +282,7 @@ public enum KidSessions {
             .done(wait: 16),
             .shot("checked"),
         ]),
-        KidSession("s04-slip-help", "34 × 6: a slip, a ring, Help me, the fix, then Now you try", grade: 3, hand: .steep, mess: .little, budget: 30, [
+        KidSession("s04-slip-help", "34 × 6: a slip, a ring and its hint, Got it, the fix, then Now you try", grade: 3, hand: .steep, mess: .little, budget: 30, [
             .tutorProblem(["34 \\times 6"]),
             .line(L("30 \\times 6 = 180", .calm), .below),
             .line(L("4 \\times 6 = 24", .calm), .below),
@@ -290,7 +290,7 @@ public enum KidSessions {
             .tap(.check),
             .done(wait: 14),
             .shot("ringed"),
-            .tap(.helpMe),
+            // the ring comes with its hint card (Help me after it would be the next level of help)
             .expect(.hint),
             .shot("hint"),
             .tap(.gotIt),

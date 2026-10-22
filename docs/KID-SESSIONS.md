@@ -17,7 +17,7 @@ scoreboard's), moved by `KidMess`. The repo is public: never put a real user's i
 | s01-carry | 2 | 47 + 38 stacked | a carry over the tens, big hand, slow |
 | s02-borrow | 2 | 52 − 27 stacked | the 5 crossed out, a 4 over it, a 1 before the 2 |
 | s03-wander | 3 | 23 × 4 split up | lines wander right and grow, the answer off to the side |
-| s04-slip-help | 3 | 34 × 6 | a slip → ring → Help me → Got it → crossed out, fixed → Now you try one → its problem solved |
+| s04-slip-help | 3 | 34 × 6 | a slip → ring and its hint → Got it → crossed out, fixed → Now you try one → its problem solved |
 | s05-long-division | 4 | 156 ÷ 12 in chunks | tilt and slope |
 | s06-side-by-side | 4 | two problems side by side | → New page for this one |
 | s07-fractions | 5 | ½ + ⅓ | a leaning, sloping hand |
