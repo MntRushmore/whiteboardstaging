@@ -25,7 +25,7 @@
 import { all, create, version as mathjsVersion } from "mathjs";
 import type { TLShapeId } from "tldraw";
 import { createEngine } from "@/lib/live/engine";
-import { bracketLine, isArithmetic, isStackRead, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "@/lib/live/engine/columnWork";
+import { arithmeticOf, bracketLine, isArithmetic, isStackRead, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "@/lib/live/engine/columnWork";
 import { parseStacked, rowPlaces, stackedAnalysis, workStacked } from "@/lib/live/engine/columnArithmetic";
 import { answerAfterRestatedEnd, inkLeadsWithMinus, leadingSigns, readVariants, readYoungHand, rightAnswerTo } from "@/lib/live/youngHand";
 import type { AnalyzeContext, GraphForOptions, HelpMode, InkLine, InkStroke, LineAnalysis, LiveEngine, Rect } from "@/lib/live/contracts";
@@ -191,7 +191,7 @@ export function judgeLineOf(args: JudgeLineArgs): LineAnalysis {
   need(typeof args.latex === "string", "latex is a string");
   const ctx: AnalyzeContext = { ...args.context, mode: (args.context?.mode ?? "feedback") as HelpMode };
   const problem = Array.isArray(args.problem) ? args.problem.filter((l) => typeof l === "string" && l.trim().length > 0) : [];
-  const arithmetic = problem.length > 0 && problem.every(isArithmetic) ? problem : null;
+  const arithmetic = arithmeticOf(problem);
   const above = Array.isArray(args.above) ? args.above.filter((l) => typeof l === "string") : [];
   const beside = args.beside && arithmetic && arithmetic.length === 1 ? answerAfterRestatedEnd(args.latex, arithmetic[0]) : null;
   return judgeLine(engine(), args.latex, { ctx, arithmetic, above, slip: args.slip, beside });
