@@ -302,10 +302,12 @@ describe("live loop — the second reader", () => {
     const step = await write(writeLine("x=4", 100, 300, 40));
     await drain();
 
-    // both lines read again, each on its own: no column for the model to make the step follow
+    // both lines read again, each on its own: no column for the model to make the step follow — and
+    // the line above, a sure read changed, looked at once more (`chainGuard.ts`: two looks must agree)
     expect(rereadBodies).toEqual([
       expect.objectContaining({ lineId: top, latex: "3(x-2)=17", above: [], below: [] }),
       expect.objectContaining({ lineId: step, latex: "3x-6=12", above: [], below: [] }),
+      expect.objectContaining({ lineId: top, latex: "3(x-2)=17", above: [], below: [] }),
     ]);
     expect(lineOf(top)).toMatchObject({ latex: "3(x-2)=12", provider: "reread" });
     expect(liveDebugStore.get()[top].reread).toMatchObject({ signal: "chain", accepted: true });

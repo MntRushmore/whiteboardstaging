@@ -12,11 +12,20 @@ import Foundation
 ///    ring waits for them (at most `chainHoldMs`). The second look can take a ring back, never move
 ///    one: a re-read is taken only when it is a near transcription (two characters at most) AND it
 ///    makes the step follow. Once per pair of inks; never offline.
+///
+///    And it can never take back a real slip's ring (a kid session, 2026-10-22: `180+24=214`, read at
+///    1.00, ringed, then re-read `180+34=214` — true — and the ring came off, the hint stayed):
+///    a re-read never changes a number the page already knows (any of the problem's; the line above's
+///    of two digits or more, `keepsKnownNumbers`), a sure read (`sureRead`) is changed only when two re-reads say the same
+///    (the routes give no per-character confidence: two agreeing looks stand in for it), and a ring
+///    taken back takes its hint card, its queued step and the step it wrote with it (`ringWithdrawn`).
 extension LiveLoop {
     /// how long a ring waits for its second look, at most (the web's `LIVE_TIMING.chainHoldMs`)
     static let chainHoldMs = 4_000.0
     /// a chain re-read may change this many characters of Mathpix's read, no more (`CHAIN_MAX_EDIT`)
     static let chainMaxEdit = 2
+    /// a first read this sure is changed by the second look only when two re-reads agree
+    static let sureRead = 0.95
 
     // MARK: - crossed out
 
@@ -66,22 +75,36 @@ extension LiveLoop {
         track { [weak self] in
             guard let self else { return }
             var reads: [(id: String, hash: String, mathpix: String, confidence: Double, latex: String?)] = []
-            await withTaskGroup(of: (Int, String?).self) { group in
+            await withTaskGroup(of: (Int, String?, Bool).self) { group in
                 for (k, s) in due.enumerated() {
                     guard let crop = self.crop(s.id) else { continue }
                     let request = RereadRequest(boardId: self.boardId, lineId: s.id, crop: crop, latex: s.latex, above: [], below: [])
                     let services = self.services
-                    group.addTask { (k, try? await services.reread(request).latex) }
+                    let sure = s.confidence >= Self.sureRead
+                    group.addTask {
+                        let first = try? await services.reread(request).latex
+                        // a sure read is changed only when a second look says the same
+                        guard sure, let first, first != request.latex else { return (k, first, true) }
+                        let second = try? await services.reread(request).latex
+                        return (k, first, second == first)
+                    }
                 }
-                for await (k, latex) in group {
+                for await (k, latex, agreed) in group {
                     let s = due[k]
                     self.count("reread")
                     self.rereads[s.ink.hash] = .some(nil)
-                    guard let latex else { continue }
+                    guard let latex, agreed else { continue }
                     let others = self.columnLines(s.column).filter { $0.id != s.id && !$0.latex.isEmpty }.map(\.latex)
+                    // the numbers the page already knows: all of the problem's, and (for the step) the line
+                    // above's of two digits or more (a lone digit turns up there by chance)
+                    var known = self.head(for: s.column)?.lines ?? []
+                    if s.id == lineId, let above = self.lines[aboveId] {
+                        known += Self.numbers(in: above.latex).filter { $0.replacingOccurrences(of: ".", with: "").count >= 2 }
+                    }
                     var taken: String?
                     if let c = ReadCheck.candidate(mathpix: s.latex, reread: latex, others: others),
-                       ReadCheck.distance(c, s.latex) <= Self.chainMaxEdit, await self.engineReads(c) { taken = c }
+                       ReadCheck.distance(c, s.latex) <= Self.chainMaxEdit, Self.keepsKnownNumbers(mathpix: s.latex, reread: c, known: known),
+                       await self.engineReads(c) { taken = c }
                     reads.append((s.id, s.ink.hash, s.latex, s.confidence, taken))
                 }
             }
@@ -97,6 +120,43 @@ extension LiveLoop {
             for id in ids where self.lines[id] == nil || self.lines[id]?.ink.hash == hashes[id] { self.reading.remove(id) }
             self.releaseRing(lineId, key)
         }
+    }
+
+    /// Does a re-read keep every number of Mathpix's read that the page already knows (`known`: the
+    /// problem's lines, the line above)? A number the kid copied from the problem, read as such at
+    /// first, is the problem's number — a "fix" that changes it makes a slip look right.
+    static func keepsKnownNumbers(mathpix: String, reread: String, known: [String]) -> Bool {
+        var left = numbers(in: reread)
+        let changed = numbers(in: mathpix).filter { n in
+            guard let i = left.firstIndex(of: n) else { return true }
+            left.remove(at: i)
+            return false
+        }
+        let knownNumbers = Set(known.flatMap { numbers(in: $0) })
+        return !changed.contains { knownNumbers.contains($0) }
+    }
+
+    static func numbers(in latex: String) -> [String] {
+        guard let re = try? NSRegularExpression(pattern: #"\d+(?:\.\d+)?"#) else { return [] }
+        let ns = latex as NSString
+        return re.matches(in: latex, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range) }
+    }
+
+    /// A ring came off (a second look, a fix, a new read): what it brought goes with it — its hint card,
+    /// a step queued or being written beside it, and a step already written for the old reading.
+    func ringWithdrawn(_ id: String) {
+        hints.removeAll { $0.lineId == id }
+        pendingSuggestions.remove(id)
+        rt[id]?.stepPen?.cancel()
+        rt[id]?.stepPen = nil
+        rt[id]?.stepFor = nil
+        let screen = board.currentScreenID
+        let current = lines[id]?.latex
+        let written = board.store.liveRecords(on: screen, lineId: id).filter { r in
+            let step = r.meta.string(LiveMeta.suggestFor)
+            return !step.isEmpty && step != current
+        }.map(\.id)
+        if !written.isEmpty { board.store.remove(written, origin: .tutor) }
     }
 
     /// The fewest of the second look's reads that make the step follow from the line above — one of
