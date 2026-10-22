@@ -91,6 +91,45 @@ used on that day (the day is in the user's time zone, sent by the client as `tz`
   today. Otherwise the call returns the usual out-of-ink style refusal. Ordinary boards keep their
   current rules.
 
+#### Route details (bank lane, 2026-10-22; additive to the contract above)
+
+- **`sat_question_id` on the live routes.** Put it at the top level of the JSON body of
+  `POST /api/live/recognize`, `/reread`, `/setup`, `/check`, `/solve`, `/ask`, `/chat` and `/proof`
+  (the other fields are unchanged). It must be a bank id (`<domain>-<skill-slug>-<nnnn>`): anything
+  else is a `400 invalid_request`; absent or `null` is an ordinary board. With it:
+  - Unlimited: charged exactly as on any board (no ink, the fair-use count).
+  - No Unlimited, and a pass for that question today: the call goes through and spends **no ink**
+    (a free student with no ink at all is not refused).
+  - No Unlimited and no pass: `402 ink_empty`, the same body as out of ink (`remaining`, `cost`,
+    `buyUrl`) plus `reason: "sat_tutor"` and `sat: "no_pass" | "pass_used_up"`.
+  - "Today" for a live call is any pass day that is today somewhere on Earth (UTC-12..UTC+14),
+    because the live calls send no `tz`.
+  - One pass lets through at most 200 ink-priced units of live calls (recognize 1, check 3, solve
+    10, ...), far more than one question needs, so a pass can't become a free day of tutoring on other
+    boards. Past it the call gets the 402 with `sat: "pass_used_up"`.
+- **`POST /api/sat/attempts`** answers `{ok: true, correct}`: the server decides `correct` from the
+  bank's answer (an mcq key, or a grid-in in any accepted form or an equal value like `6/8` for
+  `3/4`) and stores that, whatever the app sent. `404 not_found` for a question that isn't live.
+- **`POST /api/sat/tutor`**: `tz` must be an IANA zone (`400` otherwise); `404` for a question that
+  isn't live; Unlimited is always allowed and its pass is still recorded (so `used_today` counts it).
+- **`GET /api/sat/progress`**: `tz` defaults to UTC. `estimate` is `{low, high, note}` or null;
+  `note` is the honest label to show with it ("A rough estimate from practice questions, not an SAT
+  score."). The model (src/lib/sat/estimate.ts): each answer is a Rasch item with difficulty 1/2/3 at
+  -1/0/+1 logits; ability is the MAP estimate under a standard normal prior from the newest 120
+  answers; centre 500 + 120·θ, half-width 120·SE + 20, rounded out to tens, kept in 200..800. With 15
+  answers the band is about 150 wide, about 90 at 120 answers. `streak_days` counts days in a row with
+  an answer, ending today (or yesterday, when nothing is answered yet today).
+- **`GET /api/sat/next`**: `difficulty` is 1, 2 or 3; `skill` is a skill name exactly as in the
+  table (URL-encoded). Errors are `400` (bad query) and `502` (the bank couldn't be read).
+- Every SAT route is no-store and carries `X-Request-Id`. Rate limits per user: next/progress 60 a
+  minute, attempts 60, tutor 30.
+- **Figures, exactly.** Only the keys shown below exist. A plot `function`'s `expr` uses numbers, `x`,
+  `+ - * /`, parentheses and `**` for powers (never `^`, never a unary minus right before `**`: the
+  bank writes `9-(x-1)**2`). `arc_angle`'s `from`/`to` are the directions of its two rays, in degrees
+  counter-clockwise from +x, swept from `from` to `to`. Labels may hold inline `$…$` LaTeX.
+- The sample: `docs/sat/sample-20.json` (20 hand-checked questions, both formats, all four domains,
+  every figure kind and item).
+
 ### Figures (`figure` jsonb, drawn natively by the iPad with Canvas, never an image)
 
 ```jsonc
