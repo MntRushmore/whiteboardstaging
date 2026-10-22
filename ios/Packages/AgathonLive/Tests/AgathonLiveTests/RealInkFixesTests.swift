@@ -17,6 +17,34 @@ struct RealInkFixesTests {
             + (r.why.map { " — \($0.text)" } ?? "")
     }
 
+    /// A fixture written in the synthetic clean hand (`StudentHand`, which writes any LaTeX), its reads
+    /// recorded as `TrainingFixtureTests.syntheticFixture` records them: each line read as `reads[k]`
+    /// (the read production gave for the real ink) or as written.
+    static func fixture(problem: [String]?, lines: [(String, TrainingExpect, TrainingPlace)], reads: [String?] = [],
+                        solved: Bool?) async throws -> TrainingFixture {
+        try await TestBrain.shared.load()
+        var flines: [TrainingFixture.Line] = []
+        var y = 268.0
+        for (k, (latex, expect, place)) in lines.enumerated() {
+            let ink = try #require(try await StudentHand.ink(latex, hand: .clean, brain: TestBrain.shared), "the hand can't write \(latex)")
+            let at = place == .answer ? Vec2(300, 768) : Vec2(160, y)
+            y += 90
+            let read = k < reads.count ? (reads[k] ?? latex) : latex
+            flines.append(TrainingFixture.Line(written: latex, expect: expect, value: nil, place: place,
+                                               strokes: ink.map { s in TrainingStroke(x: s.map { $0.x + at.x }, y: s.map { $0.y + at.y }) },
+                                               read: read, mark: .none))
+        }
+        let r = TrainingCaseResult(kind: .bench, caseKey: "real-ink", category: .multiStep, grade: .g78, topic: "algebra", hand: "clean",
+                                   problem: problem ?? [], spec: nil, lines: [], strokes: [], solvedExpected: solved, solvedGot: false, pass: nil)
+        var f = TrainingFixture(r, settings: .init())
+        f.lines = flines
+        f.status = "fixed"
+        let labeling = LabelingServices()
+        _ = await TrainingFixtureTests.replay(f, labeling: labeling)
+        f.reads = labeling.recorded
+        return f
+    }
+
     // MARK: - a child's mark is no line to ask about
 
     @Test func aMarkWithNoDigitAndNoLetterGetsNoQuestion() {
@@ -34,14 +62,14 @@ struct RealInkFixesTests {
     // MARK: - the answer without its letter
 
     @Test func aLoneRightNumberUnderAnEquationIsTheAnswer() async throws {
-        let f = try await TrainingFixtureTests.syntheticFixture(problem: ["\\frac{x}{2} - 5 = 1"], lines: [("12", .tick, .answer)], solved: true)
+        let f = try await Self.fixture(problem: ["\\frac{x}{2} - 5 = 1"], lines: [("12", .tick, .answer)], solved: true)
         let r = await TrainingFixtureTests.replay(f)
         #expect(r.pass == true, "\(Self.describe(r))")
     }
 
     @Test func aLoneWrongNumberIsNeverRinged() async throws {
         // it may be a side sum: no ring (a "?" or nothing), and the page not solved
-        let f = try await TrainingFixtureTests.syntheticFixture(problem: ["2x + 3 = 11"], lines: [("8", .calm, .work)], solved: false)
+        let f = try await Self.fixture(problem: ["2x + 3 = 11"], lines: [("8", .calm, .work)], solved: false)
         let r = await TrainingFixtureTests.replay(f)
         #expect(!r.lines.contains { $0.mark == .ring }, "\(Self.describe(r))")
     }
@@ -50,17 +78,17 @@ struct RealInkFixesTests {
 
     @Test func notesReadIntoTheLineAreNotJudged() async throws {
         // production read "×4  ×4" written beside x/4 = 3 into the line: both right lines were ringed
-        let f = try await TrainingFixtureTests.syntheticFixture(problem: ["\\frac{x}{4} - 4 = -1"],
-                                                                lines: [("\\frac{x}{4} = 3 \\quad \\times 4", .calm, .work), ("x = 12", .tick, .answer)],
-                                                                solved: true)
+        let f = try await Self.fixture(problem: ["\\frac{x}{4} - 4 = -1"],
+                                       lines: [("\\frac{x}{4} = 3 \\quad \\times 4", .calm, .work), ("x = 12", .tick, .answer)],
+                                       reads: ["\\frac{x}{4}=3 \\quad \\times 4", "x=12"], solved: true)
         let r = await TrainingFixtureTests.replay(f)
         #expect(!r.lines.contains { $0.mark == .ring }, "\(Self.describe(r))")
         #expect(r.pass == true, "\(Self.describe(r))")
     }
 
     @Test func notesNeverHideASlip() async throws {
-        let f = try await TrainingFixtureTests.syntheticFixture(problem: ["\\frac{x}{4} - 4 = -1"],
-                                                                lines: [("\\frac{x}{4} = 5 \\quad \\times 4", .ring, .work)], solved: false)
+        let f = try await Self.fixture(problem: ["\\frac{x}{4} - 4 = -1"],
+                                       lines: [("\\frac{x}{4} = 5 \\quad \\times 4", .ring, .work)], solved: false)
         let r = await TrainingFixtureTests.replay(f)
         #expect(r.lines.first?.mark == .ring, "\(Self.describe(r))")
     }

@@ -138,11 +138,16 @@ describe("judgeTryLine, line by line", () => {
     expect(judgeTryLine(engine, g68, ["2x = 22"], "x = 6").verdict).toBe("solved");
   }, 20_000);
 
-  it("leaves half a step and a lone number under algebra unjudged", () => {
+  it("leaves half a step and a lone wrong number under algebra unjudged", () => {
     expect(judgeTryLine(engine, p("g68-3"), [], "2x =").verdict).toBe("unjudged");
     expect(judgeTryLine(engine, p("g68-3"), [], "2x").verdict).toBe("unjudged");
     expect(judgeTryLine(engine, p("k2-0"), [], "3 +").verdict).toBe("unjudged");
-    expect(judgeTryLine(engine, p("g68-0"), [], "8").verdict).toBe("unjudged");
+    // a lone wrong number may be a side sum: never a slip (x + 7 = 15)
+    expect(judgeTryLine(engine, p("g68-0"), [], "9").verdict).toBe("unjudged");
+  }, 20_000);
+
+  it("takes a lone right number under algebra as the answer: children write 8, not x = 8 (the real-ink bench)", () => {
+    expect(judgeTryLine(engine, p("g68-0"), [], "8").verdict).toBe("solved");
   }, 20_000);
 });
 
