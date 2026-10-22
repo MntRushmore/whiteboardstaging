@@ -136,6 +136,21 @@ the brain changes (no `brain.js` rebuild), and the strokes still carry `chatProb
 every page, which is what Ask's picture of that page says too). A problem the desk refuses gets no page
 ("Problem 2 of 4"); at the 50-page cap the rest are left out, as the desk says today.
 
+**Word problems (2026-10-22).** The desk writes maths only (`verifyProblem`'s `words`), so a problem in
+sentences ("Sam has 3 bags of 4 apples. How many apples?") used to get no page at all — the Training
+Center's 30 word-problem pages never started. Real kids did not hit it: the chat route repairs or drops
+a word problem before it reaches the board, and practice sets are generated as maths. Now the writer
+gives a word problem the desk refused its page too (`WordProblem`, AgathonLive): its sentences as plain
+words (`\text{}` unwrapped, `\frac{3}{4}` as 3/4, `\times` as ×; a command it has no words for keeps
+the problem out, so nothing ever shows as LaTeX), written in the tutor's hand at the problem origin by
+the brain's `layoutWords` (`planWords`: the hand's `composeHandwriting`, wrapped at the rules' width,
+48 down to 28, a word gap that grows with the hand), the work area under them. The words carry
+`wordProblem: true` and no `chatProblem`: they head no column. The kid's first line under them
+(`3 \times 4 = 12`) is the problem their work is judged against, as on a page of their own homework,
+so a slip in the sums is still ringed; whether the set-up matches the words is theirs. With the hand
+off the sentences are typeset as `\text{}` rows of at most 48 characters. The web writes no word
+problems, so nothing changes there; `layoutWords` is new in the brain and nothing on the web calls it.
+
 ## One page, one problem (AgathonLive)
 
 **The page's problem heads every column on the page.** `anchorAtProblems` today homes a line to the
