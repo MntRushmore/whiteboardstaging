@@ -16,6 +16,10 @@ import os
 /// strokes still carry `chatProblem` (Ask's `help_problem`, the learning record's chat cells and the
 /// loop's problem records keep working), its `cell` the whole page.
 ///
+/// A word problem (the desk refuses sentences: it writes maths only) gets its page too, its words at
+/// the top in the tutor's hand (`WordProblem`), heading no column: the kid's first line under them
+/// is the problem their work is judged against.
+///
 /// The first page is written by hand, as the kid watches; the others are put on their pages at once
 /// (`InstantPen`), so the board does not flip through the set.
 @MainActor
@@ -74,6 +78,8 @@ public final class ProblemPageWriter {
         for problem in request.problems {
             switch await verify(problem) {
             case .ok(let lines, let meta): kept.append((lines, meta))
+            case .refused where WordProblem.sentences(problem) != nil:
+                kept.append((WordProblem.sentences(problem) ?? [], [WordProblem.meta: true]))
             case .refused(let note):
                 report.dropped += 1
                 if let note, !report.notes.contains(note) { report.notes.append(note) }
@@ -83,7 +89,8 @@ public final class ProblemPageWriter {
         // 2. each laid out at the page's problem origin
         var planned: [(plan: HandPlan?, lines: [String], meta: Meta)] = []
         for (i, k) in kept.enumerated() {
-            let plan = await layout(k.lines, seedKey: "page:\(request.setId):\(i + 1):\(k.lines.joined(separator: ";"))")
+            let seedKey = "page:\(request.setId):\(i + 1):\(k.lines.joined(separator: ";"))"
+            let plan = Self.isWords(k.meta) ? await WordProblem.plan(k.lines, brain: driver.brain, seedKey: seedKey) : await layout(k.lines, seedKey: seedKey)
             if plan == nil && driver.handwriting() {
                 // the hand cannot write it at any size here (the desk could at its own): left out
                 report.dropped += 1
@@ -190,10 +197,17 @@ public final class ProblemPageWriter {
         return nil
     }
 
+    static func isWords(_ meta: Meta) -> Bool { meta[WordProblem.meta]?.boolValue == true }
+
     /// The meta on the problem's strokes: the desk's, its cell the whole page, the number 1 (the only
-    /// problem on its page).
+    /// problem on its page). A word problem's words carry no `chatProblem`: they head no column.
     static func pageMeta(_ meta: Meta, lines: [String]) -> Meta {
         var m = meta
+        if isWords(meta) {
+            m["live"] = true
+            m["source"] = "ai"
+            return m
+        }
         let c = pageCell
         m["chatProblem"] = .object(["n": .number(1), "lines": .array(lines.map { .string($0) }),
                                     "cell": .object(["x": .number(c.x), "y": .number(c.y), "w": .number(c.w), "h": .number(c.h)])])
@@ -219,6 +233,21 @@ public final class ProblemPageWriter {
         await driver.write(plan, meta: Self.pageMeta(p.meta, lines: p.lines))
     }
 
+    /// A sentence in rows of at most `max` characters, broken between words.
+    static func rows(_ sentence: String, max: Int) -> [String] {
+        var out: [String] = []
+        var row = ""
+        for word in sentence.split(separator: " ") {
+            if !row.isEmpty && row.count + 1 + word.count > max {
+                out.append(row)
+                row = ""
+            }
+            row += row.isEmpty ? String(word) : " \(word)"
+        }
+        if !row.isEmpty { out.append(row) }
+        return out
+    }
+
     /// The hand off: the problem's lines as typeset maths at the problem origin.
     func typeset(_ lines: [String], on page: RecordID, meta: Meta) {
         var m = meta
@@ -226,6 +255,8 @@ public final class ProblemPageWriter {
         m["source"] = "ai"
         m["createdAt"] = .number((Date().timeIntervalSince1970 * 1000).rounded())
         let o = ProblemPageLayout.problemOrigin
+        // a word problem's sentences, typeset as words, a short row each so they stay on the page
+        let lines = Self.isWords(meta) ? lines.flatMap { Self.rows($0, max: 48) }.map { "\\text{\($0)}" } : lines
         board.store.transact(.tutor) { tx in
             var order = board.store.nextOrder(on: page)
             for (i, latex) in lines.enumerated() {
