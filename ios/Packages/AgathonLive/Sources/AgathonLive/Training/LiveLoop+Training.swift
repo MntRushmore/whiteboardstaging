@@ -53,6 +53,11 @@ extension LiveLoop {
         return obs
     }
 
+    /// The line is a stacked sum (one line by design: its rows are no merge).
+    public func trainingStacked(_ lineId: String) -> Bool {
+        lines[lineId].map(stackLike) ?? false
+    }
+
     /// The tutor's mark on one of its lines (the page on show).
     public func trainingMark(on lineId: String) -> TrainingMark {
         let target = RecordID("line:\(lineId)")
