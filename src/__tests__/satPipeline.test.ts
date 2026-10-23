@@ -151,7 +151,14 @@ describe("reading the models", () => {
 });
 
 describe("the upsert", () => {
-  const row = (q: SatQuestion, version = 1, status = q.status) => ({ id: q.id, domain: q.domain, skill: q.skill, difficulty: q.difficulty, format: q.format, stem: q.stem, figure: q.figure, choices: q.choices, answer: q.answer, solution: q.solution, status, version });
+  const row = (q: SatQuestion, version = 1, status = q.status) => ({ id: q.id, domain: q.domain, skill: q.skill, difficulty: q.difficulty, format: q.format, stem: q.stem, figure: q.figure, choices: q.choices, answer: q.answer, solution: q.solution, nudge: q.nudge ?? null, common_wrong: q.common_wrong ?? null, status, version });
+  // a sample as v1 had it, without the v2 notes
+  const v1 = (q: SatQuestion): SatQuestion => {
+    const { nudge, common_wrong, ...rest } = q;
+    void nudge;
+    void common_wrong;
+    return { ...rest, choices: q.choices ? q.choices.map(({ key, text }) => ({ key, text })) : null, solution: { steps: q.solution.steps, desmos_tip: q.solution.desmos_tip } };
+  };
   it("writes new rows, skips unchanged ones, bumps the version only on a content change, retires the missing", () => {
     const [a, b, c] = SAMPLE;
     const changed = { ...b, stem: `${b.stem} ` };
@@ -162,14 +169,14 @@ describe("the upsert", () => {
     // a status change alone writes the row with the same version
     expect(planUpsert([{ ...a, status: "draft" }], [row(a, 3)]).upsert).toEqual([expect.objectContaining({ id: a.id, version: 3, status: "draft" })]);
     // key order inside jsonb does not count as a change
-    expect(contentHash(row(a))).toBe(contentHash({ ...row(a), solution: { desmos_tip: a.solution.desmos_tip, steps: a.solution.steps } }));
+    expect(contentHash(row(a))).toBe(contentHash({ ...row(a), solution: { desmos_steps: a.solution.desmos_steps, desmos_tip: a.solution.desmos_tip, steps: a.solution.steps } }));
   });
   it("loads a live row that fails a check as draft", () => {
     const bad = { ...SAMPLE[0], stem: "Costs $5 a day" };
     expect(planUpsert([bad], []).demoted).toEqual([bad.id]);
   });
   it("v2 notes: written as columns (null when absent, so a removed note is cleared), a failing note left out with the question kept live, a note change is a new version", () => {
-    const a = SAMPLE[0];
+    const a = v1(SAMPLE[0]);
     const withNudge = { ...a, nudge: "What could you do to both sides first?" };
     const plan = planUpsert([withNudge], [row(a, 2)]);
     expect(plan.upsert).toEqual([expect.objectContaining({ id: a.id, nudge: withNudge.nudge, common_wrong: null, version: 3, status: "live" })]);
@@ -181,7 +188,7 @@ describe("the upsert", () => {
     expect(leaky.upsert[0]).toMatchObject({ status: "live", nudge: null });
     expect(leaky.droppedNotes).toEqual({ [a.id]: ["nudge"] });
     expect(leaky.demoted).toEqual([]);
-    const sql = bankSql([withNudge, SAMPLE[1]]);
+    const sql = bankSql([withNudge, v1(SAMPLE[1])]);
     expect(sql).toContain("'What could you do to both sides first?'");
     expect(sql).toContain("nudge = excluded.nudge, common_wrong = excluded.common_wrong");
     expect(sql).toContain("null, null::jsonb, 'live'");
