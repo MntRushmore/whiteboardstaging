@@ -64,6 +64,15 @@ type Upstream = { url: string; body: Record<string, unknown>; signal: AbortSigna
 let upstream: Upstream[] = [];
 /** OpenRouter's replies, in order: a JSON body, or a function of the request (for the abort test). */
 let replies: Array<Record<string, unknown> | ((signal: AbortSignal | null) => Promise<Response>)> = [];
+/**
+ * The fast tutor (asked alongside the main one, used when the main one is late or fails) has its
+ * own queue and is NOT recorded in `upstream`. Unqueued, it never answers until it is stopped, so
+ * the main tutor's answer is the one used, as when it answers inside TUTOR_PREFER_MS.
+ */
+let fastReplies: Array<Record<string, unknown> | ((signal: AbortSignal | null) => Promise<Response>)> = [];
+let fastAsked = 0;
+const neverAnswers = (signal: AbortSignal | null) =>
+  new Promise<Response>((_, reject) => signal?.addEventListener("abort", () => reject(signal.reason ?? new DOMException("aborted", "AbortError")), { once: true }));
 
 const tutorReply = (needsHelp: boolean, instructions = INSTRUCTIONS) => ({
   choices: [{ message: { role: "assistant", content: JSON.stringify({ needsHelp, instructions: needsHelp ? instructions : "" }) } }],
@@ -111,6 +120,8 @@ beforeEach(async () => {
   PAINTED ||= await pngUrl(W, H, KID + CIRCLE);
   upstream = [];
   replies = [];
+  fastReplies = [];
+  fastAsked = 0;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -118,6 +129,12 @@ beforeEach(async () => {
       if (url.includes("/rest/v1/admins")) return Response.json(url.includes(fake.ADMIN_ID) ? [{ user_id: fake.ADMIN_ID }] : []);
       if (url === "https://openrouter.ai/api/v1/chat/completions") {
         const signal = init?.signal ?? null;
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (body.model === BOARD_DRAW_MODELS.tutorFast) {
+          fastAsked++;
+          const fastNext = fastReplies.shift() ?? neverAnswers;
+          return typeof fastNext === "function" ? fastNext(signal) : Response.json(fastNext);
+        }
         upstream.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown>, signal });
         const next = replies.shift();
         if (!next) throw new Error("no OpenRouter reply queued");
@@ -233,6 +250,34 @@ describe("POST /api/board/draw: a run", () => {
     expect(drawEvents()[0].meta).toMatchObject({ needsHelp: false, result: "none" });
   });
 
+  it("asks the fast tutor alongside, and paints its instructions when the main tutor fails", async () => {
+    const FAST = "Arrow to the 25 from the right: what is 20 - 5?";
+    replies = [{ error: { code: 502, message: "busy" } }, painterReply(PAINTED)];
+    fastReplies = [tutorReply(true, FAST)];
+    const ev = await lines(await draw(post("/api/board/draw", RUN())));
+    expect(fastAsked).toBe(1);
+    expect(ev.map((e) => e.type)).toEqual(["status", "status", "done"]);
+    expect(ev[1]).toEqual({ type: "status", stage: "drawing", instructions: FAST });
+    expect(drawEvents()[0].meta).toMatchObject({ result: "done", tutorModel: BOARD_DRAW_MODELS.tutorFast });
+  });
+
+  it("paints the fast tutor's instructions when the main tutor is late, and stops the main one", async () => {
+    const FAST = "Write ÷2 to the right of 2x = 12.";
+    replies = [
+      (signal) =>
+        new Promise<Response>((resolve, reject) => {
+          const t = setTimeout(() => resolve(Response.json(tutorReply(true))), 8_000);
+          signal?.addEventListener("abort", () => (clearTimeout(t), reject(new DOMException("aborted", "AbortError"))), { once: true });
+        }),
+      painterReply(PAINTED),
+    ];
+    fastReplies = [tutorReply(true, FAST)];
+    const ev = await lines(await draw(post("/api/board/draw", RUN())));
+    expect(ev[1]).toEqual({ type: "status", stage: "drawing", instructions: FAST });
+    expect(upstream[0].signal?.aborted).toBe(true);
+    expect(drawEvents()[0].meta).toMatchObject({ tutorModel: BOARD_DRAW_MODELS.tutorFast });
+  }, 15_000);
+
   it("a voice request paints even when the tutor sees no need (Reed's prompt alone)", async () => {
     replies = [tutorReply(false), painterReply(PAINTED)];
     const ev = await lines(await draw(post("/api/board/draw", { ...RUN(), source: "voice" })));
@@ -262,6 +307,7 @@ describe("POST /api/board/draw: a run", () => {
 
   it("an upstream failure is an error line: 5xx retryable, 4xx not", async () => {
     replies = [() => Promise.resolve(Response.json({ error: { message: "overloaded" } }, { status: 503 }))];
+    fastReplies = [() => Promise.resolve(Response.json({ error: { message: "overloaded" } }, { status: 503 }))]; // both tutors down
     let ev = await lines(await draw(post("/api/board/draw", RUN())));
     expect(ev.at(-1)).toMatchObject({ type: "error", retryable: true });
     replies = [tutorReply(true), () => Promise.resolve(Response.json({ error: { message: "bad image" } }, { status: 400 }))];

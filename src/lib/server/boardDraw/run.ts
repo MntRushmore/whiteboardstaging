@@ -19,6 +19,7 @@ import {
   BOARD_DRAW_MODELS,
   MAX_INSTRUCTIONS,
   PAINTER_TIMEOUT_MS,
+  TUTOR_PREFER_MS,
   TUTOR_TIMEOUT_MS,
   type BoardDrawEvent,
   type BoardDrawMode,
@@ -26,7 +27,7 @@ import {
   type BoardDrawTimings,
 } from "./contracts";
 import { dataUrlBytes, dataUrlPng, decodeRgb, encodeRgbaPng, encodeRgbPng, overlayOf, pictureAt, type Rgb } from "./overlay";
-import { parseTutorReply, tutorMessages } from "./prompts";
+import { parseTutorReply, tutorMessages, type TutorDecision } from "./prompts";
 import { pictureUrlOf, reedChatBody, reedPrompt } from "./reed";
 import { revealStrokes } from "./strokes";
 
@@ -49,6 +50,8 @@ export type RunSummary = {
   /** null when the tutor was skipped (the client sent instructions) or never answered */
   needsHelp: boolean | null;
   tutorSkipped: boolean;
+  /** which tutor's instructions were used (the slower, better one or the fast one) */
+  tutorModel?: string;
   timings: BoardDrawTimings;
   costUsd: number;
   instructionsChars: number;
@@ -115,6 +118,61 @@ function classify(err: unknown, stage: "tutor" | "painter" | "after"): RunError 
   return new RunError("internal", "Something went wrong drawing on the board.", stage !== "after");
 }
 
+type TutorAnswer = { model: string; decision: TutorDecision };
+
+/** One tutor call: the decision, or a throw (upstream error, timeout, unreadable reply). */
+async function askTutor(model: string, input: RunInput, summary: RunSummary, stop: AbortSignal): Promise<TutorAnswer> {
+  const data = await openrouterChat(
+    {
+      model,
+      messages: tutorMessages(input.mode, input.imageDataUrl),
+      temperature: 0,
+      max_tokens: 1500, // 500 cut off 4 of 9 Solve (cone) replies in the fast-chain check: the kid saw nothing
+      reasoning: { effort: "minimal" },
+      provider: { sort: "latency" },
+      usage: { include: true },
+    },
+    { signal: AbortSignal.any([withTimeout(input.signal, TUTOR_TIMEOUT_MS), stop]), requestId: input.requestId, title: "Agathon Board Draw - tutor" },
+  );
+  checkReply(data);
+  summary.costUsd += costOf(data);
+  const decision = parseTutorReply(textOf(data), MAX_INSTRUCTIONS);
+  if (!decision) throw new RunError("tutor_reply", "The tutor's answer could not be read.", true);
+  return { model, decision };
+}
+
+/**
+ * Both tutors at once: `tutor`'s answer when it comes within TUTOR_PREFER_MS, otherwise
+ * `tutorFast`'s (and `tutor`'s after all if the fast one fails). The one not used is stopped.
+ */
+async function askTutors(input: RunInput, summary: RunSummary): Promise<TutorDecision> {
+  const stopBest = new AbortController();
+  const stopFast = new AbortController();
+  const best = askTutor(BOARD_DRAW_MODELS.tutor, input, summary, stopBest.signal);
+  const fast = askTutor(BOARD_DRAW_MODELS.tutorFast, input, summary, stopFast.signal);
+  best.catch(() => {});
+  fast.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<"late">((resolve) => (timer = setTimeout(() => resolve("late"), TUTOR_PREFER_MS)));
+  const first = await Promise.race([best.then((a) => a, () => "failed" as const), late]);
+  clearTimeout(timer);
+  let answer: TutorAnswer;
+  if (first !== "late" && first !== "failed") {
+    answer = first;
+    stopFast.abort();
+  } else {
+    try {
+      answer = await fast;
+      stopBest.abort();
+    } catch (fastErr) {
+      if (first === "failed") throw fastErr;
+      answer = await best; // still running: its own timeout bounds the wait
+    }
+  }
+  summary.tutorModel = answer.model;
+  return answer.decision;
+}
+
 export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
   const t0 = now();
   const { signal, emit, board } = input;
@@ -148,22 +206,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
   } else {
     const t = now();
     try {
-      const data = await openrouterChat(
-        {
-          model: BOARD_DRAW_MODELS.tutor,
-          messages: tutorMessages(input.mode, input.imageDataUrl),
-          temperature: 0,
-          max_tokens: 1500, // 500 cut off 4 of 9 Solve (cone) replies in the fast-chain check: the kid saw nothing
-          reasoning: { effort: "minimal" },
-          provider: { sort: "latency" },
-          usage: { include: true },
-        },
-        { signal: withTimeout(signal, TUTOR_TIMEOUT_MS), requestId: input.requestId, title: "Agathon Board Draw - tutor" },
-      );
-      checkReply(data);
-      summary.costUsd += costOf(data);
-      const decision = parseTutorReply(textOf(data), MAX_INSTRUCTIONS);
-      if (!decision) throw new RunError("tutor_reply", "The tutor's answer could not be read.", true);
+      const decision = await askTutors(input, summary);
       summary.needsHelp = decision.needsHelp;
       instructions = decision.instructions;
     } catch (err) {

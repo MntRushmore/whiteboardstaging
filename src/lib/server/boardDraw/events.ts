@@ -57,7 +57,7 @@ export function recordBoardDraw(ctx: {
       tutorSkipped: s.tutorSkipped,
       ...s.timings,
       costUsd: s.costUsd,
-      tutorModel: s.tutorSkipped ? null : BOARD_DRAW_MODELS.tutor,
+      tutorModel: s.tutorSkipped ? null : (s.tutorModel ?? null),
       painterModel: BOARD_DRAW_MODELS.painter,
       imageWidth: ctx.imageWidth,
       imageHeight: ctx.imageHeight,

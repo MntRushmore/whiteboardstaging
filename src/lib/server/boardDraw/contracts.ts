@@ -21,12 +21,21 @@ import { z } from "zod";
 /** The models, by job. The tutor decides and writes the instructions; the painter draws them. */
 export const BOARD_DRAW_MODELS = {
   tutor: "google/gemini-3.8-flash",
+  /**
+   * Asked at the same time as `tutor`, used when `tutor` has not answered within TUTOR_PREFER_MS.
+   * On the zero-data-retention (Vertex) endpoints the app must use, 3.8 Flash took 3.2 s, 5.1 s and
+   * once 91 s; 3.1 Flash Lite 1.0–1.2 s, with the same three boards right (2026-10-23). 3.8 Flash
+   * stays first because its instructions are better (it asks for the diagram on a Solve board).
+   */
+  tutorFast: "google/gemini-3.1-flash-lite",
   /** Nano Banana 2 Lite */
   painter: "google/gemini-3.1-flash-lite-image",
 } as const;
 
 /** Each upstream call gives up after this long (the caller's abort stops it sooner). */
 export const TUTOR_TIMEOUT_MS = 15_000;
+/** How long the run waits for `tutor` before it takes `tutorFast`'s answer instead. */
+export const TUTOR_PREFER_MS = 4_000;
 export const PAINTER_TIMEOUT_MS = 30_000;
 
 /** The board picture's long side, at most (px); bigger is a 413. */
