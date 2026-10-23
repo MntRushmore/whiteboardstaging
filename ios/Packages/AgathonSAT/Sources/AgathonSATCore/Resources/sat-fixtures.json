@@ -10,10 +10,10 @@
       "stem": "If $4(x - 3) + 7 = 2x + 9$, what is the value of $x$?",
       "figure": null,
       "choices": [
-        { "key": "A", "text": "$2$" },
+        { "key": "A", "text": "$2$", "why": "Subtracted 5 from 9 instead of adding it: 2x = 4." },
         { "key": "B", "text": "$5$" },
         { "key": "C", "text": "$7$" },
-        { "key": "D", "text": "$14$" }
+        { "key": "D", "text": "$14$", "why": "Stopped at 2x = 14 without dividing by 2." }
       ],
       "answer": { "key": "C" },
       "solution": {
@@ -22,10 +22,16 @@
           { "text": "Subtract $2x$ from both sides and add 5.", "math": "2x = 14" },
           { "text": "Divide both sides by 2.", "math": "x = 7" }
         ],
-        "desmos_tip": "Graph $y = 4(x - 3) + 7$ and $y = 2x + 9$. The lines cross where $x = 7$."
+        "desmos_tip": "Graph $y = 4(x - 3) + 7$ and $y = 2x + 9$. The lines cross where $x = 7$.",
+        "desmos_steps": [
+          { "text": "Type the left side as a line.", "math": "y=4(x-3)+7" },
+          { "text": "Type the right side as a second line.", "math": "y=2x+9" },
+          { "text": "Tap where the lines cross: $(7, 23)$. The $x$ is the answer.", "math": null }
+        ]
       },
       "status": "live",
-      "version": 1
+      "version": 1,
+      "nudge": "What do you get when you distribute the 4?"
     },
     {
       "id": "algebra-linear-functions-9002",
@@ -37,9 +43,9 @@
       "figure": { "kind": "table", "headers": ["$x$", "$f(x)$"], "rows": [["0", "-3"], ["2", "1"], ["5", "7"]] },
       "choices": [
         { "key": "A", "text": "$f(x) = 2x - 3$" },
-        { "key": "B", "text": "$f(x) = 2x + 3$" },
+        { "key": "B", "text": "$f(x) = 2x + 3$", "why": "Took +3 for the intercept, but f(0) is −3." },
         { "key": "C", "text": "$f(x) = 3x - 3$" },
-        { "key": "D", "text": "$f(x) = \\frac{1}{2}x - 3$" }
+        { "key": "D", "text": "$f(x) = \\frac{1}{2}x - 3$", "why": "Flipped the slope: change in x over change in f(x)." }
       ],
       "answer": { "key": "A" },
       "solution": {
@@ -51,7 +57,8 @@
         "desmos_tip": "Type the table into Desmos, then type $y_1 \\sim mx_1 + b$ to fit a line: $m = 2$, $b = -3$."
       },
       "status": "live",
-      "version": 1
+      "version": 1,
+      "nudge": "What is $f(0)$? Where does it go in $y = mx + b$?"
     },
     {
       "id": "algebra-linear-systems-9003",
@@ -69,10 +76,19 @@
           { "text": "Substitute into the first equation.", "math": "3(y + 2) + 2y = 16 \\Rightarrow 5y + 6 = 16" },
           { "text": "So $y = 2$, and then $x$ follows.", "math": "x = 2 + 2 = 4" }
         ],
-        "desmos_tip": "Graph both equations as written. Tap the point where they cross: $(4, 2)$."
+        "desmos_tip": "Graph both equations as written. Tap the point where they cross: $(4, 2)$.",
+        "desmos_steps": [
+          { "text": "Type the first equation as written.", "math": "3x+2y=16" },
+          { "text": "Type the second one.", "math": "x-y=2" },
+          { "text": "Tap where they cross: $(4, 2)$.", "math": null }
+        ]
       },
       "status": "live",
-      "version": 1
+      "version": 1,
+      "nudge": "Can you write $x$ in terms of $y$ from the second equation?",
+      "common_wrong": [
+        { "answer": "2", "why": "That's y. Put y = 2 back in to find x." }
+      ]
     },
     {
       "id": "algebra-linear-two-var-9004",
@@ -94,8 +110,8 @@
       },
       "choices": [
         { "key": "A", "text": "$2x + y = 4$" },
-        { "key": "B", "text": "$x + 2y = 4$" },
-        { "key": "C", "text": "$2x - y = 4$" },
+        { "key": "B", "text": "$x + 2y = 4$", "why": "Read the points as (y, x): that's the line through (4, 0) and (0, 2)." },
+        { "key": "C", "text": "$2x - y = 4$", "why": "Used slope +2, but the line falls from left to right." },
         { "key": "D", "text": "$x - 2y = -4$" }
       ],
       "answer": { "key": "A" },
@@ -105,10 +121,16 @@
           { "text": "The line crosses the $y$-axis at 4.", "math": "y = -2x + 4" },
           { "text": "Add $2x$ to both sides to match a choice.", "math": "2x + y = 4" }
         ],
-        "desmos_tip": "Graph each choice. Only $2x + y = 4$ goes through both $(0, 4)$ and $(2, 0)$."
+        "desmos_tip": "Graph each choice. Only $2x + y = 4$ goes through both $(0, 4)$ and $(2, 0)$.",
+        "desmos_steps": [
+          { "text": "Type the two points as a list.", "math": "(0,4),(2,0)" },
+          { "text": "Type each choice, one per line.", "math": "2x+y=4" },
+          { "text": "Keep the one that goes through both points.", "math": null }
+        ]
       },
       "status": "live",
-      "version": 1
+      "version": 1,
+      "nudge": "What's the slope between the two labeled points?"
     },
     {
       "id": "geometry_trig-right-triangles-trig-9005",
@@ -132,9 +154,9 @@
       },
       "choices": [
         { "key": "A", "text": "$\\frac{3}{5}$" },
-        { "key": "B", "text": "$\\frac{4}{5}$" },
-        { "key": "C", "text": "$\\frac{3}{4}$" },
-        { "key": "D", "text": "$\\frac{4}{3}$" }
+        { "key": "B", "text": "$\\frac{4}{5}$", "why": "That's cos A: 8 is the side next to A, not opposite it." },
+        { "key": "C", "text": "$\\frac{3}{4}$", "why": "That's tan A: opposite over adjacent, 6/8." },
+        { "key": "D", "text": "$\\frac{4}{3}$", "why": "That's 8/6: adjacent over opposite." }
       ],
       "answer": { "key": "A" },
       "solution": {
@@ -145,7 +167,8 @@
         "desmos_tip": null
       },
       "status": "live",
-      "version": 1
+      "version": 1,
+      "nudge": "Which side is opposite angle $A$? How long is the hypotenuse?"
     },
     {
       "id": "psda-ratios-rates-9006",
@@ -165,7 +188,11 @@
         "desmos_tip": null
       },
       "status": "live",
-      "version": 1
+      "version": 1,
+      "nudge": "For 4 cups of milk you use 3 of flour. What about a quarter of that?",
+      "common_wrong": [
+        { "answer": "4/3", "why": "That's milk for each cup of flour, the ratio upside down." }
+      ]
     },
     {
       "id": "advanced_math-nonlinear-functions-9007",
@@ -179,13 +206,15 @@
         "x": { "min": -3, "max": 5, "step": 1, "label": "x" },
         "y": { "min": -5, "max": 6, "step": 1, "label": "y" },
         "grid": true,
-        "items": [{ "type": "function", "expr": "x**2 - 2*x - 3" }]
+        "items": [
+          { "type": "function", "expr": "x**2 - 2*x - 3" }
+        ]
       },
       "choices": [
         { "key": "A", "text": "$-4$" },
-        { "key": "B", "text": "$-3$" },
-        { "key": "C", "text": "$1$" },
-        { "key": "D", "text": "$3$" }
+        { "key": "B", "text": "$-3$", "why": "That's f(0), where the graph crosses the y-axis, not its lowest point." },
+        { "key": "C", "text": "$1$", "why": "That's the x of the vertex. The question asks for f(x) there." },
+        { "key": "D", "text": "$3$", "why": "3 is a zero of f, where f(x) = 0." }
       ],
       "answer": { "key": "A" },
       "solution": {
@@ -193,10 +222,15 @@
           { "text": "A parabola that opens up is lowest at its vertex, halfway between its zeros.", "math": "x^2 - 2x - 3 = (x - 3)(x + 1)" },
           { "text": "The zeros are $-1$ and $3$, so the vertex is at $x = 1$.", "math": "f(1) = 1 - 2 - 3 = -4" }
         ],
-        "desmos_tip": "Graph $y = x^2 - 2x - 3$ and tap the lowest point: $(1, -4)$."
+        "desmos_tip": "Graph $y = x^2 - 2x - 3$ and tap the lowest point: $(1, -4)$.",
+        "desmos_steps": [
+          { "text": "Type the function.", "math": "y=x^2-2x-3" },
+          { "text": "Tap the lowest point of the curve: $(1, -4)$.", "math": null }
+        ]
       },
       "status": "live",
-      "version": 1
+      "version": 1,
+      "nudge": "Where is the parabola lowest? Look halfway between its zeros."
     },
     {
       "id": "psda-one-var-data-9008",
@@ -228,7 +262,11 @@
         "desmos_tip": "Type mean([4, 7, 3, 6, 5]) on a line of its own."
       },
       "status": "live",
-      "version": 1
+      "version": 1,
+      "nudge": "How many books in all? Then share them out over the students.",
+      "common_wrong": [
+        { "answer": "25", "why": "That's the total. The mean divides it by the 5 students." }
+      ]
     },
     {
       "id": "geometry_trig-lines-angles-triangles-9009",
@@ -255,7 +293,7 @@
         { "key": "A", "text": "$55$" },
         { "key": "B", "text": "$65$" },
         { "key": "C", "text": "$75$" },
-        { "key": "D", "text": "$130$" }
+        { "key": "D", "text": "$130$", "why": "That's the exterior angle itself, not x." }
       ],
       "answer": { "key": "C" },
       "solution": {
@@ -266,7 +304,8 @@
         "desmos_tip": null
       },
       "status": "live",
-      "version": 1
+      "version": 1,
+      "nudge": "How is the $130^\\circ$ angle related to the two angles inside the triangle?"
     },
     {
       "id": "geometry_trig-circles-9010",
@@ -298,7 +337,11 @@
         "desmos_tip": null
       },
       "status": "live",
-      "version": 1
+      "version": 1,
+      "nudge": "Half the chord, the distance 3 and the radius make a right triangle.",
+      "common_wrong": [
+        { "answer": "8.544", "why": "Used the whole chord, 8, as a leg. The perpendicular cuts it in half." }
+      ]
     },
     {
       "id": "algebra-linear-inequalities-9011",
