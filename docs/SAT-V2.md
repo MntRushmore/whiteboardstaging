@@ -73,6 +73,26 @@ different, is the smallest thing on screen.
 - `GET /api/sat/next` puts the reviews due today (in the user's tz) first, then the adaptive pick.
   Each question carries `"review": true|false`.
 - `GET /api/sat/progress` adds `reviews_due` (today) and `reviews_waiting`.
+- **The user's tz on the two routes that had none (bank lane, 2026-10-23; additive).** The deck's
+  days are the student's, so `POST /api/sat/attempts` takes an optional `"tz"` in its body and
+  `GET /api/sat/next` an optional `&tz=` (an IANA zone, like `/api/sat/progress`'s). Absent means UTC;
+  a zone the server does not know is a `400 invalid_request`. The iPad sends
+  `TimeZone.current.identifier` on both.
+
+#### Route details (bank lane, 2026-10-23; additive)
+
+- Day boundaries: "tomorrow" for a miss and "due today" are the student's date in `tz`; an overdue
+  review counts as due. A right answer on a review that is not due yet (a retry in the same set)
+  changes nothing, so a question missed and then got right on the second try still comes back
+  tomorrow. A second miss the same day changes nothing either.
+- `POST /api/sat/attempts` still answers `{ok: true, correct}`. The answer is saved first; if the
+  deck write fails it is logged and the answer still counts.
+- `GET /api/sat/next`: the due reviews follow the set's `domain` / `skill` / `difficulty` filter,
+  oldest due first, at most `count` of them; a review of a question that is no longer live is
+  skipped. The adaptive pick fills the rest from the other questions.
+- `reviews_due` / `reviews_waiting` count live questions only.
+- The notes: a row without a note has no key for it (never `null`), except `desmos_steps: null`,
+  which means "Desmos doesn't really help here". `choices[].why` is on wrong choices only.
 - The migration is LOCAL ONLY until the owner OKs production.
 
 ## Not this round
