@@ -555,9 +555,10 @@ final class SATSessionModel: ObservableObject {
 
     static func calls(_ loop: LiveLoop) -> Int { loop.metrics.calls.values.reduce(0, +) }
 
-    /// The capped line for the top bar, when the tutor is used up on this question.
-    var cappedLine: String? {
-        if case .capped(let pass) = practice.item.tutor { return SATCopy.cappedLine(cap: pass.cap) }
+    /// The capped line for the top bar, when the tutor is used up on this question: with no account it
+    /// says what one gives ("… Make a free account for 20 a day.", docs/SAT-MODE.md), and a tap on it makes one.
+    func cappedLine(hasAccount: Bool) -> String? {
+        if case .capped(let pass) = practice.item.tutor { return SATCopy.cappedLine(cap: pass.cap, hasAccount: hasAccount) }
         return nil
     }
 

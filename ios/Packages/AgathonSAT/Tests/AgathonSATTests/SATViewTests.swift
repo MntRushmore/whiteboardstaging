@@ -17,6 +17,11 @@ struct SATViewTests {
         #expect(SATNoteWords.looksLike("Only checked the goal line.") == "Looks like you only checked the goal line.")
     }
 
+    @Test func theSessionsCappedLineSaysWhatAnAccountGives() {
+        #expect(SATCopy.cappedLine(cap: 2, hasAccount: false) == "Tutor checks used up today: 2 of 2. Make a free account for 20 a day.")
+        #expect(SATCopy.cappedLine(cap: 20, hasAccount: true) == "Tutor checks used up today: 20 of 20. Help me still works.")
+    }
+
     @Test func theCapLineSaysTheServersCapAndTheTiersWay() {
         // the owner (2026-10-22): no account 5 ("make a free account for 20"), a free account 20 ("Unlimited")
         #expect(SATCopy.capped(cap: 5, hasAccount: false) == "Free tutor used up for today: 5 of 5. Make a free account for 20 a day.")

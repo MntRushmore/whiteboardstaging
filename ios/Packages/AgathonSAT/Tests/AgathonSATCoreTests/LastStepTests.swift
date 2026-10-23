@@ -33,11 +33,21 @@ struct LastStepTests {
     @Test func thePointerSaysHowNeverTheResult() {
         #expect(SATLastStep.pointer(explanation: "Divide both sides by 3 to get x = 19.", for: Self.oneVar) == "One step left: divide both sides by 3.")
         #expect(SATLastStep.pointer(explanation: "Divide both sides by 3: $x = 19$.", for: Self.oneVar) == "One step left: divide both sides by 3.")
+        // the live run's words (2026-10-23): "Divide 56 by 7 to get a = 8."
+        #expect(SATLastStep.pointer(explanation: "Divide 57 by 3 to get x = 19.", for: Self.oneVar) == "One step left: divide 57 by 3.")
         // no words from the model: the bank's step
         #expect(SATLastStep.pointer(explanation: nil, for: Self.oneVar) == "One step left: divide by 3.")
         #expect(SATLastStep.pointer(explanation: "", for: Self.oneVar) == "One step left: divide by 3.")
         // the bank's words only announce the result: a plain pointer
         #expect(SATLastStep.pointer(explanation: nil, for: Self.line) == "One step left: finish it from your last line.")
+        // words that write the answer out (a choice that is maths): never shown
+        #expect(SATLastStep.pointer(explanation: "Write the line as h = 3/2 w + 6 using the intercept.", for: Self.line) == "One step left: finish it from your last line.")
+        // maths in the words comes out as words (the live run: "at $t=0$")
+        #expect(SATLastStep.pointer(explanation: "Read the value at $t=0$ from the table.", for: Self.line) == "One step left: read the value at t = 0 from the table.")
+        // every number of the answer named in words: as good as the answer
+        #expect(SATLastStep.pointer(explanation: "Use slope 3/2 and starting value 6.", for: Self.line) == "One step left: finish it from your last line.")
+        #expect(SATLastStep.pointer(explanation: "Put the slope and the intercept into slope-intercept form.", for: Self.line)
+                == "One step left: put the slope and the intercept into slope-intercept form.")
         #expect(SATLastStep.pointer(explanation: "Substitute 19 for x into the second equation, then solve for y = -17/3.", for: Self.system)
                 == "One step left: substitute 19 for x into the second equation, then solve for y.")
     }

@@ -119,6 +119,7 @@ struct SATSessionScreen: View {
 
 /// The board and everything over it.
 private struct SATBoardRoom: View {
+    @Environment(AgathonBackend.self) private var backend
     @ObservedObject var model: SATSessionModel
     @ObservedObject var session: BoardSession
     @ObservedObject var controller: BoardController
@@ -232,7 +233,7 @@ private struct SATBoardRoom: View {
         return SATTopBar.Model(title: title, skill: practice.current.map(\.skillTitle) ?? "",
                                review: practice.current?.review ?? false, marked: item.marked,
                                position: "\(item.number)/\(item.count)", hasPrevious: practice.hasPrevious, hasNext: practice.hasNext,
-                               capped: model.cappedLine)
+                               capped: model.cappedLine(hasAccount: model.context.account(backend) != .none))
     }
 }
 

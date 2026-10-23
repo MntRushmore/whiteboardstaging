@@ -152,12 +152,14 @@ final class SATLiveE2ETests: XCTestCase {
         let asked = Date()
         tap("sat.helpMe")
         let end = Date().addingTimeInterval(60)
-        while number("tutorInk") <= inkBefore && Date() < end { usleep(100_000) }
-        XCTAssertGreaterThan(number("tutorInk"), inkBefore, "no tutor ink from Help me's step")
+        // the step in cobalt ink, or (the next step is the answer) the pointer's words
+        let pointed = { (self.element("sat.debug").value as? String ?? "").contains("step pointer") }
+        while number("tutorInk") <= inkBefore && !pointed() && Date() < end { usleep(100_000) }
+        XCTAssertTrue(number("tutorInk") > inkBefore || pointed(), "no tutor ink and no pointer from Help me's step")
         probe("rung 2", timeout: 10)
-        timings.append(String(format: "Help me tap → cobalt step on screen: %.1f s", Date().timeIntervalSince(asked)))
+        timings.append(String(format: "Help me tap → cobalt %@ on screen: %.1f s", pointed() ? "pointer" : "step", Date().timeIntervalSince(asked)))
         probe("yourTurn yes", timeout: 90)
-        timings.append(String(format: "Help me tap → Your turn: %.1f s (%@)", Date().timeIntervalSince(asked), (element("sat.debug").value as? String ?? "").contains("step live") ? "live step" : "bank step"))
+        timings.append(String(format: "Help me tap → Your turn: %.1f s (%@)", Date().timeIntervalSince(asked), (element("sat.debug").value as? String ?? "").contains("step live") ? "live step" : pointed() ? "pointer" : "bank step"))
         snap("05-help-2-one-step")
         // the tests' own buttons never put words on the page ("ink o w" under Check, 2026-10-23)
         for word in ["ink", "o", "w"] { XCTAssertFalse(app.staticTexts[word].exists, "debug words on the page: \(word)") }
@@ -294,7 +296,8 @@ final class SATLiveE2ETests: XCTestCase {
     func testNoAccountCapAndUpgrade() throws {
         try XCTSkipIf(signedIn, "the no-account run is without AGATHON_TEST_EMAIL")
         let email = try XCTUnwrap(env["AGATHON_UPGRADE_EMAIL"], "AGATHON_UPGRADE_EMAIL: the address the anonymous student signs up with")
-        launch(autowrite: "step:0|step:0|step:0")
+        // any line takes the pass (a question's own step may be one the hand cannot write)
+        launch(autowrite: "2x=8|3x=9|4x=12")
         snap("11-anon-home")
         tap("sat.home.practice10", wait: 30)
         XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 60))

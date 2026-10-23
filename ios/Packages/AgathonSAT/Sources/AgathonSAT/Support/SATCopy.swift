@@ -117,7 +117,11 @@ public enum SATCopy {
     public static func youTyped(_ answer: String) -> String { "YOU TYPED \(answer)" }
     public static let notQuite = "Not quite."
     public static let walkMeThrough = "Walk me through it"
-    public static func cappedLine(cap: Int) -> String { "Tutor checks used up today: \(cap) of \(cap). Help me still works." }
+    /// The session's capped line: a free account's says Help me still works; no account's, what an account gives.
+    public static func cappedLine(cap: Int, hasAccount: Bool = true) -> String {
+        hasAccount ? "Tutor checks used up today: \(cap) of \(cap). Help me still works."
+            : "Tutor checks used up today: \(cap) of \(cap). Make a free account for 20 a day."
+    }
     public static let ladderTitle = "HELP ME, THREE TAPS"
     public static let ladderNudge = "Nudge"
     public static let ladderNudgeLine = "A question to get you going."
