@@ -254,3 +254,16 @@ describe("a chain of rewrites goes on from its last side (SAT v2 end-to-end run,
     expect(judge(["2x+3=7", "=5"])[1]).toBe("incomplete/none");
   });
 });
+
+describe("a letter given a value through a chain of numbers (SAT v2 end-to-end run, 2026-10-23)", () => {
+  const verdict = (latex: string) => engine.analyzeLine(latex, { mode: "suggest" }).verdict;
+  it("a right chain is never a mismatch (it was: every slope line ringed)", () => {
+    expect(verdict("m=\\frac{-2-4}{2-0}=-3")).not.toBe("mismatch");
+    expect(verdict("m=\\frac{48-24}{6-2}=6")).not.toBe("mismatch");
+    expect(verdict("x=2+3=5")).not.toBe("mismatch");
+  });
+  it("a wrong link in the chain is", () => {
+    expect(verdict("m=\\frac{-2-4}{2-0}=-4")).toBe("mismatch");
+    expect(verdict("x=2+3=6")).toBe("mismatch");
+  });
+});

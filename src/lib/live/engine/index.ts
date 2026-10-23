@@ -414,6 +414,17 @@ export function createEngine(mod: MathModule): LiveEngine {
       return out;
     }
 
+    // `m = \frac{-2-4}{2-0} = -3`, `x = 2 + 3 = 5`: a letter given a value worked out in a chain of plain
+    // numbers. mathjs reads `m == a == b` as `(m == a) == b`, and every such line was a mismatch: the
+    // commonest line of an SAT slope ringed (SAT v2 end-to-end run, 2026-10-23). The number chain is
+    // judged as arithmetic (a wrong link is a slip), and the line as `m = <its last side>`.
+    if (allEqual && sides.length >= 3 && /^[a-zA-Z][a-zA-Z0-9_]*$/.test(ts[0].source) && ts[0].variables.length === 1 && !ts[0].hasUnits
+      && ts.slice(1).every((t) => unknownsOf(t).length === 0)) {
+      const numbers = analyzeRelation(sides.slice(1).join(" = "), ctx);
+      if (numbers.verdict === "mismatch") return { ...numbers, kind: "equation", math: source };
+      if (numbers.verdict === "ok") return analyzeRelation(`${sides[0]} = ${sides[sides.length - 1]}`, ctx);
+    }
+
     if (allEqual && sides.length === 2) {
       let [L, R] = ts;
       let [lhsLatex, rhsLatex] = sides;

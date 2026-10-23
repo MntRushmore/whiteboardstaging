@@ -52,7 +52,9 @@ enum SATAutowriter {
             if line == "circle:auto", case .plot(let p)? = model.practice.current?.figure {
                 for item in p.items { if case .point(let at, _, _) = item { n = [at.x, at.y]; break } }
             }
-            guard n.count == 2, let plot = model.questionPlot(on: screen) else { return }
+            guard let plot = model.questionPlot(on: screen) else { return }
+            // a plane with no labelled point (a scatterplot's line, bars): round the middle of its window
+            if n.count != 2 { n = [(plot.xMin + plot.xMax) / 2, (plot.yMin + plot.yMax) / 2] }
             let c = plot.page(n[0], n[1])
             strokes = [(0...28).map { k in
                 let t = Double(k) / 26 * 2 * .pi
