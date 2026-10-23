@@ -54,6 +54,26 @@ struct ProblemPagesLoopTests {
 
     // MARK: - check when done
 
+    /// A line's cheer goes where its "I read" chip goes when a big hand's line reaches the margin lane:
+    /// the chip steps aside while the cheer is on show, and comes back after.
+    @Test func aLinesChipStepsAsideWhileItsCheerShows() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        await h.write("2x = 8", at: Vec2(200, 280))
+        await h.pass(2_000)
+        let right = try #require(line(h, "2x = 8"))
+        #expect(h.loop.pages.readings.contains { $0.id == right.id })
+        h.loop.checkPage()
+        await h.pass(1_000)
+        #expect(h.loop.cheers.contains { $0.lineId == right.id }, "a tick cheers")
+        #expect(!h.loop.pages.readings.contains { $0.id == right.id }, "no chip under the cheer")
+        await h.pass(2_500)
+        #expect(h.loop.cheers.isEmpty)
+        #expect(h.loop.pages.readings.contains { $0.id == right.id }, "the chip is back")
+    }
+
+
     @Test func heldLinesWriteNoMarksAndTellTheRecordNothingUntilCheck() async throws {
         let h = harness(checking: .whenDone)
         await h.start()

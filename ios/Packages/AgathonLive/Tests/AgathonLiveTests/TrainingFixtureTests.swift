@@ -107,22 +107,9 @@ struct TrainingFixtureTests {
         }
         loop.start()
         await idle()
-        let screen = board.currentScreenID
-        if let problem = f.problem {
-            board.setProblemPage(ProblemPage(setId: "fixture", index: 1, count: 1, origin: "practice"), on: screen)
-            let meta: Meta = ["chatProblem": .object(["n": 1, "lines": .array(problem.map { .string($0) }),
-                                                      "cell": .object(["x": 40, "y": 40, "w": 1520, "h": 840])]),
-                              "lineId": "chat", "live": true, "source": "ai"]
-            for k in 0..<problem.count {
-                let s = StrokeRecord(screen: screen, order: board.store.nextOrder(on: screen), author: .tutor, color: .tutor, width: 4,
-                                     pressure: .real, x: 88, y: 70 + Double(k) * 40,
-                                     points: [InkPoint(x: 0, y: 0), InkPoint(x: 160, y: 6), InkPoint(x: 320, y: 0)], meta: meta)
-                board.store.put(.stroke(s), origin: .tutor)
-            }
-        } else {
-            board.setProblemPage(ProblemPage(kind: .problem, origin: "student"), on: screen)
-        }
-        loop.problemsChanged()
+        // the page as the headless bench makes it (the problem in the tutor's hand, as the desk writes a
+        // practice page), so a case saved from a bench run replays exactly
+        _ = await HeadlessBench.page(f.problem, on: board, loop: loop, brain: TestBrain.shared)
         await pass(300)
         var ids: [[RecordID]] = []
         for line in f.lines {
@@ -134,21 +121,14 @@ struct TrainingFixtureTests {
         await pass(2_000)
         if checking == .whenDone { loop.checkPage() }
         await pass(3_000)
-        var results: [TrainingLineResult] = []
+        // judged as the bench judges (`TrainingBench.observe`): a line with no strokes was rubbed out
+        let spec = TrainingCase(id: f.caseKey, category: f.category, grade: f.grade ?? .g56, topic: "", problem: f.problem,
+                                lines: f.lines.map { TrainingLineSpec($0.written, $0.expect, value: $0.value, place: $0.place) }, solved: f.solved)
+        let erased = Set(f.lines.indices.filter { f.lines[$0].strokes.isEmpty })
+        var results = TrainingBench.observe(spec: spec, ids: ids, erased: erased, loop: loop)
+        // the fixture's own read of a line is what "right" means here (a misread is the recorder's)
         for (k, line) in f.lines.enumerated() {
-            let others = Set(ids.enumerated().filter { $0.offset != k }.flatMap { $0.element.map(\.rawValue) })
-            let obs = loop.trainingObserve(strokes: ids[k], others: others)
-            var r = TrainingLineResult(index: k, written: line.written, meaning: line.written, expect: line.expect, value: line.value, place: line.place)
-            r.read = obs.latex
-            r.reading = obs.reading
-            r.verdict = obs.verdict
-            r.result = obs.result
-            r.mark = obs.mark
-            r.released = obs.released
-            r.pieces = obs.merged ? 0 : obs.lineIds.count
-            // the fixture's own read of the line is what "right" means here (a misread is the recorder's)
-            if let recorded = line.read { r.meaning = recorded }
-            results.append(r)
+            if let recorded = line.read { results[k].meaning = recorded }
         }
         let judged = TrainingJudge.judge(lines: results, solvedExpected: f.solved, solvedGot: loop.trainingSolved)
         loop.stop()

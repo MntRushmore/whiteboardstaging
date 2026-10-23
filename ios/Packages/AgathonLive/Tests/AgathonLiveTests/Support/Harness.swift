@@ -97,10 +97,8 @@ final class TestBoard: LiveBoard {
         let from = currentScreenID
         let moving = ids.compactMap { store.stroke($0) }.filter { $0.screen == from }
         guard !moving.isEmpty else { return nil }
-        let screens = store.screens
-        let i = screens.firstIndex { $0.id == from }
-        let next = i.flatMap { $0 + 1 < screens.count ? screens[$0 + 1].order : nil }
-        let order = (i.flatMap { try? OrderKey.between(screens[$0].order, next) }) ?? OrderKey.after(screens.last?.order)
+        // (after the last page of this problem, when it needed more room, as the controller does)
+        let order = store.screenOrder(after: store.lastPageOfProblem(from))
         let screen = ScreenRecord(order: order, meta: meta)
         store.transact(.kid) { tx in
             tx.put(.screen(screen))
@@ -197,6 +195,8 @@ final class FakeServices: LiveServices, @unchecked Sendable {
     private var checkCancelled = 0
     var setupReply: SetupResponse?
     var rereadReply: RereadResponse?
+    /// the second reader's reply for one read (Mathpix's LaTeX → its reply), before `rereadReply`
+    var rereadReplies: [String: RereadResponse] = [:]
 
     var recognizeRequests: [RecognizeRequest] { lock.withLock { _recognizeRequests } }
     var checkRequests: [CheckRequest] { lock.withLock { _checkRequests } }
@@ -252,6 +252,7 @@ final class FakeServices: LiveServices, @unchecked Sendable {
 
     func reread(_ request: RereadRequest) async throws -> RereadResponse {
         lock.withLock { _rereadRequests.append(request) }
+        if let r = rereadReplies[request.latex] { return r }
         if let r = rereadReply { return r }
         return RereadResponse(latex: request.latex, changed: false, model: "fake", ms: 1)
     }

@@ -20,6 +20,8 @@
  * Small and free of mathjs: the loop imports it on the board's first load.
  */
 import type { AnalyzeContext, HelpMode, LineAnalysis, LiveEngine } from "../contracts";
+import { withoutOperationNotes } from "./annotations";
+import { readVariants } from "../youngHand";
 import { parseStacked, stackedAnalysis, workStacked } from "./columnArithmetic";
 
 /** A number, as a young student writes an answer: `14`, `-3`, `2.5`, `\frac{3}{4}`, `3/4` (an `=` before it allowed). */
@@ -34,6 +36,14 @@ const PLAIN_NUMBER = /^\s*-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d
  * fraction (`= 0.7039`): it is treated as a stacked sum this cannot work, quiet.
  */
 export const MISREAD_STACK = /^\s*\\frac\s*\{\s*(?:\+|\\times(?![a-zA-Z])|\\cdot(?![a-zA-Z]))/;
+
+/**
+ * A wrong digit in a stacked sum is ringed only on a read this sure of it: a child's sum ringed for
+ * a digit Mathpix misread is worse than one left unmarked (the second reader, which re-reads a line
+ * before its ring, reads one line, not a block). Mathpix read every stacked block at ~1. The board
+ * (`LiveLoop.stackAnalysis`) and the iPad's brain (`stackedLine`) both judge by it.
+ */
+export const STACK_RING_CONFIDENCE = 0.85;
 
 /** What follows a line's last `=` (the whole line when it has none). */
 function lastSide(latex: string): string {
@@ -70,6 +80,45 @@ export function isArithmetic(latex: string): boolean {
   return /\d/.test(bare) && !/[a-zA-Z\\]/.test(bare);
 }
 
+/** `4 \overline{ \, 222 \, }`: the divisor, then the dividend under the bar. */
+const OVERLINE_DIVISION = /^\s*(\d+)\s*\\overline\s*\{((?:\s|\\[,;:!]|\d)+)\}\s*$/;
+/** `55 r 2`, `55 R 2`: a remainder as children write it, for the young judge's `55 \text{ R } 2`. */
+const REMAINDER = /(\d)\s*(?:\\(?:text|mathrm)\s*\{\s*)?[rR](?:\s*\})?\s*(\d)/;
+
+/** `h(x) = 4x + 1` (a function of one letter) … */
+const FUNCTION_DEF = /^\s*([a-zA-Z])\s*\(\s*([a-zA-Z])\s*\)\s*=\s*(.+)$/;
+/** … and `h(1)`: its value at a number. */
+const FUNCTION_CALL = /^\s*([a-zA-Z])\s*\(\s*(-?\s*\d+(?:\.\d+)?)\s*\)\s*$/;
+/** A line that starts by naming that value (`h(1) = 5`): the rest is the working. */
+const LEADING_CALL = /^\s*[a-zA-Z]\s*\(\s*-?\s*\d+(?:\.\d+)?\s*\)\s*(?==)/;
+
+/**
+ * The problem as arithmetic, when it is: its own lines when every one is (`isArithmetic`), and a
+ * function's value at a number — `h(x) = 4x + 1` with `h(1)` — as the sum it comes to, `4(1) + 1`
+ * (the real-ink bench: children work it in one chained line, `= 4(1) + 1 = 5`, and got a "?").
+ * Null for any other problem.
+ */
+export function arithmeticOf(problem: readonly string[] | null | undefined): string[] | null {
+  if (!problem || problem.length === 0) return null;
+  // the tutor's long division `4 \overline{ \, 222 \, }` is 222 ÷ 4
+  const divided = problem.map((l) => l.replace(OVERLINE_DIVISION, (_m, d: string, n: string) => `${n.replace(/\\[,;:!]|\s/g, "")} \\div ${d}`));
+  if (divided.every(isArithmetic)) return divided;
+  if (problem.every(isArithmetic)) return [...problem];
+  const lines = problem.flatMap((l) => l.split(/\s*;\s*/)).filter((l) => l.trim().length > 0);
+  if (lines.length !== 2) return null;
+  const def = FUNCTION_DEF.exec(lines[0]);
+  const call = FUNCTION_CALL.exec(lines[1]);
+  if (!def || !call || def[1] !== call[1]) return null;
+  const at = call[2].replace(/\s+/g, "");
+  const sum = def[3].replace(new RegExp(`(?<![\\\\a-zA-Z])${def[2]}(?![a-zA-Z])`, "g"), `(${at})`).trim();
+  return isArithmetic(sum) ? [sum] : null;
+}
+
+/** `h(1) = 4(1) + 1 = 5` → `= 4(1) + 1 = 5`: in a function's value worked as arithmetic, its name is no sum. */
+export function withoutLeadingCall(latex: string): string {
+  return latex.replace(LEADING_CALL, "");
+}
+
 /** A step the engine rings (it does not follow), or one carried on from such a step (`LineAnalysis.carried`). */
 export function isSlip(a: LineAnalysis): boolean {
   return a.verdict === "mismatch" || Boolean(a.carried);
@@ -104,7 +153,43 @@ export interface WorkInput {
 export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): LineAnalysis {
   const { ctx } = input;
   let a = engine.analyzeLine(latex, ctx);
+  // the child's notes of what they do to both sides, read into the line (`annotations.ts`): the
+  // equation is judged without them — only to find it right; a slip is never hidden by them
+  if (a.verdict !== "ok" && !input.arithmetic) {
+    const bare = withoutOperationNotes(latex);
+    if (bare !== latex) {
+      const judged = engine.analyzeLine(bare, ctx);
+      if (judged.verdict === "ok") {
+        a = judged;
+        latex = bare;
+      }
+    }
+  }
+  // what a messy read may have been (`readVariants`: a plus written high, her `x` read as `\times`, a
+  // side note behind a left arrow) — only to find the step right, never dropping a number the problem
+  // or the lines above have (MISREADS; the minus her ink starts with is the loop's to offer: it needs the ink)
+  if (a.verdict !== "ok" && !input.arithmetic) {
+    const keep = [...input.above, ctx.previous?.math ?? "", ctx.original?.math ?? ""];
+    for (const v of readVariants(latex, false, keep)) {
+      const judged = engine.analyzeLine(v, ctx);
+      if (judged.verdict === "ok") {
+        a = judged;
+        latex = v;
+        break;
+      }
+    }
+  }
   if (input.arithmetic) {
+    if (REMAINDER.test(latex)) {
+      // `= 55 r 2`: the answer with its remainder, as the young judge reads one (`55 \text{ R } 2`)
+      latex = withoutRelation(latex).replace(REMAINDER, "$1 \\text{ R } $2").replace(/\\text\s*\{\s*R\s*\}\s*\\text\s*\{\s*R\s*\}/, "\\text{ R }");
+      a = engine.analyzeLine(latex, ctx);
+    }
+    const named = withoutLeadingCall(latex);
+    if (named !== latex) {
+      latex = named;
+      a = engine.analyzeLine(latex, ctx);
+    }
     const young = engine.judgeWork?.({ problem: input.arithmetic, above: input.above, latex: input.beside ?? latex, ctx });
     if (young) a = young;
     else {
@@ -118,6 +203,7 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
       }
       if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(latex))) a = { ...a, solved: true };
     }
+    if (a.verdict === "mismatch" && looksMisread(engine, latex, input.arithmetic)) a = { ...a, misreadLikely: true };
   } else if (ctx.previous?.substituted && !input.given) {
     // the line above asks for its value with the column's givens put in (`2x + 5 =` under `x = 3`,
     // `LineAnalysis.substituted`): a lone number is that value (`11`, judged as `= 11`), and a right
@@ -127,7 +213,17 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
       if (answer.verdict === "ok" || answer.verdict === "mismatch") a = { ...answer, bareAnswer: true };
     }
     if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(latex))) a = { ...a, solved: true };
+  } else if (a.verdict === "none" && !input.given && BARE_NUMBER.test(latex)) {
+    // a lone number under an equation in one letter, when it is that letter's value, is the answer
+    // (`12` under `x/2 - 5 = 1`, `2` after `y = -6 + 8`: children write it without `x =`). Only a
+    // right one: a lone wrong number may be a side sum, and a ring there would be on right work.
+    const letter = ctx.previous?.variable ?? ctx.original?.variable;
+    if (letter && /^[a-zA-Z]$/.test(letter)) {
+      const answer = engine.analyzeLine(`${letter} = ${withoutRelation(latex)}`, ctx);
+      if (answer.verdict === "ok") a = { ...answer, bareAnswer: true };
+    }
   }
+  if (a.verdict === "ok" && !a.solved && !input.arithmetic && answersBySimplestForm(a, ctx)) a = { ...a, solved: true };
   if (a.verdict !== "mismatch" || a.solved) return a;
   // not right from the last right line: carried on from the slip right above it? Then the
   // mistake is that slip's (ringed already), and this step gets no mark of its own
@@ -225,11 +321,73 @@ export function judgeColumn(engine: LiveEngine, column: WorkColumn, mode: HelpMo
     out.push(
       judgeLine(engine, latex, {
         ctx: { previous, original, mode },
-        arithmetic: head.length > 0 && head.every(isArithmetic) ? head : null,
+        arithmetic: arithmeticOf(head),
         above: lines.slice(0, i).filter((l) => l && !isStackRead(l)),
         slip: last && isSlip(last) ? last : undefined,
       }),
     );
   }
   return out;
+}
+
+/**
+ * A right line that is the problem's answer by its form, where the engine only solves equations (the
+ * real-ink bench: simplify problems, an inequality, `C = 10\pi`, `y = -4x + 7` were ticked but the page
+ * never counted solved): in a column with no equation, an expression in simplest form; a letter alone
+ * against a number (`x \ge 9`); a letter given its value in simplest form (`C = 10\pi`, `y = -4x + 7`).
+ */
+function answersBySimplestForm(a: LineAnalysis, ctx: AnalyzeContext): boolean {
+  const math = a.math.trim();
+  if (!math) return false;
+  if (a.kind === "inequality") {
+    return ctx.original?.kind === "inequality" && /^(?:[a-zA-Z]\s*(?:>=|<=|>|<)\s*-?\s*[\d.]+|-?\s*[\d.]+\s*(?:>=|<=|>|<)\s*[a-zA-Z])$/.test(math);
+  }
+  if (ctx.original) return false;
+  if (a.kind === "expression") return Boolean(ctx.previous) && simplestForm(math);
+  if (a.kind === "assignment" || a.kind === "function") {
+    const m = /^[a-zA-Z]\s*=\s*(.+)$/.exec(math);
+    return Boolean(m) && Boolean(ctx.previous) && simplestForm(m![1]);
+  }
+  return false;
+}
+
+/**
+ * The engine's math of an expression is as simple as it goes: no brackets, no term with a second
+ * number factor, no two terms alike (`9 * x - 5`, `x ^ 8`, `10 * pi`; not `5 * x + 25 - 2 * x`,
+ * `x ^ (2 + 6)`, `2 * pi * 5`, `9 * x - 5 + 0`).
+ */
+export function simplestForm(math: string): boolean {
+  if (/[()]/.test(math) || /\//.test(math)) return false;
+  const terms = math.replace(/^\s*-\s*/, "").split(/\s+[+-]\s+/);
+  const seen = new Set<string>();
+  for (const t of terms) {
+    const factors = t.split(/\s*\*\s*/).filter((f) => f.length > 0);
+    const numbers = factors.filter((f) => /^[\d.]+$/.test(f));
+    if (numbers.length > 1 || numbers.some((n) => Number(n) === 0) || (numbers.length === 1 && Number(numbers[0]) === 1 && factors.length > 1)) return false;
+    const key = factors.filter((f) => !/^[\d.]+$/.test(f)).sort().join("*");
+    if (seen.has(key)) return false;
+    seen.add(key);
+  }
+  return true;
+}
+
+/**
+ * An arithmetic answer that is "wrong" the way a misread is, not the way a slip is (the real-ink bench:
+ * a 14 read as 4, a 65 read as b5, both ringed on right work): a letter where only a number can be, or
+ * the right value with one digit dropped or added. Only for a one-line problem with a whole-number answer.
+ */
+function looksMisread(engine: LiveEngine, latex: string, problem: readonly string[]): boolean {
+  if (problem.length !== 1) return false;
+  const end = lastSide(latex).replace(/\\(?:text|mathrm|mathbb|mathbf)\s*\{([^{}]*)\}/g, "$1").replace(/\\[a-zA-Z]+/g, " ");
+  if (/[a-zA-Z]/.test(end) && /\d/.test(end)) return true;
+  const read = (end.match(/\d+/g) ?? []).join("");
+  if (!read) return false;
+  const right = engine.analyzeLine(`x = ${problem[0]}`, { mode: "feedback" }).solutions?.[0]?.replace(/\s/g, "");
+  if (!right || !/^-?\d+$/.test(right)) return false;
+  const digits = right.replace("-", "");
+  const [short, long] = read.length < digits.length ? [read, digits] : [digits, read];
+  if (long.length - short.length !== 1) return false;
+  let i = 0;
+  for (const ch of long) if (i < short.length && ch === short[i]) i++;
+  return i === short.length;
 }

@@ -60,7 +60,7 @@ extension LiveLoop {
     /// device by the background brain (`variantOf`: same form, new numbers, checked by the engine).
     /// Once per problem; never two offers at once.
     func offerNowYouTry(problem key: String, lines problem: [String]) {
-        guard !problem.isEmpty, offer == nil, !offeredFor.contains(key), engineReady else { return }
+        guard !passive, !problem.isEmpty, offer == nil, !offeredFor.contains(key), engineReady else { return }
         offeredFor.insert(key)
         let seed = Int(LiveSeeds.handSeed(key) & 0x7fff_ffff)
         // the learning record's name for the problem it follows (its attempt is the new one's parent)

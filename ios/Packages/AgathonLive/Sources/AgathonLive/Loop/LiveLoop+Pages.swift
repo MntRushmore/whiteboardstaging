@@ -78,7 +78,11 @@ extension LiveLoop {
         if a.verdict != "ok", a.solved != true, a.bareAnswer != true,
            a.kind == "equation" || a.kind == "inequality" {
             let otherLetters = !mine.isEmpty && !theirs.isEmpty && mine.isDisjoint(with: theirs)
-            if solvedAbove || otherLetters {
+            // the problem's letter given a value again (`x = 4` under `x = 3 - 7`): its answer worked on,
+            // judged — not a problem of the kid's own (it went unringed, and the page counted solved)
+            let sameAnswer = mine.count == 1 && theirs.isSuperset(of: mine)
+                && judged.range(of: #"^\s*[a-zA-Z]\s*=[^=]*$"#, options: .regularExpression) != nil
+            if (solvedAbove && !sameAnswer) || otherLetters {
                 var r = a
                 r.verdict = "none"
                 r.note = ""
@@ -188,11 +192,15 @@ extension LiveLoop {
 
     // MARK: - Next, All done
 
-    /// Next problem (or All done): the page after this one.
+    /// Next problem (or All done): the page after this one — after this problem's last page, when it
+    /// needed more room ("More room": Next shows on whichever of its pages is on show).
     public func nextPage() {
         let ids = board.store.screenIDs
-        guard let i = ids.firstIndex(of: board.currentScreenID), i + 1 < ids.count else { return }
-        board.goToScreen(ids[i + 1])
+        guard let i = ids.firstIndex(of: board.currentScreenID) else { return }
+        var j = i + 1
+        if let group = pageGroup { while j < ids.count && group.pages.contains(ids[j]) { j += 1 } }
+        guard j < ids.count else { return }
+        board.goToScreen(ids[j])
     }
 
     /// A page of the set (the All done page's stickers).
@@ -213,7 +221,8 @@ extension LiveLoop {
         let attempts = learning.attempts()
         var out: [SetProblem] = []
         for id in store.screenIDs {
-            guard let p = store[id]?.screen?.problemPage, p.kind == .problem, p.setId == set else { continue }
+            // (a page that continues a problem is no problem of its own: "More room")
+            guard let p = store[id]?.screen?.problemPage, p.kind == .problem, p.setId == set, !p.isContinuation else { continue }
             let latex = Self.problemLatex(on: id, in: store)
             let key = DailyProgress.problemKey(latex)
             let attempt = key.isEmpty ? nil : attempts.last { DailyProgress.problemKey($0.problemLatex) == key && $0.outcome != .inProgress }
@@ -242,11 +251,15 @@ extension LiveLoop {
         return ""
     }
 
-    /// What a page shows of how it went: solved by the tutor's working, solved, or not yet.
+    /// What a page shows of how it went: solved by the tutor's working, solved, or not yet (on any of
+    /// its problem's pages, when it needed more room).
     static func pageOutcome(_ screen: RecordID, in store: BoardStore) -> SetProblem.Outcome {
-        let solved = store.semantic(on: screen).contains { if case .line(let l) = $0 { return l.verdict == .solved } else { return false } }
+        let pages = store.problemGroup(of: screen)?.pages ?? [screen]
+        let solved = pages.contains { page in
+            store.semantic(on: page).contains { if case .line(let l) = $0 { return l.verdict == .solved } else { return false } }
+        }
         guard solved else { return .notYet }
-        let tutorWorked = store.drawables(on: screen).contains { $0.meta[LiveMeta.solvedLatex] != nil }
+        let tutorWorked = pages.contains { page in store.drawables(on: page).contains { $0.meta[LiveMeta.solvedLatex] != nil } }
         return tutorWorked ? .together : .alone
     }
 

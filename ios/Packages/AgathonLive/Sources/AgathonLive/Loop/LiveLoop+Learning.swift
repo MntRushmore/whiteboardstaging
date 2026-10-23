@@ -77,7 +77,8 @@ extension LiveLoop {
 
     /// The record's key for the problem a student line is in.
     func learnKeyFor(_ st: LiveLine) -> String {
-        let page = board.currentScreenID.rawValue
+        // (a problem over more pages is filed under its first page: one attempt, "More room")
+        let page = learnPageId
         let key: String
         if let head = head(for: st.column) {
             key = "\(page)\(ProblemKeyKind.cell)\(head.id.key)"
@@ -85,6 +86,10 @@ extension LiveLoop {
             key = "\(page)\(ProblemKeyKind.cell)\(cell.key)"
         } else if let own = learn.keys[st.id] {
             key = own
+        } else if let carried = carriedLearnKey(st) {
+            // the kid's own problem, begun on the page before
+            key = carried
+            for s in columnLines(st.column) where learn.keys[s.id] == nil && ownHeadAbove(s) == nil { LearnState.remember(&learn.keys, s.id, carried) }
         } else {
             let col = columnLines(st.column)
             let found = col.lazy.compactMap { self.learn.keys[$0.id] }.first
@@ -102,6 +107,7 @@ extension LiveLoop {
     func learnProblemOf(_ st: LiveLine) -> [String] {
         if let head = head(for: st.column) { return head.lines }
         if let cell = chatCell(for: st) { return cell.lines }
+        if let carried = carriedProblem(st) { return carried }
         let col = columnLines(st.column).filter { !$0.latex.isEmpty }
         let first = col.first { !["label", "unknown", "operation"].contains($0.analysis?.kind ?? "unknown") } ?? col.first
         return first.map { [$0.latex] } ?? []
@@ -150,20 +156,27 @@ extension LiveLoop {
     func learnLine(_ given: LiveLine, _ decided: LiveMarks.Kind?) {
         guard started, learning.isEnabled, let st = lines[given.id], !st.latex.isEmpty else { return }
         let id = st.id
+        let line = learnLineSignal(st, decided)
+        // most renders change nothing: they stop here
+        if learn.sent[id] == line.said { return }
+        // a readback stays quiet, and unsent, until a line of its problem is new
+        if learn.fresh[id] == nil && !columnLines(st.column).contains(where: { learn.fresh[$0.id] != nil }) { return }
+        LearnState.remember(&learn.sent, id, line.said)
+        learnEmit(line.signal)
+    }
+
+    /// What the record is told about a line (and, to tell when it changes, the gist of it). A line on
+    /// another page of a problem that needed more room is told this way too (`LiveLoop+MoreRoom`).
+    func learnLineSignal(_ st: LiveLine, _ decided: LiveMarks.Kind?) -> (said: String, signal: LearningSignal) {
         let mark = learnMarkOf(st, decided)
         let solved = (st.analysis?.solved ?? false) && mark == .check
         let kind = st.analysis?.kind ?? "unknown"
         let key = learnKeyFor(st)
         let said = "\(key)\n\(st.latex)\n\(kind)\n\(mark?.rawValue ?? "")\n\(solved)"
-        // most renders change nothing: they stop here
-        if learn.sent[id] == said { return }
-        // a readback stays quiet, and unsent, until a line of its problem is new
-        if learn.fresh[id] == nil && !columnLines(st.column).contains(where: { learn.fresh[$0.id] != nil }) { return }
-        LearnState.remember(&learn.sent, id, said)
-        let previous = learnPreviousLine(st)?.latex ?? learnHeadAbove(st)
-        learnEmit(.line(.init(at: learnNow, boardId: boardId, pageId: board.currentScreenID.rawValue, problemKey: key,
-                              problemLatex: learnProblemOf(st), lineId: id, latex: st.latex, kind: kind, previousLatex: previous,
-                              mark: mark, solved: solved)))
+        let previous = learnPreviousLine(st)?.latex ?? carriedPreviousLatex(st) ?? learnHeadAbove(st)
+        return (said, .line(.init(at: learnNow, boardId: boardId, pageId: learnPageId, problemKey: key,
+                                  problemLatex: learnProblemOf(st), lineId: st.id, latex: st.latex, kind: kind, previousLatex: previous,
+                                  mark: mark, solved: solved)))
     }
 
     enum LearnDepth { case step, solve }
@@ -174,7 +187,7 @@ extension LiveLoop {
         let at = learnNow
         learnEmit(.help(.init(at: at, problemKey: target.key, help: depth == .step ? .nextStep : .solve, auto: auto)))
         if depth == .solve {
-            learnEmit(.tutorSolved(.init(at: at, boardId: boardId, pageId: board.currentScreenID.rawValue, problemKey: target.key,
+            learnEmit(.tutorSolved(.init(at: at, boardId: boardId, pageId: learnPageId, problemKey: target.key,
                                          problemLatex: target.problem)))
         }
     }
@@ -223,7 +236,8 @@ extension LiveLoop {
     /// The student moved to another screen: the problems on the one left are over (for now).
     func learnScreen() {
         learn.chatCells = nil
-        learnEmit(.screen(at: learnNow, boardId: boardId, pageId: board.currentScreenID.rawValue))
+        // (another page of the same problem is the same problem's page: it stays open, "More room")
+        learnEmit(.screen(at: learnNow, boardId: boardId, pageId: learnPageId))
     }
 
     /// The board is closing.
@@ -240,7 +254,7 @@ extension LiveLoop {
     func learnTutorChanges(_ change: ChangeSet) {
         learn.chatCells = nil
         // the tutor writing now (not a board opened, converted or synced from another device)
-        guard change.origin == .tutor, learning.isEnabled else { return }
+        guard change.origin == .tutor, learning.isEnabled, !passive else { return }
         var told: [(key: String, signal: LearningSignal)] = []
         for (_, record) in change.added {
             switch record {

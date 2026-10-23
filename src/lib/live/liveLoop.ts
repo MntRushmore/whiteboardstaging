@@ -131,7 +131,7 @@ import {
   recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
-import { assignColumns, clusterLines, inkScale, medianStrokeHeight, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
+import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
 import type { Stroke } from "@/lib/hand";
 import { roundInk } from "./inkCompact";
 import { lineGroupsOf, type LineGroup } from "./typedInk";
@@ -140,11 +140,13 @@ import { TYPED_COUNT_META, TYPED_ID_META, type TypedLineRef, type TypedSpot, typ
 import type { TypedHost, TypedWriter } from "./typedWriter";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { captureInkCrop } from "./inkCrop";
-import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, leadingSigns, ownTicks, readYoungHand } from "./youngHand";
-import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
+import { answerAfterRestatedEnd, leadingSigns, readYoungHand, rightAnswerTo } from "./youngHand";
+import { withoutStrays } from "./strays";
+import { barGroups, DIAGRAM_RULES, diagramNear, fractionGroups, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, stackedAnalysis, workStacked, type StackedWork } from "./engine/columnArithmetic";
-import { bracketLine, isArithmetic, isSlip, judgeLine, MISREAD_STACK } from "./engine/columnWork";
+import { keepsKnownNumbers, knownNumbers, SURE_READ } from "./chainGuard";
+import { arithmeticOf, bracketLine, isArithmetic, isSlip, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "./engine/columnWork";
 import { stackGrid, stackGroups, type StackGrid, type StackedSum } from "./stackedSums";
 import { parseDomainPiece } from "./engine/domain";
 import { figureAnswer, isValueLabel, labelKey, looksLikeUnknown } from "./figure";
@@ -266,10 +268,12 @@ interface LineRuntime {
   /** the tutor's mark wanted on this line (`markKey`), null for none; undefined until first render */
   markKey?: string | null;
   /**
-   * its ring was taken off because new ink looked like more of this line (`unringGrowingLines`):
-   * its strokes then, so the next flush can tell whether that ink really joined it
+   * its ring or tick was taken off because new ink looked like more of this line
+   * (`unringGrowingLines`): its strokes then, so the next flush can tell whether that ink really
+   * joined it, and which mark it was
    */
   unrungStrokes?: readonly string[] | null;
+  unrungKind?: "circle" | "check" | null;
   markWriter?: HandWriter | null;
   /** its read failed for a reason that is not the handwriting (signed out, out of ink, rate limited): no "?" */
   readRefused?: boolean;
@@ -554,12 +558,6 @@ const NEXT_STEP_META = "nextStepFor";
  * tutor wrote is not written again, and a sum rewritten takes the tutor's digits with it.
  */
 const STACK_META = "stackFor";
-/**
- * A wrong digit in a stacked sum is ringed only on a read this sure of it: a child's sum ringed for
- * a digit Mathpix misread is worse than one left unmarked (the second reader, which re-reads a line
- * before its ring, reads one line, not a block). Mathpix read every stacked block at ~1.
- */
-const STACK_RING_CONFIDENCE = 0.85;
 /** between two digits of a stacked sum the tutor writes, a beat (not a whole line's pause) */
 const STACK_DIGIT_GAP_MS = 200;
 /** on the strokes of a tutor's mark (tick / ring / question mark): its `markKey` */
@@ -801,6 +799,12 @@ export class LiveLoop implements LiveController {
   /** a line's readback, shown after its read (`showReadback`) */
   private readonly readbackTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private dirtyStrokeIds = new Set<string>();
+  /** when each of the student's strokes was finished (`stillGrowing`) */
+  private strokeDoneAt = new Map<string, number>();
+  /** the stroke being drawn now, if any (`stillGrowing`) */
+  private drawingStrokeId: TLShapeId | null = null;
+  /** lines whose ring or "?" waits for them to look finished (`stillGrowing`) */
+  private growthTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private pendingRewrite = false;
   private readonly rt = new Map<string, LineRuntime>();
   /** lines whose recognition could not reach the network; replayed on reconnect (no cap) */
@@ -1109,6 +1113,8 @@ export class LiveLoop implements LiveController {
     this.deps.events?.removeEventListener("offline", this.onOffline);
     this.deps.events?.removeEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
     this.resetRuntime();
+    for (const t of this.growthTimers.values()) clearTimeout(t);
+    this.growthTimers.clear();
     this.tutorScreens.clear();
     // what lecture mode heard since the last write is saved with the board, not lost with the loop
     this.flushPageMeta();
@@ -1551,12 +1557,16 @@ export class LiveLoop implements LiveController {
       if (!isStudentInk(rec)) continue;
       if ((rec as TLDrawShape).props.isComplete) {
         this.dirtyStrokeIds.add(rec.id);
+        this.strokeDone(rec.id);
         finished.push(rec);
         penUp = true;
         if (!this.looksDrawn(rec)) writingUp = true;
         // a stroke made in one frame (a dot) is the pen; one the student had rubbed out is Undo
         if (!this.goneStrokeIds.has(rec.id)) this.wrote(rec.id);
-      } else penDown = true;
+      } else {
+        penDown = true;
+        this.drawingStrokeId = rec.id;
+      }
     }
 
     for (const [from, to] of Object.values(entry.changes.updated)) {
@@ -1564,9 +1574,13 @@ export class LiveLoop implements LiveController {
       if (isDraw(to)) {
         if (!isStudentInk(to)) continue;
         const f = from as TLDrawShape;
-        if (!to.props.isComplete) penDown = true;
+        if (!to.props.isComplete) {
+          penDown = true;
+          this.drawingStrokeId = to.id;
+        }
         if (!f.props.isComplete && to.props.isComplete) {
           this.dirtyStrokeIds.add(to.id);
+          this.strokeDone(to.id);
           finished.push(to);
           penUp = true;
           if (!this.looksDrawn(to)) writingUp = true;
@@ -1665,19 +1679,22 @@ export class LiveLoop implements LiveController {
   }
 
   /**
-   * Takes the ring off every ringed line these new strokes extend (`inkExtendsLine`: on its row, on
-   * it or just past its right end). The verdict was on a half-written line; the re-read of the whole
-   * line marks it again — a ring again if it is still wrong — instead of the old ring standing (and
-   * its writer finishing it) while the student completes the line.
+   * Takes the ring or the tick off every marked line these new strokes extend (`inkExtendsLine`: on
+   * its row, on it or just past its right end). The verdict was on a half-written line (`x = 1`
+   * ticked, then its 2); the re-read of the whole line marks it again — a ring only once it looks
+   * finished (`stillGrowing`) — instead of the old mark standing (and its writer finishing it) while
+   * the student completes the line.
    */
   private unringGrowingLines(strokes: readonly TLShape[]): void {
     const inks = strokes.map((s) => this.editor.getShapePageBounds(s)).filter((b): b is Box => Boolean(b));
     for (const state of Object.values(liveStore.lines.get())) {
       const rt = this.rt.get(state.line.id);
-      if (!rt?.markKey?.startsWith("circle:")) continue;
+      const kind = rt?.markKey?.startsWith("circle:") ? "circle" : rt?.markKey?.startsWith("check:") ? "check" : null;
+      if (!rt || !kind) continue;
       if (!inks.some((b) => inkExtendsLine(boxToRect(b), state.line.bounds))) continue;
       // the clustering has the last word on whether this ink is more of the line (`reringUnchanged`)
       rt.unrungStrokes = [...state.line.strokeIds];
+      rt.unrungKind = kind;
       // (the learning record waits for the read of the whole line: this is no verdict)
       this.syncMark(state, null, undefined, false);
     }
@@ -1689,19 +1706,21 @@ export class LiveLoop implements LiveController {
    * past a line that clusters as a line of its own (`2x = 1`, then `y` written a gap to the right)
    * left the line it guessed at un-ringed for good: its strokes had not changed, so it was never
    * read again, and only a read puts a ring back. A line whose strokes are the ones it had when its
-   * ring came off gets the ring back now; a line that did grow is read again, and the read marks it.
+   * ring (or tick) came off gets it back now; a line that did grow is read again, and the read marks it.
    */
   private reringUnchanged(lines: readonly InkLine[], force: ReadonlySet<string>): void {
     for (const line of lines) {
       const rt = this.rt.get(line.id);
       const before = rt?.unrungStrokes;
+      const kind = rt?.unrungKind ?? "circle";
       if (!rt || !before) continue;
       rt.unrungStrokes = null;
+      rt.unrungKind = null;
       // something marked it again since (a re-render): that mark stands
       if (rt.markKey !== null || force.has(line.id) || this.opts.mode === "off") continue;
       if (!sameStrokeSet(before, line.strokeIds)) continue;
       const state = liveStore.lines.get()[line.id];
-      if (state) this.syncMark(state, "circle");
+      if (state) this.syncMark(state, kind);
     }
   }
 
@@ -1965,7 +1984,7 @@ export class LiveLoop implements LiveController {
     const columns = this.columnOptions(inLines);
     // a division bar with its divisor, a stacked sum and a typed line are a line each whatever the clusterer makes of them
     const byId = new Map(ink.map((s) => [s.id as string, s]));
-    const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink), ...groups.map((g) => g.strokeIds.flatMap((id) => byId.get(id) ?? []))];
+    const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink), ...fractionGroups(split.fractions, ink), ...groups.map((g) => g.strokeIds.flatMap((id) => byId.get(id) ?? []))];
     // ink beside one of the chat's problems is never one line with ink under another (`splitAcrossProblems`)
     const cells = this.problemCells();
     const apart = cells.length > 1 ? (group: InkStroke[]) => splitAcrossProblems(group, cells) : undefined;
@@ -2012,48 +2031,9 @@ export class LiveLoop implements LiveController {
     this.publishHelpTarget();
   }
 
-  /**
-   * The lines without what a young student puts on the page that is no maths (`youngHand.ts`): a
-   * line of nothing but taps of the pen is no line (`isSpeckLine`: never read, so never given a "?");
-   * under one of the chat's problems, nor is one of nothing but level bars — `-`, `=`, `= -`, an answer
-   * started whose number is still to come (`isSignsOnly`: Mathpix reads a lone minus `\backslash`,
-   * and `= -` as `=`) — until the number joins it; and under one of the chat's sums her own tick after
-   * her answer is not part of it (`ownTicks`; a line that was only a tick is none). Those strokes stay
-   * on the page in no line, like a drawing's. A division bar's or a stacked sum's line is left as it
-   * is. `writing`: the strokes clustered; `cells`: the chat's problems.
-   */
+  /** The lines without what a young student puts on the page that is no maths (`strays.ts`). */
   private withoutStrays(lines: InkLine[], writing: readonly InkStroke[], columns: ColumnOptions, cells: readonly ProblemCell[]): InkLine[] {
-    const byId = new Map(writing.map((s) => [s.id as string, s]));
-    const glyph = medianStrokeHeight([...writing]);
-    let changed = false;
-    const out: InkLine[] = [];
-    for (const line of lines) {
-      const strokes = line.strokeIds.map((id) => byId.get(id)).filter((s): s is InkStroke => Boolean(s));
-      // a division bar's line, a stacked sum's: not the clusterer's, left alone
-      if (strokes.length !== line.strokeIds.length) {
-        out.push(line);
-        continue;
-      }
-      if (isSpeckLine(strokes, glyph)) {
-        changed = true;
-        continue;
-      }
-      const cell = cellOf(line.bounds, cells);
-      // `-`, `=`, `= -` under one of the chat's problems: an answer started, its number still to come
-      if (cell && isSignsOnly(strokes)) {
-        changed = true;
-        continue;
-      }
-      const ticks = cell && cell.lines.every(isArithmetic) ? ownTicks(strokes) : [];
-      if (ticks.length === 0) {
-        out.push(line);
-        continue;
-      }
-      changed = true;
-      const kept = strokes.filter((s) => !ticks.includes(s));
-      if (kept.length > 0) out.push({ ...line, strokeIds: kept.map((s) => s.id), bounds: unionRects(kept.map((s) => s.bounds)) });
-    }
-    return changed ? assignColumns(out, columns) : lines;
+    return withoutStrays(lines, writing, columns, cells);
   }
 
   /**
@@ -2538,7 +2518,10 @@ export class LiveLoop implements LiveController {
     // the signs her answer starts with, as its ink has them: a wobbly `=` is read as a minus too
     const ink = arithmetic ? state.line.strokeIds.map((id) => this.editor.getShape(id)).map((s) => (s ? this.inkOf(s) : null)) : [];
     const signs = arithmetic ? leadingSigns(ink.filter((s): s is InkStroke => s !== null)) : null;
-    return readYoungHand(latex, { arithmetic, signs });
+    // a nonsense read of her answer that can only have been the right number (`misreadVariants`)
+    const problem = arithmetic ? this.arithmeticLines(state) : null;
+    const rightAnswer = problem && this.engine ? rightAnswerTo(this.engine, problem) : undefined;
+    return readYoungHand(latex, { arithmetic, signs, rightAnswer });
   }
 
   // ---------------------------------------------------------------- the second reader
@@ -2695,7 +2678,7 @@ export class LiveLoop implements LiveController {
   private arithmeticLines(state: LiveLineState): string[] | null {
     const head = this.columnHeads.get(state.line.column);
     const lines = head ? head.lines : [this.columnLines(state.line.column).find((s) => s.latex && s.line.row <= state.line.row)?.latex ?? state.latex];
-    return lines.length > 0 && lines.every(isArithmetic) ? [...lines] : null;
+    return arithmeticOf(lines);
   }
 
   /**
@@ -2775,7 +2758,17 @@ export class LiveLoop implements LiveController {
           return null;
         }
         const reply = await this.askAgain(s.line, s, { signal: "chain", above: [], below: [] });
-        const latex = reply && this.engine ? acceptChainReread(this.engine, s.latex, reply.latex, others) : null;
+        let latex = reply && this.engine ? acceptChainReread(this.engine, s.latex, reply.latex, others) : null;
+        // never a number the page knows (the problem's; the line above's, for the step) — `chainGuard.ts`
+        const step = liveStore.lines.get()[lineId];
+        const aboveOfStep = step ? this.previousLine(step) : null;
+        const known = knownNumbers(this.columnHeads.get(s.line.column)?.lines ?? [], s.line.id === lineId && aboveOfStep ? aboveOfStep.latex : null);
+        if (latex && !keepsKnownNumbers(s.latex, latex, known)) latex = null;
+        // a sure read is changed only when a second look says the same
+        if (latex && s.confidence >= SURE_READ) {
+          const again = await this.askAgain(s.line, s, { signal: "chain", above: [], below: [] });
+          if (!again || !this.engine || acceptChainReread(this.engine, s.latex, again.latex, others) !== latex) latex = null;
+        }
         return reply ? { state: s, reply, latex } : null;
       }),
     );
@@ -3839,7 +3832,12 @@ export class LiveLoop implements LiveController {
         // ...or this very read already earned its "couldn't read this" "?": a re-render of it (the
         // line above was read again) keeps the "?" instead of taking it off
         const unread = !why && rt.unreadableShown && this.opts.mode !== "off" && this.unreadableRead(state);
-        this.syncMark(state, why || unread ? "question" : null, why ?? (unread ? "unread" : undefined));
+        // no "?" on a line still being written (`stillGrowing`)
+        const wait = why || unread ? this.stillGrowing(state) : null;
+        if (wait !== null) {
+          this.syncMark(state, null, undefined, false);
+          this.renderWhenFinished(lineId, wait);
+        } else this.syncMark(state, why || unread ? "question" : null, why ?? (unread ? "unread" : undefined));
       }
       if (this.unreadableRead(state) && !rt.unreadableShown && !rt.unreadableTimer && !opts.quiet) {
         const ticket = rt.processing;
@@ -3889,10 +3887,61 @@ export class LiveLoop implements LiveController {
       const tick = marked === "ok" || marked === "solved";
       // a line the engine cannot read at all, under one of the chat's problems: its "?" (`questionNow`)
       const why = ring || tick ? null : this.questionNow(state);
+      // no ring and no "?" on a line still being written (`stillGrowing`)
+      const wait = ring || why ? this.stillGrowing(state) : null;
+      if (wait !== null) {
+        this.syncMark(state, null, undefined, false);
+        this.renderWhenFinished(lineId, wait);
+        return;
+      }
       this.syncMark(state, ring ? "circle" : tick ? "check" : why ? "question" : null, why ?? undefined);
       this.dropStaleSuggestion(state, ring);
       if (ring && !opts.quiet && auto) this.suggestNextStep(lineId);
     }
+  }
+
+  /** A stroke of the student's was finished now (`stillGrowing`). */
+  private strokeDone(id: string): void {
+    this.strokeDoneAt.set(id, this.deps.now());
+    if (this.drawingStrokeId === id) this.drawingStrokeId = null;
+  }
+
+  /**
+   * A ring or a "?" never lands on a line still being written (the real-ink bench: `7^{2} = 4` ringed
+   * before its 9, `x = 1` before its 2). The ms it should still wait, null when the line looks
+   * finished: no stroke being drawn across its row, and none of its strokes newer than
+   * `LIVE_TIMING.doubtHoldMs`. A line with no timed stroke (opened from the board, typed) is finished,
+   * and so is one the student asked about.
+   */
+  private stillGrowing(state: LiveLineState): number | null {
+    // the student asked about this line as it reads now (Help me, Check): they are done with it
+    if (this.askedLines.get(state.line.id) === state.latex) return null;
+    const hold = LIVE_TIMING.doubtHoldMs;
+    const drawing = this.drawingStrokeId;
+    if (drawing && this.editor.isIn?.("draw.drawing")) {
+      const b = this.editor.getShapePageBounds?.(drawing);
+      const l = state.line.bounds;
+      if (b && b.y < l.y + l.h && b.y + b.h > l.y) return hold;
+    }
+    let last = -Infinity;
+    for (const id of state.line.strokeIds) last = Math.max(last, this.strokeDoneAt.get(id) ?? -Infinity);
+    const age = this.deps.now() - last;
+    return age < hold ? hold - age : null;
+  }
+
+  /** Renders the line again when it should look finished (`stillGrowing`). */
+  private renderWhenFinished(lineId: string, ms: number): void {
+    const prev = this.growthTimers.get(lineId);
+    if (prev) clearTimeout(prev);
+    this.growthTimers.set(
+      lineId,
+      setTimeout(() => {
+        this.growthTimers.delete(lineId);
+        const cur = liveStore.lines.get()[lineId];
+        if (!cur || !this.opts.enabled || !this.engine) return;
+        this.render(cur, this.decisionFor(cur));
+      }, ms + 10),
+    );
   }
 
   /** A read the recognizer was unsure of: the "couldn't read this" chip and "?" are for it. */
@@ -6059,6 +6108,12 @@ export class LiveLoop implements LiveController {
     const at = kind ? this.markRect(state, kind) : state.line.bounds;
     const want = kind && this.deps.handwritingEnabled() ? markKey(kind, at) : null;
     if (rt.markKey === want) return;
+    // a ring taken back takes what it brought: its hint card, its queued step (the iPad's `ringWithdrawn`)
+    if (rt.markKey?.startsWith("circle") && kind !== "circle") {
+      this.pendingSuggestions.delete(lineId);
+      const hints = liveStore.openHints.get();
+      if (hints.some((h) => h.lineId === lineId)) liveStore.openHints.set(hints.filter((h) => h.lineId !== lineId));
+    }
     rt.markKey = want;
     rt.markWriter?.cancel();
     rt.markWriter = null;

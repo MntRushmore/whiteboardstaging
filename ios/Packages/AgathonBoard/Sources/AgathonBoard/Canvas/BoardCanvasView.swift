@@ -76,6 +76,8 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
     private let templateLayer = CALayer()
     private let templateAnswer = CAShapeLayer()
     private let templateAnswerLabel = CAShapeLayer()
+    /// "Problem 2, continued", "Answer on the next page" ("More room")
+    private let templateNotes = CAShapeLayer()
     private let templateLabel = CAShapeLayer()
     private let templateRules = CAShapeLayer()
     /// the page the template was drawn for (redrawn only when it changes)
@@ -186,7 +188,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         content.addSublayer(paper)
         templateLayer.anchorPoint = .zero
         templateLayer.actions = ["sublayers": NSNull(), "hidden": NSNull()]
-        for l in [templateAnswer, templateAnswerLabel, templateLabel, templateRules] {
+        for l in [templateAnswer, templateAnswerLabel, templateNotes, templateLabel, templateRules] {
             l.actions = ["path": NSNull(), "fillColor": NSNull(), "strokeColor": NSNull(), "lineWidth": NSNull(), "hidden": NSNull()]
             templateLayer.addSublayer(l)
         }
@@ -252,6 +254,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         paper.shadowOffset = CGSize(width: 0, height: 2)
         templateAnswer.fillColor = appearance.template.answer
         templateAnswerLabel.fillColor = appearance.template.answerLabel
+        templateNotes.fillColor = appearance.template.answerLabel
         templateLabel.fillColor = appearance.template.label
         templateRules.strokeColor = appearance.template.rule
         selectionFrame.strokeColor = appearance.selectionInk.cgColor
@@ -1102,6 +1105,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         }
         templateAnswer.path = t.answer
         templateAnswerLabel.path = t.answerLabel
+        templateNotes.path = t.notes
         templateLabel.path = t.label
         templateRules.path = t.rules
         templateRules.lineWidth = t.ruleWidth
@@ -1176,8 +1180,11 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
 
     /// Draws `points` (view coordinates) as a stroke of `duration` seconds through the same path a
     /// touch takes, one sample per display frame, at Pencil-like 240 Hz coalesced sampling. The tool
-    /// in hand decides what it does (ink, rub out, a shape, a lasso or a move).
-    public func simulateStroke(_ points: [CGPoint], duration: TimeInterval, pencil: Bool = true, completion: @escaping () -> Void) {
+    /// in hand decides what it does (ink, rub out, a shape, a lasso or a move). A hand's own pen
+    /// (the kid sessions) can give each point its `pressures` and when it is reached (`times`: 0…1 of
+    /// the duration, rising); otherwise an even pace and a gentle swell.
+    public func simulateStroke(_ points: [CGPoint], duration: TimeInterval, pencil: Bool = true, pressures: [Double]? = nil, times: [Double]? = nil,
+                               completion: @escaping () -> Void) {
         guard points.count >= 2 else {
             completion()
             return
@@ -1186,12 +1193,19 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         var sent = 0
         func samples(upTo now: CFTimeInterval) -> [Sample] {
             let frac = min(1, (now - start) / duration)
-            let n = max(1, Int((frac * Double(points.count - 1)).rounded(.down)) + 1)
+            let n: Int
+            if let times, times.count == points.count {
+                n = max(1, times.firstIndex { $0 > frac } ?? points.count)
+            } else {
+                n = max(1, Int((frac * Double(points.count - 1)).rounded(.down)) + 1)
+            }
             var out: [Sample] = []
             while sent < n {
                 let i = sent
-                let t = start + duration * Double(i) / Double(points.count - 1)
-                let pressure = pencil ? 0.45 + 0.35 * sin(Double(i) / Double(points.count) * .pi) : 0.5
+                let at = times.flatMap { $0.count == points.count ? $0[i] : nil } ?? Double(i) / Double(points.count - 1)
+                let t = start + duration * at
+                let swell = 0.45 + 0.35 * sin(Double(i) / Double(points.count) * .pi)
+                let pressure = pencil ? (pressures.flatMap { $0.count == points.count ? $0[i] : nil } ?? swell) : 0.5
                 out.append(Sample(view: points[i], pressure: pressure, altitude: pencil && controller.storesTilt ? 1.1 : -1, azimuth: pencil && controller.storesTilt ? 0.6 : 0, timestamp: t))
                 sent += 1
             }

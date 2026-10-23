@@ -159,7 +159,10 @@ public struct OnboardingCopy: Sendable {
     }
     public let email = "Email"
     public let password = "Password"
-    public let consent = "I agree to the Terms and Privacy Policy. I’m 13 or older, or I’m a parent or guardian setting this up for my child."
+    /// What goes to AI services, said before the account is made and agreed to in the box below it
+    /// (App Review 5.1.2(i): disclose sharing with third-party AI and get explicit permission first).
+    public let aiDisclosure = "To check work and answer questions, Agathon sends what your kid writes, says and asks to AI services that read it and answer (our Privacy Policy lists them). Never their name or email."
+    public let consent = "I agree to the Terms and Privacy Policy, including the AI services. I’m 13 or older, or I’m a parent or guardian setting this up for my child."
     public let terms = "Terms"
     public let privacy = "Privacy Policy"
     public let heardFromPrompt = "How did you hear about Agathon?"

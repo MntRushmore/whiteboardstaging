@@ -54,8 +54,12 @@ export const STACK_RULES = {
   /** rows are at most this many digit heights apart (blank between them), and at least this many */
   rowGapFactor: 1.3,
   rowApartFactor: 0.08,
+  /** ...or touching, by at most this many digit heights, when both are rows of full-size digits */
+  rowTouchFactor: 0.15,
   /** a row is one row of glyphs: at most this many digit heights tall, and this many wide */
   rowMaxHeightFactor: 1.75,
+  /** the answer row (under the rule) may be this many digit heights tall: a child's answer is often bigger */
+  answerMaxHeightFactor: 2.5,
   rowMaxWidthFactor: 12,
   /** each row is at least this share over the rule (the operator may stick out on the left) */
   ruleCoverShare: 0.55,
@@ -69,6 +73,12 @@ export const STACK_RULES = {
   markShare: 0.62,
   /** ...and bigger than a decimal point (this share both ways) */
   dotShare: 0.3,
+  /** a rule drawn without a ruler may climb or fall this much over its length (~14°) when it is straight */
+  ruleTilt: 0.25,
+  /** a loop round some of the writing (her circle or box round the answer) is at least this many glyphs (G) across... */
+  loopMinFactor: 1.8,
+  /** ...and ends within this share of its size of where it began */
+  loopGapShare: 0.4,
 } as const;
 
 /** One row of a stacked sum: its box and its glyphs (strokes overlapping in x are one glyph, the two of a `+`). */
@@ -149,9 +159,20 @@ function nearIndex(strokes: readonly InkStroke[], cap: number): Near {
   };
 }
 
-/** Long, level and straight — and not one bar of an `=` (a level twin just over or under it). */
+/**
+ * A rule's shape: level and straight, or — a child's line drawn without a ruler, `198 × 34` under
+ * `+47` — straight and at most `ruleTilt` off level. Before, such a sum was no sum: its rule was a
+ * fraction bar, `\frac{+47}{175}` was read under a `128` of its own, and the right sum got no tick.
+ */
+function isRuleShape(s: InkStroke, G: number): boolean {
+  const r = s.bounds;
+  if (isFlat(r, G)) return bend(s) < 0.12;
+  return r.w > 3 * r.h && r.h <= STACK_RULES.ruleTilt * r.w && bend(s) < 0.06;
+}
+
+/** Long, level (or a child's slight tilt) and straight — and not one bar of an `=` (a level twin just over or under it). */
 function isRule(s: InkStroke, near: Near, G: number, minFactor: number = STACK_RULES.ruleMinFactor): boolean {
-  if (!(s.bounds.w >= minFactor * G && isFlat(s.bounds, G) && bend(s) < 0.12)) return false;
+  if (!(s.bounds.w >= minFactor * G && isRuleShape(s, G))) return false;
   const r = s.bounds;
   return !near(r.x, cy(r) - G, right(r), cy(r) + G).some((o) => {
     if (o === s || !isFlat(o.bounds, G) || o.bounds.w < 0.4 * r.w || o.bounds.w > 2.5 * r.w) return false;
@@ -162,16 +183,22 @@ function isRule(s: InkStroke, near: Near, G: number, minFactor: number = STACK_R
 
 /**
  * Strokes in rows, top to bottom: a stroke is in the row so far when half of it (or of the row) is
- * level with it. The two loops of an `8` are one row; a carry over a row, or a row touching the next,
- * is not.
+ * level with it, when it is a level bar inside the row's height (a `7`'s crossbar, drawn flat: no
+ * height to be level with), or when it crosses one of the row's strokes (a `+` written low, its
+ * upright hanging under the row). The two loops of an `8` are one row; a carry over a row, or a row
+ * touching the next, is not.
  */
 function bands(strokes: readonly InkStroke[]): InkStroke[][] {
   const out: InkStroke[][] = [];
   let lo = Infinity;
   let hi = -Infinity;
+  const thin = (r: Rect) => Math.max(r.w, r.h) > 3 * Math.min(r.w, r.h);
+  const crosses = (a: Rect, b: Rect) => overlap(a.x, right(a), b.x, right(b)) > 0 && overlap(a.y, bottom(a), b.y, bottom(b)) > 0;
   for (const s of [...strokes].sort((a, b) => cy(a.bounds) - cy(b.bounds))) {
     const level = overlap(s.bounds.y, bottom(s.bounds), lo, hi);
-    if (out.length > 0 && level > 0 && level >= 0.5 * Math.min(s.bounds.h, hi - lo)) {
+    const bar = s.bounds.w > 3 * s.bounds.h && s.bounds.h < 0.25 * (hi - lo) && cy(s.bounds) > lo && cy(s.bounds) < hi;
+    const crossing = out.length > 0 && level > 0 && out[out.length - 1].some((o) => crosses(o.bounds, s.bounds) && (thin(o.bounds) || thin(s.bounds)));
+    if (out.length > 0 && ((level > 0 && level >= 0.5 * Math.min(s.bounds.h, hi - lo)) || bar || crossing)) {
       out[out.length - 1].push(s);
       lo = Math.min(lo, s.bounds.y);
       hi = Math.max(hi, bottom(s.bounds));
@@ -180,6 +207,25 @@ function bands(strokes: readonly InkStroke[]): InkStroke[][] {
       lo = s.bounds.y;
       hi = bottom(s.bounds);
     }
+  }
+  // a band of level bars alone (a `+`'s bar, sorted before its upright) inside the next band's height is of that row
+  for (let i = out.length - 2; i >= 0; i--) {
+    const next = unionRects(out[i + 1].map((s) => s.bounds));
+    if (out[i].every((s) => s.bounds.w > 3 * s.bounds.h && cy(s.bounds) > next.y && cy(s.bounds) < bottom(next))) out.splice(i, 2, [...out[i], ...out[i + 1]]);
+  }
+  // one glyph alone at the left end of a row it overlaps (a `+` or `×` written low or high): the row's operator
+  for (let i = 0; i < out.length; i++) {
+    if (out.length < 2 || glyphGroups(out[i]).length !== 1) continue;
+    const r = unionRects(out[i].map((s) => s.bounds));
+    const into = [i - 1, i + 1].find((j) => {
+      if (j < 0 || j >= out.length) return false;
+      const o = unionRects(out[j].map((s) => s.bounds));
+      return overlap(r.y, bottom(r), o.y, bottom(o)) > 0 && right(r) <= o.x + 0.1 * o.w && o.x - right(r) <= Math.max(r.w, r.h) && glyphGroups(out[j]).length >= 2;
+    });
+    if (into === undefined) continue;
+    out[into] = [...out[into], ...out[i]];
+    out.splice(i, 1);
+    i--;
   }
   return out;
 }
@@ -202,7 +248,8 @@ function glyphGroups(strokes: readonly InkStroke[]): Array<{ rect: Rect; strokes
   for (const s of [...strokes].sort((a, b) => a.bounds.x - b.bounds.x)) {
     const r = s.bounds;
     const last = groups[groups.length - 1];
-    if (last && overlap(last.rect.x, right(last.rect), r.x, right(r)) >= 0.4 * Math.max(1, Math.min(last.rect.w, r.w))) {
+    // a pixel either side: an upright drawn dead straight has no width, and still crosses the `+`'s bar
+    if (last && overlap(last.rect.x - 1, right(last.rect) + 1, r.x - 1, right(r) + 1) >= 0.4 * Math.max(1, Math.min(last.rect.w, r.w))) {
       last.rect = unionRects([last.rect, r]);
       last.strokes.push(s);
     } else groups.push({ rect: r, strokes: [s] });
@@ -261,6 +308,24 @@ function rowMarks(strokes: readonly InkStroke[], dH: number, top: boolean): { sm
   return out;
 }
 
+const cx = (r: Rect) => r.x + r.w / 2;
+
+/**
+ * A loop round some of the writing — a child's circle or box round her answer, or round a number:
+ * big (a `0` is a glyph), ending near where it began, with a smaller stroke's middle inside it.
+ */
+function isLoopRound(s: InkStroke, all: readonly InkStroke[], G: number): boolean {
+  const r = s.bounds;
+  const size = Math.max(r.w, r.h);
+  if (size < STACK_RULES.loopMinFactor * G || Math.min(r.w, r.h) < 0.3 * size) return false;
+  const pts = s.segments.flat();
+  if (pts.length < 6) return false;
+  const a = pts[0];
+  const b = pts[pts.length - 1];
+  if (Math.hypot(b.x - a.x, b.y - a.y) > STACK_RULES.loopGapShare * size) return false;
+  return all.some((o) => o !== s && o.bounds.w < r.w && o.bounds.h < r.h && cx(o.bounds) > r.x && cx(o.bounds) < right(r) && cy(o.bounds) > r.y && cy(o.bounds) < bottom(r));
+}
+
 interface Built {
   strokes: InkStroke[];
   rect: Rect;
@@ -288,7 +353,11 @@ function stackAt(rule: InkStroke, free: readonly InkStroke[], all: readonly InkS
   const ry = cy(rb);
   const x0 = rb.x - 3 * G;
   const x1 = right(rb) + 1.5 * G;
-  const around = free.filter((s) => !pieces.includes(s) && s.bounds.x <= x1 && right(s.bounds) >= x0 && bottom(s.bounds) >= ry - 14 * G && s.bounds.y <= ry + 14 * G);
+  const box = free.filter((s) => !pieces.includes(s) && s.bounds.x <= x1 && right(s.bounds) >= x0 && bottom(s.bounds) >= ry - 14 * G && s.bounds.y <= ry + 14 * G);
+  // her circle or box round the answer (or round a number): set aside, read with nothing — it is no
+  // row, and no side of a drawing meeting the rule (`13 × 4` with `52` boxed was no sum at all)
+  const loops = new Set(box.filter((s) => isLoopRound(s, all, G)));
+  const around = box.filter((s) => !loops.has(s));
   const above = around.filter((s) => cy(s.bounds) < ry);
   if (above.length < 2) return null;
   const upward = bands(above).reverse();
@@ -308,13 +377,15 @@ function stackAt(rule: InkStroke, free: readonly InkStroke[], all: readonly InkS
   const reach = 0.3 * dH;
   if (around.some((s) => Math.max(s.bounds.w, s.bounds.h) >= 2.5 * dH && xGap(s.bounds, rb) <= reach && Math.max(0, s.bounds.y - bottom(rb), rb.y - bottom(s.bounds)) <= reach)) return null;
   /** a row of writing that is no row of a sum (a bar in it, an `=`, more of it past the block, too big) */
-  const notARow = (band: InkStroke[], rect: Rect): boolean => {
-    if (rect.h > R.rowMaxHeightFactor * dH || rect.w > R.rowMaxWidthFactor * dH || holdsEquals(band, dH)) return true;
+  // rows written along a tilted rule climb as it does: a row is that much taller
+  const slope = rb.h / Math.max(1, rb.w);
+  const notARow = (band: InkStroke[], rect: Rect, tall: number = R.rowMaxHeightFactor): boolean => {
+    if (rect.h > tall * dH + slope * rect.w || rect.w > R.rowMaxWidthFactor * dH || holdsEquals(band, dH)) return true;
     // a row has a glyph in it, not only bars (the upper bar of an `=` beside a fraction)
     if (!band.some((s) => !isFlat(s.bounds, dH) && s.bounds.h >= 0.5 * dH)) return true;
     if (band.some((s) => isFlat(s.bounds, dH) && s.bounds.w >= 1.2 * dH && s.bounds.w >= 0.6 * rect.w)) return true;
     const mine = new Set(band);
-    return all.some((s) => !mine.has(s) && !pieces.includes(s) && cy(s.bounds) >= rect.y && cy(s.bounds) <= bottom(rect) && xGap(s.bounds, rect) <= R.extendFactor * dH && (s.bounds.x > x1 || right(s.bounds) < x0));
+    return all.some((s) => !mine.has(s) && !pieces.includes(s) && !loops.has(s) && cy(s.bounds) >= rect.y && cy(s.bounds) <= bottom(rect) && xGap(s.bounds, rect) <= R.extendFactor * dH && (s.bounds.x > x1 || right(s.bounds) < x0));
   };
 
   // up from the rule: rows, and bands of small marks between and over them
@@ -337,7 +408,16 @@ function stackAt(rule: InkStroke, free: readonly InkStroke[], all: readonly InkS
     // ...and sits over the row under it, apart from it and over its columns: a superscript (`x^{5}`
     // over a bar), or the start of a steep line, touches the glyphs beside it, not a row under it
     const under = rows[0]?.rect;
-    const apart = !under || (under.y - bottom(rect) >= R.rowApartFactor * dH && overlap(rect.x, right(rect), under.x, right(under)) >= 0.5 * Math.min(rect.w, under.w));
+    // two full rows of digits may touch (a tall `9` under a `7`): each two digit-sized glyphs or more and
+    // a digit tall, two digits tall together — not an `8`'s two loops, nor a superscript over its base
+    const fullRow = (b: InkStroke[], r: Rect) => r.h >= 0.9 * dH && glyphGroups(b).filter((g) => g.rect.h >= 0.7 * dH).length >= 2;
+    const gapUnder = under ? under.y - bottom(rect) : 0;
+    const touching =
+      !!under && gapUnder >= -R.rowTouchFactor * dH && fullRow(band, rect) && fullRow(rows[0].strokes, under) && bottom(under) - rect.y >= 1.9 * dH;
+    const apart =
+      !under ||
+      ((gapUnder >= R.rowApartFactor * dH || touching) &&
+        overlap(rect.x, right(rect), under.x, right(under)) >= 0.5 * Math.min(rect.w, under.w));
     if (!apart || notARow(band, rect)) {
       stop = { strokes: band, rect };
       break;
@@ -355,7 +435,7 @@ function stackAt(rule: InkStroke, free: readonly InkStroke[], all: readonly InkS
   if (right(rb) < blockRight - 0.5 * dH || rb.w > 2.5 * Math.max(...rows.map((r) => r.rect.w)) + 2 * dH) return null;
   // writing level with the rule beside it: a fraction inside a line (`x = \frac{a+b}{2}`, `2\frac{3}{4}`)
   const inRows = new Set(rows.flatMap((r) => r.strokes));
-  if (all.some((s) => !pieces.includes(s) && !inRows.has(s) && Math.abs(cy(s.bounds) - ry) <= 0.45 * dH && overlap(s.bounds.x, right(s.bounds), rb.x, right(rb)) === 0 && xGap(s.bounds, rb) <= R.besideFactor * dH)) return null;
+  if (all.some((s) => !pieces.includes(s) && !inRows.has(s) && !loops.has(s) && Math.abs(cy(s.bounds) - ry) <= 0.45 * dH && overlap(s.bounds.x, right(s.bounds), rb.x, right(rb)) === 0 && xGap(s.bounds, rb) <= R.besideFactor * dH)) return null;
   // nothing tall through the rule (a table's or a drawing's line)
   if (around.some((s) => s.bounds.h >= 1.5 * dH && s.bounds.y < rb.y && bottom(s.bounds) > bottom(rb) && overlap(s.bounds.x, right(s.bounds), rb.x, right(rb)) > 0)) return null;
 
@@ -371,7 +451,8 @@ function stackAt(rule: InkStroke, free: readonly InkStroke[], all: readonly InkS
     if (rect.y - ceil > (answer ? Math.max(spacing, 0.4 * dH) + 0.5 * dH : R.firstGapFactor * dH)) break;
     const aRule = band.length === 1 && isFlat(rect, dH) && rect.w >= 0.6 * (blockRight - left);
     if (!aRule) {
-      if (notARow(band, rect) || right(rect) > blockRight + R.alignFactor * dH || rect.x < left - 2 * dH) break;
+      // the answer may be written bigger than the sum (the last thing she writes, and the proudest)
+      if (notARow(band, rect, answer ? R.rowMaxHeightFactor : R.answerMaxHeightFactor) || right(rect) > blockRight + R.alignFactor * dH || rect.x < left - 2 * dH) break;
       if (!answer && overlap(rect.x, right(rect), rb.x, right(rb)) < 0.5 * rect.w) break;
       if (answer && blockRight - right(rect) > 1.6 * dH) break;
     } else if (!answer) break;
@@ -394,7 +475,7 @@ function stackAt(rule: InkStroke, free: readonly InkStroke[], all: readonly InkS
   return {
     rule: rule.id,
     strokeIds: [...read].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)).map((s) => s.id),
-    marks: [...marks, ...crossed].map((s) => s.id),
+    marks: [...marks, ...crossed, ...loops].map((s) => s.id),
     markRects: marks.map((s) => s.bounds),
     rows: built.map((b) => b.row),
     answer: ans?.row ?? null,
@@ -410,7 +491,7 @@ function stackAt(rule: InkStroke, free: readonly InkStroke[], all: readonly InkS
  */
 export function findStackedSums(strokes: readonly InkStroke[], G: number): StackedSum[] {
   // cheap first: long, level and straight (the `=` twin test asks the index)
-  const long = strokes.filter((s) => s.bounds.w >= STACK_RULES.ruleMinFactor * G && isFlat(s.bounds, G));
+  const long = strokes.filter((s) => s.bounds.w >= STACK_RULES.ruleMinFactor * G && s.bounds.w > 3 * s.bounds.h && s.bounds.h <= Math.max(STACK_RULES.ruleTilt * s.bounds.w, 0.3 * G));
   if (long.length === 0) return [];
   const near = nearIndex(strokes, 6 * G);
   const rules = long.filter((s) => isRule(s, near, G)).sort((a, b) => a.bounds.y - b.bounds.y);

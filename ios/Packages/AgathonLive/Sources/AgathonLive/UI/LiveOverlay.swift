@@ -1,3 +1,4 @@
+import AgathonBoard
 import AgathonBrain
 import Combine
 import AgathonDesign
@@ -37,6 +38,8 @@ public struct LiveOverlay: View {
         self.onMoreLikeThese = onMoreLikeThese
     }
 
+    private var outOfInkShowing: Bool { showsOutOfInk && loop.activity == .outOfInk && !outOfInkSeen }
+
     private var following: Bool { !loop.hints.isEmpty || !loop.cheers.isEmpty || !loop.readbacks.isEmpty || !loop.graphOffers.isEmpty }
 
     public var body: some View {
@@ -44,7 +47,8 @@ public struct LiveOverlay: View {
             ZStack(alignment: .topLeading) {
                 Color.clear
                 // problem pages: "I read", the action corner, "New page for this one", All done
-                PagesLayer(pages: loop.pages, loop: loop, geometry: geometry, onAllDoneBack: onAllDoneBack, onMoreLikeThese: onMoreLikeThese)
+                PagesLayer(pages: loop.pages, loop: loop, geometry: geometry, onAllDoneBack: onAllDoneBack, onMoreLikeThese: onMoreLikeThese,
+                           tryOffer: outOfInkShowing ? nil : loop.offer)
                 ForEach(loop.readbacks) { r in readback(r) }
                 ForEach(loop.graphOffers) { g in graphChip(g) }
                 ForEach(loop.cheers) { c in cheer(c) }
@@ -62,11 +66,8 @@ public struct LiveOverlay: View {
                         .onTapGesture { loop.dismissNote() }
                         .transition(.opacity)
                 }
-                if showsOutOfInk && loop.activity == .outOfInk && !outOfInkSeen {
+                if outOfInkShowing {
                     OutOfInkCard(onGrownUp: onGrownUp) { outOfInkSeen = true }
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if let offer = loop.offer {
-                    NowYouTryCard(offer: offer, take: { loop.takeOffer() }, notNow: { loop.dismissOffer() })
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -146,8 +147,11 @@ struct PagesLayer: View {
     let geometry: LiveCanvasGeometry
     let onAllDoneBack: (() -> Void)?
     let onMoreLikeThese: (() -> Void)?
+    /// "Now you try one", placed in the page's free space (`NowYouTryPlacement`), following the camera
+    var tryOffer: NowYouTryOffer?
     /// bumped when the camera moves (the board's own viewport): everything here follows it
     @State private var cameraTick = 0
+    @State private var tryCardSize = CGSize(width: 460, height: 210)
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -156,8 +160,9 @@ struct PagesLayer: View {
                 ForEach(pages.readings) { r in chip(r) }
             }
             if let offer = pages.offer { offerBar(offer) }
-            if let action = pages.action { corner(action) }
+            if pages.action != nil || pages.moreRoom { corner(pages.action, moreRoom: pages.moreRoom) }
             if pages.page?.kind == .done { allDone }
+            if let offer = tryOffer { nowYouTry(offer) }
         }
         .onReceive(cameraChanges) { _ in cameraTick &+= 1 }
         .sheet(item: Binding(get: { pages.fixing.map { FixID(id: $0.id) } }, set: { if $0 == nil { loop.closeFix() } })) { _ in
@@ -167,7 +172,34 @@ struct PagesLayer: View {
                 .presentationCornerRadius(DS.Radius.card)
         }
         .dsAnimation(DS.Motion.snap, value: pages.action)
+        .dsAnimation(DS.Motion.snap, value: pages.moreRoom)
         .dsAnimation(DS.Motion.snap, value: pages.offer)
+        .dsAnimation(DS.Motion.snap, value: tryOffer)
+    }
+
+    /// "Now you try one" in the page's free space: never over the answer spot or its tick, away from ink.
+    private func nowYouTry(_ offer: NowYouTryOffer) -> some View {
+        let page = pageFrame
+        let answer: CGRect? = pages.page.flatMap { p -> CGRect? in
+            guard p.kind == .problem, p.answer else { return nil }
+            let a = ProblemPageLayout.place(ProblemPageLayout.answer, on: loop.board.screenRect.box)
+            return rect(a.x, a.y, a.w, a.h)
+        }
+        let ink = loop.avoidRects().map { rect($0.x, $0.y, $0.w, $0.h) }
+        let width = min(460, max(280, page.width - 32))
+        let at = NowYouTryPlacement.place(card: CGSize(width: width, height: tryCardSize.height), page: page, answer: answer, ink: ink)
+        return NowYouTryCard(offer: offer, take: { loop.takeOffer() }, notNow: { loop.dismissOffer() })
+            .frame(width: width)
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { tryCardSize = $0 }
+            .alignmentGuide(.leading) { _ in -at.x }
+            .alignmentGuide(.top) { _ in -at.y }
+            .transition(.opacity)
+    }
+
+    /// A page rect in view points.
+    private func rect(_ x: Double, _ y: Double, _ w: Double, _ h: Double) -> CGRect {
+        let a = point(x, y), b = point(x + w, y + h)
+        return CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
     }
 
     /// The canvas's camera, when the geometry is the app's board (else the overlay's own clock follows).
@@ -197,35 +229,54 @@ struct PagesLayer: View {
 
     private func chip(_ r: LineReading) -> some View {
         let at = point(r.at.x, r.at.y)
-        let size = geometry.viewSize
+        // inside the page (a long reading beside a line near its right edge comes back in)
+        let right = min(geometry.viewSize.width, pageFrame.maxX)
         return ReadbackChip(reading: r) { loop.openFix(r.id) }
-            .alignmentGuide(.leading) { d in -min(at.x, max(8, size.width - d.width - 8)) }
+            .alignmentGuide(.leading) { d in -min(at.x, max(8, right - d.width - 8)) }
             .alignmentGuide(.top) { d in -(at.y - d.height / 2) }
             .transition(.opacity)
     }
 
     private func offerBar(_ offer: NewPageOffer) -> some View {
         let at = point(offer.anchor.x, offer.anchor.y + offer.anchor.h)
+        // under the problem's first line, inside the page (a problem on the page's right half: the
+        // kid sessions' side-by-side page had "Keep it here" off the page's edge)
+        let page = pageFrame
         return NewPageOfferBar(take: { loop.takeNewPage() }, keep: { loop.keepHere() })
-            .alignmentGuide(.leading) { _ in -at.x }
+            .alignmentGuide(.leading) { d in -max(page.minX + 8, min(at.x, page.maxX - d.width - 8)) }
             .alignmentGuide(.top) { _ in -(at.y + 12) }
             .transition(.opacity)
     }
 
-    /// Check / Next at the page's bottom right (a problem page's action corner, beside the answer spot).
+    /// Check / Next at the page's bottom right (a problem page's action corner, beside the answer spot),
+    /// and "More room" beside it when the page is getting full — above it when the page's corner is
+    /// too narrow for both (an upright iPad, a split view).
     @ViewBuilder
-    private func corner(_ action: PageAction) -> some View {
+    private func corner(_ action: PageAction?, moreRoom: Bool) -> some View {
         let page = pageFrame
         let anchor = CGPoint(x: page.maxX - 20, y: page.maxY - 20)
+        // the corner and the gap before the answer spot, in view points
+        let room = page.width * (ProblemPageLayout.actions.w + ProblemPageLayout.actions.x - ProblemPageLayout.answer.maxX) / Box.screen.w
         Group {
-            switch action {
-            case .check: CheckButton { loop.checkPage() }
-            case .next(let last): NextButton(last: last) { loop.nextPage() }
+            if room >= 400 {
+                HStack(alignment: .bottom, spacing: DS.Space.s) { cornerButtons(action, moreRoom: moreRoom) }
+            } else {
+                VStack(alignment: .trailing, spacing: DS.Space.s) { cornerButtons(action, moreRoom: moreRoom) }
             }
         }
         .alignmentGuide(.leading) { d in -(anchor.x - d.width) }
         .alignmentGuide(.top) { d in -(anchor.y - d.height) }
         .transition(.opacity)
+    }
+
+    @ViewBuilder
+    private func cornerButtons(_ action: PageAction?, moreRoom: Bool) -> some View {
+        if moreRoom { MoreRoomButton { loop.moreRoom() } }
+        switch action {
+        case .check?: CheckButton { loop.checkPage() }
+        case .next(let last)?: NextButton(last: last) { loop.nextPage() }
+        case nil: EmptyView()
+        }
     }
 
     private var allDone: some View {

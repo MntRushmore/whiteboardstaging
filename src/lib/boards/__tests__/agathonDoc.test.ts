@@ -286,4 +286,47 @@ describe("the trip back: Swift's document → a tldraw snapshot the web board lo
     expect(snap.document.store["shape:r1"]).toMatchObject({ type: "geo", props: { geo: "rectangle", fill: "solid", color: "red", size: "m" } });
     store.dispose();
   });
+
+  it("a problem continued on a second page (the iPad's More room) loads, both pages in order, for the view and the replay", () => {
+    // docs/PROBLEM-PAGES.md, "More room": page 2 `continues` page 1, page 1 has `more`; the problem again
+    // small at the top of page 2 is tutor ink with `reminder` (and `locked`); the problem record lists
+    // its lines on both pages
+    const page = (extra: Record<string, unknown>) => ({ kind: "problem", set: "daily:2026-10-21", index: 1, count: 2, origin: "practice", ...extra });
+    const doc: AgathonDoc = {
+      format: "agathon.board",
+      schema: 1,
+      records: {
+        "screen:p1": { id: "screen:p1", type: "screen", order: "a0", rect: { x: 0, y: 0, w: 1600, h: 900 }, meta: { page: page({ more: true }) } },
+        "screen:p1b": { id: "screen:p1b", type: "screen", order: "a0V", rect: { x: 0, y: 0, w: 1600, h: 900 }, meta: { page: page({ continues: "screen:p1", workTop: 150 }) } },
+        "screen:p2": { id: "screen:p2", type: "screen", order: "a1", rect: { x: 0, y: 0, w: 1600, h: 900 }, meta: { page: page({ index: 2 }) } },
+        "stroke:problem": { id: "stroke:problem", type: "stroke", screen: "screen:p1", order: "a1", author: "tutor", color: "tutor", width: 3, pressure: "real", x: 88, y: 64, points: "AQUDAACAADA//wQyAEAF", start: 1_760_000_000_000, meta: { live: true, handBlock: "hb_1" } },
+        "stroke:k1": { id: "stroke:k1", type: "stroke", screen: "screen:p1", order: "a2", author: "kid", color: "black", width: 6, pressure: "real", x: 140, y: 600, points: "AQUDAACAADA//wQyAEAF", start: 1_760_000_010_000 },
+        "stroke:copy": { id: "stroke:copy", type: "stroke", screen: "screen:p1b", order: "a0", author: "tutor", color: "tutor", width: 1.5, pressure: "real", x: 88, y: 104, points: "AQUDAACAADA//wQyAEAF", start: 1_760_000_020_000, meta: { reminder: "screen:p1", locked: true } },
+        "stroke:k2": { id: "stroke:k2", type: "stroke", screen: "screen:p1b", order: "a1", author: "kid", color: "black", width: 6, pressure: "real", x: 300, y: 768, points: "AQUDAACAADA//wQyAEAF", start: 1_760_000_030_000 },
+        "line:l1": { id: "line:l1", type: "line", screen: "screen:p1", strokes: ["stroke:k1"], latex: "2x = 8", verdict: "ok", problem: "problem:hb_1", meta: { checked: "2x = 8" } },
+        "line:l2": { id: "line:l2", type: "line", screen: "screen:p1b", strokes: ["stroke:k2"], latex: "x = 4", verdict: "solved", problem: "problem:hb_1", meta: { checked: "x = 4" } },
+        "problem:hb_1": { id: "problem:hb_1", type: "problem", screen: "screen:p1", lines: ["line:l1", "line:l2"], latex: "2x + 3 = 11", origin: "chat" },
+      },
+    };
+    const snap = agathonDocToTldraw(doc);
+    const store = boardStore();
+    expect(() => loadSnapshot(store, snap as never)).not.toThrow();
+    const pages = (Object.values(snap.document.store).filter((r) => r.typeName === "page") as (TldrawRecord & { index: string })[])
+      .sort((a, b) => (a.index < b.index ? -1 : 1))
+      .map((p) => p.id);
+    expect(pages).toEqual(["page:p1", "page:p1b", "page:p2"]);
+    // the page meta rides along (the view ignores it): the link and the moved answer spot
+    const second = snap.document.store["page:p1b"] as TldrawRecord & { meta: Record<string, unknown> };
+    expect((second.meta.page as Record<string, unknown>).continues).toBe("screen:p1");
+    expect(((snap.document.store["page:p1"] as TldrawRecord & { meta: Record<string, unknown> }).meta.page as Record<string, unknown>).more).toBe(true);
+    // the copy of the problem is ink on page 2, locked
+    const copy = snap.document.store["shape:copy"] as AnyShape;
+    expect(copy.parentId).toBe("page:p1b");
+    expect(copy.isLocked).toBe(true);
+    // the replay plays both pages, page 1 first
+    const timeline = buildTimeline(recordsOf(snap));
+    const strokes = timeline.items.filter((i) => i.type === "draw");
+    expect(strokes.map((i) => i.id)).toEqual(["shape:problem", "shape:k1", "shape:copy", "shape:k2"]);
+    store.dispose();
+  });
 });

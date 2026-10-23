@@ -36,8 +36,9 @@ public enum StudentHand {
     /// `latex` in `hand`: its strokes in page units, the ink box's top-left at (0, 0), scaled by the
     /// hand's size. Nil when the hand cannot write it (something it has no glyph for).
     public static func ink(_ latex: String, hand: TrainingHand, brain: Brain) async throws -> [[Vec2]]? {
-        let layout: MathLayout = try await brain.call("layoutMath", LayoutArgs(latex: handLatex(latex), size: handSize, seed: hand.seed))
-        guard layout.unsupported.isEmpty, !layout.strokes.isEmpty else { return nil }
+        let laid: MathLayout = try await brain.call("layoutMath", LayoutArgs(latex: handLatex(latex), size: handSize, seed: hand.seed))
+        guard laid.unsupported.isEmpty, !laid.strokes.isEmpty else { return nil }
+        let layout = withRules(laid, latex: latex)
         let strokes = perturb(layout, latex: latex, hand: hand)
         let pts = strokes.flatMap { $0 }
         guard let x0 = pts.map(\.x).min(), let y0 = pts.map(\.y).min() else { return nil }
@@ -59,6 +60,47 @@ public enum StudentHand {
         s = s.replacingOccurrences(of: "~", with: " ")
         s = s.replacingOccurrences(of: #"\\mathrm\s*\{([^{}]*?)\^\{([^{}]*)\}\s*\}"#, with: #"\\mathrm{$1}^{$2}"#, options: .regularExpression)
         return s
+    }
+
+    /// A stacked sum's bars (`\hline` in an array): the hand's layout leaves them out, and no kid does. A
+    /// bar is drawn across the sum's width between the row above and the row under it, in writing order
+    /// (after the row above). The layout's rows are its strokes' vertical bands, top to bottom.
+    static func withRules(_ layout: MathLayout, latex: String) -> MathLayout {
+        guard latex.contains("\\hline"), let begin = latex.range(of: "\\begin{array}"), let end = latex.range(of: "\\end{array}"),
+              begin.upperBound < end.lowerBound else { return layout }
+        var body = String(latex[begin.upperBound..<end.lowerBound])
+        // the column spec (`{r}`)
+        if body.hasPrefix("{"), let close = body.firstIndex(of: "}") { body = String(body[body.index(after: close)...]) }
+        let rows = body.components(separatedBy: "\\\\")
+        let ruled = rows.enumerated().filter { $0.offset > 0 && $0.element.contains("\\hline") }.map(\.offset)
+        guard !ruled.isEmpty else { return layout }
+        // the strokes' bands: overlapping vertical spans merged
+        let spans = layout.strokes.enumerated().compactMap { i, s -> (i: Int, y0: Double, y1: Double)? in
+            guard let y0 = s.points.map(\.y).min(), let y1 = s.points.map(\.y).max() else { return nil }
+            return (i, y0, y1)
+        }.sorted { $0.y0 < $1.y0 }
+        var bands: [(y0: Double, y1: Double, last: Int)] = []
+        for s in spans {
+            if let b = bands.last, s.y0 <= b.y1 + 1 {
+                bands[bands.count - 1] = (b.y0, max(b.y1, s.y1), max(b.last, s.i))
+            } else {
+                bands.append((s.y0, s.y1, s.i))
+            }
+        }
+        guard bands.count == rows.count else { return layout }
+        let xs = layout.strokes.flatMap { $0.points.map(\.x) }
+        guard let x0 = xs.min(), let x1 = xs.max() else { return layout }
+        var strokes = layout.strokes
+        // last first, so the indices of the earlier rows hold
+        for r in ruled.sorted(by: >) {
+            let y = (bands[r - 1].y1 + bands[r].y0) / 2
+            let n = 8
+            let bar = MathLayout.Stroke(points: (0...n).map { k in .init(x: x0 - 4 + (x1 - x0 + 8) * Double(k) / Double(n), y: y) })
+            strokes.insert(bar, at: min(strokes.count, bands[r - 1].last + 1))
+        }
+        var out = layout
+        out.strokes = strokes
+        return out
     }
 
     /// `handInk`'s pen: the warp (uneven sizes, a wandering baseline), the slant, the scale, the tilt

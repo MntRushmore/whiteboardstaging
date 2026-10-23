@@ -11,9 +11,11 @@ import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
 
 /**
  * A pause mid-line (found by the film session): lifting the pen for ~1.5 s before the last stroke
- * of the 12 in `2x = 12` gets the half line read as `2x = 1` and ringed. When the student goes on
- * writing that line, the ring comes off at once — it does not stand (or finish drawing) until the
- * finished line is read again and ticked. Ink on another line leaves it alone.
+ * of the 12 in `2x = 12` gets the half line read as `2x = 1`. A ring waits for the line to look
+ * finished (`LIVE_TIMING.doubtHoldMs`, from kids' real pauses), so a pause that short shows none.
+ * After a longer one the ring comes; when the student goes on writing that line, it comes off at
+ * once — it does not stand (or finish drawing) until the finished line is read again and ticked.
+ * Ink on another line leaves it alone.
  */
 
 const engine: LiveEngine = {
@@ -21,7 +23,7 @@ const engine: LiveEngine = {
     kind: "equation",
     math: latex,
     resultLatex: "",
-    verdict: latex === "2x=12" ? "ok" : latex === "2x=1" ? "mismatch" : "unknown",
+    verdict: latex === "2x=12" || latex === "x=1" ? "ok" : latex === "2x=1" || latex === "x=12" ? "mismatch" : "unknown",
     note: "",
   }),
   compileExpr: () => () => 0,
@@ -90,10 +92,31 @@ describe("live loop — a ring on a line the student is still writing", () => {
     editor.putUser(line);
     await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
     await settle(8);
+    // a kid's ordinary pause: read, but no ring yet
+    expect(rings()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.doubtHoldMs);
+    await settle(8);
     await frames(6);
     expect(rings().length).toBeGreaterThan(0);
     return tail;
   }
+
+  it("a short pause mid-line shows no ring: the finished line is ticked", async () => {
+    const line = writeLine("2x=12", 100, 200);
+    const tail = line.pop()!;
+    reads = ["2x=1", "2x=12"];
+    editor.putUser(line);
+    await vi.advanceTimersByTimeAsync(1500);
+    await settle(8);
+    await frames(6);
+    expect(rings()).toHaveLength(0);
+    editor.putUser([tail]);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.rewriteQuietMs + LIVE_TIMING.quietMs + 1);
+    await settle(8);
+    await frames(120);
+    expect(rings()).toHaveLength(0);
+    expect(ticks().length).toBeGreaterThan(0);
+  });
 
   it("the last stroke of the line takes the ring off at once; the finished line is ticked", async () => {
     const tail = await pauseMidLine();
@@ -113,7 +136,7 @@ describe("live loop — a ring on a line the student is still writing", () => {
     // further than the clustering's same-row join (three glyphs)
     reads = ["2x=1"];
     editor.putUser(fixtureFraction());
-    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + LIVE_TIMING.doubtHoldMs + 1);
     await settle(8);
     await frames(120);
     const ringed = Object.keys(liveStore.lines.get());
@@ -124,7 +147,7 @@ describe("live loop — a ring on a line the student is still writing", () => {
     editor.putUser(writeLine("4", 360, 200));
     await settle(4);
     expect(rings()).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(LIVE_TIMING.rewriteQuietMs + LIVE_TIMING.quietMs + 1);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.rewriteQuietMs + LIVE_TIMING.quietMs + LIVE_TIMING.doubtHoldMs + 1);
     await settle(8);
     await frames(120);
     // ...but the clustering makes it a line of its own: the ringed line is unchanged, not read again
@@ -134,6 +157,34 @@ describe("live loop — a ring on a line the student is still writing", () => {
     // before: the ring stayed off for good (only a read puts one back)
     expect(rings().length).toBeGreaterThan(0);
     expect(new Set(rings().map((s) => (s.meta as Record<string, unknown>).lineId))).toEqual(new Set(ringed));
+  });
+
+  it("a tick on a half line comes off at its next stroke; the finished line's ring waits for it to look finished", async () => {
+    // the answer is 1: `x = 1` is ticked — and then it was the start of `x = 12`
+    const line = writeLine("x=12", 100, 200);
+    const tail = line.pop()!;
+    reads = ["x=1", "x=12"];
+    editor.putUser(line);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
+    await settle(8);
+    await frames(120);
+    expect(ticks().length).toBeGreaterThan(0);
+    editor.putUser([tail]);
+    await settle(4);
+    // at the stroke, before the line is read again
+    expect(ticks()).toHaveLength(0);
+    expect(rings()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.rewriteQuietMs + LIVE_TIMING.quietMs + 1);
+    await settle(8);
+    await frames(6);
+    // read as `x = 12`, wrong: no ring while it might still be growing
+    expect(ticks()).toHaveLength(0);
+    expect(rings()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.doubtHoldMs);
+    await settle(8);
+    await frames(120);
+    expect(rings().length).toBeGreaterThan(0);
+    expect(ticks()).toHaveLength(0);
   });
 
   it("a stroke on the next line leaves the ring where it is", async () => {

@@ -23,6 +23,9 @@ public final class LivePages: ObservableObject {
     @Published public internal(set) var page: ProblemPage?
     /// on the All done page: the set's problems and how each went
     @Published public internal(set) var setProblems: [SetProblem] = []
+    /// "More room": the page is getting full (the kid's work reaches its last row), the problem can
+    /// go on on a new page (`LiveLoop+MoreRoom`)
+    @Published public internal(set) var moreRoom = false
     /// the chips step aside while the pen writes (and a moment after)
     @Published public internal(set) var chipsHidden = false
 
@@ -86,6 +89,12 @@ public final class LivePages: ObservableObject {
     var partial = Set<String>()
     /// the page's problem is solved (the cheer and Next)
     var solved = false
+    /// "More room": how the problem's work stood at the bottom of the page before (a continued page;
+    /// a loop on another page is given it), and how each column of this page ends (`LiveLoop+MoreRoom`)
+    var carry: PageCarry?
+    var columnEnds: [Int: PageCarry] = [:]
+    /// the problem's other pages, as the board's records say (cached by the store's change count)
+    var elsewhere: (seq: UInt64, screen: RecordID, held: Bool, solvedBefore: Bool, solvedAfter: Bool, ringedLater: Bool)?
 
     public init() {}
 
@@ -110,6 +119,10 @@ public final class LivePages: ObservableObject {
         keptHere = []
         partial = []
         solved = false
+        carry = nil
+        columnEnds = [:]
+        elsewhere = nil
+        if moreRoom { moreRoom = false }
         if !readings.isEmpty { readings = [] }
         if fixing != nil { fixing = nil }
         if offer != nil { offer = nil }
@@ -143,6 +156,11 @@ public enum PageTiming {
     public static let answerQuietMs = 1_500.0
     /// at a pause or the answer spot, a line whose ink changed this recently is still being written
     public static let unfinishedMs = 1_200.0
+    /// check as I go: a ring or a "?" waits until the line has had no new stroke this long. Kids pause
+    /// inside a line (the real-ink corpus, 916 pauses in 95 timed attempts: p90 1.3 s, p95 2.4 s), and a
+    /// ring on `x = 1` before its 2 tells a kid their unfinished step is wrong; 2.5 s holds 95% of those
+    /// pauses (96% with a pen). Ticks are not held: a right line so far is never marked wrong.
+    public static let doubtHoldMs = 2_500.0
     /// a check waits for the reads in flight at most this long
     public static let readWaitMs = 7_000.0
     /// the "I read" chips step aside this long after the pen lifts

@@ -163,12 +163,31 @@ public actor Brain {
         try call("judgeLine", JudgeLineArgs(latex: latex, context: context, problem: problem, above: above, slip: slip, beside: beside ? true : nil))
     }
 
+    /// A stacked (column) sum's line, as the web's board judges and marks it (`LiveLoop.stackAnalysis`,
+    /// `markRect`; src/lib/brain `stackedLine`): worked column by column from the read and where its
+    /// digits sit in the ink (`stack`, one of `clusterStrokes`' `stacks`), a wrong digit ringed only on a
+    /// read sure of it. `stacked` false: the line is no stacked sum (judge it as a line).
+    public func stackedLine(_ latex: String, confidence: Double, stack: JSONValue?, problem: [String]? = nil, mode: HelpMode = .feedback) throws -> StackedLine {
+        try call("stackedLine", StackedLineArgs(latex: latex, confidence: confidence, stack: stack, problem: problem, mode: mode))
+    }
+
     /// A young hand's read put right (the web's `LiveLoop.youngRead`): a wobbly `=` read as
     /// `\smile`, `\asymp`, `\approx` is an `=`; under a problem of plain numbers the signs an answer
     /// starts with are the ink's (`-54` from a wobbly `=` is `= 54`) and a tick drawn after it is dropped.
-    public func youngRead(_ latex: String, problem: [String], strokes: [BrainStroke]) throws -> String {
-        let r: YoungRead = try call("youngRead", YoungReadArgs(latex: latex, problem: problem, strokes: strokes))
+    /// `bar`: one of the line's strokes is a division bar (`clusterStrokes`' `bars`): a number under it
+    /// is "divide both sides" (`barDivisionLatex`: `3` → `\div 3`).
+    public func youngRead(_ latex: String, problem: [String], strokes: [BrainStroke], bar: Bool = false) throws -> String {
+        let r: YoungRead = try call("youngRead", YoungReadArgs(latex: latex, problem: problem, strokes: strokes, bar: bar ? true : nil))
         return r.latex
+    }
+
+    /// What a messy read of a child's step may have been (`readVariants`: a plus written high, her `x`
+    /// read as `\times`, a side note behind a left arrow, the minus her ink starts with that the read
+    /// dropped). For the second look before a ring only: one is taken when it makes the step follow.
+    /// `keep`: the problem and the line above — no variant drops a number they have.
+    public func readVariants(_ latex: String, strokes: [BrainStroke], keep: [String] = []) throws -> [String] {
+        let r: ReadVariants = try call("readVariants", ReadVariantsArgs(latex: latex, strokes: strokes, keep: keep))
+        return r.variants
     }
 
     /// Every line of a column analysed as the board holds them (each against the lines above it).
@@ -214,6 +233,11 @@ public actor Brain {
     /// The tutor's handwriting for LaTeX steps, laid out and timed.
     public func layoutHandwriting(_ request: HandwritingRequest) throws -> HandwritingResult {
         try call("layoutHandwriting", request)
+    }
+
+    /// A word problem's sentences in the tutor's hand, wrapped at `maxWidth` (`planWords`).
+    public func layoutWords(_ request: WordsRequest) throws -> WordsResult {
+        try call("layoutWords", request)
     }
 
     /// A tick, ring or question mark for a line, and the plan that reveals it.
@@ -307,8 +331,17 @@ public actor Brain {
         var slip: LineAnalysis?
         var beside: Bool?
     }
-    private struct YoungReadArgs: Encodable { var latex: String; var problem: [String]; var strokes: [BrainStroke] }
+    private struct StackedLineArgs: Encodable {
+        var latex: String
+        var confidence: Double
+        var stack: JSONValue?
+        var problem: [String]?
+        var mode: HelpMode
+    }
+    private struct YoungReadArgs: Encodable { var latex: String; var problem: [String]; var strokes: [BrainStroke]; var bar: Bool? }
     private struct YoungRead: Decodable { var latex: String }
+    private struct ReadVariantsArgs: Encodable { var latex: String; var strokes: [BrainStroke]; var keep: [String] }
+    private struct ReadVariants: Decodable { var variants: [String] }
     private struct ColumnArgs: Encodable { var lines: [String]; var mode: HelpMode }
     private struct ClassifyArgs: Encodable { var lines: [String]; var course: String? }
     private struct LocalSolveArgs: Encodable {

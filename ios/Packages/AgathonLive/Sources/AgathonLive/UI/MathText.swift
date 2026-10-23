@@ -21,8 +21,42 @@ public enum MathText {
         "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
     ]
 
+    /// A stacked sum or a division bracket as one line (the kid sees "I read 47 + 38 = 85", not the
+    /// array's LaTeX): the rows over a bar are added up (or take their own sign), what is under a bar
+    /// is what they make; `9 )\overline{144}` under a quotient is `144 ÷ 9 = 16`. Nil for anything else.
+    static func stacked(_ latex: String) -> String? {
+        guard let begin = latex.range(of: #"\\begin\{array\}(\{[^{}]*\})?"#, options: .regularExpression),
+              let end = latex.range(of: "\\end{array}"), begin.upperBound <= end.lowerBound else { return nil }
+        let rows = latex[begin.upperBound..<end.lowerBound].components(separatedBy: "\\\\")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        // a division bracket: the quotient over `divisor )\overline{dividend}`
+        if rows.count == 2, let re = try? NSRegularExpression(pattern: #"^([^)]+?)\s*\)\s*\\overline\s*\{([^{}]+)\}$"#),
+           let m = re.firstMatch(in: rows[1], range: NSRange(rows[1].startIndex..., in: rows[1])),
+           let divisor = Range(m.range(at: 1), in: rows[1]), let dividend = Range(m.range(at: 2), in: rows[1]) {
+            return "\(rows[1][dividend]) \\div \(rows[1][divisor].trimmingCharacters(in: .whitespaces)) = \(rows[0])"
+        }
+        // sections between the bars: each one's rows (a row without a sign is added)
+        var sections: [[String]] = [[]]
+        for row in rows {
+            var r = row
+            while let bar = r.range(of: "\\hline") {
+                r.removeSubrange(bar)
+                sections.append([])
+            }
+            r = r.trimmingCharacters(in: .whitespaces)
+            if !r.isEmpty { sections[sections.count - 1].append(r) }
+        }
+        sections = sections.filter { !$0.isEmpty }
+        guard sections.count >= 2 else { return nil }
+        return sections.map { rows in
+            rows.enumerated().map { i, r in
+                i == 0 || r.hasPrefix("+") || r.hasPrefix("-") || r.hasPrefix("\\times") || r.hasPrefix("\\div") ? r : "+ \(r)"
+            }.joined(separator: " ")
+        }.joined(separator: " = ")
+    }
+
     public static func plain(_ latex: String) -> String {
-        var s = latex
+        var s = stacked(latex) ?? latex
         // \text{…} and friends: their words
         s = s.replacingOccurrences(of: #"\\(?:text|textrm|mathrm|mbox|operatorname)\s*\{([^{}]*)\}"#, with: "$1", options: .regularExpression)
         // fractions, innermost first

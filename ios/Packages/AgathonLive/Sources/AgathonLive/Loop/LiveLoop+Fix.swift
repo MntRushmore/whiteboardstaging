@@ -36,6 +36,9 @@ extension LiveLoop {
         var out: [LineReading] = []
         for st in lines.values.sorted(by: { ($0.column, $0.row) < ($1.column, $1.row) }) {
             if reading.contains(st.id) || st.ink.strokeIds.isEmpty { continue }
+            // its cheer is on show where the chip goes (a big hand's line reaches the margin lane): the
+            // chip comes back when the cheer goes
+            if cheers.contains(where: { $0.lineId == st.id }) { continue }
             // nothing read yet (never asked, or waiting for the network): no chip
             if st.latex.isEmpty && st.provider == .none && st.analysis == nil { continue }
             // a lone label or a scratch mark is no line to read back
@@ -89,7 +92,8 @@ extension LiveLoop {
         if let second = pages.second[lineId], !second.agree { prior.append(second.latex) }
         let reread = st.ink.hash.isEmpty ? nil : (rereads[st.ink.hash] ?? nil)
         let raw = ReadingAlternatives.candidates(st.latex, letters: letters, prior: prior, also: reread.map { [$0] } ?? [])
-        let previous = lastGoodLineAbove(st)?.analysis
+        // (the first line of a page that continues a problem follows from the page before: "More room")
+        let previous = lastGoodLineAbove(st)?.analysis ?? carryIn(column: st.column)?.previous
         track { [weak self] in
             guard let self else { return }
             var follows: [String] = []
@@ -169,6 +173,8 @@ extension LiveLoop {
             render(st.id, userAsked: !settings.auto)
         }
         refreshPage()
+        // the problem's later pages go on from this one ("More room"): what is checked there, again
+        refreshLaterPages()
     }
 
     /// A check found a slip on a line the tutor is not sure it read: it asks first (its chip opens

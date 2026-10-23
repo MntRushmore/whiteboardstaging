@@ -136,6 +136,21 @@ the brain changes (no `brain.js` rebuild), and the strokes still carry `chatProb
 every page, which is what Ask's picture of that page says too). A problem the desk refuses gets no page
 ("Problem 2 of 4"); at the 50-page cap the rest are left out, as the desk says today.
 
+**Word problems (2026-10-22).** The desk writes maths only (`verifyProblem`'s `words`), so a problem in
+sentences ("Sam has 3 bags of 4 apples. How many apples?") used to get no page at all — the Training
+Center's 30 word-problem pages never started. Real kids did not hit it: the chat route repairs or drops
+a word problem before it reaches the board, and practice sets are generated as maths. Now the writer
+gives a word problem the desk refused its page too (`WordProblem`, AgathonLive): its sentences as plain
+words (`\text{}` unwrapped, `\frac{3}{4}` as 3/4, `\times` as ×; a command it has no words for keeps
+the problem out, so nothing ever shows as LaTeX), written in the tutor's hand at the problem origin by
+the brain's `layoutWords` (`planWords`: the hand's `composeHandwriting`, wrapped at the rules' width,
+48 down to 28, a word gap that grows with the hand), the work area under them. The words carry
+`wordProblem: true` and no `chatProblem`: they head no column. The kid's first line under them
+(`3 \times 4 = 12`) is the problem their work is judged against, as on a page of their own homework,
+so a slip in the sums is still ringed; whether the set-up matches the words is theirs. With the hand
+off the sentences are typeset as `\text{}` rows of at most 48 characters. The web writes no word
+problems, so nothing changes there; `layoutWords` is new in the brain and nothing on the web calls it.
+
 ## One page, one problem (AgathonLive)
 
 **The page's problem heads every column on the page.** `anchorAtProblems` today homes a line to the
@@ -350,6 +365,107 @@ broken in its own eval) keeps working as today. Sending the page's letters to th
 | web (server) | | `/api/live/recognize`: `secondOpinion` + `crop` → `second`, `agree`, behind `RECOGNIZE_SECOND_OPINION` (off); `RecognizeRequestSchema` / `RecognizeResponseSchema` gain the optional fields |
 | brain | none | |
 
+## More room (2026-10-21)
+
+A kid's big handwriting runs out of page (long multi-step algebra, long division, a word problem
+with a drawing). One problem can spread over more pages; the pages are one problem's work.
+
+| | |
+|---|---|
+| ![The page is full: More room](qa-screenshots/ipad-room-1-page-full-more-room.png) | ![Problem 1, page 2 of 2](qa-screenshots/ipad-room-2-page-2-continued.png) |
+| **Full.** The work reaches the last row: **More room** (chalk, 64 pt, a plus) in the page's corner, beside Check. | **Page 2 of the problem.** "Problem 1, continued", the problem again small, more rows, the answer spot. The top bar: "Problem 1 · page 2 of 2". |
+| ![Solved across two pages](qa-screenshots/ipad-room-3-page-2-solved-next.png) | ![Page 1, checked from page 2](qa-screenshots/ipad-room-4-page-1-checked-next.png) |
+| **Checked.** The answer on page 2 checks both pages; solved: Next. | **Page 1.** Its steps were checked from page 2 (their ticks are here); "Answer on the next page" where its answer spot was; Next here too. |
+
+### What the kid sees
+
+- **More room** shows in the page's action corner (beside Check; above it when the corner is narrow:
+  upright, a split view) once a line of the kid's work, outside the answer spot, reaches the last row
+  of the work area (its bottom below `ProblemPageLayout.fullBand`, 620 on the 1600 × 900 page), on the
+  problem's last page, while it is unsolved, with a page left (at most `maxPages` = 4 pages a problem;
+  never past the board's 50). A tap is **one kid undo step**: a new page right after the problem's last
+  one, and the board shows it.
+- **The new page**: "Problem 2, continued" ("Continued" for a problem of no set; Lexend SemiBold 20,
+  ink secondary) in the problem's place, the problem again under it, small (at most 0.45 of its size and
+  60 tall: a copy of everything written in the problem's place on the first page — the tutor's hand, a
+  typeset problem, a picture, or a kid's own first line — as the tutor's ink, `locked`), the work area
+  from under it (a row more than the first page: 7 rows for a one-line problem, against 6; 6 for a
+  three-line word problem, against 5), and the answer spot. No "Work it out here".
+- **The page before** loses its answer spot (its `more`): "Answer on the next page" is written where it
+  was, and ink there is work.
+- **The top bar**: "Problem 2 · page 2 of 2" ("This problem · page 2 of 2" for a problem of no set).
+  The dock's ‹ › step through every page, the problem's pages included.
+- **Next problem** shows once the problem is solved on any of its pages, on whichever page is on show,
+  and goes past the problem's other pages. The All done page counts the problem once.
+
+### One problem's work (AgathonLive `LiveLoop+MoreRoom`)
+
+The loop still works on the page on show; what crosses a page break:
+
+- **The column flows on.** `analyze` starts a continued page's first column (the one whose top line is
+  highest, then leftmost) where the problem's work ended at the bottom of the page before (the column
+  whose line is lowest there): its last right step, the problem's first relation, the problem it works,
+  the lines above as judged, a slip right above it, a running total, "solved above" (`PageCarry`). So
+  `+3 = 767` at the top of page 2 goes on from `400 + 364 = 764` at the bottom of page 1, `=431` answers
+  `767 − 336`, and a step carried on from a slip on page 1 is not ringed again.
+- **The problem heads every page.** The first page's `problem` record heads the columns of the pages
+  after it (`refreshHeads`: placed where its copy is); its `lines` list the problem's lines on every
+  page, in order (a kid's own problem's record, too, stays on its first page).
+- **A check on any page checks every page.** Check, the answer spot, the long pause, Help me's release
+  and the safety net run as before on the page on show, then every other page of the problem is
+  checked where it is, in order, each going on from the page before: its finished lines released and
+  marked **on their own page** (no hint, no step, no Now you try there). Work held on another page of
+  the problem counts as unchecked work here: Check shows on an empty page 2, and the long pause and the
+  safety net run from the kid's last ink on the page they left. A slip found on another page, with
+  none here and the problem unsolved, is pointed at: "Have another look at page 1." (its ring is there).
+- **"I read" and tap to fix** stay per page; a fix judges the line again with what it goes on from (the
+  page before, for a continued page's first line), and the problem's later pages are judged again from
+  the fixed reading (their marks follow, on their pages).
+- **The learning record** files every line of the problem under its first page: the key
+  `<first page>#cell:<problem>` (a kid's own problem: its first page's `#ink:` key, carried over), the
+  `pageId` the first page, and a move between the problem's pages closes nothing. One attempt a problem.
+- **Another page judged where it is.** A page other than the one on show is judged by a loop of its own
+  on it (`PassBoard`, `passive`): the same records read back, the same analysis and policy, the marks
+  written straight onto it (`InstantPen`). It shares the board loop's services, brain, clock, settings
+  and read cache, makes no capabilities call, records nothing itself, saves no settings and closes no
+  attempt. Ink of that page never read (a read still in flight when the kid tapped More room) is read
+  then, after the board loop's own reads in flight land in the cache.
+- **"New page for this one"** is unchanged and distinct: a second problem started on any page of a
+  problem moves to a page of its own (origin `student`, no `continues`), put after the problem's last
+  page; so is every page put "after this one" (Ask's sets, Now you try), so a problem's pages stay
+  together.
+
+### The board (AgathonBoard)
+
+`ProblemPage` gains `continues` (the first page's screen id, on every page after it) and `more` (the
+page is followed by another of its problem); `hasAnswerSpot` = `answer && !more`. `ProblemPageGroup` /
+`BoardStore.problemGroup(of:)` gives a problem's pages in the board's order (a page whose first page is
+gone stands on its own). `MoreRoom.plan` / `apply` and `BoardController.addMoreRoom()` make the step.
+`PageTemplate` gains `notes` ("Problem 2, continued", "Answer on the next page", in "Answer:"'s colour),
+drawn by the canvas (`templateNotes`) and the thumbnail. The schema is unchanged (meta keys only:
+docs/BOARD-FORMAT.md). An older build shows the pages plainly: page 2 as its own page of the set with
+the copy at its top, page 1 still with its answer spot.
+
+### Tests
+
+- AgathonBoard `MoreRoomTests` (6): the keys round trip and move the answer spot; the step (after the
+  problem's last page, before the next problem; the copy small, the tutor's, locked, no `chatProblem`;
+  the work area; ONE undo step); a third page continues the first, pages put after this one keep the
+  problem together, at most four pages; New page for this one goes after the problem's pages; a page
+  whose first page is gone stands alone; the template's words.
+- AgathonLive `MoreRoomLoopTests` (10): a running total across the page break (and back and forth);
+  an `=` answer across it; a check on page 2 checks page 1, marks each page, one learning attempt; a
+  slip on page 1 ringed there and pointed at; the long pause on page 2 checks page 1; Next goes past
+  the problem's pages (and shows on page 1); a reading fixed on page 1 judges page 2 again; the kid's
+  own problem over two pages is one attempt and one record; More room offered only when full, on the
+  last page; New page for this one still works.
+- AgathonBoardUI: "Problem 2 · page 2 of 2".
+- Web (`agathonDoc.test.ts`): a board with a continued problem converts, its pages in order, the copy
+  locked, the replay playing both pages.
+- Journey (`MoreRoomUITests`, local stack, 5 recognize calls): problem 1 filled in a big hand, More room,
+  the answer on page 2 checks both pages, page 1 ticked with Next, Next past page 2, problem 2, All done
+  with two stickers.
+
 ## Old boards, old settings
 
 - **No migration.** Pages exist; `page` is a new meta key; an old board has no problem pages and works as
@@ -368,7 +484,7 @@ broken in its own eval) keeps working as today. Sending the page's letters to th
   least (the hand shrinks first).
 - **Long division needing room:** the guide lines are only guides: a bracket can be drawn over them, and
   the whole page (answer spot and margin lane included) is the problem's. A bracket read as one block is
-  judged as today (`judgeWork`). A "More room" page for the same problem is a follow-up.
+  judged as today (`judgeWork`). When it runs off the page, More room gives the problem another page.
 - **The kid ignores the answer spot:** the last line of the work is judged as usual; the pause or Check
   checks it; a solved line anywhere on the page solves the problem.
 - **The answer spot first** (the kid writes only an answer): a bare number answers the problem's letter;
@@ -432,20 +548,7 @@ about 6–7 recognize calls and 1–3 checks (reads of moved ink and fixed readi
 - The page's letters for the recognizer on the server (needs a web change).
 - Turning the second opinion on (both flags) once the owner OKs doubling Mathpix's cost per line;
   measure "asked" and "fixed" in the admin console first.
-- **"More room"** for a long problem (a page that continues the same problem). What it takes:
-  - the page: `ProblemPage` gains `continues: <the first page's screen id>` (meta only, no schema
-    bump), and `kind: .problem` with the same `set`/`index`, so "Problem 2 of 5" and Next stay right;
-    `BoardTopBar`'s `whereAmI` says "Problem 2 of 5 (more room)";
-  - making it: a quiet "More room" in the action corner once the work area's last guide line has ink
-    (or the kid's lines reach the answer spot), `BoardController.insertScreen(after:meta:go:)` with the
-    template but no problem at the top (the first page's problem is shown small, in the tutor's hand,
-    as a reminder); one kid undo step;
-  - judging: `pageHead()` reads the problem from the page it continues (its `problem` records, or
-    `ProblemPage.problem`), and the first line on the new page continues the last line of the page
-    before (`lastGoodLineAbove` across the two pages, the way columns continue today); the answer
-    spot moves to the last page of the problem, and Next waits for it;
-  - tests: a loop test (a step on page 2 judged against page 1's problem and its last line) and the
-    journey's long division. About a day.
+- **"More room"**: built (2026-10-21, `feat/ipad-room`); see "More room" above.
 - **"Keep it here"** is remembered (`meta.keptHere` on the line's record, 2026-10-19): a board opened
   again does not offer that problem a page again.
 - An answer spot for problems whose answer is a drawing (a graph, a shape): none yet; those pages have

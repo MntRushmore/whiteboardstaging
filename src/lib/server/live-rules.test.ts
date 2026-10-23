@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Annotation, CheckRequest } from "@/lib/live/contracts";
-import { classifyKind, filterAnnotation, normalizeStep, textCoverage } from "@/lib/server/live-rules";
+import { classifyKind, filterAnnotation, normalizeStep, pointWithInk, textCoverage } from "@/lib/server/live-rules";
 
 describe("classifyKind", () => {
   it("returns unknown for empty latex", () => {
@@ -45,7 +45,7 @@ const warn: Annotation = {
   lineId: "l3",
   verdict: "warn",
   kind: "arithmetic",
-  message: "Look again at the right side of line 3",
+  message: "Look again at the right side of this line",
   question: "What is 8 divided by 2?",
   latex: "x = 8/2",
   expected: "8/2",
@@ -100,5 +100,36 @@ describe("normalizeStep", () => {
   it("leaves non-final and already boxed steps alone", () => {
     expect(normalizeStep({ index: 1, latex: "2x = 8", explanation: "", final: false }, 1).latex).toBe("2x = 8");
     expect(normalizeStep({ index: 1, latex: "\\boxed{x=4}", explanation: "", final: true }, 1).latex).toBe("\\boxed{x=4}");
+  });
+});
+
+describe("pointWithInk: a hint never counts lines", () => {
+  it.each([
+    ["Look again at the right side of line 3", "Look again at the right side of this line"],
+    ["Check the addition on the right side of line 4.", "Check the addition on the right side of this line."],
+    ["Signs tripped you up before. Check the sign on the right side of line 2.", "Signs tripped you up before. Check the sign on the right side of this line."],
+    ["Line 2: what is 9 + 7?", "This line: what is 9 + 7?"],
+    ["Look at line 2: what is 9 + 7?", "Look at this line: what is 9 + 7?"],
+    ["Compare lines 2 and 3.", "Compare these lines."],
+    ["Lines 1-2 are fine. Check line #3.", "These lines are fine. Check this line."],
+    ["Step 2 drops the minus sign.", "This step drops the minus sign."],
+    ["Look again at the second line", "Look again at this line"],
+    ["The last line needs another look.", "This line needs another look."],
+  ])("%s", (input, want) => {
+    expect(pointWithInk(input)).toBe(want);
+  });
+
+  it("leaves maths and plain words alone", () => {
+    for (const s of ["What is 8 divided by 2?", "Write the next step 2x = 8", "Check the line with 34 × 6", "Your steps so far look right.", "Underline the 3"]) {
+      expect(pointWithInk(s)).toBe(s);
+    }
+  });
+
+  it("filterAnnotation rewrites the message and the question; normalizeStep the explanation", () => {
+    const out = filterAnnotation({ ...warn, message: "Look again at line 3", question: "What does line 2 give you?" }, { lines, mode: "suggest" });
+    expect(out?.message).toBe("Look again at this line");
+    expect(out?.question).toBe("What does this line give you?");
+    const step = normalizeStep({ index: 0, latex: "x = 4", explanation: "Divide line 2 by 2", final: false } as never, 1);
+    expect(step.explanation).toBe("Divide this line by 2");
   });
 });

@@ -230,7 +230,8 @@ describe("live loop — stacked sums", () => {
       start("feedback");
       const ink = sum(OWNER_ROWS, "866");
       await pen(ink.all);
-      await wait(1500);
+      // a ring waits for the line to look finished (LIVE_TIMING.doubtHoldMs)
+      await wait(LIVE_TIMING.doubtHoldMs + 100);
       expect(marks()).toEqual(["circle"]);
       expect(echoNote()).toBe("Add the 1 you carried to the hundreds.");
       const ring = editor.getShapePageBounds(tutorInk().find((s) => metaOf(s).mark)!)!;
@@ -437,7 +438,7 @@ describe("live loop — stacked sums", () => {
     it("a wrong row: ringed — round the whole block — with what to check; Solve and Help write nothing into it", async () => {
       start("answer");
       await pen(longMultiplication(["115", "820"], "935", "\\begin{array}{r}\n23 \\\\\n\\times 45 \\\\\n\\hline 115 \\\\\n820 \\\\\n\\hline 935\n\\end{array}"));
-      await wait(1500);
+      await wait(LIVE_TIMING.doubtHoldMs + 100);
       expect(stackLine().analysis).toMatchObject({ verdict: "mismatch", note: "Check the row for the 4 tens: 23 × 40." });
       expect(marks()).toEqual(["circle"]);
       const ring = tutorInk().find((s) => String(metaOf(s).mark).startsWith("circle"))!;

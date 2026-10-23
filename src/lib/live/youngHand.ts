@@ -30,7 +30,7 @@
  *    precalculus (`x \approx 2.41`), an `\approx` is meant, and stays.
  */
 
-import type { InkStroke, Rect } from "./contracts";
+import type { InkStroke, LiveEngine, Rect } from "./contracts";
 import { isDotStroke, isLevelBar, strokeLength } from "./strokeClusters";
 
 export interface YoungReadContext {
@@ -45,6 +45,13 @@ export interface YoungReadContext {
    * (a wave and a bar) as one minus, `-54` for `= 54`, and the right answer was ringed.
    */
   signs?: string | null;
+  /**
+   * In arithmetic, is this read the problem's right answer? (the caller's engine: `problem = read`
+   * holds). A read a child's glyph made nonsense of (`9,08` for 9108, her tick read into it, `-4
+   * \quad-`) is taken as the one number it can only be — and only when that number is right
+   * (`misreadVariants`): a nonsense read never becomes a wrong answer, so never a ring.
+   */
+  rightAnswer?: (latex: string) => boolean;
 }
 
 const commands = (names: readonly string[]) => names.map((n) => `\\\\${n}(?![a-zA-Z])`).join("|");
@@ -75,6 +82,38 @@ const MIDDLE_ANY_RE = between(`${UNREADABLE}|${APPROX}`);
 const MIDDLE_UNREADABLE_RE = between(UNREADABLE);
 /** a tick after the answer: `\checkmark`, `\text{✓}`, `\vee`, `v`, `V`, `\surd`, an empty `\sqrt{}` */
 const TRAILING_TICK_RE = /(\d\}?)\s*(?:\\checkmark|\\text\s*\{\s*[✓✔]\s*\}|[✓✔]|\\vee(?![a-zA-Z])|\\surd(?![a-zA-Z])|\\sqrt\s*\{\s*\}|\\mathrm\s*\{\s*[vV]\s*\}|[vV])\s*$/;
+
+/** ...and the ticks no maths could be, anywhere: `\checkmark`, `✓`, an empty `\sqrt{}` (a `√` with no bar over anything) */
+const TRAILING_SURE_TICK_RE = /(\d\}?)\s*(?:\\checkmark|\\text\s*\{\s*[✓✔]\s*\}|[✓✔]|\\sqrt\s*\{\s*\})\s*$/;
+
+/**
+ * A child's numbers Mathpix took for words (`\text { 767-336 }`, `\text { = } 431`, `\text { 5/6 }`,
+ * `\text { 3R3 }`, `\text { -9 }`; real reads of the Training Center's bench, 2026-10-21): text of
+ * nothing but digits, signs and brackets — or a remainder's `R` between two numbers — is maths. Words
+ * (`\text{apples}`, `\text { O }`) stay.
+ */
+function mathsOfText(latex: string): string {
+  return latex.replace(/\\text\s*\{([^{}]*)\}/g, (m, inner: string) => {
+    const t = inner.trim();
+    if (/^\d+\s*[Rr]\s*\d+$/.test(t)) return ` ${t} `;
+    if (/^[\d\s.,+\-=/()×÷:<>]+$/.test(t) && /[\d=+\-<>]/.test(t)) return ` ${t} `;
+    return m;
+  });
+}
+
+/**
+ * A long-division bracket as Mathpix reads one with its quotient over it: the divisor and its bracket
+ * taken for words (`\text { 9) }`, a 9 read `g`), the quotient over the overline read as a fraction's
+ * top (`\frac{16}{144}`). Put as the bracket the engine reads (`primaryWork.ts`):
+ * `\begin{array}{r} 16 \\ 9)\overline{144} \end{array}`. Nothing else is changed.
+ */
+const BRACKET_READ_RE = /^\s*(?:\\text\s*\{\s*([0-9gq]{1,3})\s*\)\s*\}|(\d{1,3})\s*\))\s*\\[dt]?frac\s*\{\s*(\d+)\s*\}\s*\{\s*(\d+)\s*\}\s*$/;
+function bracketOfRead(latex: string): string {
+  const m = BRACKET_READ_RE.exec(latex);
+  if (!m) return latex;
+  const divisor = (m[1] ?? m[2]).replace(/[gq]/g, "9");
+  return `\\begin{array}{r} ${m[3]} \\\\ ${divisor})\\overline{${m[4]}} \\end{array}`;
+}
 
 /** Maths with digits and no letters: `18 + 15 - 19`, `6 \times 4`, `\frac{1}{2}` (relations allowed). */
 function numbersOnly(latex: string): boolean {
@@ -169,6 +208,40 @@ export function leadingSigns(strokes: readonly InkStroke[]): string | null {
 }
 
 /**
+ * The line's ink starts with a minus: its leftmost level bar in the middle of the line's height, no
+ * other ink to the left of it at that height (a `5` whose tail curls out under it is fine), no bar
+ * over or under it (an `=`), no stroke through it (a `+`), and writing within a glyph's height to its
+ * right. The stroke a read that starts with no sign has left out (`readVariants`' `minus`).
+ */
+export function inkLeadsWithMinus(strokes: readonly InkStroke[]): boolean {
+  const ink = strokes.filter((s) => !isDotStroke(s));
+  const glyphs = ink.filter((s) => !isLevelBar(s.bounds));
+  if (glyphs.length === 0) return false;
+  const top = Math.min(...glyphs.map((s) => s.bounds.y));
+  const h = Math.max(...glyphs.map((s) => s.bounds.y + s.bounds.h)) - top;
+  const bars = ink
+    .filter((s) => isLevelBar(s.bounds))
+    .filter((s) => {
+      const cy = s.bounds.y + s.bounds.h / 2;
+      return cy >= top + 0.25 * h && cy <= top + 0.8 * h;
+    })
+    .sort((p, q) => p.bounds.x - q.bounds.x);
+  const bar = bars[0];
+  if (!bar) return false;
+  const { x, w } = bar.bounds;
+  const cy = bar.bounds.y + bar.bounds.h / 2;
+  const points = (s: InkStroke) => s.segments.flat();
+  const others = ink.filter((s) => s !== bar);
+  // nothing further left at its height, nothing through it
+  if (others.some((s) => points(s).some((p) => p.x < x + 0.7 * w && Math.abs(p.y - cy) <= 0.2 * h))) return false;
+  // no bar over or under it
+  if (others.some((s) => isLevelBar(s.bounds) && Math.min(s.bounds.x + s.bounds.w, x + w) - Math.max(s.bounds.x, x) >= Math.min(s.bounds.w, w) / 3)) return false;
+  // writing right after it
+  const next = Math.min(...glyphs.flatMap((s) => points(s).filter((p) => p.x >= x + 0.5 * w && Math.abs(p.y - cy) <= 0.5 * h).map((p) => p.x)));
+  return Number.isFinite(next) && next - (x + w) <= h;
+}
+
+/**
  * Nothing but level bars (and taps of the pen): `-`, `=`, `= -` — the signs of an answer, its number
  * still to come. Under one of the chat's problems such a line is not read until the number joins it
  * (`LiveLoop.withoutStrays`): Mathpix reads a lone minus as `\backslash`, and `= -` as `=`.
@@ -183,9 +256,131 @@ export function isSignsOnly(strokes: readonly InkStroke[]): boolean {
   return bars > 0;
 }
 
+/**
+ * A read that is a whole number with a bar over it (`\overline{544}`, `= \overline{544}`): in
+ * arithmetic, the rule of a stacked sum or product over its answer, read into it. Never after a `)`
+ * (a long-division bracket) or a decimal point (a repeating decimal): the whole read is the number.
+ */
+const OVERLINED_ANSWER_RE = /^(\s*=?\s*-?\s*)\\overline\s*\{\s*(\d+)\s*\}\s*$/;
+
+/** Letters a child's digit is read as (a small or written-over `9` as `G`, a `0` as `O`). */
+const LOOKALIKE_DIGITS: Record<string, string> = { G: "9", g: "9", q: "9", O: "0", o: "0", D: "0", l: "1", I: "1", S: "5", s: "5", Z: "2", z: "2", b: "6", B: "8" };
+
+/** A number's commas as thousands separators: `1,500`, `12,345,678` (and no comma at all). */
+const THOUSANDS_RE = /^\d{1,3}(?:,\d{3})+$/;
+
+/**
+ * What a nonsense read of a young student's answer may have been (`YoungReadContext.rightAnswer`
+ * picks one only when it is right):
+ *  - a comma between digits that no thousands separator could be (`9,08`): a short `1` (or a tap
+ *    of the pen) read as a comma — `9108`, `908`;
+ *  - a spaced tail of a stroke or two after the number (`-4 \quad-`, `27 \quad ,`): her own tick
+ *    or a stray, read into the answer — the number alone; so is a trailing `=` (`=30=`);
+ *  - a letter a digit looks like, alone or in the number (`=\mathbb{G}` for `= 9`, `=b5` for `= 65`).
+ * Plain numbers only (`ANSWER_NUMBER`); empty when nothing applies.
+ */
+export function misreadVariants(read: string): string[] {
+  const out = new Set<string>();
+  const lead = /^\s*=\s*/.exec(read)?.[0] ?? "";
+  const body = read.slice(lead.length).trim();
+  const number = /^-?\s*[\d,]+$/.exec(body)?.[0];
+  if (number && /\d,\d/.test(number) && !THOUSANDS_RE.test(number.replace(/^-\s*/, ""))) {
+    out.add(lead + number.replace(/(?<=\d),(?=\d)/g, "1"));
+    out.add(lead + number.replace(/(?<=\d),(?=\d)/g, ""));
+  }
+  // a doubled or trailing `=` after the number (`=30=`)
+  const trailing = /^(-?\s*\d+(?:\.\d+)?)\s*=\s*$/.exec(body);
+  if (trailing) out.add(lead + trailing[1].trim());
+  // a digit read as a letter that looks like it (`=\mathbb{G}` for `= 9`)
+  const letter = /^(?:\\math(?:bb|rm|bf|cal)\s*\{\s*([A-Za-z])\s*\}|([A-Za-z]))$/.exec(body);
+  const digit = letter ? LOOKALIKE_DIGITS[letter[1] ?? letter[2]] : undefined;
+  if (digit) out.add(lead + digit);
+  // ...or one inside a number (`=b5` for `= 65`)
+  if (/^[\dA-Za-z]+$/.test(body) && /\d/.test(body) && [...body].every((c) => /\d/.test(c) || c in LOOKALIKE_DIGITS)) {
+    out.add(lead + [...body].map((c) => LOOKALIKE_DIGITS[c] ?? c).join(""));
+  }
+  const tail = /^(-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}))\s*(?:\\q?quad|\\[,;:]|~)\s*[-,.'`^~|/]?\s*(?:\\(?:prime|vee|wedge))?\s*$/.exec(body);
+  if (tail) out.add(lead + tail[1].trim());
+  return [...out].filter((v) => v !== read && ANSWER_NUMBER.test(v.slice(lead.length)));
+}
+
+/**
+ * `YoungReadContext.rightAnswer` for an arithmetic problem of one line: the read, its `=` aside, is a
+ * plain number (`ANSWER_NUMBER`) and `problem = number` holds. Undefined for a problem of more lines.
+ */
+export function rightAnswerTo(engine: LiveEngine, problem: readonly string[]): ((latex: string) => boolean) | undefined {
+  if (problem.length !== 1) return undefined;
+  return (latex) => {
+    const answer = latex.replace(/^\s*=\s*/, "").trim();
+    if (!ANSWER_NUMBER.test(answer)) return false;
+    try {
+      return engine.analyzeLine(`${problem[0]} = ${answer}`, { mode: "feedback" }).verdict === "ok";
+    } catch {
+      return false;
+    }
+  };
+}
+
+/** An exponent that is nothing but a plus, a term after it (`5 x^{+} 20`): never meant — the `+` written a little high (an ion's `Na^{+}` has none). */
+const SIGN_EXPONENT_RE = /(?<=[\da-zA-Z)}])\s*\^\s*\{\s*\+\s*\}(?=\s*[\da-zA-Z(\\])/g;
+/** A `\times` with nothing before it (`\times=2`, `(\times + 1)`): no product — her `x`. */
+const LONE_TIMES_RE = /(^|[=(+\-]\s*)\\times(?![a-zA-Z])(?=\s*(?:[=+\-)]|$))/g;
+/** A left arrow and what follows it (`2 x=11-3 \Longleftarrow 9`): a note at the side, pointing back. */
+const LEFT_ARROW_TAIL_RE = /\s*\\(?:Long|long)?(?:left|Left)arrow(?![a-zA-Z]).*$/;
+
+/**
+ * Out of arithmetic, what a messy read of a child's step may have been (real-ink bench, 2026-10-22):
+ * a plus written high, read as an exponent (`5 x^{+} 20`); her `x` read as a times sign with nothing
+ * to multiply (`\times=2`); a note at the side behind a left arrow (`2 x=11-3 \Longleftarrow 9`); and,
+ * when her ink starts with a minus right before its first glyph (`minus`: `inkLeadsWithMinus`), that
+ * minus, which the read dropped (`-5x + 20 - 6x` read `5 x^{+} 20-6 x`: the right step was ringed).
+ * Each alone, then all together; none drops a number that `keep` (the problem, the line above) has.
+ * They are only ever taken to find a step RIGHT (`judgeLine`, the loop's second look before a ring),
+ * and each is a confusion of what the ink shows: a variant never makes a ring or a "?".
+ */
+export function readVariants(read: string, minus = false, keep: readonly string[] = []): string[] {
+  // never a number taken out that the problem or the line above has (a side note's `9` may go; a
+  // `9` the work is about may not): a variant must not make right what the ink does not say
+  const kept = new Set(keep.flatMap(numbersIn));
+  const steps: Array<(s: string) => string> = [
+    (s) => s.replace(SIGN_EXPONENT_RE, " + "),
+    (s) => s.replace(LONE_TIMES_RE, "$1x"),
+    (s) => {
+      const noted = s.replace(LEFT_ARROW_TAIL_RE, "");
+      return /[=<>]|\\(?:le|ge|leq|geq)(?![a-zA-Z])/.test(noted) ? noted : s;
+    },
+    (s) => (minus && /^(?:\d|[a-zA-Z(]|\\(?:frac|left|sqrt)(?![a-zA-Z]))/.test(s.trim()) ? `-${s.trim()}` : s),
+  ];
+  const out: string[] = [];
+  const before = numbersIn(read);
+  const add = (v: string) => {
+    const t = tidy(v);
+    if (t === tidy(read) || out.includes(t)) return;
+    // the same numbers, in order, but for some a side note held that nothing above has
+    const after = numbersIn(t);
+    let k = 0;
+    for (const n of before) {
+      if (n === after[k]) k += 1;
+      else if (kept.has(n)) return;
+    }
+    if (k === after.length) out.push(t);
+  };
+  for (const step of steps) add(step(read));
+  add(steps.reduce((s, step) => step(s), read));
+  return out;
+}
+
+/** The numbers written in a read, unsigned, in order (`12`, `3.5`). */
+function numbersIn(latex: string): string[] {
+  return latex.match(/\d+(?:\.\d+)?/g) ?? [];
+}
+
 /** The line as a young student meant it (see the file comment); unchanged when nothing applies. */
 export function readYoungHand(latex: string, ctx: YoungReadContext): string {
-  let s = latex.replace(/⌣/g, "\\smile ").replace(/⌢/g, "\\frown ");
+  // her numbers read as words, her long division's bracket read as words and a fraction
+  let s = bracketOfRead(mathsOfText(latex)).replace(/⌣/g, "\\smile ").replace(/⌢/g, "\\frown ");
+  // an empty `\text { }` (a tap of the pen read as text) is nothing: `\text { } \approx 12` is `\approx 12`
+  s = s.replace(/\\text\s*\{\s*\}/g, " ");
   // two bars read stacked, and a curved bar wherever it is
   s = tidy(s.replace(STACKED_RE, " = ").replace(CURVED_RE, " = "));
   if (LONE_STRONG_RE.test(s) || (ctx.arithmetic && LONE_ANY_RE.test(s))) return "=";
@@ -193,11 +388,20 @@ export function readYoungHand(latex: string, ctx: YoungReadContext): string {
     s = s.replace(TRAILING_TICK_RE, "$1").trim();
     s = s.replace(LEADING_RE, "= ");
     s = withSignsOfInk(s, ctx.signs);
+    s = s.replace(OVERLINED_ANSWER_RE, "$1$2");
+  } else {
+    // in algebra too, a tick no maths could be (`x=4 \sqrt{ }`: a `√` over nothing is her ✓)
+    s = s.replace(TRAILING_SURE_TICK_RE, "$1").trim();
   }
   // between two sides: in arithmetic any look-alike; anywhere, one the engine cannot read on a line of numbers
   const swapped = s.replace(ctx.arithmetic ? MIDDLE_ANY_RE : MIDDLE_UNREADABLE_RE, " = ");
   if (swapped !== s && numbersOnly(swapped)) s = swapped;
   s = tidy(s);
+  // a nonsense read of her answer that can only have been the right number (`misreadVariants`)
+  if (ctx.arithmetic && ctx.rightAnswer && !ctx.rightAnswer(s)) {
+    const meant = misreadVariants(s).find((v) => ctx.rightAnswer?.(v));
+    if (meant) return meant;
+  }
   return s === tidy(latex) ? latex : s;
 }
 
@@ -207,7 +411,7 @@ export function readYoungHand(latex: string, ctx: YoungReadContext): string {
  * Her own tick: ONE stroke shaped like a ✓ — two straight-ish arms meeting at its lowest point, the
  * corner in the left half, the long arm reaching up to the top on the right and at least 1.3 times
  * the short one, which rises less — drawn in either direction (a young hand draws it from the top of
- * the long arm down, then up the short one). A `√` drawn without its bar is the same shape: it is
+ * the long arm down, then up the short one), its short arm slanting or straight down. A `√` drawn without its bar is the same shape: it is
  * only taken for a tick at the end of an answer in arithmetic (`ownTicks`). A `7`, a `2`, an `L` end
  * at their lowest point or at the bottom; a `v` or a `U` has arms of one length.
  */
@@ -221,7 +425,8 @@ export function isTickStroke(s: InkStroke): boolean {
   if (v === 0 || v === pts.length - 1) return false;
   const corner = pts[v];
   const [left, right] = pts[0].x <= pts[pts.length - 1].x ? [pts[0], pts[pts.length - 1]] : [pts[pts.length - 1], pts[0]];
-  if (corner.x <= left.x || corner.x >= right.x || corner.x - left.x > 0.5 * (right.x - left.x)) return false;
+  // the short arm may come straight down (the corner right under where it starts: a real child's ✓)
+  if (corner.x < left.x - 0.05 * w || corner.x >= right.x || corner.x - left.x > 0.5 * (right.x - left.x)) return false;
   if (right.y > y + 0.3 * h || left.y > corner.y - 0.2 * h || left.y <= right.y) return false;
   const long = Math.hypot(right.x - corner.x, right.y - corner.y);
   const short = Math.hypot(left.x - corner.x, left.y - corner.y);

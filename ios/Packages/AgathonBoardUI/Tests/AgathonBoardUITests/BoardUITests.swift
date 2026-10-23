@@ -65,6 +65,11 @@ struct DockLayoutTests {
         #expect(DockCopy.whereAmI(ProblemPage(origin: "student"), screen: 4, of: 7) == "Page 4 of 7")
         #expect(DockCopy.whereAmI(ProblemPage(setId: "nyt:1", index: 1, count: 1), screen: 2, of: 2) == "Page 2 of 2")
         #expect(DockCopy.whereAmI(nil, screen: 1, of: 1) == "Page 1 of 1")
+        // a problem that needed more room ("More room"): which of its pages
+        #expect(DockCopy.whereAmI(ProblemPage(setId: "daily:x", index: 2, count: 5), part: (2, 2), screen: 4, of: 8) == "Problem 2 · page 2 of 2")
+        #expect(DockCopy.whereAmI(ProblemPage(setId: "daily:x", index: 2, count: 5), part: (1, 3), screen: 3, of: 8) == "Problem 2 · page 1 of 3")
+        #expect(DockCopy.whereAmI(ProblemPage(origin: "nowYouTry"), part: (2, 2), screen: 5, of: 8) == "This problem · page 2 of 2")
+        #expect(DockCopy.whereAmI(ProblemPage(setId: "daily:x", index: 2, count: 5), part: (1, 1), screen: 3, of: 8) == "Problem 2 of 5")
         // kind words: never "wrong"
         for s in [DockCopy.pictureFailed, DockCopy.pdfFailed, DockCopy.deleteMessage, DockCopy.boardFullMessage] {
             #expect(!s.lowercased().contains("wrong"))

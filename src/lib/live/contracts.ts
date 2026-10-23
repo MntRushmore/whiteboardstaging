@@ -212,6 +212,12 @@ export interface LineAnalysis {
    */
   bareAnswer?: boolean;
   /**
+   * A slip in arithmetic that looks more like a misread than a mistake (`judgeLine`): a letter in a
+   * number answer, or the right answer with one digit dropped or added (`4` for 14). The loop asks
+   * "Is this right?" instead of ringing it.
+   */
+  misreadLikely?: boolean;
+  /**
    * Where the unknown lives, written with the equation (`2\cos x = 1, 0^{\circ} \le x < 360^{\circ}`)
    * or on a line of its own (`engine/domain.ts`). Carried down the column: an answer under it must
    * lie inside, and lists all of its solutions there to count as solved.
@@ -847,6 +853,14 @@ export const LIVE_TIMING = {
   /** a line just read: its typeset readback shows this long, even with the pen in hand */
   readbackMs: 2500,
   unreadableChipMs: 3000, // low confidence: "Couldn't read this" chip only after this
+  /**
+   * A ring or a "?" waits until the line has had no new stroke this long (and no stroke is being
+   * drawn on it): kids pause inside a line (the real-ink corpus, 916 pauses in 95 timed attempts:
+   * p90 1.3 s, p95 2.4 s), and a ring on `x = 1` before its 2 tells a kid an unfinished step is
+   * wrong. 2.5 s holds 95% of those pauses (96% with a pen). Ticks are not held. The iPad's
+   * `PageTiming.doubtHoldMs`.
+   */
+  doubtHoldMs: 2500,
   /** a ring waits at most this long for the step and its line above to be read again (`acceptChainReread`) */
   chainHoldMs: 4000,
   recognizeTimeoutMs: 6000,

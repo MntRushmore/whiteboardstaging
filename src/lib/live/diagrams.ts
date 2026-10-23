@@ -3,6 +3,8 @@ import type { InkLine, InkStroke, Rect, StrokePayload } from "./contracts";
 import { clusterStrokeGroups, inkScale, median, medianStrokeHeight, unionRects } from "./strokeClusters";
 import { buildPayload, rdp, type Pt } from "./strokePayload";
 import { tableRules } from "./proof/table";
+import { separatorRules } from "./separatorRules";
+import { struckRows } from "./struckRows";
 import { findStackedSums, type StackedSum } from "./stackedSums";
 
 /**
@@ -171,7 +173,7 @@ export const DIAGRAM_RULES = {
  * `operation`: a "divide both sides" bar under an equation, or the divisor under it (`DivisionBar`);
  * `stack`: a stacked sum's rows, rule and answer (`StackedSum`); `carry`: its carry and borrow marks
  */
-export type StrokeRole = "writing" | "drawing" | "mark" | "label" | "table" | "operation" | "stack" | "carry";
+export type StrokeRole = "writing" | "drawing" | "mark" | "label" | "table" | "operation" | "stack" | "carry" | "separator" | "struck";
 export type DiagramKind = "triangle" | "quadrilateral" | "polygon" | "circle" | "axes" | "numberLine" | "arrow" | "segment" | "curve";
 
 export interface Diagram {
@@ -237,6 +239,11 @@ export interface InkSplit {
   /** the glyph scale G the split was made with (page px) */
   glyph: number;
   roles: Map<string, StrokeVerdict>;
+  /**
+   * Fractions written with a long slanted bar (`slantedFraction`), each its stroke ids — the bar,
+   * then what is over and under it: one line of its own (`fractionGroups`), in `writing` none of them.
+   */
+  fractions?: string[][];
 }
 
 // ---------------------------------------------------------------- geometry
@@ -427,6 +434,78 @@ function geometry(stroke: InkStroke, i: number, G: number): Geo {
     cls = "big";
   }
   return { i, stroke, b: stroke.bounds, size, path, ends, shape, closed, main, rule, orient, cls };
+}
+
+/**
+ * A fraction written with a long slanted bar (its top over the bar's left half, its bottom under the
+ * right half: a child's `12` / `5` spanning five glyphs, real-ink bench 2026-10-22 — never read, a
+ * "long diagonal"): a straight diagonal rising to the right, no steeper than 40°, glyph ink just over
+ * its upper side and just under its lower side within its span, nothing else near it — no glyph
+ * beside it, no other long or big stroke (a triangle's side, an axis, a graph's line has those).
+ * Writing, not a drawing.
+ */
+function slantedFraction(g: Geo, geos: readonly Geo[], G: number): number[] | null {
+  if (g.cls !== "diagonal") return null;
+  const [l, r] = g.main.a.x <= g.main.b.x ? [g.main.a, g.main.b] : [g.main.b, g.main.a];
+  const run = r.x - l.x;
+  if (run <= 0 || l.y <= r.y || (l.y - r.y) / run > Math.tan((40 * Math.PI) / 180)) return null;
+  const near = geos.filter((o) => o.i !== g.i && rectGap(o.b, g.b) <= 2 * G);
+  if (near.some((o) => o.cls !== "glyph" && o.cls !== "medium")) return null;
+  const glyphs = near.filter((o) => o.cls === "glyph");
+  if (glyphs.length < 2) return null;
+  const scale = Math.max(G, median(glyphs.map((o) => o.b.h)));
+  // which side of the bar a glyph's centre is, within a glyph and a half of it: over its left part
+  // (-1), under its right part (1); anywhere else near it (NaN) is no fraction's — a segment's end
+  // labels sit under its low end and over its high one
+  const side = (o: Geo): number => {
+    const cx = o.b.x + o.b.w / 2;
+    const cy = o.b.y + o.b.h / 2;
+    if (cx < l.x - 0.5 * scale || cx > r.x + 0.5 * scale) return 0;
+    const t = Math.min(1, Math.max(0, (cx - l.x) / run));
+    const dy = cy - (l.y + t * (r.y - l.y));
+    if (Math.abs(dy) > 1.5 * scale) return 0;
+    if (dy < 0) return t <= 0.65 ? -1 : NaN;
+    return t >= 0.35 ? 1 : NaN;
+  };
+  const sides = glyphs.map(side);
+  // alone: every glyph near the bar is its top or its bottom — one beside it (a `+`, another
+  // fraction) makes it a term of a longer line, which the clusterer keeps whole
+  if (sides.some((v) => Number.isNaN(v) || v === 0) || !sides.includes(-1) || !sides.includes(1) || glyphs.some((o) => pathCrossesSeg(o.path, l, r, 0))) return null;
+  return [g.i, ...glyphs.map((o) => o.i)];
+}
+
+/** One open curve, big, no closed shape and no straight rule (a rule's arrow has its own barbs): a hand-drawn arrow's shaft. */
+function arrowLike(g: Geo): boolean {
+  return g.cls === "big" && !g.closed && !g.rule;
+}
+
+/** `rect` lies within `reach` of one end of `g`, and half as far again from the point halfway along it. */
+function atAnEnd(g: Geo, rect: Rect, reach: number): boolean {
+  const gap = (p: Pt) => rectGap(rect, { x: p.x, y: p.y, w: 0, h: 0 });
+  const pts = g.stroke.segments.flat();
+  let total = 0;
+  for (let k = 1; k < pts.length; k++) total += dist(pts[k - 1], pts[k]);
+  let along = 0;
+  let mid = pts[0];
+  for (let k = 1; k < pts.length && along < total / 2; k++) {
+    along += dist(pts[k - 1], pts[k]);
+    mid = pts[k];
+  }
+  const end = Math.min(gap(g.ends[0]), gap(g.ends[1]));
+  return end <= reach && gap(mid) >= 1.5 * Math.max(end, 1);
+}
+
+/** Each slanted fraction on the screen (`slantedFraction`): its bar's index first, then its glyphs'. */
+function slantedFractions(geos: readonly Geo[], G: number): number[][] {
+  const out: number[][] = [];
+  const taken = new Set<number>();
+  for (const g of geos) {
+    const members = g.cls === "diagonal" ? slantedFraction(g, geos, G) : null;
+    if (!members || members.some((i) => taken.has(i))) continue;
+    for (const i of members) taken.add(i);
+    out.push(members);
+  }
+  return out;
 }
 
 /**
@@ -1133,6 +1212,26 @@ const writingOnly = (strokes: InkStroke[], glyph: number, reason = "glyph"): Ink
  * pure.
  */
 export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagram[] = [], opts: SplitOptions = {}): InkSplit {
+  const split = splitParts(strokes, previous, opts);
+  // A row the kid struck out — found in the writing only, the drawings set apart first (a figure's
+  // side through its angle arcs and labels is no strike): no line, and no bridge between the steps
+  // over and under it.
+  const writingIds = new Set(split.writing.map((s) => s.id as string));
+  // a straight strike may have been taken for a small drawing first (a line, or an arrow with the
+  // last digit it went through for its head): a drawing of two strokes at most, with no labels
+  const small = new Set(split.diagrams.filter((d) => d.strokeIds.length <= 2 && d.labels.length === 0).flatMap((d) => d.strokeIds as string[]));
+  const pool = strokes.filter((s) => writingIds.has(s.id as string) || small.has(s.id as string));
+  const struck = struckRows(pool, split.glyph);
+  if (struck.size === 0) return split;
+  for (const id of struck) split.roles.set(id, { role: "struck", reason: "a row struck out" });
+  return {
+    ...split,
+    writing: split.writing.filter((s) => !struck.has(s.id as string)),
+    diagrams: split.diagrams.filter((d) => !d.strokeIds.every((id) => struck.has(id as string))),
+  };
+}
+
+function splitParts(strokes: readonly InkStroke[], previous: readonly Diagram[] = [], opts: SplitOptions = {}): InkSplit {
   const R = DIAGRAM_RULES;
   const all = [...strokes];
   const G = glyphScale(all, opts.zoom);
@@ -1143,7 +1242,7 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
   const stacks = findStackedSums(all, G);
   if (stacks.length > 0) {
     const taken = new Set<string>(stacks.flatMap((s) => [...s.strokeIds, ...s.marks]));
-    const split = splitInk(all.filter((s) => !taken.has(s.id)), previous, opts);
+    const split = splitParts(all.filter((s) => !taken.has(s.id)), previous, opts);
     for (const s of stacks) {
       for (const id of s.strokeIds) split.roles.set(id, { role: "stack", reason: "a stacked sum, read as one" });
       for (const id of s.marks) split.roles.set(id, { role: "carry", reason: "a carry or borrow mark" });
@@ -1156,8 +1255,15 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
   // A proof's T-table: its rules are set aside, so the rows it separates are read as lines.
   const table = tableRules(all, G);
   if (table.size > 0) {
-    const split = splitInk(all.filter((s) => !table.has(s.id)), previous, opts);
+    const split = splitParts(all.filter((s) => !table.has(s.id)), previous, opts);
     for (const id of table) split.roles.set(id, { role: "table", reason: "a proof's table rule" });
+    return split;
+  }
+  // A line drawn right across the work under a step (an equation over or under it): no fraction bar.
+  const separators = separatorRules(all, G);
+  if (separators.size > 0) {
+    const split = splitParts(all.filter((s) => !separators.has(s.id)), previous, opts);
+    for (const id of separators) split.roles.set(id, { role: "separator", reason: "a line under a step, across the work" });
     return split;
   }
 
@@ -1168,7 +1274,7 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
   const bars = divisionBars(geos, G, opts.equations ?? []);
   if (bars.length > 0) {
     const taken = new Set<string>(bars.flatMap((b) => [b.bar, ...b.divisor]).map((i) => all[i].id));
-    const split = splitInk(
+    const split = splitParts(
       all.filter((s) => !taken.has(s.id)),
       previous,
       opts,
@@ -1178,6 +1284,23 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
       for (const i of b.divisor) split.roles.set(all[i].id, { role: "operation", reason: "what both sides are divided by" });
     }
     split.bars = [...bars.map((b) => ({ bar: all[b.bar].id, divisor: b.divisor.map((i) => all[i].id) })), ...split.bars];
+    return split;
+  }
+  // A fraction written with a long slanted bar (`12` over it, `5` under): one line of its own, read
+  // whole, before the bar is taken for a drawing's long diagonal.
+  const fractions = slantedFractions(geos, G);
+  if (fractions.length > 0) {
+    const taken = new Set<string>(fractions.flat().map((i) => all[i].id));
+    const split = splitInk(
+      all.filter((s) => !taken.has(s.id)),
+      previous,
+      opts,
+    );
+    for (const f of fractions) {
+      split.roles.set(all[f[0]].id, { role: "writing", reason: "a slanted fraction bar" });
+      for (const i of f.slice(1)) split.roles.set(all[i].id, { role: "writing", reason: "over or under a slanted fraction bar" });
+    }
+    split.fractions = [...fractions.map((f) => f.map((i) => all[i].id)), ...(split.fractions ?? [])];
     return split;
   }
   const reasons = new Map<number, string>();
@@ -1329,6 +1452,12 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
       for (const i of cluster) roleOf.set(i, { role: "writing", reason: reasons.get(i) ?? "glyph" });
       continue;
     }
+    // An arrow to the answer (one open curve, nothing else drawn: real-ink bench 2026-10-22, `30 + 30`
+    // and a long curve down to `50`, never read): what is written at either end of it is writing
+    if (groups[best].length === 1 && arrowLike(geos[groups[best][0]]) && atAnEnd(geos[groups[best][0]], rect, labelReach)) {
+      for (const i of cluster) roleOf.set(i, { role: "writing", reason: "at the end of an arrow" });
+      continue;
+    }
     const d = best;
     const toDrawing = (i: number) => {
       let m = Infinity;
@@ -1451,6 +1580,11 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
  * Each division bar's strokes (the bar, then its divisor) for `clusterLines`' `fixed` groups: one
  * line each. Strokes no longer in `strokes` are left out.
  */
+/** Each slanted fraction's strokes (`InkSplit.fractions`), in writing order, for `clusterLines`' `fixed` groups: one line each. */
+export function fractionGroups(fractions: readonly string[][] | undefined, strokes: readonly InkStroke[]): InkStroke[][] {
+  return (fractions ?? []).map((ids) => strokes.filter((s) => ids.includes(s.id)));
+}
+
 export function barGroups(bars: readonly DivisionBar[], strokes: readonly InkStroke[]): InkStroke[][] {
   const byId = new Map(strokes.map((s) => [s.id as string, s]));
   return bars.map((b) => [b.bar, ...b.divisor].map((id) => byId.get(id)).filter((s): s is InkStroke => Boolean(s)));

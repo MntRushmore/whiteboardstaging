@@ -116,14 +116,35 @@ extension LiveLoop {
         lines.values.first { $0.ink.strokeIds.contains(strokeId) }
     }
 
-    /// A ringed line the kid is still writing (a pause before the last stroke of the 12 read
-    /// `2x = 12` as `2x = 1`): the ring comes off now, not when the line is read again.
+    /// A marked line the kid is still writing (a pause before the last stroke of the 12 read
+    /// `2x = 12` as `2x = 1`, or `x = 1` ticked before its 2): the ring or tick comes off now, not
+    /// when the line is read again — and a ring after that waits for it to look finished.
     func unringGrowingLine(_ ink: BrainRect) {
         for st in lines.values {
-            guard rt[st.id]?.markKey.map({ $0.hasPrefix("circle:") }) == true else { continue }
-            guard MarkSettler.inkExtendsLine(ink, st.bounds) else { continue }
+            guard let key = rt[st.id]?.markKey else { continue }
+            let kind: LiveMarks.Kind? = key.hasPrefix("circle:") ? .circle : key.hasPrefix("check:") ? .check : nil
+            guard let kind, MarkSettler.inkExtendsLine(ink, st.bounds) else { continue }
+            // the clustering has the last word on whether this ink is more of the line (`remarkUnchanged`)
+            rt[st.id, default: LineRuntime()].unrungStrokes = st.ink.strokeIds
+            rt[st.id, default: LineRuntime()].unrungKind = kind
             // (the learning record waits for the read of the whole line: this is no verdict)
             syncMark(st, nil, learn: false)
+        }
+    }
+
+    /// The flush's clustering says which marked lines the new ink really joined: one whose strokes
+    /// are the ones it had when its mark came off (the ink was a line of its own) gets it back; one
+    /// that did grow is read again, and the read marks it.
+    func remarkUnchanged(_ next: [InkLine], force: Set<String>) {
+        for line in next {
+            guard let before = rt[line.id]?.unrungStrokes else { continue }
+            let kind = rt[line.id]?.unrungKind ?? .circle
+            rt[line.id]?.unrungStrokes = nil
+            rt[line.id]?.unrungKind = nil
+            // something marked it again since (a re-render): that mark stands
+            if rt[line.id]?.markKey != nil || force.contains(line.id) || settings.mode == .off { continue }
+            guard Set(before) == Set(line.strokeIds), let st = lines[line.id] else { continue }
+            syncMark(st, kind)
         }
     }
 
@@ -201,6 +222,7 @@ extension LiveLoop {
         let previous = lines.values.map(\.ink)
         let previousDiagrams = diagrams
         let zoom = board.fitZoom
+        let context = clusterContext()
         flushing = true
         track { [weak self] in
             guard let self else { return }
@@ -213,7 +235,8 @@ extension LiveLoop {
             }
             let result: ClusterResult
             do {
-                result = try await self.brain.clusterStrokes(ClusterRequest(strokes: strokes, previousLines: previous, previousDiagrams: previousDiagrams, zoom: zoom))
+                result = try await self.brain.clusterStrokes(ClusterRequest(strokes: strokes, previousLines: previous, previousDiagrams: previousDiagrams, zoom: zoom,
+                                                                            equations: context.equations, cells: context.cells, mates: context.mates))
             } catch {
                 Self.log.error("live: clustering failed: \(String(describing: error), privacy: .public)")
                 return
@@ -225,9 +248,13 @@ extension LiveLoop {
 
     func apply(_ result: ClusterResult, dirty: Set<String>, force: Set<String>, strokes: [BrainStroke]) {
         diagrams = result.diagrams
+        stacks = result.stacks
+        barStrokeIds = Set(result.bars.map(\.bar))
+        struckStrokeIds = Set(result.roles.filter { $0.value.role == "struck" }.keys)
         // the tutor's problems cut the columns: work beside or under one is judged against it
         refreshHeads()
         let next = anchorAtProblems(result.lines)
+        rememberProblems(next)
         let nextIds = Set(next.map(\.id))
         for id in Array(lines.keys) where !nextIds.contains(id) { dropLine(id) }
 
@@ -247,6 +274,8 @@ extension LiveLoop {
             lines[line.id] = prev
             if touched { affected.append((ink, same && !forced)) }
         }
+        // a mark taken off for ink that turned out to be a line of its own goes back on
+        remarkUnchanged(next, force: force)
         // where the kid last wrote: Help me acts there
         if let pen = penStrokeId, let line = next.first(where: { $0.strokeIds.contains(pen) }) { penLineId = line.id }
         for (line, moveOnly) in affected { processLine(line, moveOnly: moveOnly) }
@@ -263,6 +292,7 @@ extension LiveLoop {
             r.readRetryTimer?.cancel()
         }
         rt[id] = nil
+        stackMarks[id] = nil
         reading.remove(id)
         offlineQueue.remove(id)
         pendingSuggestions.remove(id)
@@ -324,13 +354,20 @@ extension LiveLoop {
         let strokes = store.kidStrokes(on: screen)
         let gen = generation
         let zoom = board.fitZoom
+        refreshHeads()
+        let context = clusterContext()
         track { [weak self] in
             guard let self else { return }
-            guard let result = try? await self.brain.clusterStrokes(ClusterRequest(strokes: strokes, previousLines: seeds, zoom: zoom)),
+            guard let result = try? await self.brain.clusterStrokes(ClusterRequest(strokes: strokes, previousLines: seeds, zoom: zoom, equations: context.equations,
+                                                                                  cells: context.cells, mates: context.mates)),
                   gen == self.generation, screen == self.board.currentScreenID else { return }
             self.diagrams = result.diagrams
+            self.stacks = result.stacks
+            self.barStrokeIds = Set(result.bars.map(\.bar))
+            self.struckStrokeIds = Set(result.roles.filter { $0.value.role == "struck" }.keys)
             self.refreshHeads()
             let anchored = self.anchorAtProblems(result.lines)
+            self.rememberProblems(anchored)
             var unread: [InkLine] = []
             for ink in anchored {
                 var line = LiveLine(ink: ink, updatedAt: self.scheduler.now)
@@ -344,11 +381,14 @@ extension LiveLoop {
                 }
                 self.lines[ink.id] = line
             }
+            // a page that continues a problem ("More room"): its work goes on from the page before
+            await self.takeCarry()
+            guard gen == self.generation else { return }
             await self.analyzeAll(quiet: true)
             // what was on the screen before this session had its pauses then: Auto leaves it be
             for st in self.lines.values where !st.latex.isEmpty { _ = self.autoOnce(self.autoKey("check", st)) }
             // ink never read (written with Live off, or offline before a reload): read now
-            for ink in unread { self.processLine(ink, moveOnly: false) }
+            for ink in unread where !self.readBeforeElsewhere(ink) { self.processLine(ink, moveOnly: false) }
             self.refreshPage()
         }
     }
@@ -366,6 +406,8 @@ extension LiveLoop {
             let cell = p.meta[Self.problemCellMeta].flatMap(BrainRect.init(meta:))
             next.append(ProblemHead(id: p.id, lines: lines, rect: rect, analyses: old?.lines == lines ? old?.analyses ?? [] : [], cell: cell))
         }
+        // a page that continues a problem ("More room"): the problem's own record heads it too
+        next += groupHeads(keeping: heads)
         heads = next
     }
 
@@ -385,7 +427,10 @@ extension LiveLoop {
     /// to right, rows top to bottom; `columnHeads` says which problem heads which column.
     func anchorAtProblems(_ input: [InkLine]) -> [InkLine] {
         columnHeads = [:]
-        guard !heads.isEmpty, !input.isEmpty else { return input }
+        guard !heads.isEmpty, !input.isEmpty else {
+            // a page of the kid's own: its answer spot's line is the last step of the work above it
+            return board.currentProblemPage?.kind == .problem ? joinAnswerSpot(input) : input
+        }
         // a problem page: all its ink is the page's problem's work, wherever it is (docs/PROBLEM-PAGES.md)
         let onPage = pageHomes(input)
         var homes = onPage ?? input.map { problemHome(for: $0.bounds) }
@@ -397,9 +442,11 @@ extension LiveLoop {
             let top = input.indices.filter { input[$0].column == l.column && homes[$0] == home }.map { input[$0].bounds.y }.min() ?? l.bounds.y
             if top - head.rect.maxY >= 360 { homes[i] = nil }
         }
+        // on a problem page the answer spot's line is the last step of the work above it (`LiveLoop+Columns`)
+        let brainColumns = onPage != nil ? answerSpotColumns(input) : input.map(\.column)
         var groups: [(key: String, head: RecordID?, lines: [InkLine])] = []
-        for (l, home) in zip(input, homes) {
-            let key = "\(l.column)|\(home?.rawValue ?? "")"
+        for (i, (l, home)) in zip(input, homes).enumerated() {
+            let key = "\(brainColumns[i])|\(home?.rawValue ?? "")"
             if let i = groups.firstIndex(where: { $0.key == key }) { groups[i].lines.append(l) } else { groups.append((key, home, [l])) }
         }
         groups.sort { a, b in

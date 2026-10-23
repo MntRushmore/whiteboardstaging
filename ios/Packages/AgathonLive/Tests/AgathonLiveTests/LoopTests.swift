@@ -83,6 +83,8 @@ struct LoopMarksTests {
         await slip(h)
         #expect(h.board.mark(on: "2x + 3 = 11") == nil)
         #expect(h.board.mark(on: "2x = 8") == .tick)
+        // a ring waits for its line to look finished (`PageTiming.doubtHoldMs`)
+        await h.pass(PageTiming.doubtHoldMs)
         #expect(h.board.mark(on: "x = 5") == .ring)
         let lines = h.board.lineRecords
         #expect(lines.count == 3)
@@ -123,9 +125,10 @@ struct LoopMarksTests {
         let h = Harness(mode: .suggest)
         await h.start()
         await slip(h)
-        #expect(h.board.mark(on: "x = 5") == .ring)
         #expect(h.board.tutorStrokes(withMeta: "suggestFor").isEmpty, "an answer waits for the kid to stop")
+        // the ring once the line looks finished (`PageTiming.doubtHoldMs`), the step once the kid stops
         await h.pass(2_500)
+        #expect(h.board.mark(on: "x = 5") == .ring)
         let step = h.board.tutorStrokes(withMeta: "suggestFor", "x = 5")
         #expect(!step.isEmpty)
         #expect(step.first?.meta["handLine"]?.stringValue == "x = 4")
@@ -151,6 +154,8 @@ struct LoopMarksTests {
         let h = Harness(mode: .feedback)
         await h.start()
         await slip(h)
+        // a ring waits for its line to look finished (`PageTiming.doubtHoldMs`)
+        await h.pass(PageTiming.doubtHoldMs)
         let reads = h.services.recognizeRequests.count
         // the kid drags x = 5 down by 60
         let ids = h.written["x = 5"] ?? []

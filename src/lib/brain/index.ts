@@ -25,15 +25,19 @@
 import { all, create, version as mathjsVersion } from "mathjs";
 import type { TLShapeId } from "tldraw";
 import { createEngine } from "@/lib/live/engine";
-import { isArithmetic, judgeLine } from "@/lib/live/engine/columnWork";
-import { answerAfterRestatedEnd, leadingSigns, readYoungHand } from "@/lib/live/youngHand";
+import { arithmeticOf, bracketLine, isArithmetic, isStackRead, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "@/lib/live/engine/columnWork";
+import { parseStacked, rowPlaces, stackedAnalysis, workStacked } from "@/lib/live/engine/columnArithmetic";
+import { answerAfterRestatedEnd, inkLeadsWithMinus, leadingSigns, readVariants, readYoungHand, rightAnswerTo } from "@/lib/live/youngHand";
 import type { AnalyzeContext, GraphForOptions, HelpMode, InkLine, InkStroke, LineAnalysis, LiveEngine, Rect } from "@/lib/live/contracts";
-import { barGroups, splitInk, type Diagram, type StrokeVerdict } from "@/lib/live/diagrams";
-import { stackGroups } from "@/lib/live/stackedSums";
-import { clusterLines, unionRects } from "@/lib/live/strokeClusters";
+import { barGroups, fractionGroups, splitInk, type Diagram, type StrokeVerdict } from "@/lib/live/diagrams";
+import { stackGrid, stackGroups, type StackedSum } from "@/lib/live/stackedSums";
+import { clusterLines, unionRects, type ColumnOptions } from "@/lib/live/strokeClusters";
+import { cellOf, splitAcrossProblems, type ProblemCell } from "@/lib/live/chat/cells";
+import { withoutStrays } from "@/lib/live/strays";
+import { barDivisionLatex } from "@/lib/live/engine/operationLine";
 import { buildPayload, payloadPointCount } from "@/lib/live/strokePayload";
 import { analyzeColumn, localSolve, type LocalSolveResult } from "@/lib/live/localSolve";
-import { HAND_WRITE, handSeedFor, handSizeFor, inlineHandSizeFor, placeHandPlanOnBaseline, planFromStrokes, planHandwriting, type HandPlanResult } from "@/lib/live/handwriting";
+import { HAND_WRITE, handSeedFor, handSizeFor, inlineHandSizeFor, placeHandPlanOnBaseline, planFromStrokes, planHandwriting, planWords, type HandPlanResult } from "@/lib/live/handwriting";
 import { markAnchor, markKey, markStrokes, ringRect, type MarkKind } from "@/lib/live/marks";
 import { decide, type PolicyDecision, type PolicyInput } from "@/lib/live/policy";
 import { planGraph, type GraphWindowHint } from "@/lib/live/graphing";
@@ -187,7 +191,7 @@ export function judgeLineOf(args: JudgeLineArgs): LineAnalysis {
   need(typeof args.latex === "string", "latex is a string");
   const ctx: AnalyzeContext = { ...args.context, mode: (args.context?.mode ?? "feedback") as HelpMode };
   const problem = Array.isArray(args.problem) ? args.problem.filter((l) => typeof l === "string" && l.trim().length > 0) : [];
-  const arithmetic = problem.length > 0 && problem.every(isArithmetic) ? problem : null;
+  const arithmetic = arithmeticOf(problem);
   const above = Array.isArray(args.above) ? args.above.filter((l) => typeof l === "string") : [];
   const beside = args.beside && arithmetic && arithmetic.length === 1 ? answerAfterRestatedEnd(args.latex, arithmetic[0]) : null;
   return judgeLine(engine(), args.latex, { ctx, arithmetic, above, slip: args.slip, beside });
@@ -198,13 +202,98 @@ export function judgeLineOf(args: JudgeLineArgs): LineAnalysis {
  * `\approx` is an `=`; in arithmetic the signs an answer starts with are the INK's (`leadingSigns`:
  * `-54` from a wobbly `=` is `= 54`), and her own tick after the answer is dropped.
  */
-export function youngReadOf(args: { latex: string; problem?: string[] | null; strokes?: BrainStroke[] }): { latex: string } {
+export function youngReadOf(args: { latex: string; problem?: string[] | null; strokes?: BrainStroke[]; bar?: boolean }): { latex: string } {
   need(typeof args.latex === "string", "latex is a string");
   // the problem the line is part of has no letters (`LiveLoop.arithmeticProblem`)
   const problem = Array.isArray(args.problem) ? args.problem.filter((l) => typeof l === "string" && l.trim().length > 0) : [];
   const arithmetic = problem.length > 0 && problem.every(isArithmetic);
   const signs = arithmetic && Array.isArray(args.strokes) && args.strokes.length > 0 ? leadingSigns(args.strokes.map(toInkStroke)) : null;
-  return { latex: readYoungHand(args.latex, { arithmetic, signs }) };
+  // a nonsense read of her answer that can only have been the right number (`misreadVariants`)
+  const rightAnswer = arithmetic ? rightAnswerTo(engine(), problem) : undefined;
+  const read = readYoungHand(args.latex, { arithmetic, signs, rightAnswer });
+  // a division bar and the number under it (`bar`: one of the line's strokes is a `bars`' bar): Mathpix
+  // drops the bar and reads `2` — the line is "divide both sides by 2" (`LiveLoop.applyRecognition`)
+  return { latex: args.bar === true ? (barDivisionLatex(read) ?? read) : read };
+}
+
+/**
+ * What a messy read of a child's step may have been (`readVariants`: a plus written high, her `x` read
+ * as `\times`, a side note behind a left arrow, the minus her ink starts with that the read dropped),
+ * for the loop's second look before a ring (`LiveLoop.holdRing`): taken only when one makes the step follow.
+ */
+export function readVariantsOf(args: { latex: string; strokes?: BrainStroke[]; keep?: string[] }): { variants: string[] } {
+  need(typeof args.latex === "string", "latex is a string");
+  const ink = Array.isArray(args.strokes) && args.strokes.length > 0 ? args.strokes.map(toInkStroke) : [];
+  const keep = Array.isArray(args.keep) ? args.keep.filter((l) => typeof l === "string") : [];
+  return { variants: readVariants(args.latex, ink.length > 0 && inkLeadsWithMinus(ink), keep) };
+}
+
+export interface StackedLineArgs {
+  /** the line's read */
+  latex: string;
+  /** the read's confidence: a wrong digit is ringed only on a read this sure of it (`STACK_RING_CONFIDENCE`) */
+  confidence?: number;
+  /** the stacked sum in the ink this line is (one of `clusterStrokes`' `stacks`: its rule is in the line), if any */
+  stack?: StackedSum | null;
+  /** the problem the line is part of: a long-division bracket read as one block is judged against it */
+  problem?: string[] | null;
+  mode?: HelpMode;
+}
+
+export interface StackedLineResult {
+  /** a stacked sum read as one: never a line's analysis (its rule is no fraction bar) */
+  stacked: boolean;
+  analysis: LineAnalysis | null;
+  /** where the tick goes (after the answer row, level with it) and the ring (round the first wrong digit, else the answer row) */
+  tick: Rect | null;
+  ring: Rect | null;
+  /**
+   * The analysis when she says she is done (Check), where it differs: an answer right so far but short
+   * of the result is wrong then (`WorkOptions.done`); null when it is the same.
+   */
+  done?: LineAnalysis | null;
+}
+
+/**
+ * A stacked (column) sum's line, as the board judges and marks it (`LiveLoop.stackLike`,
+ * `stackAnalysis`, `markRect`): the read parsed and worked column by column
+ * (`engine/columnArithmetic.ts`), the student's answer placed by where its digits sit in the ink
+ * (`stackGrid`) — a tick on a right sum, a ring round the first wrong digit on a read sure of it,
+ * nothing on a partial one, quiet on a block it cannot work (a long-division bracket read as one is
+ * the engine's young-work judge's). Never a model, never a fraction.
+ *
+ * `stacked: false` (and no analysis) for a line that is no stacked sum: not one in the ink, and its
+ * read neither an array with a rule (`isStackRead`) nor a sum's last row over its answer read as a
+ * fraction (`MISREAD_STACK`). An array read without the ink's layout is worked from the read alone,
+ * as the young kids' scoreboard does (`judgeColumn`).
+ */
+export function stackedLineOf(args: StackedLineArgs): StackedLineResult {
+  need(typeof args.latex === "string", "latex is a string");
+  const sum = args.stack ?? null;
+  if (!sum && !isStackRead(args.latex) && !MISREAD_STACK.test(args.latex)) return { stacked: false, analysis: null, tick: null, ring: null };
+  const sure = (args.confidence ?? 1) >= STACK_RING_CONFIDENCE;
+  const mode = (args.mode ?? "feedback") as HelpMode;
+  const lines = Array.isArray(args.problem) ? args.problem.filter((l) => typeof l === "string" && l.trim().length > 0) : [];
+  const problem = lines.length > 0 && lines.every(isArithmetic) ? lines : null;
+  const read = parseStacked(args.latex, problem);
+  if (!sum) {
+    const analysis = read ? stackedAnalysis(workStacked(read), sure) : bracketLine(engine(), args.latex, problem, sure, mode);
+    return { stacked: true, analysis, tick: null, ring: null };
+  }
+  // the board's `stackWork`: the read and the ink agree on the rows (long multiplication's under the answer)
+  const grid = read && !(sum.more && !read.rows) && read.operands.length === sum.rows.length ? stackGrid(sum, rowPlaces(read)) : null;
+  const opts = grid && grid.answerLast !== null && !read?.rows ? { answerLast: grid.answerLast } : {};
+  const work = read && grid ? workStacked(read, opts) : null;
+  const analysis = work || read ? stackedAnalysis(work, sure) : bracketLine(engine(), args.latex, problem, sure, mode);
+  const doneWork = read && grid && work && !work.right && work.wrong === -1 ? workStacked(read, { ...opts, done: true }) : null;
+  const doneAnalysis = doneWork && doneWork.wrong !== -1 ? stackedAnalysis(doneWork, sure) : null;
+  // `markRect`: round the line, or after it — on a sum, after the answer row and round its first wrong digit
+  const answer = sum.answer?.rect;
+  if (!answer || sum.more) return { stacked: true, analysis, tick: null, ring: null };
+  const block = unionRects([sum.ruleRect, answer, ...sum.rows.map((r) => r.rect)]);
+  const tick = { ...answer, w: block.x + block.w - answer.x };
+  const ring = (work && grid && work.wrong !== -1 && grid.answerGlyph(work.wrong)) || answer;
+  return { stacked: true, analysis, tick, ring, done: doneAnalysis };
 }
 
 /** Each line of a column analysed as the loop holds it (`analyzeColumn` in localSolve.ts). */
@@ -271,6 +360,16 @@ export interface ClusterArgs {
   split?: boolean;
   /** new ids from this seed instead of random ones (parity tests) */
   idSeed?: number;
+  /**
+   * The chat's problems on the screen (`chat/cells.ts`; a problem page's is the whole page): the work
+   * in one cell is one problem whatever the gaps in it (`LiveLoop.columnOptions`' `together`), ink
+   * beside one problem is never one line with ink under another (`splitAcrossProblems`), and the
+   * strays under one go (`strays.ts`: taps of the pen, an answer's signs before its number, her own
+   * tick after it). Given (even empty), the flush is the board's: taps of the pen are no line anywhere.
+   */
+  cells?: ProblemCell[];
+  /** lines that were one problem at the last flush (`LiveLoop.problemMates`): each group's line ids */
+  mates?: string[][];
 }
 
 export interface ClusterResult {
@@ -298,9 +397,33 @@ export function clusterStrokes(args: ClusterArgs): ClusterResult {
     return { lines, diagrams: [], bars: [], stacks: [], glyph: 0, roles: {} };
   }
   const split = splitInk(ink, args.previousDiagrams ?? [], { zoom: args.zoom, equations: args.equations, newId: idSource("dg", args.idSeed) });
-  const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink)];
-  const lines = clusterLines(split.writing, previousLines, fixed, { zoom: args.zoom, newId: idSource("ln", args.idSeed) });
+  const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink), ...fractionGroups(split.fractions, ink)];
+  const cells = Array.isArray(args.cells) ? args.cells : [];
+  const columns = columnOptionsOf(cells, args.mates);
+  const apart = cells.length > 1 ? (group: InkStroke[]) => splitAcrossProblems(group, cells) : undefined;
+  const clustered = clusterLines(split.writing, previousLines, fixed, { zoom: args.zoom, columns, apart, newId: idSource("ln", args.idSeed) });
+  // with `cells` (even none) the board's flush: its strays go too (a tap of the pen is never a line)
+  const lines = Array.isArray(args.cells) ? withoutStrays(clustered, split.writing, columns, cells) : clustered;
   return { lines, diagrams: split.diagrams, bars: split.bars, stacks: split.stacks, glyph: split.glyph, roles: Object.fromEntries(split.roles) };
+}
+
+/**
+ * What the columns know besides the lines (`LiveLoop.columnOptions`, without the editor): lines that
+ * were one problem stay one (`mates`), and so do the lines in one of the chat's cells, gap or no gap.
+ * None when there is neither (a pure clustering of ink, as before).
+ */
+function columnOptionsOf(cells: readonly ProblemCell[], mates: string[][] | undefined): ColumnOptions | undefined {
+  const groups = Array.isArray(mates) ? mates.filter((g) => Array.isArray(g) && g.length > 1) : [];
+  if (cells.length === 0 && groups.length === 0) return undefined;
+  const mateOf = new Map<string, Set<string>>();
+  for (const g of groups) for (const id of g) mateOf.set(id, new Set([...(mateOf.get(id) ?? []), ...g]));
+  return {
+    together: (line, other) => {
+      if (mateOf.get(line.id)?.has(other.id)) return true;
+      const cell = cellOf(line.bounds, cells);
+      return cell !== null && cell.key === cellOf(other.bounds, cells)?.key;
+    },
+  };
 }
 
 export interface PayloadArgs {
@@ -395,6 +518,17 @@ export function layoutMathOf(args: { latex: string; size?: number; seed?: number
 export function writeText(args: { text: string; maxWidth: number; size?: number; seed?: number }) {
   need(typeof args.text === "string" && typeof args.maxWidth === "number", "text is a string and maxWidth a number");
   return composeHandwriting(args.text, { maxWidth: args.maxWidth, size: args.size, seed: args.seed });
+}
+
+/**
+ * A word problem's sentences in the tutor's hand (`planWords`), wrapped at `maxWidth`, as a plan
+ * the board's pen writes at `origin` (page coordinates). `plan` null when nothing could be drawn.
+ */
+export function layoutWords(args: { sentences: string[]; maxWidth: number; size: number; seed?: number; seedKey?: string; origin?: { x: number; y: number } }) {
+  need(Array.isArray(args.sentences) && args.sentences.every((s) => typeof s === "string"), "sentences is an array of strings");
+  need(typeof args.maxWidth === "number" && typeof args.size === "number", "maxWidth and size are numbers");
+  const seed = args.seed ?? handSeedFor(args.seedKey ?? args.sentences.join("\n"));
+  return { plan: planWords(args.sentences, { size: args.size, seed, maxWidth: args.maxWidth, origin: args.origin }), size: args.size, seed };
 }
 
 export interface MarkArgs {
@@ -589,6 +723,7 @@ export const METHODS: Readonly<Record<string, Method>> = {
   init: { run: init },
   analyzeLine: { run: analyzeLine },
   judgeLine: { run: judgeLineOf },
+  stackedLine: { run: stackedLineOf },
   analyzeColumn: { run: analyzeColumnOf },
   localSolve: { run: localSolveOf },
   calculate: { run: calculate },
@@ -596,9 +731,11 @@ export const METHODS: Readonly<Record<string, Method>> = {
   clusterStrokes: { run: clusterStrokes },
   recognizerPayload: { run: recognizerPayload, plain: true },
   youngRead: { run: youngReadOf, plain: true },
+  readVariants: { run: readVariantsOf, plain: true },
   layoutHandwriting: { run: layoutHandwriting, plain: true },
   layoutMath: { run: layoutMathOf, plain: true },
   writeText: { run: writeText, plain: true },
+  layoutWords: { run: layoutWords, plain: true },
   marks: { run: marks, plain: true },
   policy: { run: policy },
   variantOf: { run: variantOf },

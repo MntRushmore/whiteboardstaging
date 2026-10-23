@@ -274,6 +274,8 @@ describe("live loop — the board chat", () => {
       const wrong = await penLine("x=2", 900, 200, "x=2");
       // under problem 2 (3x = 12), x = 2 is wrong
       expect(liveStore.lines.get()[wrong].analysis?.verdict).toBe("mismatch");
+      // a ring waits for the line to look finished (LIVE_TIMING.doubtHoldMs)
+      await vi.advanceTimersByTimeAsync(LIVE_TIMING.doubtHoldMs);
       await settleStable(() => String(tutor().length));
       expect(marksOf(wrong)).toEqual(["circle"]);
     });
@@ -285,6 +287,7 @@ describe("live loop — the board chat", () => {
       const sum = await penLine("2", 900, 200, "3");
       const sign = await penLine("2", 120, 600, ">");
       const wrong = await penLine("2", 900, 600, "6");
+      await vi.advanceTimersByTimeAsync(LIVE_TIMING.doubtHoldMs);
       await settleStable(() => String(tutor().length));
       const lines = liveStore.lines.get();
       expect(lines[right].analysis).toMatchObject({ verdict: "ok", solved: true });

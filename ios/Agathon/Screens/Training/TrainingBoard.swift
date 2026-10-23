@@ -114,25 +114,10 @@ final class TrainingBoard: ObservableObject {
 
     // MARK: - where a line goes
 
-    /// Where a line `ink` (page units, its box at 0, 0) goes on the page on show, in the layout's own
-    /// units (1600 × 900): the next guide line under the work so far (`bottom`), the answer spot, the
-    /// problem area, or beside the line before (`beside`). The bench and Debug's autowrite place lines
-    /// alike.
+    /// Where a line `ink` (page units, its box at 0, 0) goes on the page on show (`TrainingBench.origin`:
+    /// the bench, Debug's autowrite and the headless bench place lines alike).
     static func origin(for ink: [[Vec2]], place: TrainingPlace, dx: Double, workTop: Double, bottom: Double, beside: Box?) -> Vec2 {
-        let h = ink.flatMap { $0 }.map(\.y).max() ?? 0
-        switch place {
-        case .problem:
-            return Vec2(ProblemPageLayout.problemOrigin.x + dx, ProblemPageLayout.problemOrigin.y + 10)
-        case .answer:
-            let a = ProblemPageLayout.answer
-            return Vec2(a.x + 210 + dx, a.y + max(4, (a.h - h) / 2))
-        case .beside where beside != nil:
-            return Vec2(beside!.maxX + 70 + dx, beside!.maxY - h)
-        case .work, .beside:
-            let rules = ProblemPageLayout.rules(workTop: workTop)
-            let g = rules.first { $0 - h + 8 >= bottom + 14 } ?? (bottom + 14 + h - 8)
-            return Vec2(140 + dx, g - h + 8)
-        }
+        TrainingBench.origin(for: ink, place: place, dx: dx, workTop: workTop, bottom: bottom, beside: beside)
     }
 
     /// The kid's ink on the page on show, in the layout's units: the lowest point of the work (the

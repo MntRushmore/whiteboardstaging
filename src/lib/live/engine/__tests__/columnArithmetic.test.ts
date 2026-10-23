@@ -41,7 +41,10 @@ describe("reading the array", () => {
     ["\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 966 \\\\ \\hline 12 \\end{array}", "two rules under a sum"],
     ["\\begin{array}{r} 23 \\\\ \\times 4 \\\\ \\hline 12 \\\\ 80 \\end{array}", "rows under a product by one digit"],
     ["\\begin{array}{r} 23 \\\\ \\times 45 \\\\ \\hline 115 \\\\ 9.2 \\\\ \\hline 1035 \\end{array}", "a row with a point"],
-    ["\\begin{array}{r} 286 \\\\ 680 \\\\ \\hline 966 \\end{array}", "no operator"],
+    ["\\begin{array}{r} 286 \\\\ 680 \\\\ \\hline 965 \\end{array}", "no operator, and no operator makes the answer"],
+    ["\\begin{array}{r} 286 \\\\ 680 \\\\ \\hline \\end{array}", "no operator, and no answer to tell it by"],
+    ["\\begin{array}{r} 2 \\\\ 2 \\\\ \\hline 4 \\end{array}", "no operator, and two make the answer (2 + 2, 2 × 2)"],
+    ["\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 966 \\\\ 965 \\end{array}", "two different rows under a sum"],
     ["\\begin{array}{r} +286 \\\\ +680 \\\\ \\hline 966 \\end{array}", "an operator on the first number"],
     ["\\begin{array}{r} 286 \\\\ +680 \\\\ -12 \\\\ \\hline 954 \\end{array}", "two kinds of operator"],
     ["\\begin{array}{r} 52 \\\\ -17 \\\\ -3 \\\\ \\hline 32 \\end{array}", "taking away twice"],
@@ -54,6 +57,17 @@ describe("reading the array", () => {
     ["286+680=966", "a line"],
   ])("not a stacked sum: %s (%s)", (latex) => {
     expect(parseStacked(latex)).toBeNull();
+  });
+
+  // the real-ink bench: a child's `×` lost in the read, her answer copied out again under itself
+  it.each<[string, StackedRead]>([
+    ["\\begin{array}{r} 267 \\\\ 8 \\\\ \\hline 2136 \\end{array}", { op: "×", operands: ["267", "8"], answer: "2136" }],
+    ["\\begin{array}{r} 286 \\\\ 680 \\\\ \\hline 966 \\end{array}", { op: "+", operands: ["286", "680"], answer: "966" }],
+    ["\\begin{array}{r} 52 \\\\ 17 \\\\ \\hline 35 \\end{array}", { op: "-", operands: ["52", "17"], answer: "35" }],
+    ["\\begin{array}{r} 267 \\\\ \\times 8 \\\\ \\hline 2136 \\\\ 2136 \\end{array}", { op: "×", operands: ["267", "8"], answer: "2136" }],
+    ["\\begin{array}{r} 267 \\\\ 8 \\\\ \\hline 2136 \\\\ 2136 \\end{array}", { op: "×", operands: ["267", "8"], answer: "2136" }],
+  ])("the operator her answer makes, the answer once: %s", (latex, want) => {
+    expect(parseStacked(latex)).toEqual(want);
   });
 });
 
@@ -286,5 +300,50 @@ describe("long multiplication: a row for each digit, then their sum", () => {
 
   it("nothing for Help to write into it: the rows are the student's", () => {
     expect(nextStep(work(LONG("138")), new Set())).toBeNull();
+  });
+});
+
+// the real-ink bench: 18 × 7, she wrote 26 (the last carry never written) and pressed Check
+describe("an answer right so far but short of the result", () => {
+  const read = parseStacked("\\begin{array}{r} 18 \\\\ \\times 7 \\\\ \\hline 26 \\end{array}")!;
+
+  it("is left alone while she writes (right to left, the carry still to come)", () => {
+    const w = workStacked(read)!;
+    expect(w.wrong).toBe(-1);
+    expect(w.right).toBe(false);
+    expect(stackedAnalysis(w, true).verdict).toBe("none");
+  });
+
+  it("is wrong when she says she is done, at its first missing place (the hundreds)", () => {
+    const w = workStacked(read, { done: true })!;
+    expect(w.wrong).toBe(2);
+    expect(stackedAnalysis(w, true).verdict).toBe("mismatch");
+  });
+
+  it("a right answer and an empty one are what they were when she is done", () => {
+    const right = workStacked(parseStacked("\\begin{array}{r} 18 \\\\ \\times 7 \\\\ \\hline 126 \\end{array}")!, { done: true })!;
+    expect(right.right).toBe(true);
+    const empty = workStacked(parseStacked("\\begin{array}{r} 18 \\\\ \\times 7 \\\\ \\hline \\end{array}")!, { done: true })!;
+    expect(empty.wrong).toBe(-1);
+    // a wrong digit is the same wrong digit
+    expect(workStacked(parseStacked("\\begin{array}{r} 18 \\\\ \\times 7 \\\\ \\hline 136 \\end{array}")!, { done: true })!.wrong).toBe(1);
+  });
+});
+
+// the real-ink bench: 18 × 7 written as 18 over 7 (no ×), the problem says ×
+describe("the problem's operator for rows that are its numbers", () => {
+  const latex = "\\begin{array}{r} 18 \\\\ 7 \\\\ \\hline 26 \\end{array}";
+  it("is taken when the rows are the problem's two numbers", () => {
+    expect(parseStacked(latex, ["18 \\times 7"])).toEqual({ op: "×", operands: ["18", "7"], answer: "26" });
+  });
+  it("is not taken for other numbers, nor without a problem", () => {
+    expect(parseStacked(latex, ["19 \\times 7"])).toBeNull();
+    expect(parseStacked(latex)).toBeNull();
+    expect(parseStacked("\\begin{array}{r} 18 \\\\ 7 \\\\ \\hline x \\end{array}", ["18 \\times 7"])).toBeNull();
+  });
+  it("…and wins over an operator her answer makes: 25 for 18 × 7 is a slip (she added), never a right sum", () => {
+    const read = parseStacked("\\begin{array}{r} 18 \\\\ 7 \\\\ \\hline 25 \\end{array}", ["18 \\times 7"])!;
+    expect(read.op).toBe("×");
+    expect(stackedAnalysis(workStacked(read)!, true).verdict).toBe("mismatch");
   });
 });

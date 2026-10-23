@@ -49,8 +49,49 @@ extension LiveLoop {
             // what the student's line above ended in (`400 + 364 = 764` → 764), for a line that goes
             // on from it (`+3 = 767`: `ContinuationLine`)
             var running: String?
+            // a page that continues a problem ("More room"): its first column goes on from where the
+            // work at the bottom of the page before ended (`LiveLoop+MoreRoom`)
+            if let c = carryIn(column: column) {
+                previous = c.previous ?? previous
+                original = c.original ?? original
+                if !c.problem.isEmpty { problem = c.problem }
+                above = c.above
+                slip = c.slip
+                running = c.running
+                solvedAbove = c.solvedAbove
+            }
             for st in columnLines(column) {
                 guard !st.latex.isEmpty else { continue }
+                // a line crossed out: never judged, and no step of the column (`LiveLoop+Chain`)
+                if isStruck(st) {
+                    guard gen == generation, var cur = lines[st.id], cur.latex == st.latex else {
+                        analyzeAgain.insert(column)
+                        break
+                    }
+                    if cur.analysis != LineAnalysis.quiet {
+                        cur.analysis = LineAnalysis.quiet
+                        cur.rewritesWithWarn = 0
+                        lines[st.id] = cur
+                        changed.append(st.id)
+                    }
+                    continue
+                }
+                // a stacked sum: worked as a sum by the brain, never as a line, and no step of the
+                // column — the lines under it are not judged against it (`LiveLoop+Stacks`)
+                if let s = await stackedAnalysis(st, problem: problem) {
+                    guard gen == generation, var cur = lines[st.id], cur.latex == st.latex else {
+                        analyzeAgain.insert(column)
+                        break
+                    }
+                    if cur.analysis != s {
+                        cur.rewritesWithWarn = s.verdict == "mismatch" ? cur.rewritesWithWarn + (cur.analysis?.verdict == "mismatch" ? 1 : 0) : 0
+                        cur.analysis = s
+                        lines[st.id] = cur
+                        changed.append(st.id)
+                    }
+                    if s.solved == true { solvedAbove = true }
+                    continue
+                }
                 // a running total (`+3 = 767`) is judged as the child means it, `764 + 3 = 767`; with
                 // nothing above to go on from it is never judged (read alone it is `3 = 767`, false)
                 let judged: String?
@@ -86,7 +127,9 @@ extension LiveLoop {
                 // never ring a correct line: a true relation of plain numbers (`=431` going on from
                 // `767-336` above it too) is at worst quiet, whatever problem the column was judged
                 // against (`ArithmeticTruth`)
-                if raw.verdict == "mismatch", ArithmeticTruth.holds(judged ?? st.latex, above: above.last) == true {
+                // — nor one true as the child means it (two facts side by side, an `=` read as a `-`)
+                if raw.verdict == "mismatch",
+                   ArithmeticTruth.holds(judged ?? st.latex, above: above.last) == true || ArithmeticTruth.trueAsMeant(judged ?? st.latex) {
                     raw.verdict = "none"
                     raw.carried = nil
                 }
@@ -130,6 +173,9 @@ extension LiveLoop {
                 }
                 if a.solved == true { solvedAbove = true }
             }
+            // how the column ends: the next page of the problem goes on from it ("More room")
+            noteColumnEnd(column, PageCarry(previous: previous, original: original, problem: problem, above: above, slip: slip,
+                                            running: running, solvedAbove: solvedAbove))
             guard gen == generation else { return }
             for st in columnLines(column) where !st.latex.isEmpty {
                 render(st.id, quiet: quiet && !changed.contains(st.id))
@@ -155,7 +201,7 @@ extension LiveLoop {
 
     func policyInput(_ st: LiveLine, userAsked: Bool = false, settled: Bool? = nil) -> LivePolicy.Input {
         LivePolicy.Input(
-            mode: settings.mode, analysis: st.analysis, confidence: st.confidence, settled: settled ?? self.settled,
+            mode: settings.mode, analysis: st.analysis, confidence: judgedConfidence(st), settled: settled ?? self.settled,
             auto: autoFor(st), userAsked: userAsked, hintsShownForLine: st.hintsShown, openHintCount: hints.count,
             rewritesWithWarn: st.rewritesWithWarn, liveShapeCount: liveShapeCount(), latex: st.latex,
             answerOnEquals: settings.answerOnEquals, held: isHeld(st))
@@ -202,11 +248,19 @@ extension LiveLoop {
         }
         defer { refreshPage() }
         let d = decision(st, userAsked: userAsked)
+        // a right answer Mathpix was unsure of: no "?" while one more look decides (`lookAgainAtUnsureAnswer`)
+        if !d.echo && lookAgainAtUnsureAnswer(st) { return }
         if !d.echo {
             if !quiet {
                 let why = questionNow(st)
                 let unread = why == nil && (rt[id]?.unreadableShown ?? false) && settings.mode != .off && unreadableRead(st)
-                syncMark(st, why != nil || unread ? .question : nil, why ?? (unread ? "unread" : nil))
+                // check as I go: no "?" on a line still being written (`stillGrowing`)
+                if why != nil || unread, !userAsked, let wait = stillGrowing(st) {
+                    syncMark(st, nil, learn: false)
+                    renderWhenFinished(id, after: wait)
+                } else {
+                    syncMark(st, why != nil || unread ? .question : nil, why ?? (unread ? "unread" : nil))
+                }
             }
             if unreadableRead(st), !(rt[id]?.unreadableShown ?? false), rt[id]?.unreadableTimer == nil, !quiet {
                 scheduleUnreadableMark(id)
@@ -231,13 +285,34 @@ extension LiveLoop {
         var marked = auto || d.capped ? d.badge : LivePolicy.badge(settings.mode, st.analysis)
         // a line the loop cannot place for sure is never ringed: a right answer is never marked wrong
         if marked == "warn" && unsureOfProblem(st) { marked = "none" }
+        // nor a stray beside the work (a digit or a mark alone, in a column no problem heads)
+        if marked == "warn" && looksLikeStray(st) { marked = "none" }
         // nor a read the tutor is not sure of (it asks first: "Is this right?"), nor a problem of the
         // kid's own (docs/PROBLEM-PAGES.md)
-        let doubt = pages.extras && (readingInDoubt(st) || pages.ownHeads.contains(st.id))
+        let doubt = pages.extras && (readingInDoubt(st) || pages.ownHeads.contains(st.id) || st.analysis?.misreadLikely == true)
         if marked == "warn" && doubt { marked = "none" }
         let ring = marked == "warn" || (marked != "ok" && marked != "solved" && st.isModelFlagged && !unsureOfProblem(st) && !doubt)
+        // a crossed-out line is never marked
+        if isStruck(st) {
+            syncMark(st, nil, learn: false)
+            updateVerdict(st, "none")
+            return
+        }
+        // a step about to be ringed waits while it and the line above are read again (`holdRing`)
+        if ring && holdRing(st) {
+            syncMark(st, nil, learn: false)
+            updateVerdict(st, "none")
+            return
+        }
         let tick = marked == "ok" || marked == "solved"
         let why = ring || tick ? nil : questionNow(st)
+        // check as I go: no ring and no "?" on a line still being written (`stillGrowing`)
+        if ring || why != nil, !userAsked, let wait = stillGrowing(st) {
+            syncMark(st, nil, learn: false)
+            updateVerdict(st, "none")
+            renderWhenFinished(id, after: wait)
+            return
+        }
         syncMark(st, ring ? .circle : tick ? .check : why != nil ? .question : nil, why)
         updateVerdict(st, ring ? "warn" : marked == "solved" ? "solved" : tick ? "ok" : "none")
         if ring && !quiet && auto { suggestNextStep(id) }
@@ -250,7 +325,13 @@ extension LiveLoop {
 
     /// A read Mathpix was unsure of: the "?" is for it (after a moment).
     func unreadableRead(_ st: LiveLine) -> Bool {
-        !st.latex.isEmpty && st.confidence < LiveLimits.minConfidence
+        !st.latex.isEmpty && judgedConfidence(st) < LiveLimits.minConfidence
+    }
+
+    /// The confidence a line is judged with: Mathpix's, or — a right answer it was unsure of that a
+    /// second look read as the same value (`lookAgainAtUnsureAnswer`) — enough to be ticked.
+    func judgedConfidence(_ st: LiveLine) -> Double {
+        unsureAnswerLooks[st.ink.hash] == .some(true) ? max(st.confidence, LiveLimits.minConfidence) : st.confidence
     }
 
     /// Under a problem the tutor wrote, a line it cannot judge gets its "?" once the kid has stopped
@@ -258,10 +339,14 @@ extension LiveLoop {
     /// and scratch numbers.
     func questionFor(_ st: LiveLine) -> String? {
         guard settings.enabled, settings.mode != .off, head(for: st.column) != nil else { return nil }
+        // a stacked sum the engine cannot work is read back, never marked (the web's `stackAnalysis`)
+        if stackLike(st) { return nil }
+        // nor is a line crossed out
+        if isStruck(st) { return nil }
         if rt[st.id]?.readRefused == true || rt[st.id]?.checkTask != nil { return nil }
         if reading.contains(st.id) || offlineQueue.contains(st.id) || pendingChecks[st.id] != nil { return nil }
         if liveShapeCount() >= LiveLimits.maxLiveShapesPerBoard { return nil }
-        return LivePolicy.unjudgedReason(latex: st.latex, confidence: st.confidence, provider: st.provider, analysis: st.analysis)
+        return LivePolicy.unjudgedReason(latex: st.latex, confidence: judgedConfidence(st), provider: st.provider, analysis: st.analysis)
     }
 
     func questionNow(_ st: LiveLine) -> String? {
@@ -286,7 +371,8 @@ extension LiveLoop {
         if learn { learnLine(st, kind) }
         let id = st.id
         var r = rt[id] ?? LineRuntime()
-        let want = kind.map { LiveMarks.key($0, st.bounds) }
+        // (round the line, or after it; a stacked sum's after its answer row, round its wrong digit)
+        let want = kind.map { LiveMarks.key($0, markBox($0, st)) }
         if r.markDecided && r.markKey == want { return }
         r.markDecided = true
         r.markKey = want
@@ -305,7 +391,10 @@ extension LiveLoop {
             return nil
         }
         if !staleStrokes.isEmpty || !staleRecords.isEmpty {
-            if marks.contains(where: { $0.meta.string(LiveMeta.mark).hasPrefix("circle:") && $0.meta.string(LiveMeta.mark) != want }) { settler.removed(id) }
+            if marks.contains(where: { $0.meta.string(LiveMeta.mark).hasPrefix("circle:") && $0.meta.string(LiveMeta.mark) != want }) {
+                settler.removed(id)
+                if kind != .circle { ringWithdrawn(id) }
+            }
             store.remove(staleStrokes + staleRecords, origin: .tutor)
         }
         guard let want, let kind, !marks.contains(where: { $0.meta.string(LiveMeta.mark) == want }) else {
@@ -329,8 +418,8 @@ extension LiveLoop {
         if kind == .question { meta[LiveMeta.markWhy] = .string(why ?? "unread") }
         // a ring beside one of the tutor's problems keeps off its ink
         let besideHead = head(for: st.column).map(\.rect).flatMap { Self.besideProblem(st.bounds, $0) ? $0 : nil }
-        let markBox = kind == .circle ? LiveMarks.ringBox(st.bounds, clearOf: besideHead) : st.bounds
-        let line = TutorLine(strokes: LiveMarks.strokes(kind, line: markBox, lineId: id))
+        let box = kind == .circle ? LiveMarks.ringBox(markBox(.circle, st), clearOf: besideHead) : markBox(kind, st)
+        let line = TutorLine(strokes: LiveMarks.strokes(kind, line: box, lineId: id))
         var penRef: TutorPen?
         penRef = board.write([line], meta: meta) { [weak self] in
             guard let self else { return }
@@ -391,8 +480,12 @@ extension LiveLoop {
         }
         cheers = Array(cheers.suffix(2)) + [cheer]
         if cheer.big { bigBurst += 1 }
+        refreshReadings()
         let cid = cheer.id
-        scheduler.after(2_200) { [weak self] in self?.cheers.removeAll { $0.id == cid } }
+        scheduler.after(2_200) { [weak self] in
+            self?.cheers.removeAll { $0.id == cid }
+            self?.refreshReadings()
+        }
     }
 
     // MARK: - records
@@ -450,12 +543,16 @@ extension LiveLoop {
             let col = columnLines(column).filter { !$0.latex.isEmpty }
             guard let first = col.first else { continue }
             let head = head(for: column)
-            let pid = head?.id ?? RecordID("problem:\(first.id)")
+            // (a kid's own problem begun on the page before, continued here: its record is there)
+            let carried = head == nil ? carriedProblemRecord(column) : nil
+            let pid = head?.id ?? carried ?? RecordID("problem:\(first.id)")
             let ids = col.map { RecordID("line:\($0.id)") }
-            if head == nil {
-                wanted[pid] = ProblemRecord(id: pid, screen: screen, lines: ids, latex: first.latex, origin: "student")
+            if head == nil && carried == nil {
+                // (its lines on the problem's other pages stay: "More room")
+                let old: [RecordID] = { if case .problem(let p)? = store[pid] { return p.lines } else { return [] } }()
+                wanted[pid] = ProblemRecord(id: pid, screen: screen, lines: problemLines(old, here: ids), latex: first.latex, origin: "student")
             } else if case .problem(var p)? = store[pid] {
-                p.lines = ids
+                p.lines = problemLines(p.lines, here: ids)
                 wanted[pid] = p
             }
             for l in ids { lineProblem[l] = pid }

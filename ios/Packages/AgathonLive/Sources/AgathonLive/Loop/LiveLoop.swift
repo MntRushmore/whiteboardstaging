@@ -96,6 +96,10 @@ public final class LiveLoop: ObservableObject {
     // MARK: lifecycle state
 
     var started = false
+    /// A loop on another page of the problem on show ("More room", `LiveLoop+MoreRoom`): it judges
+    /// that page where it is and writes its marks there, and nothing else — no capabilities call, no
+    /// learning of its own (the board's loop tells the record), no Now you try, no settings saved.
+    var passive = false
     /// bumped by every reset (a screen left, the loop stopped): work begun before it is dropped
     var generation = 0
     var engineReady = false
@@ -108,6 +112,11 @@ public final class LiveLoop: ObservableObject {
 
     var quietTimer: LiveTimer?
     var settleTimer: LiveTimer?
+    /// "check as I go": lines whose marks wait for them to look finished (`stillGrowing`)
+    var growthTimers: [String: LiveTimer] = [:]
+    /// how long a line must go without a new stroke before a ring or a "?" (`PageTiming.doubtHoldMs`;
+    /// the real-ink bench sets 0 to measure the tutor without it)
+    var doubtHoldMs = PageTiming.doubtHoldMs
     var stuckTimer: LiveTimer?
     var helpWaitTimer: LiveTimer?
     var readingLabelTimer: LiveTimer?
@@ -123,6 +132,29 @@ public final class LiveLoop: ObservableObject {
     var pendingRewrite = false
     var forceRecognize = Set<String>()
     var diagrams: [Diagram] = []
+    /// the stacked sums in the ink (`clusterStrokes`' `stacks`), and where a stacked line's marks go
+    /// (`LiveLoop+Stacks`)
+    var stacks: [AgathonBrain.JSONValue] = []
+    var stackMarks: [String: (tick: BrainRect?, ring: BrainRect?)] = [:]
+    /// a stacked sum's analysis when she says she is done (`StackedLine.done`): swapped in at a Check
+    var stackDone: [String: LineAnalysis] = [:]
+    /// stacked sums finished at a Check, at that reading: they stay finished when the column is judged again
+    var stackFinished: [String: String] = [:]
+    /// division bars' strokes (`clusterStrokes`' `bars`): a number under one is "divide both sides"
+    var barStrokeIds = Set<String>()
+    /// strokes the split set aside as a row the kid struck out (`struckRows.ts`): in no line
+    var struckStrokeIds = Set<String>()
+    /// the lines that were one problem (one column) at the last flush: they stay one (the web's
+    /// `problemMates`)
+    var problemMates: [String: Set<String>] = [:]
+    /// lines crossed out, by ink version (`LiveLoop+Chain`)
+    var struckCache: [String: Bool] = [:]
+    /// rings waiting for a second look: the step's line id → its pair of inks; a pair done is drawn at
+    /// once from then on (`LiveLoop+Chain`, the web's `chainHolds` / `chainsDone`)
+    var chainHolds: [String: String] = [:]
+    var chainsDone = Set<String>()
+    /// right answers read unsure, looked at once more (by ink hash): nil while the look is out, then its verdict
+    var unsureAnswerLooks: [String: Bool?] = [:]
     var flushing = false
     var flushAgain = false
     /// per line: tickets, in-flight work, its mark
@@ -267,10 +299,10 @@ public final class LiveLoop: ObservableObject {
         lastOnline = connectivity.isOnline
         subscription = board.store.observe { [weak self] change in self?.storeChanged(change) }
         screenSeen = board.currentScreenID
-        if hintWriter == nil && HintWording.debugEnabled { hintWriter = HintWording.onDevice() }
-        if LivePages.secondOpinionDebug { pages.secondOpinion = true }
+        if !passive && hintWriter == nil && HintWording.debugEnabled { hintWriter = HintWording.onDevice() }
+        if !passive && LivePages.secondOpinionDebug { pages.secondOpinion = true }
         // the learning record: the signed-in student's, when the services know the backend
-        if learning.connectsAutomatically, learning.recorder == nil, let backend = (services as? LiveAPIServices)?.backend {
+        if !passive, learning.connectsAutomatically, learning.recorder == nil, let backend = (services as? LiveAPIServices)?.backend {
             learning.connect(backend: backend)
         }
         track { [weak self] in
@@ -283,7 +315,7 @@ public final class LiveLoop: ObservableObject {
                 Self.log.error("live: the brain did not load: \(String(describing: error), privacy: .public)")
             }
         }
-        fetchCapabilities()
+        if !passive { fetchCapabilities() }
         refreshActivity()
     }
 
@@ -300,6 +332,8 @@ public final class LiveLoop: ObservableObject {
         resetRuntime()
         for t in tasks.values { t.cancel() }
         tasks.removeAll()
+        // (a loop on another page of the problem saves nothing and closes nothing of the board's)
+        guard !passive else { return }
         settings.save(boardId: boardId)
         // the board is closed: the problems on it are over, and saved, as far as the record goes
         learnClosed()
@@ -387,6 +421,16 @@ public final class LiveLoop: ObservableObject {
         penLineId = nil
         lastTouchedLineId = nil
         diagrams = []
+        stacks = []
+        stackMarks = [:]
+        stackDone = [:]
+        stackFinished = [:]
+        barStrokeIds = []
+        struckStrokeIds = []
+        problemMates = [:]
+        struckCache = [:]
+        chainHolds = [:]
+        chainsDone = []
         heads = []
         columnHeads = [:]
         lines = [:]
@@ -400,12 +444,15 @@ public final class LiveLoop: ObservableObject {
     /// its records (no re-reading, no model call).
     func switchScreen() {
         guard started, board.currentScreenID != screenSeen else { return }
+        // (another page of the same problem: the kid's last ink there still counts for the pause)
+        let from = screenSeen, lastInk = pages.lastInkAt
         resetRuntime()
         screenSeen = board.currentScreenID
         // the learning record: the problems on the screen the student left are over (for now)
         learnScreen()
         offer = nil
         rebuild()
+        arrived(from: from, lastInk: lastInk)
     }
 
     // MARK: - settings
@@ -516,6 +563,10 @@ struct LineRuntime {
     /// the mark wanted on the line (its key); `markDecided` false until the first render
     var markKey: String?
     var markDecided = false
+    /// its ring or tick came off because new ink looked like more of it (`unringGrowingLine`): its
+    /// strokes then and the mark, so the next flush can tell whether that ink really joined it
+    var unrungStrokes: [String]?
+    var unrungKind: LiveMarks.Kind?
     var markPen: TutorPen?
     var markBusySince = 0.0
     var afterMark: [() -> Void] = []

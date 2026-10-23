@@ -160,6 +160,8 @@ describe("live loop — operation lines under an equation", () => {
     expect(analysisOf(op)).toMatchObject({ kind: "operation", verdict: "mismatch" });
     const next = await pen(inkLine("2x=8", 100, 330, 40), "2x = 8");
     expect(analysisOf(next)?.verdict).toBe("ok");
+    // a ring waits for the line to look finished (LIVE_TIMING.doubtHoldMs)
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.doubtHoldMs);
     await settleStable(() => String(tutor().length));
     expect(marksOf(op)).toEqual(["circle"]);
   });
@@ -181,6 +183,7 @@ describe("live loop — operation lines under an equation", () => {
     await pen(inkLine("2x=8", 100, 200, 40), "2x = 8");
     const op = await pen(inkLine("8", 180, 262, 36), "\\div 0");
     expect(analysisOf(op)?.verdict).toBe("mismatch");
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.doubtHoldMs);
     await settleStable(() => String(tutor().length));
     expect(marksOf(op)).toEqual(["circle"]);
   });

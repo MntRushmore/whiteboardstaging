@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- How scripts/ios-release.sh exports an archive for App Store Connect (docs/APP-STORE-LAUNCH.md).
+     destination "export" writes Agathon.ipa to disk; the script then uploads it with an App Store
+     Connect API key (altool). The script swaps in "upload" only for UPLOAD_WITH=xcodebuild.
+     Automatic signing: Xcode re-signs with the team's Apple Distribution certificate and an
+     App Store provisioning profile for app.agathon.Agathon (App Attest, production). -->
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>destination</key>
+	<string>export</string>
+	<key>teamID</key>
+	<string>SG4YJW2K5Z</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<!-- crash reports in App Store Connect / Xcode Organizer show symbol names -->
+	<key>uploadSymbols</key>
+	<true/>
+	<!-- the build number is ours (scripts/ios-bump-build.sh), never Apple's -->
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+	<!-- TestFlight external testers and App Review may use this build -->
+	<key>testFlightInternalTestingOnly</key>
+	<false/>
+	<key>stripSwiftSymbols</key>
+	<true/>
+</dict>
+</plist>

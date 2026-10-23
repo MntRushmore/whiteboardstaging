@@ -1,0 +1,136 @@
+import { beforeAll, describe, expect, it } from "vitest";
+import type { LiveEngine } from "../../contracts";
+import { getEngine } from "..";
+import { youngReadOf } from "@/lib/brain";
+import { judgeColumn, simplestForm } from "../columnWork";
+
+/**
+ * Columns the real-ink bench found misjudged with perfect reads (docs/REAL-INK-BENCH.md): what real
+ * children write, re-said as plain LaTeX — no child's ink or words here; the corpus never enters the
+ * repo. The tutor's logic alone; the loop's tests hold the ink side.
+ */
+
+let engine: LiveEngine;
+beforeAll(async () => {
+  engine = await getEngine();
+}, 60_000);
+
+const marks = (column: { problem?: string[]; lines: string[] }) =>
+  judgeColumn(engine, column).map((a) => (a ? `${a.verdict}${a.solved ? "+solved" : ""}${a.carried ? "+carried" : ""}` : null));
+
+describe("a lone number under an equation in one letter", () => {
+  it("is the letter's value when it is right: a tick, and the problem solved", () => {
+    expect(marks({ problem: ["\\frac{x}{2} - 5 = 1"], lines: ["12"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["3x + 4 = 19"], lines: ["5"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["2x + 3 = 11"], lines: ["2x = 8", "4"] })).toEqual(["ok", "ok+solved"]);
+  });
+
+  it("after a line that works out a letter's value, is that value — and the problem answered", () => {
+    expect(marks({ problem: ["y = -\\frac{2}{3}x + 8", "x = 9"], lines: ["y = -\\frac{2}{3}(9) + 8", "y = -6 + 8", "2"] }).slice(1)).toEqual(["ok", "ok+solved"]);
+  });
+
+  it("is never ringed when it is not the value: it may be a side sum (a ring there would be on right work)", () => {
+    expect(marks({ problem: ["\\frac{x}{2} - 5 = 1"], lines: ["14"] })).toEqual(["none"]);
+    expect(marks({ problem: ["2x + 3 = 11"], lines: ["8"] })).toEqual(["none"]);
+  });
+
+  it("leaves the arithmetic rules as they were", () => {
+    expect(marks({ problem: ["11 + 9 \\times 2"], lines: ["11 + 18", "29"] })).toEqual(["ok", "ok+solved"]);
+    expect(marks({ problem: ["5x - 4 = 21"], lines: ["+4 +4", "5x = 25", "x = 5"] })).toEqual(["ok", "ok", "ok+solved"]);
+  });
+});
+
+describe("a function's value at a number", () => {
+  it("worked in one chained line is judged as the sum it comes to: a tick and solved", () => {
+    expect(marks({ problem: ["h(x) = 4x + 1", "h(1)"], lines: ["= 4(1) + 1 = 5"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["h(x) = 4x + 1", "h(1)"], lines: ["h(1) = 4(1) + 1 = 5"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["h(x) = 4x + 1", "h(1)"], lines: ["5"] })).toEqual(["ok+solved"]);
+  });
+
+  it("put in wrong is a slip", () => {
+    expect(marks({ problem: ["h(x) = -2x + 1", "h(4)"], lines: ["= -2(4) + 4 = -4"] })).toEqual(["mismatch"]);
+  });
+
+  it("a function that is no sum at a number stays as it was", () => {
+    expect(marks({ problem: ["f(x) = x^{2} + y", "f(2)"], lines: ["= 4 + y"] })).toEqual([marks({ problem: ["f(x) = x^{2} + y"], lines: ["= 4 + y"] })[0]]);
+  });
+});
+
+describe("a child's notes of what they do to both sides, read into the line", () => {
+  it("are not judged: the equation is (a ring was on right work)", () => {
+    expect(marks({ problem: ["\\frac{x}{4} - 4 = -1"], lines: ["+4 \\quad +4", "\\frac{x}{4}=3 \\quad \\times 4", "x=12"] })).toEqual(["ok", "ok", "ok+solved"]);
+    expect(marks({ problem: ["\\frac{x}{4} - 4 = -1"], lines: ["\\frac{x}{4}=3 \\times 4 \\times 4"] })).toEqual(["ok"]);
+    expect(marks({ problem: ["3(x - 2) = 15"], lines: ["\\begin{array}{l}\nx-2=5 \\\\\n+2+2\n\\end{array}", "x=7"] })).toEqual(["ok", "ok+solved"]);
+  });
+
+  it("never hide a slip, and a product stays a product", () => {
+    expect(marks({ problem: ["\\frac{x}{4} - 4 = -1"], lines: ["\\frac{x}{4}=5 \\quad \\times 4"] })).toEqual(["mismatch"]);
+    expect(marks({ problem: ["\\frac{x}{4} = 3"], lines: ["x = 3 \\times 4"] })).toEqual(["ok+solved"]);
+  });
+});
+
+
+describe("a page answered by its form (the engine solves equations only)", () => {
+  it("a simplify problem is answered by its simplest form", () => {
+    expect(marks({ problem: ["3x + 6x - 5"], lines: ["= 9x - 5"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["5(x + 5) - 2x"], lines: ["= 5x + 25 - 2x", "= 3x + 25"] })).toEqual(["ok", "ok+solved"]);
+    expect(marks({ problem: ["x^{2} \\cdot x^{6}"], lines: ["x^{2+6}", "x^{8}"] })).toEqual(["ok", "ok+solved"]);
+  });
+
+  it("an inequality by its letter alone, a letter's value by its simplest form", () => {
+    expect(marks({ problem: ["8x - 3 \\ge 69"], lines: ["8x \\ge 72", "x \\ge 9"] })).toEqual(["ok", "ok+solved"]);
+    expect(marks({ problem: ["C = 2\\pi \\cdot 5"], lines: ["C = 10\\pi"] })).toEqual(["ok+solved"]);
+  });
+
+  it("never a step on the way, nor a side sum under an equation", () => {
+    expect(marks({ problem: ["2x + 3 = 11"], lines: ["2x = 8"] })).toEqual(["ok"]);
+    expect(simplestForm("5 * x + 25 - 2 * x")).toBe(false);
+    expect(simplestForm("x ^ (2 + 6)")).toBe(false);
+    expect(simplestForm("2 * pi * 5")).toBe(false);
+    expect(simplestForm("9 * x - 5 + 0")).toBe(false);
+    expect(simplestForm("9 * x - 5")).toBe(true);
+  });
+});
+
+describe("a long division's answer with its remainder", () => {
+  it("is judged as children write it: = 55 r 2, under the tutor's bracket or a ÷", () => {
+    expect(marks({ problem: ["4 \\overline{ \\, 222 \\, }"], lines: ["= 55 r 2"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["222 \\div 4"], lines: ["= 55 R 2"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["222 \\div 4"], lines: ["= 54 r 2"] })).toEqual(["mismatch"]);
+  });
+});
+
+/**
+ * Open: found by the real-ink bench, not fixed yet. `it.fails` passes while the tutor still gets it
+ * wrong and fails the day it is put right — then make it an `it`.
+ */
+describe("her own tick read into her answer (MISREADS lane)", () => {
+  it("read as a spaced dash after the right answer, is dropped (a \"?\" was on her right answer)", () => {
+    expect(youngReadOf({ latex: "-4 \\quad-", problem: ["-7 + 3"] }).latex.trim()).toBe("-4");
+  });
+
+  it("…but never to make a wrong answer of nonsense: `-5 \\quad-` for -7 + 3 stays as read", () => {
+    expect(youngReadOf({ latex: "-5 \\quad-", problem: ["-7 + 3"] }).latex.trim()).toBe("-5 \\quad-");
+  });
+});
+
+describe("open classes (known issues)", () => {
+  it.fails("…or read as a comma and a letter", () => {
+    expect(youngReadOf({ latex: "27^{\\circ}, \\quad x", problem: ["x + 63^{\\circ} = 90^{\\circ}"] }).latex.replace(/\s/g, "")).toBe("27^{\\circ}");
+  });
+});
+
+describe("an arithmetic answer wrong the way a misread is", () => {
+  const flag = (c: { problem: string[]; lines: string[] }) => judgeColumn(engine, c).map((a) => a?.misreadLikely === true);
+  it("is flagged to be asked about, not ringed: a digit dropped (14 read as 4), a letter (65 read as b5)", () => {
+    expect(flag({ problem: ["7 \\times 2"], lines: ["4"] })).toEqual([true]);
+    expect(flag({ problem: ["58 + 7"], lines: ["=b5"] })).toEqual([true]);
+    expect(flag({ problem: ["7 \\times 2"], lines: ["= 104"] })).toEqual([true]);
+  });
+
+  it("a slip that is a slip stays one", () => {
+    expect(flag({ problem: ["58 + 7"], lines: ["= 64"] })).toEqual([false]);
+    expect(flag({ problem: ["7 \\times 2"], lines: ["13"] })).toEqual([false]);
+    expect(flag({ problem: ["7 \\times 2"], lines: ["41"] })).toEqual([false]);
+  });
+});

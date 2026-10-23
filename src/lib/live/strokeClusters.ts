@@ -333,6 +333,52 @@ export function isDotOf(dot: Rect, glyph: Rect, medianH: number): boolean {
   return vGap <= CLUSTER_RULES.dotReachFactor * medianH;
 }
 
+/**
+ * `other` lies past the row next to the bar: a glyph the bar also covers sits wholly between them (the
+ * denominator `13` between `\frac{166}{13}`'s bar and the next line's `x = …` 17 px under it — joined,
+ * the two steps were read as one and ringed). A fraction's own rows touch its bar; nested fractions
+ * join through their own bars.
+ */
+function beyondRow(bar: Rect, other: Rect, covered: readonly Rect[], medianH: number): boolean {
+  const below = other.y + other.h / 2 > bar.y + bar.h / 2;
+  return covered.some((m) => {
+    if (m === other || m.h < 0.3 * medianH || m.w > 3 * Math.max(m.h, 1)) return false;
+    return below ? m.y >= bar.y + bar.h - 1 && m.y + m.h <= other.y : m.y + m.h <= bar.y + 1 && m.y >= other.y + other.h;
+  });
+}
+
+/**
+ * A `+`'s (or `÷`'s, `≠`'s) bar, not a fraction bar: a stroke crosses it, reaching well over and under
+ * it. A fraction's numerator and denominator touch their bar at most. The `+` of `+2` written under
+ * `x - 2 = 5` reached up to the `=` as a "fraction bar" and read the notes into the equation.
+ */
+function isCrossedBar(i: number, raw: readonly Rect[]): boolean {
+  const bar = raw[i];
+  const cy = bar.y + bar.h / 2;
+  return raw.some((r, j) => {
+    if (j === i || r.h < 2 * Math.max(bar.h, 1)) return false;
+    const cx = r.x + r.w / 2;
+    return cx > bar.x && cx < bar.x + bar.w && r.y <= cy - 0.25 * r.h && r.y + r.h >= cy + 0.25 * r.h;
+  });
+}
+
+/**
+ * A minus in a row, not a fraction bar: a level bar with a glyph level with it on either side and
+ * nothing it covers over it (a fraction has its numerator). `x - 2 = 5` with `+2 +2` written close
+ * under it: the minus "covered" the first `+2` and the notes were read into the equation.
+ */
+function isMinusInRow(i: number, raw: readonly Rect[], medianH: number): boolean {
+  const bar = raw[i];
+  const cy = bar.y + bar.h / 2;
+  const glyph = (r: Rect) => r.h >= 0.4 * medianH && !(r.w > 3 * Math.max(r.h, 1));
+  const level = (r: Rect) => glyph(r) && r.y <= cy && r.y + r.h >= cy;
+  const near = 1.2 * medianH;
+  const left = raw.some((r, j) => j !== i && level(r) && r.x + r.w <= bar.x + 0.15 * bar.w && bar.x - (r.x + r.w) <= near);
+  const right = raw.some((r, j) => j !== i && level(r) && r.x >= bar.x + 0.85 * bar.w && r.x - (bar.x + bar.w) <= near);
+  if (!left || !right) return false;
+  return !raw.some((r, j) => j !== i && glyph(r) && r.y + r.h / 2 < cy && barCovers(bar, r, medianH));
+}
+
 function barCovers(bar: Rect, other: Rect, medianH: number): boolean {
   if (other.w < 1) {
     // A thin vertical stroke (a "1", the stem of a "+") has no width to overlap:
@@ -380,12 +426,16 @@ export function clusterStrokeGroups(strokes: InkStroke[]): number[][] {
   if (n === 0) return [];
   const medianH = medianStrokeHeight(strokes);
   const uf = new UnionFind(n);
-  const bars = strokes.map((s) => isFractionBar(s, strokes, medianH));
   const rawBounds = strokes.map((s) => s.bounds);
+  const bars = strokes.map((s, i) => isFractionBar(s, strokes, medianH) && !isMinusInRow(i, rawBounds, medianH) && !isCrossedBar(i, rawBounds));
   const overlines = bars.map((bar, i) => bar && isOverlineBar(rawBounds[i], rawBounds, medianH));
-  /** a bar joins `other`: an overline only what is under it */
+  // what each bar covers (raw bounds): a bar reaches only the row next to it (`beyondRow`)
+  const covered = bars.map((bar, i) => (bar ? rawBounds.flatMap((r, j) => (j !== i && barCovers(rawBounds[i], r, medianH) ? [j] : [])) : []));
+  /** a bar joins `other`: an overline only what is under it; no bar what lies past its numerator or denominator */
   const barJoins = (i: number, bar: Rect, other: Rect, rawOther: Rect) =>
-    barCovers(bar, other, medianH) && (!overlines[i] || rawOther.y + rawOther.h / 2 > rawBounds[i].y + rawBounds[i].h / 2);
+    barCovers(bar, other, medianH) &&
+    (!overlines[i] || rawOther.y + rawOther.h / 2 > rawBounds[i].y + rawBounds[i].h / 2) &&
+    !beyondRow(rawBounds[i], rawOther, covered[i].map((j) => rawBounds[j]), medianH);
   const by = inflationFor(medianH);
   // Inflated rects for the overlap / gap / bar tests; bar detection above used the raw bounds.
   const rects = strokes.map((s) => inflateRect(s.bounds, by));

@@ -506,6 +506,8 @@ describe("live loop — the tutor works the problems it wrote", () => {
       const x0 = Math.round(cell.x + 40);
       const wrong = await penLine("x=4", x0, Math.round(cell.y + 110), "x = 50^{\\circ}");
       const right = await penLine("x=2", x0, Math.round(cell.y + 200), "x = 210^{\\circ}, 330^{\\circ}");
+      // a ring waits for the line to look finished (LIVE_TIMING.doubtHoldMs)
+      await vi.advanceTimersByTimeAsync(LIVE_TIMING.doubtHoldMs);
       await settleStable(() => String(tutor().length));
       const lines = liveStore.lines.get();
       expect(lines[wrong].analysis?.verdict).toBe("mismatch");
