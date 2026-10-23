@@ -49,7 +49,14 @@ MODE=server MAX_RECOGNIZE=300 MAX_OTHER=150 CACHE=~/whiteboardstaging/agathon-co
 MODE=replay CACHE=… scripts/ios-realink-bench.sh
 # a slice
 ONLY=tag:stacked-sum,tag:annotations scripts/ios-realink-bench.sh run
+# check as I go, with and without the wait before a ring or "?" on a line still being written
+CHECK=asIGo MODE=replay CACHE=… scripts/ios-realink-bench.sh run
+HOLD=0 CHECK=asIGo MODE=replay CACHE=… scripts/ios-realink-bench.sh run
 ```
+
+The wait (`PageTiming.doubtHoldMs` / `LIVE_TIMING.doubtHoldMs`, 2.5 s) comes from the corpus's own
+timing: kids' pauses inside a line are p90 1.3 s, p95 2.4 s. On 2026-10-22 (all 208 cases, check as I
+go) it took rings on half-written lines from 55 to 14; what is left follows pauses longer than it.
 
 Keep `OUT` inside the corpus folder: the results name what kids wrote.
 
