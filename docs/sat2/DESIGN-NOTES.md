@@ -141,7 +141,7 @@ All in page units, relative to the student's ink, so it travels with the page.
   text in Lexend Medium 19 cobalt) and the step's math in the tutor's hand 92 below the caption (116
   for a fraction line); steps are ~150 apart. A step that is about the figure is also drawn ON the
   figure (the rise and the run as cobalt legs, their sizes as cobalt labels). The next step's caption
-  waits in `faint` with a `tutorInkEmpty` badge. The dock's Check is replaced by a cobalt 64 pt pill:
+  waits in `faint` with a `tutorInkEmpty` badge. Check (next to Help me, bottom left) is replaced by a cobalt 64 pt pill:
   three 22 × 6 step bars (white = shown, `cobaltDeep` = waiting) + "Step 2 of 3 · Tap to go on" + →.
   A tap anywhere on the board goes on; the last step turns the pill back into Check. If the student
   already has ink in the stem column, the walk-through starts under their last line instead.
@@ -157,8 +157,9 @@ All in page units, relative to the student's ink, so it travels with the page.
   top bar, left of Mark: a 10 pt `inkSecondary` ring dot + "Tutor checks used up today: 20 of 20.
   Help me still works." (Lexend 15, on chalk, 40 tall), with the caller's own cap. Help me climbs the
   same three rungs from the bank (rung 2 writes the bank's next step in the same cobalt hand). The
-  first time it happens, an ink card above the answer row (bottom-right, 380 wide, radius 28) lays
-  the ladder out once; it goes on the next tap.
+  first time it happens, an ink card lays the ladder out once, the three rungs side by side: 760 pt
+  wide, at x 20, its bottom 20 above the answer row, radius 28 with the bottom-left corner 6 (toward
+  Help me, right below it). It goes on the next tap.
 - **The solution, two ways** (frame 7): a sheet from y 504 pt to the bottom, `ground`, radius 32
   at the top; the question and figure stay in view above it. Header: a 44 `success` circle with a
   check, "A is right." (Bricolage ExtraBold 24) and the answer in math; "Back to my work" (paper) and
@@ -176,13 +177,15 @@ All in page units, relative to the student's ink, so it travels with the page.
   at x 84; on the right, Mark (48 pill, bookmark icon, Lexend SemiBold 16) and ‹ 4/10 › (48 pill,
   36 chevrons), 10 apart, 20 from the edge. The skill name is the bank's, sentence case. The
   status bar is hidden during a set.
-- **Dock** (72 tall, ink, at (20, bottom − 92)): lasso, pencil (active = sunny), highlighter, eraser,
-  Graph it | undo, redo | three pens (ink, red, green; 44 targets, 26 dots). No page arrows (the top
-  bar has them).
+- **Bottom row** (owner, 2026-10-23): **Help me, then Check, at the bottom LEFT** (from x 20, 10
+  apart); **the pen dock at the bottom RIGHT** (its right edge 20 from the screen's); nothing in
+  between. All three sit 20 above the bottom edge, in the dock lane.
+- **Dock** (72 tall, ink): lasso, pencil (active = sunny), highlighter, eraser, Graph it | undo,
+  redo | three pens (ink, red, green; 44 targets, 26 dots). No page arrows (the top bar has them).
 - **Check** 64 pt ink pill (a 42 `onInkFaint` badge with a check, Bricolage ExtraBold 24); off until a
   choice or an answer exists: `guide` fill, `faint` text, `line` badge. **Help me** 72 pt sunny, the
-  mark in ink, Bricolage ExtraBold 26, always the biggest thing on the board. Both 20 from the right,
-  10 apart.
+  mark in ink, Bricolage ExtraBold 26, always the biggest thing on the board. Help me is first from
+  the left, Check right after it.
 
 ## Type (all Blocks styles)
 

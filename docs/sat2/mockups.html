@@ -382,15 +382,18 @@ function topBar({ q = 4, n = 10, skill = "Linear equations in two variables", ma
       w - 20, 14, "transform:translateX(-100%);display:flex;gap:10px;align-items:center");
 }
 function dock({ w = 1366, h = 1024, rung = 0, check = "off", walk = null, tool = "pencil" } = {}) {
+  // Bottom row (owner, 2026-10-23): Help me then Check (or the walk-through pill) at the bottom
+  // LEFT, the pen dock at the bottom RIGHT, nothing in between.
   const t = (n) => `<div class="tool ${tool === n ? "on" : ""}">${icon(n, 24, 2.2)}</div>`;
-  put(`<div class="dock">${t("lasso")}${t("pencil")}${t("highlighter")}${t("eraser")}${t("chart-spline")}<div class="sep"></div>
+  const pens = `<div class="dock">${t("lasso")}${t("pencil")}${t("highlighter")}${t("eraser")}${t("chart-spline")}<div class="sep"></div>
        <div class="tool">${icon("undo-2", 24, 2.2)}</div><div class="tool">${icon("redo-2", 24, 2.2)}</div><div class="sep"></div>
-       <div class="sw on"><i style="background:#14151F;box-shadow:0 0 0 2px #fff"></i></div><div class="sw"><i style="background:#E5302A"></i></div><div class="sw"><i style="background:#12A150"></i></div></div>`, 20, h - 20 - 72);
+       <div class="sw on"><i style="background:#14151F;box-shadow:0 0 0 2px #fff"></i></div><div class="sw"><i style="background:#E5302A"></i></div><div class="sw"><i style="background:#12A150"></i></div></div>`;
   const pips = [1, 2, 3].map((i) => `<i class="${i <= rung ? "on" : ""}"></i>`).join("");
-  const right = walk ? `<div class="walk"><span class="pp">${[1, 2, 3].map((i) => `<i class="${i <= walk ? "on" : ""}"></i>`).join("")}</span>Step ${walk} of 3 · Tap to go on${icon("arrow-right", 22, 2.4)}</div>`
+  const mid = walk ? `<div class="walk"><span class="pp">${[1, 2, 3].map((i) => `<i class="${i <= walk ? "on" : ""}"></i>`).join("")}</span>Step ${walk} of 3 · Tap to go on${icon("arrow-right", 22, 2.4)}</div>`
     : `<div class="check ${check === "off" ? "off" : ""}"><span class="bd">${icon("check", 24, 2.8)}</span>Check</div>`;
-  put(`${right}<div class="helpme"><svg width="42" height="42" viewBox="0 0 46 46"><circle cx="17" cy="17" r="11" fill="none" stroke="#14151F" stroke-width="6"/><circle cx="35" cy="12" r="5" fill="#14151F"/><rect x="6" y="34" width="34" height="7" rx="3.5" fill="#14151F"/></svg><span style="display:flex;flex-direction:column;gap:5px"><span class="t">Help me</span>${rung ? `<span class="pips">${pips}</span>` : ""}</span></div>`,
-      w - 20, h - 20 - 72, "transform:translateX(-100%);display:flex;gap:10px;align-items:center");
+  const help = `<div class="helpme"><svg width="42" height="42" viewBox="0 0 46 46"><circle cx="17" cy="17" r="11" fill="none" stroke="#14151F" stroke-width="6"/><circle cx="35" cy="12" r="5" fill="#14151F"/><rect x="6" y="34" width="34" height="7" rx="3.5" fill="#14151F"/></svg><span style="display:flex;flex-direction:column;gap:5px"><span class="t">Help me</span>${rung ? `<span class="pips">${pips}</span>` : ""}</span></div>`;
+  put(`${help}${mid}`, 20, h - 20 - 72, "display:flex;gap:10px;align-items:center");
+  put(pens, w - 20, h - 20 - 72, "transform:translateX(-100%)");
 }
 
 // ============================================================== frames
@@ -405,7 +408,7 @@ function plotMarks({ circle19 = true, circle31 = true, triangle = true, labels =
 }
 
 const FRAMES = {
-  f01: { name: "question", title: "1 · The question is the page", cap: "Full-screen board. The stem and figure are printed at the top like a test sheet (number hanging in the margin), dotted paper below is the work area, and the answer cards sit at the bottom of the page. Slim top bar; the dock keeps the tools, with Check and Help me.",
+  f01: { name: "question", title: "1 · The question is the page", cap: "Full-screen board. The stem and figure are printed at the top like a test sheet (number hanging in the margin), dotted paper below is the work area, and the answer cards sit at the bottom of the page. Slim top bar. Help me and Check sit bottom left, the pen dock bottom right, nothing in between.",
     draw() { questionPage(Q_PLOT); flushInk(); topBar(); dock(); } },
   f02: { name: "working", title: "2 · Mid-work: writing on the figure", cap: "The student circles the two labeled points and sketches the rise and the run on the graph, then works down the page in a thin pencil. The tutor ticks the true lines. The unfinished line is not judged.",
     draw() { questionPage(Q_PLOT); plotMarks();
@@ -424,7 +427,7 @@ const FRAMES = {
       const t = tut("t_mfrac", STEM_X + 4, rowY(1) + 10);
       putP(`Your turn: the next line.`, t.right + 40, rowY(1) - 12, "z-index:6").className = "turn";
       flushInk(); topBar(); dock({ rung: 2 }); } },
-  f05: { name: "rung3", title: "5 · Rung 3: walk me through it", cap: "The full solution drawn step by step in cobalt, on the work area and on the figure itself (the rise and the run on the graph). It pauses after each step: step 2 of 3, tap to go on. Step 3 waits in pale cobalt.",
+  f05: { name: "rung3", title: "5 · Rung 3: walk me through it", cap: "The full solution drawn step by step in cobalt, on the work area and on the figure itself (the rise and the run on the graph). It pauses after each step: step 2 of 3, tap to go on (the pill takes Check's place, next to Help me). Step 3 waits in pale cobalt.",
     draw() { questionPage(Q_PLOT); plotMarks({ circle31: false, triangle: false, labels: false });
       plotMarks({ circle19: false, circle31: true, pen: TUT });
       const c1 = putP(`<b>1</b>The setup fee is the y-intercept.`, STEM_X, L.workTop + 4, "z-index:6"); c1.className = "tcap";
@@ -477,7 +480,7 @@ const FRAMES = {
       loop(f[0], f[1], 34, 22, 31); loop(t[0], t[1] + 1, 42, 23, 33);
       const l1 = stu("s_prob", STEM_X + 8, L.workTop + 120); tickMark(l1.right + 34, L.workTop + 112);
       flushInk(); topBar({ q: 9, skill: "Probability" }); dock(); } },
-  f10: { name: "capped", title: "10 · No tutor pass today", cap: "The free tutor is used up: no ticks, no reading, no live checks, said once in a quiet line. Help me still climbs the same ladder from the bank: the nudge, the next solution step written in the same cobalt hand, and the walk-through. Shown with the one-time ladder card.",
+  f10: { name: "capped", title: "10 · No tutor pass today", cap: "The free tutor is used up: no ticks, no reading, no live checks, said once in a quiet line. Help me still climbs the same ladder from the bank: the nudge, the next solution step written in the same cobalt hand, and the walk-through. Shown with the one-time ladder card, just above Help me.",
     draw() { questionPage(Q_PLOT); plotMarks({ circle31: true, triangle: false, labels: false });
       stu("s_b19", STEM_X + 6, rowY(0));
       const t = tut("t_mfrac", STEM_X + 4, rowY(1) + 10);
@@ -486,11 +489,12 @@ const FRAMES = {
       topBar({ extra: `<div class="quiet"><span class="d"></span>Tutor checks used up today: 20 of 20. Help me still works.</div>` });
       dock({ rung: 2 });
       const rows = [["Nudge", "A question to get you going.", "Free"], ["One step", "The next line of the solution.", "From the solution today"], ["Walk me through it", "The whole solution, step by step.", "Free"]];
-      put(`<div class="lbl" style="margin-bottom:14px">Help me, three taps</div>${rows.map((r, i) => `<div style="display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start;margin-top:${i ? 14 : 0}px">
-            <span style="width:30px;height:30px;border-radius:50%;${i < 2 ? "background:var(--ink);color:#fff" : "box-shadow:inset 0 0 0 2px var(--ink)"};display:grid;place-items:center;font-size:14px;font-weight:600">${i + 1}</span>
-            <div><div style="font-weight:600;font-size:17px">${r[0]} <span style="font-weight:400;color:var(--ink2);font-size:14px">· ${r[2]}</span></div><div class="cap" style="margin-top:2px">${r[1]}</div></div></div>`).join("")}
-          <div class="cap" style="margin-top:16px;color:var(--ink)">The board, Graph it and the answer check all still work.</div>`,
-        1346, L.offY + L.rowTop * L.k - 20, "transform:translate(-100%,-100%);width:380px;background:var(--ink);color:#fff;border-radius:28px;padding:24px").querySelectorAll(".cap,.lbl").forEach((e) => (e.style.color = "#BDBDC0"));
+      const card = put(`<div class="lbl" style="margin-bottom:14px">Help me, three taps</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:22px">${rows.map((r, i) => `<div style="display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start">
+            <span style="width:30px;height:30px;border-radius:50%;${i < 2 ? "background:#fff;color:var(--ink)" : "box-shadow:inset 0 0 0 2px #fff"};display:grid;place-items:center;font-size:14px;font-weight:600">${i + 1}</span>
+            <div><div style="font-weight:600;font-size:17px">${r[0]}</div><div class="cap" style="margin-top:2px">${r[2]}. ${r[1]}</div></div></div>`).join("")}</div>
+          <div class="cap" style="margin-top:16px">The board, Graph it and the answer check all still work.</div>`,
+        20, L.offY + L.rowTop * L.k - 20, "transform:translateY(-100%);width:760px;background:var(--ink);color:#fff;border-radius:28px 28px 28px 6px;padding:22px 26px");
+      card.querySelectorAll(".cap,.lbl").forEach((e) => (e.style.color = "#BDBDC0"));
     } },
   f11: { name: "summary", title: "11 · End of the set", cap: "The score, each question as a dot (right) or a ring (missed), and the missed ones going into the mistake deck: back in 1 day, then 3 days. Practice 10 more starts with whatever is due.",
     draw() { screen("land", "var(--ground)");
