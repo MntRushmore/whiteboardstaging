@@ -36,9 +36,15 @@ enum SATAutowriter {
         var line = line
         // `step:k`: the question's own bank step k, its last link (a right step the tutor can tick:
         // the end-to-end run, whatever question the server sent)
-        if line.hasPrefix("step:"), let k = Int(line.dropFirst("step:".count)), let q = model.practice.current,
-           q.solution.steps.indices.contains(k), let math = q.solution.steps[k].math {
-            line = SATSessionModel.handLines(math).last ?? math
+        // — counted among the steps that have maths (a step of words only is no line to write: the
+        // end-to-end run wrote the token itself, "step:0", under a trig question whose first step is words)
+        if line.hasPrefix("step:"), let k = Int(line.dropFirst("step:".count)), let q = model.practice.current {
+            let maths = q.solution.steps.compactMap(\.math)
+            guard maths.indices.contains(k) else {
+                log.error("no step \(k) with maths on this question")
+                return
+            }
+            line = SATSessionModel.handLines(maths[k]).last ?? maths[k]
         }
         if line.hasPrefix("circle:") {
             // `circle:auto`: round the plane's first labelled point

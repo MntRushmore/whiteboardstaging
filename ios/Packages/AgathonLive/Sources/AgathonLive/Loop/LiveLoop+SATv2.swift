@@ -66,6 +66,15 @@ extension LiveLoop {
     public func helpOneStep() -> Bool {
         guard started, settings.enabled, !readLines.isEmpty else { return false }
         if settings.mode != .suggest { settings.mode = .suggest }
+        // a line the engine finds finished (a true sum: `\frac{48-24}{6-2} = 6`, the slope) has no next step of
+        // its own, and Help me said "nothing yet" while the app waited 12 s for the bank's step (the SAT v2
+        // end-to-end run). The question is not finished: the next step comes from the model, which reads the
+        // bank's question (the engine first, as Solve's first step does)
+        if let target = helpTargetLine(), !reading.contains(target.id), target.analysis?.solved == true, !needsLook(target) {
+            noteAsked()
+            startSolve(column: target.column, fromLineId: target.id, lineId: target.id, onlyFirstStep: true)
+            return true
+        }
         helpMe()
         return true
     }

@@ -492,7 +492,14 @@ extension LiveLoop {
                 guard gen == generation, !Task.isCancelled else { return }
                 switch event {
                 case .step(let s):
-                    let latex = SolveSteps.unwrapBoxed(s.latex)
+                    var latex = SolveSteps.unwrapBoxed(s.latex)
+                    // `= \frac{18}{45} = 0.4` under `4 \cdot 60 = 240` (SAT v2 end-to-end run): written there it says
+                    // 240 = 18/45. A step goes on after `=` from an expression or a line ending in `=` (`asks`),
+                    // never from a finished relation
+                    if asks == nil, LiveLoop.continuesWithEquals(latex), let last = built.states.last?.latex,
+                       last.range(of: #"=|<|>|\\(?:le|ge|leq|geq|neq)(?![a-zA-Z])"#, options: .regularExpression) != nil {
+                        latex = LiveLoop.withoutLeadingEquals(latex)
+                    }
                     let key = SolveSteps.key(latex)
                     if key.isEmpty || given.contains(key) || accepted.last.map(SolveSteps.key) == key { continue }
                     let reads = ReadCheck.hasWords(latex) ? false : await engineReads(latex)
@@ -530,6 +537,18 @@ extension LiveLoop {
         } else if !failed && discarded > 0 {
             fail(LiveFailure.other(LiveCopy.Help.solveFailed), kind: "solve", lineId: st.id, retry: .solve(lineId: st.id, onlyFirstStep: onlyFirstStep))
         }
+    }
+
+    /// A step written as the rest of a chain (`= 26x + 50`).
+    nonisolated static func continuesWithEquals(_ latex: String) -> Bool {
+        latex.trimmingCharacters(in: .whitespaces).hasPrefix("=")
+    }
+
+    /// The step on its own: `= \frac{18}{45} = 0.4` → `\frac{18}{45} = 0.4`.
+    nonisolated static func withoutLeadingEquals(_ latex: String) -> String {
+        var t = latex.trimmingCharacters(in: .whitespaces)
+        while t.hasPrefix("=") { t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces) }
+        return t
     }
 
     // MARK: - Auto

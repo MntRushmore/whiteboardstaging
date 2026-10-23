@@ -71,6 +71,13 @@ struct LogicTests {
         #expect(!check(carried, sat: true))
     }
 
+    /// SAT v2 end-to-end run: the model's one step `= \frac{18}{45} = 0.4` under `4 \cdot 60 = 240` is written alone.
+    @Test func aStepUnderAFinishedLineStandsAlone() {
+        #expect(LiveLoop.continuesWithEquals(" = \\frac{18}{45} = 0.4"))
+        #expect(!LiveLoop.continuesWithEquals("\\frac{18}{45} = 0.4"))
+        #expect(LiveLoop.withoutLeadingEquals("= \\frac{18}{45} = 0.4") == "\\frac{18}{45} = 0.4")
+    }
+
     @Test func markKeysAndSpotsMatchTheWeb() {
         let line = BrainRect(x: 100, y: 200, w: 300, h: 60)
         // marks.ts markKey: kind, then the rect in 4 px units (Math.round: halves up)
@@ -120,6 +127,9 @@ struct LogicTests {
         #expect(MathText.plain("\\sqrt{16} = 4") == "√16 = 4")
         #expect(MathText.plain("\\text{Look again at } x = 5") == "Look again at x = 5")
         #expect(MathText.plain("x_{1} = 2") == "x₁ = 2")
+        // a fraction of sums keeps its brackets (SAT v2 end-to-end run: "48 - 24/6 - 2 = 6")
+        #expect(MathText.plain("\\frac{48-24}{6-2}=6") == "(48 - 24)/(6 - 2) = 6")
+        #expect(MathText.plain("\\frac{-3}{4}") == "-3/4")
         // Mathpix's spacing, as a kid writes it
         #expect(MathText.plain("2 x+3=11") == "2x + 3 = 11")
         #expect(MathText.plain("x=-4") == "x = -4")
