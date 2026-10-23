@@ -86,6 +86,17 @@ struct V2FieldsTests {
         let old = try JSONDecoder().decode(SATProgress.self, from: Data(#"{"answered":3,"correct":1}"#.utf8))
         #expect(old.reviewsDue == nil)
         #expect(old.reviewsWaiting == nil)
+        #expect(old.reviewsDueSkills == nil && old.today.correct == nil)
+        // the bank lane's additions (43f8bdd6): right today, the due reviews' skills
+        let more = try JSONDecoder().decode(SATProgress.self, from: Data(#"""
+        {"answered":12,"correct":9,"today":{"answered":12,"correct":9,"tutor_used":8,"cap":20,"unlimited":false},
+         "reviews_due":3,"reviews_waiting":1,"reviews_due_skills":["circles","systems of two linear equations"]}
+        """#.utf8))
+        #expect(more.today.correct == 9)
+        #expect(more.reviewsDueSkills == ["circles", "systems of two linear equations"])
+        let none = try JSONDecoder().decode(SATProgress.self, from: Data(#"{"reviews_due":0,"reviews_due_skills":[],"today":{"correct":"x"}}"#.utf8))
+        #expect(none.reviewsDueSkills == [])
+        #expect(none.today.correct == nil, "a malformed count is none")
     }
 
     /// The hand-filled fixtures: every why on a wrong choice only, no nudge that gives the answer away.

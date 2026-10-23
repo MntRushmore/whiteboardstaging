@@ -134,13 +134,15 @@ final class SATSessionUITests: XCTestCase {
         XCTAssertFalse(element("sat.nudge").exists)
         snap("landscape-04-rung2-one-step")
         tap("sat.helpMe")
-        // rung 3: the walk-through, the Check replaced by its pill
+        // rung 3: the walk-through, the Check replaced by its pill; it picks up from the student's
+        // work (their line is step 1's), and rung 2's "Your turn" goes
         XCTAssertTrue(element("sat.walk.next").waitForExistence(timeout: 5))
         probe("rung 3", timeout: 5)
-        probe("walk 1/3", timeout: 10)
-        snap("landscape-05-rung3-walk")
-        tap("sat.walk.next")
         probe("walk 2/3", timeout: 10)
+        XCTAssertTrue(element("sat.walk.pickup").waitForExistence(timeout: 5))
+        probe("yourTurn no", timeout: 5)
+        XCTAssertFalse(element("sat.walk.caption.1").exists, "step 1 is on the page already")
+        snap("landscape-05-rung3-walk")
         tap("sat.walk.next")
         probe("walk 3/3", timeout: 10)
         tap("sat.walk.next")
@@ -166,6 +168,13 @@ final class SATSessionUITests: XCTestCase {
         probe("calls 0")
         XCTAssertTrue(element("sat.yourTurn").exists)
         snap("landscape-10b-capped-bank-step")
+        // rung 3 leaves out the step rung 2 gave: it starts at step 2
+        tap("sat.helpMe")
+        probe("walk 2/3", timeout: 10)
+        XCTAssertTrue(element("sat.walk.pickup").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("sat.walk.caption.1").exists)
+        probe("yourTurn no", timeout: 5)
+        snap("landscape-10c-capped-walk-picks-up")
         // the capped line's button: the plan (a free account)
         tap("sat.tutor.capped")
     }
@@ -195,12 +204,13 @@ final class SATSessionUITests: XCTestCase {
         openSet()
         for _ in 2...4 { tap("sat.next") }
         waitFor("sat.position", label: "Q4 of 10", timeout: 10)
-        tap("sat.helpMe")
-        XCTAssertTrue(element("sat.nudge").waitForExistence(timeout: 5))
-        tap("sat.helpMe")
-        probe("yourTurn yes", timeout: 15)
-        tap("sat.helpMe")
+        // straight to the walk from a wrong answer's note: from step 1, nothing on the page yet
+        tap("sat.choice.B")
+        tap("sat.check")
+        XCTAssertTrue(element("sat.wrong").waitForExistence(timeout: 5))
+        tap("sat.wrong.walk")
         probe("walk 1/3", timeout: 10)
+        XCTAssertFalse(element("sat.walk.pickup").exists)
         // step 1 finds the slope from the two points: both ringed, the run and the rise drawn and sized
         probe("legs 4", timeout: 10)
         XCTAssertTrue(element("sat.walk.figureLabel").waitForExistence(timeout: 5))
@@ -253,6 +263,9 @@ final class SATSessionUITests: XCTestCase {
         launch(stub: "cap=20,used=8,bank=sample,reviews=2,answered=46")
         tap("home.sat", wait: 40)
         waitFor("sat.home.reviews", label: "2 to review", timeout: 20)
+        // the bank lane's /progress additions: right today, and the deck's cards name the skills
+        XCTAssertTrue(element("sat.home.rightToday").exists)
+        waitFor("sat.home.deck", label: "Linear equations in one variable", timeout: 5)
         snap("landscape-12-home")
         tap("sat.home.practice10")
         waitFor("sat.position", label: "Q1 of 10", timeout: 30)

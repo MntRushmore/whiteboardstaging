@@ -280,6 +280,17 @@ struct HintLadderTests {
         #expect(SATHintLadder.nextBankStep(steps, studentLines: ["x=7"], written: []) == nil)
     }
 
+    @Test func theWalkThroughLeavesOutTheStepsOnThePage() throws {
+        let steps = try #require(SATFixtures.question("algebra-linear-one-var-9001")).solution.steps
+        // nothing written: all three to draw
+        #expect(SATHintLadder.stepsOnThePage(steps, studentLines: [], written: []).isEmpty)
+        // the student wrote step 2's line: steps 1 and 2 are done (step 1 is in it)
+        #expect(SATHintLadder.stepsOnThePage(steps, studentLines: ["2x = 14"], written: []) == [0, 1])
+        // rung 2 gave step 1
+        #expect(SATHintLadder.stepsOnThePage(steps, studentLines: [], written: [0]) == [0])
+        #expect(SATHintLadder.stepsOnThePage(steps, studentLines: ["4x-5=2x+9"], written: [1]) == [0, 1])
+    }
+
     @Test func theWalkthroughGoesStepByStep() {
         var l = SATHintLadder()
         #expect(l.nextWalkStep(count: 3) == 0)

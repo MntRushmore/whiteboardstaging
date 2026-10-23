@@ -165,6 +165,8 @@ public struct SATPageWords: View {
         case caption(number: Int, waiting: Bool)
         /// a size on the figure (the walk-through's rise and run)
         case figureLabel
+        /// the walk-through's first words when it starts after work already on the page
+        case pickup
     }
 
     let kind: Kind
@@ -185,6 +187,12 @@ public struct SATPageWords: View {
                 .foregroundStyle(DS.Color.tutorInk)
                 .fixedSize()
                 .accessibilityIdentifier("sat.yourTurn")
+        case .pickup:
+            Text(text)
+                .font(.custom(DSFonts.uiPostScriptName(weight: 600), fixedSize: 19 * k))
+                .foregroundStyle(DS.Color.tutorInk)
+                .fixedSize()
+                .accessibilityIdentifier("sat.walk.pickup")
         case .figureLabel:
             Text(text)
                 .font(.custom(DSFonts.uiPostScriptName(weight: 600), fixedSize: 26 * k))
