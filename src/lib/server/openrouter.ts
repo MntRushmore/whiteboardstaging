@@ -4,8 +4,10 @@ import { recordEvent } from "@/lib/server/events";
 import { repairJsonEscapes } from "./sse";
 
 /**
- * Text / vision models on OpenRouter for the non-Live routes. The app never calls an
- * image-GENERATION model: AI output is always text/LaTeX the client renders ("read, never paint").
+ * Text / vision models on OpenRouter for the non-Live routes. AI output is text/LaTeX the client
+ * renders ("read, never paint"), with one exception, admins only for now: the picture tutor
+ * (POST /api/board/draw, src/lib/server/boardDraw) calls an image-GENERATION model (its own
+ * BOARD_DRAW_MODELS, through openrouterChat, so with the privacy preferences below).
  */
 export const TEXT_MODELS = {
   fast: "google/gemini-3.5-flash",
