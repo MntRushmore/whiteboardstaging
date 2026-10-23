@@ -168,12 +168,17 @@ extension LiveLoop {
 
     /// "Check as I go": a ring or a "?" never lands on a line still being written (the real-ink bench:
     /// `7^{2} = 4` ringed before its 9, `x = 1` before its 2). They come once it looks finished: the pen
-    /// off it and no new stroke in it for `holdMs` (`PageTiming.doubtHoldMs`). The ms left, nil when it
-    /// looks finished (and always nil when checking when done: lines are held until then).
-    func stillGrowing(_ st: LiveLine, holdMs: Double = PageTiming.doubtHoldMs) -> Double? {
-        guard !checksWhenDone else { return nil }
+    /// off it and no new stroke in it for `doubtHoldMs` (`PageTiming.doubtHoldMs`), or the kid asked
+    /// about it. The ms left, nil when it looks finished (and always nil when checking when done:
+    /// lines are held until then).
+    func stillGrowing(_ st: LiveLine) -> Double? {
+        let holdMs = doubtHoldMs
+        guard !checksWhenDone, holdMs > 0 else { return nil }
+        // the kid asked about this line as it reads now (Help me, Check): they are done with it
+        if askedLines[st.id] == st.latex { return nil }
         if (penDown || board.isPenDown) && penLineId == st.id { return holdMs }
-        let last = st.ink.strokeIds.compactMap { pages.strokeAt[$0] }.max() ?? -.infinity
+        // the kid's own new strokes (a moved line is not one still being written)
+        let last = st.ink.strokeIds.compactMap { lastPenUpAt[$0] }.max() ?? -.infinity
         let age = scheduler.now - last
         return age < holdMs ? holdMs - age : nil
     }

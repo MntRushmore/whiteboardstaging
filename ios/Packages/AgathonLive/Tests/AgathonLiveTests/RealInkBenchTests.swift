@@ -198,6 +198,8 @@ struct RealInkBenchTests {
                             settings: LiveSettings(enabled: true, mode: .feedback, auto: true, handwriting: true, celebrations: false,
                                                    checking: checking, showReadings: true),
                             brain: TestBrain.shared, background: TestBrain.background, scheduler: scheduler, connectivity: ManualConnectivity())
+        // HOLD=0: the tutor without the wait before a ring or a "?" on a line still being written
+        if let hold = ProcessInfo.processInfo.environment["AGATHON_REALINK_HOLD"].flatMap(Double.init) { loop.doubtHoldMs = hold }
         let clock = HeadlessBench.Clock(loop: loop, scheduler: scheduler)
         let written = Written()
         var earlyMarks: [String] = []

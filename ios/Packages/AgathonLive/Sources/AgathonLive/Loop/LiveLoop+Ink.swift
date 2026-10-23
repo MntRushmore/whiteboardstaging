@@ -116,14 +116,35 @@ extension LiveLoop {
         lines.values.first { $0.ink.strokeIds.contains(strokeId) }
     }
 
-    /// A ringed line the kid is still writing (a pause before the last stroke of the 12 read
-    /// `2x = 12` as `2x = 1`): the ring comes off now, not when the line is read again.
+    /// A marked line the kid is still writing (a pause before the last stroke of the 12 read
+    /// `2x = 12` as `2x = 1`, or `x = 1` ticked before its 2): the ring or tick comes off now, not
+    /// when the line is read again — and a ring after that waits for it to look finished.
     func unringGrowingLine(_ ink: BrainRect) {
         for st in lines.values {
-            guard rt[st.id]?.markKey.map({ $0.hasPrefix("circle:") }) == true else { continue }
-            guard MarkSettler.inkExtendsLine(ink, st.bounds) else { continue }
+            guard let key = rt[st.id]?.markKey else { continue }
+            let kind: LiveMarks.Kind? = key.hasPrefix("circle:") ? .circle : key.hasPrefix("check:") ? .check : nil
+            guard let kind, MarkSettler.inkExtendsLine(ink, st.bounds) else { continue }
+            // the clustering has the last word on whether this ink is more of the line (`remarkUnchanged`)
+            rt[st.id, default: LineRuntime()].unrungStrokes = st.ink.strokeIds
+            rt[st.id, default: LineRuntime()].unrungKind = kind
             // (the learning record waits for the read of the whole line: this is no verdict)
             syncMark(st, nil, learn: false)
+        }
+    }
+
+    /// The flush's clustering says which marked lines the new ink really joined: one whose strokes
+    /// are the ones it had when its mark came off (the ink was a line of its own) gets it back; one
+    /// that did grow is read again, and the read marks it.
+    func remarkUnchanged(_ next: [InkLine], force: Set<String>) {
+        for line in next {
+            guard let before = rt[line.id]?.unrungStrokes else { continue }
+            let kind = rt[line.id]?.unrungKind ?? .circle
+            rt[line.id]?.unrungStrokes = nil
+            rt[line.id]?.unrungKind = nil
+            // something marked it again since (a re-render): that mark stands
+            if rt[line.id]?.markKey != nil || force.contains(line.id) || settings.mode == .off { continue }
+            guard Set(before) == Set(line.strokeIds), let st = lines[line.id] else { continue }
+            syncMark(st, kind)
         }
     }
 
@@ -252,6 +273,8 @@ extension LiveLoop {
             lines[line.id] = prev
             if touched { affected.append((ink, same && !forced)) }
         }
+        // a mark taken off for ink that turned out to be a line of its own goes back on
+        remarkUnchanged(next, force: force)
         // where the kid last wrote: Help me acts there
         if let pen = penStrokeId, let line = next.first(where: { $0.strokeIds.contains(pen) }) { penLineId = line.id }
         for (line, moveOnly) in affected { processLine(line, moveOnly: moveOnly) }
