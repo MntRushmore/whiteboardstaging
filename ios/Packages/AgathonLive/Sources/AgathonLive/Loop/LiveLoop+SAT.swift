@@ -37,6 +37,8 @@ extension LiveLoop {
         if !latex.contains("=") { latex = "y = " + latex }
         guard let analysis = try? await brain.analyzeLine(latex, context: AnalyzeContext(mode: .feedback)),
               analysis.kind == "function", let plot = analysis.plot else { return .notAFunction }
+        // an SAT question with a plane: onto it, in its coordinates (SAT v2)
+        if graphOntoQuestion(expr: plot.expr, latex: latex, lineId: nil, source: "typed") { return .graphed }
         let sketch = try? await brain.sketchGraph([latex], explicit: true)
         let id = "typed_\(UUID().uuidString.prefix(8).lowercased())"
         let content = Self.graphContent(sketch, plot: plot, latex: latex, lineId: id)

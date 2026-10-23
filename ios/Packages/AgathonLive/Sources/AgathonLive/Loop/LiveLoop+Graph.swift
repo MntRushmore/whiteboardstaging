@@ -59,6 +59,8 @@ extension LiveLoop {
         withdrawGraphOffer(lineId)
         guard settings.enabled, let st = lines[lineId], st.analysis?.kind == "function", let plot = st.analysis?.plot, !hasGraph(st) else { return }
         let latex = st.latex
+        // an SAT question's page with a plane: the line goes onto the question's own graph
+        if graphOntoQuestion(expr: plot.expr, latex: latex, lineId: lineId, source: "ai") { return }
         let gen = generation
         track { [weak self] in
             guard let self else { return }

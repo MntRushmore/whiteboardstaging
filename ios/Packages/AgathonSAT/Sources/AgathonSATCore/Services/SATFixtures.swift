@@ -13,6 +13,16 @@ public enum SATFixtures {
         return reply.questions
     }()
 
+    /// The bank lane's 20 hand-checked questions with their real v2 notes (docs/sat/sample-20.json on
+    /// feat/sat2-bank): nudges, whys, common wrong answers, Desmos ways. The screenshots' bank
+    /// (`-satStub bank=sample`).
+    public static let sample: [SATQuestion] = {
+        guard let url = Bundle.module.url(forResource: "sat-sample-20", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let list = try? JSONDecoder().decode([Lossy<SATQuestion>].self, from: data) else { return [] }
+        return list.compactMap(\.value)
+    }()
+
     public static func question(_ id: String) -> SATQuestion? {
         questions.first { $0.id == id }
     }

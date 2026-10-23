@@ -25,7 +25,7 @@ let package = Package(
             name: "AgathonSATCore",
             dependencies: [.product(name: "AgathonKit", package: "AgathonKit")],
             path: "Sources/AgathonSATCore",
-            resources: [.copy("Resources/sat-fixtures.json")]
+            resources: [.copy("Resources/sat-fixtures.json"), .copy("Resources/sat-sample-20.json")]
         ),
         .target(
             name: "AgathonSAT",
