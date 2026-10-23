@@ -136,10 +136,11 @@ struct SATSessionTests {
         let c = try #require(model.phase.session?.controller)
         model.windowChanged(CGSize(width: 1366, height: 1024))
         #expect(c.store.screens.first?.rect.h == 1199)
+        // upright: the page sits 17 pt lower (under the top bar), so the window is that much shorter
         model.windowChanged(CGSize(width: 1024, height: 1366))
-        #expect(c.store.screens.first?.rect.h == 2134)
+        #expect(c.store.screens.first?.rect.h == 2107)
         let page = try #require(c.store.screens.first?.problemPage)
-        #expect(abs((page.workBottom ?? 0) - Double(2134 - 172 - 112 - 32)) < 0.01)
+        #expect(abs((page.workBottom ?? 0) - Double(2107 - 172 - 112 - 32)) < 0.01)
     }
 
     @Test func aChoiceOnThePageAndTheWrongAnswersNote() async throws {

@@ -78,3 +78,35 @@ different, is the smallest thing on screen.
 ## Not this round
 
 Pencil gestures, R&W, ACT, timed modules, teacher classes.
+
+## The iPad (board lane, `feat/sat2-board`)
+
+Built to `docs/sat2/DESIGN-NOTES.md` (feat/sat2-design) with the owner's six calls as recommended and
+the 2026-10-23 change: **Help me and Check at the bottom LEFT, the pens at the bottom right.**
+Screens: `docs/sat2/screens/sat2-*.png` (the stubbed UI tests' captures, landscape and portrait).
+
+- **The printed question** (`SATPageLayout` in AgathonSATCore: pure, its numbers pinned in
+  `PageLayoutTests`; `SATPagePrinter` in AgathonSAT): the number in the margin, the stem (680 beside a
+  figure, 1388 alone), the figure at x 880 (≤ 648) or under the stem, the cards (4 × 346, 112 / 132 tall,
+  2 × 2 or one under another for long choices) or the grid-in's field and keypad over the dock's lane.
+  The page is the window's height in page units (taller for a long question or for ink low on it) and
+  is laid out again when the iPad turns; the question never moves. Printed as `PagePrint`
+  (AgathonBoard): drawn in the ink's own tiles under the ink, crisp at every zoom, never a record.
+  Dotted paper is the problem page's template (`ProblemPage.paper = .dots`, `keepOut`, `workBottom`).
+- **The session** (`SATSessionModel` / `SATSessionScreen`): `BoardEditorView(chrome: false)` with a
+  fit-width camera (`CameraConstraints.fitsWidth`), SAT's own top bar and bottom row, taps on the
+  printed cards and keys through invisible targets (`sat.choice.X`, `sat.strike.X`, `sat.key.N`). v1's
+  gate is unchanged: the first ink claims the pass, `sat_question_id` on every live body.
+- **Write on the figure:** a stroke over the figure is tagged `figure: plot|shape` as it is committed
+  (`BoardController.strokeTagger`), never read as a line; the plane's marks are summarised in graph
+  terms (`SATFigureMarks`) and sent as `sat_figure_marks` (≤ 300) beside `sat_question_id`. Graph it and
+  Graph an equation draw onto the question's plane (`LiveLoop.questionPlot`).
+- **The ladder:** rung 1 the bank's nudge (note beside the last line, its footer names the next tap);
+  rung 2 the live Help me (`LiveLoop.helpOneStep`, Next step) when the page has a pass and a read line,
+  else (capped, offline, a 402 `sat_tutor`, nothing read, or nothing written in 12 s) the bank's next
+  step after the last matching line (`SATHintLadder.nextBankStep`) in the tutor's hand
+  (`LiveLoop.writeTutorMath`), then "Your turn: the next line."; rung 3 the walk-through (captions
+  typeset in cobalt, each step's maths in the hand, the walk pill in Check's place).
+- **Debug:** `-satStub cap=…,used=…,bank=sample,reviews=N`, `-satStubRead "a|b"` (the quiet tutor's
+  reads), `-satAutowrite "line|step:0|circle:auto"` (a student's hand through the touch path), `-satLive`
+  (no stubs: the end-to-end run, `SATLiveE2ETests`, skipped without `AGATHON_E2E=1`).
