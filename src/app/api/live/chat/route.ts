@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   const { requestId, token, user, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
-  const billing = await enforceInk({ token, route: "live/chat", requestId, model: models.chat }, log);
+  const billing = await enforceInk({ token, route: "live/chat", requestId, model: models.chat, satQuestionId: ctx.satQuestionId }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   const deadline = startedAt + CHAT_BUDGET_MS;

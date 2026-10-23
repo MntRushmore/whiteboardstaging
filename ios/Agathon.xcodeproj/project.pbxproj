@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0109CEB84F9F6D8D69087838 /* AgathonStore in Frameworks */ = {isa = PBXBuildFile; productRef = 0A88AEAB98272D9FC51B26E0 /* AgathonStore */; };
+		0F4974321B0C9326DBED5994 /* AgathonSAT in Frameworks */ = {isa = PBXBuildFile; productRef = 413047AFB6192C4CD7763619 /* AgathonSAT */; };
 		2E48E6AE82AC7FE028DA3904 /* AgathonKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2EBB9398B5E77B93B1939A1D /* AgathonKit */; };
 		569333189A76680A35C74B67 /* AgathonBoard in Frameworks */ = {isa = PBXBuildFile; productRef = 473BF604BAF84ABCD8CE679D /* AgathonBoard */; };
 		6CC073C52FF8D7A3F808FEFA /* AgathonBrain in Frameworks */ = {isa = PBXBuildFile; productRef = 065FF0609EBF448976CCA0A0 /* AgathonBrain */; };
@@ -49,6 +50,7 @@
 		9D638D0D1FC47406A44F456F /* AgathonStore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonStore; path = Packages/AgathonStore; sourceTree = SOURCE_ROOT; };
 		A46533837B7C9C2DDA13FE58 /* AgathonOnboarding */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonOnboarding; path = Packages/AgathonOnboarding; sourceTree = SOURCE_ROOT; };
 		B01D1E6F2042A25FBFFD6CCE /* AgathonDesign */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonDesign; path = Packages/AgathonDesign; sourceTree = SOURCE_ROOT; };
+		CE983F8DAA96BC98FD85A35F /* AgathonSAT */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonSAT; path = Packages/AgathonSAT; sourceTree = SOURCE_ROOT; };
 		DE349BD35DF38F4B559CC448 /* AgathonLive */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgathonLive; path = Packages/AgathonLive; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -110,6 +112,7 @@
 				0109CEB84F9F6D8D69087838 /* AgathonStore in Frameworks */,
 				C9BEC5E41A4B39FBF7AEFF4E /* AgathonAsk in Frameworks */,
 				EB7573BE79ED12E4BD60CA60 /* AgathonOnboarding in Frameworks */,
+				0F4974321B0C9326DBED5994 /* AgathonSAT in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -127,6 +130,7 @@
 				52F39C285070ACC0A0DDBD65 /* AgathonKit */,
 				DE349BD35DF38F4B559CC448 /* AgathonLive */,
 				A46533837B7C9C2DDA13FE58 /* AgathonOnboarding */,
+				CE983F8DAA96BC98FD85A35F /* AgathonSAT */,
 				9D638D0D1FC47406A44F456F /* AgathonStore */,
 				2F12BF8AD1DEF01F2D9518BA /* AgathonSync */,
 			);
@@ -228,6 +232,7 @@
 				0A88AEAB98272D9FC51B26E0 /* AgathonStore */,
 				B0B4A7F5C5ECA3E081660D3B /* AgathonAsk */,
 				43C1740DD3E8938BA7BABDC9 /* AgathonOnboarding */,
+				413047AFB6192C4CD7763619 /* AgathonSAT */,
 			);
 			productName = Agathon;
 			productReference = 73B45906A59F544D6AB84716 /* Agathon.app */;
@@ -275,6 +280,7 @@
 				F912F11CC2BAD2680486BC66 /* XCLocalSwiftPackageReference "Packages/AgathonKit" */,
 				9106872B2EA9CF9CC1B4BFD8 /* XCLocalSwiftPackageReference "Packages/AgathonLive" */,
 				E21FF80F4B376E5F4DF3CD33 /* XCLocalSwiftPackageReference "Packages/AgathonOnboarding" */,
+				0E9163C51152913E0998AE93 /* XCLocalSwiftPackageReference "Packages/AgathonSAT" */,
 				8A43253F3FEEA7A30D570593 /* XCLocalSwiftPackageReference "Packages/AgathonStore" */,
 				540592564D62EA46FEC0F6C4 /* XCLocalSwiftPackageReference "Packages/AgathonSync" */,
 			);
@@ -637,6 +643,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/AgathonBoardUI;
 		};
+		0E9163C51152913E0998AE93 /* XCLocalSwiftPackageReference "Packages/AgathonSAT" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgathonSAT;
+		};
 		25BC3C21DF73F9281DBC83A2 /* XCLocalSwiftPackageReference "Packages/AgathonAsk" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/AgathonAsk;
@@ -687,6 +697,10 @@
 		2EBB9398B5E77B93B1939A1D /* AgathonKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AgathonKit;
+		};
+		413047AFB6192C4CD7763619 /* AgathonSAT */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgathonSAT;
 		};
 		43C1740DD3E8938BA7BABDC9 /* AgathonOnboarding */ = {
 			isa = XCSwiftPackageProductDependency;

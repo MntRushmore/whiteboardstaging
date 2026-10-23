@@ -69,7 +69,18 @@ describe("requireUser: Auth down is an event, a refused token is not", () => {
 
   it("a good token: the user, no event", async () => {
     fake.getUser = async () => ({ data: { user: { id: "u-1", email: "kid@example.com" } }, error: null });
-    expect(await requireUser(req())).toEqual({ user: { id: "u-1", email: "kid@example.com" }, token: TOKEN });
+    expect(await requireUser(req())).toEqual({ user: { id: "u-1", email: "kid@example.com", anonymous: false }, token: TOKEN });
+    expect(events()).toEqual([]);
+  });
+});
+
+describe("requireUser: an anonymous (SAT-only) session", () => {
+  it("is refused with 403 account_required unless the route opts in", async () => {
+    fake.getUser = async () => ({ data: { user: { id: "u-anon", email: null, is_anonymous: true } }, error: null });
+    const refused = await requireUser(req());
+    expect("response" in refused && refused.response.status).toBe(403);
+    if ("response" in refused) expect(await refused.response.json()).toMatchObject({ error: "forbidden", reason: "account_required" });
+    expect(await requireUser(req(), { allowAnonymous: true })).toEqual({ user: { id: "u-anon", email: null, anonymous: true }, token: TOKEN });
     expect(events()).toEqual([]);
   });
 });

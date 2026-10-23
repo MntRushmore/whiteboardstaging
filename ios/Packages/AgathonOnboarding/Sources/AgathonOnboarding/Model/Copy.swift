@@ -33,6 +33,9 @@ public struct OnboardingCopy: Sendable {
         public let kidBig = "kid"
         public let kidHint = "Here to practice"
         public let signIn = "I have an account. Sign in"
+        /// SAT mode, straight in with no account (docs/SAT-MODE.md, phase 2)
+        public let sat = "I’m studying for the SAT"
+        public let satHint = "Free SAT math practice. No account needed."
     }
     public var hello: Hello { Hello() }
 

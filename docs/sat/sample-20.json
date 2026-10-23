@@ -1,0 +1,1342 @@
+[
+ {
+  "id": "algebra-linear-one-var-0001",
+  "domain": "algebra",
+  "skill": "linear equations in one variable",
+  "difficulty": 1,
+  "format": "mcq",
+  "stem": "If $3x - 7 = 11$, what is the value of $x$?",
+  "figure": null,
+  "choices": [
+   {
+    "key": "A",
+    "text": "$\\frac{4}{3}$"
+   },
+   {
+    "key": "B",
+    "text": "$6$"
+   },
+   {
+    "key": "C",
+    "text": "$18$"
+   },
+   {
+    "key": "D",
+    "text": "$54$"
+   }
+  ],
+  "answer": {
+   "key": "B"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Add 7 to both sides.",
+     "math": "3x = 18"
+    },
+    {
+     "text": "Divide both sides by 3.",
+     "math": "x = 6"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "algebra-linear-one-var-0002",
+  "domain": "algebra",
+  "skill": "linear equations in one variable",
+  "difficulty": 2,
+  "format": "spr",
+  "stem": "$$\\frac{2}{3}(x + 4) = \\frac{1}{2}x + 5$$\n\nWhat value of $x$ satisfies the equation above?",
+  "figure": null,
+  "choices": null,
+  "answer": {
+   "accepted": [
+    "14"
+   ]
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Multiply both sides by 6 to clear the fractions.",
+     "math": "4(x + 4) = 3x + 30"
+    },
+    {
+     "text": "Distribute the 4.",
+     "math": "4x + 16 = 3x + 30"
+    },
+    {
+     "text": "Subtract $3x$ and 16 from both sides.",
+     "math": "x = 14"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "algebra-linear-two-var-0001",
+  "domain": "algebra",
+  "skill": "linear equations in two variables",
+  "difficulty": 1,
+  "format": "mcq",
+  "stem": "A bakery sells muffins for 3 dollars each and scones for 4 dollars each. On Saturday it took in 212 dollars from muffins and scones, and it sold 20 scones. How many muffins did it sell?",
+  "figure": null,
+  "choices": [
+   {
+    "key": "A",
+    "text": "$38$"
+   },
+   {
+    "key": "B",
+    "text": "$44$"
+   },
+   {
+    "key": "C",
+    "text": "$64$"
+   },
+   {
+    "key": "D",
+    "text": "$192$"
+   }
+  ],
+  "answer": {
+   "key": "B"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Write the total: 3 dollars per muffin times $m$ muffins, plus 4 dollars per scone times 20 scones.",
+     "math": "3m + 4 \\cdot 20 = 212"
+    },
+    {
+     "text": "The scones brought in 80 dollars, so subtract 80.",
+     "math": "3m = 132"
+    },
+    {
+     "text": "Divide by 3.",
+     "math": "m = 44"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "algebra-linear-functions-0001",
+  "domain": "algebra",
+  "skill": "linear functions",
+  "difficulty": 2,
+  "format": "mcq",
+  "stem": "The graph of the linear function $f$ passes through the two labelled points shown. What is the value of $f(6)$?",
+  "figure": {
+   "kind": "plot",
+   "x": {
+    "min": -2,
+    "max": 8,
+    "step": 1,
+    "label": "x"
+   },
+   "y": {
+    "min": -4,
+    "max": 10,
+    "step": 1,
+    "label": "y"
+   },
+   "grid": true,
+   "items": [
+    {
+     "type": "function",
+     "expr": "1.5*x-2"
+    },
+    {
+     "type": "point",
+     "at": [
+      0,
+      -2
+     ],
+     "label": "(0, -2)"
+    },
+    {
+     "type": "point",
+     "at": [
+      2,
+      1
+     ],
+     "label": "(2, 1)"
+    }
+   ]
+  },
+  "choices": [
+   {
+    "key": "A",
+    "text": "$2$"
+   },
+   {
+    "key": "B",
+    "text": "$7$"
+   },
+   {
+    "key": "C",
+    "text": "$9$"
+   },
+   {
+    "key": "D",
+    "text": "$11$"
+   }
+  ],
+  "answer": {
+   "key": "B"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Find the slope from $(0, -2)$ to $(2, 1)$.",
+     "math": "m = \\frac{1 - (-2)}{2 - 0} = \\frac{3}{2}"
+    },
+    {
+     "text": "The $y$-intercept is $-2$, so write the function.",
+     "math": "f(x) = \\frac{3}{2}x - 2"
+    },
+    {
+     "text": "Substitute 6.",
+     "math": "f(6) = 9 - 2 = 7"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "algebra-linear-systems-0001",
+  "domain": "algebra",
+  "skill": "systems of two linear equations",
+  "difficulty": 2,
+  "format": "spr",
+  "stem": "$$x + 2y = 11$$\n$$3x - y = 5$$\n\nIf $(x, y)$ is the solution to the system of equations above, what is the value of $x + y$?",
+  "figure": null,
+  "choices": null,
+  "answer": {
+   "accepted": [
+    "7"
+   ]
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Solve the second equation for $y$.",
+     "math": "y = 3x - 5"
+    },
+    {
+     "text": "Substitute into the first equation.",
+     "math": "x + 2(3x - 5) = 11"
+    },
+    {
+     "text": "Simplify and solve.",
+     "math": "7x = 21, x = 3"
+    },
+    {
+     "text": "Find $y$, then add.",
+     "math": "y = 4, x + y = 7"
+    }
+   ],
+   "desmos_tip": "Graph both lines and tap the point where they cross: (3, 4). Then add the coordinates."
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "algebra-linear-inequalities-0001",
+  "domain": "algebra",
+  "skill": "linear inequalities",
+  "difficulty": 2,
+  "format": "spr",
+  "stem": "A delivery van can carry at most 1,250 kilograms, including its driver. The driver weighs 80 kilograms, and each box weighs 35 kilograms. What is the greatest number of boxes the van can carry on one trip with the driver?",
+  "figure": null,
+  "choices": null,
+  "answer": {
+   "accepted": [
+    "33"
+   ]
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Write the weight limit as an inequality, with $b$ boxes.",
+     "math": "35b + 80 \\le 1250"
+    },
+    {
+     "text": "Subtract 80.",
+     "math": "35b \\le 1170"
+    },
+    {
+     "text": "Divide by 35: $\\frac{1170}{35}$ is a little more than 33.4.",
+     "math": "b \\le \\frac{1170}{35}"
+    },
+    {
+     "text": "The number of boxes is a whole number, so round down: 33 boxes.",
+     "math": null
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "advanced_math-equivalent-expressions-0001",
+  "domain": "advanced_math",
+  "skill": "equivalent expressions",
+  "difficulty": 1,
+  "format": "mcq",
+  "stem": "Which expression is equivalent to $(2x + 3)(x - 4)$?",
+  "figure": null,
+  "choices": [
+   {
+    "key": "A",
+    "text": "$2x^2 - 12$"
+   },
+   {
+    "key": "B",
+    "text": "$2x^2 - 11x - 12$"
+   },
+   {
+    "key": "C",
+    "text": "$2x^2 - 5x - 12$"
+   },
+   {
+    "key": "D",
+    "text": "$2x^2 + 5x - 12$"
+   }
+  ],
+  "answer": {
+   "key": "C"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Multiply each term of the first factor by each term of the second.",
+     "math": "2x \\cdot x + 2x(-4) + 3x + 3(-4)"
+    },
+    {
+     "text": "Simplify each product.",
+     "math": "2x^2 - 8x + 3x - 12"
+    },
+    {
+     "text": "Combine the like terms.",
+     "math": "2x^2 - 5x - 12"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "advanced_math-equivalent-expressions-0002",
+  "domain": "advanced_math",
+  "skill": "equivalent expressions",
+  "difficulty": 3,
+  "format": "mcq",
+  "stem": "Which of the following is equivalent to $\\frac{x^2 - 9}{x^2 + 5x + 6}$ for $x > 0$?",
+  "figure": null,
+  "choices": [
+   {
+    "key": "A",
+    "text": "$\\frac{x + 3}{x + 2}$"
+   },
+   {
+    "key": "B",
+    "text": "$\\frac{-3}{5x + 2}$"
+   },
+   {
+    "key": "C",
+    "text": "$\\frac{x - 3}{x + 3}$"
+   },
+   {
+    "key": "D",
+    "text": "$\\frac{x - 3}{x + 2}$"
+   }
+  ],
+  "answer": {
+   "key": "D"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Factor the top as a difference of squares.",
+     "math": "x^2 - 9 = (x - 3)(x + 3)"
+    },
+    {
+     "text": "Factor the bottom.",
+     "math": "x^2 + 5x + 6 = (x + 2)(x + 3)"
+    },
+    {
+     "text": "Cancel the common factor $x + 3$, which is never 0 when $x > 0$.",
+     "math": "\\frac{x - 3}{x + 2}"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "advanced_math-nonlinear-equations-0001",
+  "domain": "advanced_math",
+  "skill": "nonlinear equations and systems",
+  "difficulty": 1,
+  "format": "spr",
+  "stem": "What is the positive solution to the equation $x^2 - 2x - 24 = 0$?",
+  "figure": null,
+  "choices": null,
+  "answer": {
+   "accepted": [
+    "6"
+   ]
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Find two numbers that multiply to $-24$ and add to $-2$: $-6$ and $4$.",
+     "math": null
+    },
+    {
+     "text": "Factor.",
+     "math": "(x - 6)(x + 4) = 0"
+    },
+    {
+     "text": "The solutions are 6 and $-4$; the positive one is 6.",
+     "math": "x = 6"
+    }
+   ],
+   "desmos_tip": "Graph y = x^2 - 2x - 24 and read the x-intercept on the right: 6."
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "advanced_math-nonlinear-equations-0002",
+  "domain": "advanced_math",
+  "skill": "nonlinear equations and systems",
+  "difficulty": 3,
+  "format": "mcq",
+  "stem": "$$y = x^2 - 4x + 7$$\n$$y = 2x - 2$$\n\nHow many distinct real solutions $(x, y)$ does the system of equations above have?",
+  "figure": null,
+  "choices": [
+   {
+    "key": "A",
+    "text": "Zero"
+   },
+   {
+    "key": "B",
+    "text": "Exactly one"
+   },
+   {
+    "key": "C",
+    "text": "Exactly two"
+   },
+   {
+    "key": "D",
+    "text": "Infinitely many"
+   }
+  ],
+  "answer": {
+   "key": "B"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Set the two expressions for $y$ equal.",
+     "math": "x^2 - 4x + 7 = 2x - 2"
+    },
+    {
+     "text": "Move everything to one side.",
+     "math": "x^2 - 6x + 9 = 0"
+    },
+    {
+     "text": "This is a perfect square, so there is only one value of $x$.",
+     "math": "(x - 3)^2 = 0, x = 3"
+    },
+    {
+     "text": "One $x$ gives one point, $(3, 4)$: exactly one solution.",
+     "math": null
+    }
+   ],
+   "desmos_tip": "Graph both equations: the line just touches the parabola at (3, 4), so there is one intersection."
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "advanced_math-nonlinear-functions-0001",
+  "domain": "advanced_math",
+  "skill": "nonlinear functions",
+  "difficulty": 2,
+  "format": "mcq",
+  "stem": "The table shows four values of the exponential function $g$. Which equation defines $g$?",
+  "figure": {
+   "kind": "table",
+   "headers": [
+    "$x$",
+    "$g(x)$"
+   ],
+   "rows": [
+    [
+     "0",
+     "5"
+    ],
+    [
+     "1",
+     "15"
+    ],
+    [
+     "2",
+     "45"
+    ],
+    [
+     "3",
+     "135"
+    ]
+   ]
+  },
+  "choices": [
+   {
+    "key": "A",
+    "text": "$g(x) = 5 \\cdot 3^x$"
+   },
+   {
+    "key": "B",
+    "text": "$g(x) = 3 \\cdot 5^x$"
+   },
+   {
+    "key": "C",
+    "text": "$g(x) = 10x + 5$"
+   },
+   {
+    "key": "D",
+    "text": "$g(x) = 5x^3$"
+   }
+  ],
+  "answer": {
+   "key": "A"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "When $x = 0$, $g(0) = 5$, so the starting value is 5.",
+     "math": null
+    },
+    {
+     "text": "Each time $x$ goes up by 1, the value is multiplied by 3: 15 is 5 times 3, 45 is 15 times 3.",
+     "math": null
+    },
+    {
+     "text": "So $g$ starts at 5 and triples each step.",
+     "math": "g(x) = 5 \\cdot 3^x"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "advanced_math-nonlinear-functions-0002",
+  "domain": "advanced_math",
+  "skill": "nonlinear functions",
+  "difficulty": 3,
+  "format": "spr",
+  "stem": "The graph of the quadratic function $y = f(x)$ is shown. Its vertex is $(1, 9)$ and it crosses the $x$-axis at $(4, 0)$. What is the value of $f(0)$?",
+  "figure": {
+   "kind": "plot",
+   "x": {
+    "min": -3,
+    "max": 6,
+    "step": 1,
+    "label": "x"
+   },
+   "y": {
+    "min": -3,
+    "max": 10,
+    "step": 1,
+    "label": "y"
+   },
+   "grid": true,
+   "items": [
+    {
+     "type": "function",
+     "expr": "9-(x-1)**2"
+    },
+    {
+     "type": "point",
+     "at": [
+      1,
+      9
+     ],
+     "label": "(1, 9)"
+    },
+    {
+     "type": "point",
+     "at": [
+      4,
+      0
+     ],
+     "label": "(4, 0)"
+    }
+   ]
+  },
+  "choices": null,
+  "answer": {
+   "accepted": [
+    "8"
+   ]
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Write $f$ in vertex form.",
+     "math": "f(x) = a(x - 1)^2 + 9"
+    },
+    {
+     "text": "Use the point $(4, 0)$ to find $a$.",
+     "math": "0 = 9a + 9, a = -1"
+    },
+    {
+     "text": "Substitute $x = 0$.",
+     "math": "f(0) = -(0 - 1)^2 + 9 = 8"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "psda-ratios-rates-0001",
+  "domain": "psda",
+  "skill": "ratios, rates, proportions, units",
+  "difficulty": 1,
+  "format": "mcq",
+  "stem": "A printer prints 18 pages in 45 seconds. At this rate, how many pages does it print in 4 minutes?",
+  "figure": null,
+  "choices": [
+   {
+    "key": "A",
+    "text": "$16$"
+   },
+   {
+    "key": "B",
+    "text": "$72$"
+   },
+   {
+    "key": "C",
+    "text": "$96$"
+   },
+   {
+    "key": "D",
+    "text": "$600$"
+   }
+  ],
+  "answer": {
+   "key": "C"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Change 4 minutes to seconds.",
+     "math": "4 \\cdot 60 = 240"
+    },
+    {
+     "text": "Find the rate in pages per second.",
+     "math": "\\frac{18}{45} = 0.4"
+    },
+    {
+     "text": "Multiply the rate by the time.",
+     "math": "0.4 \\cdot 240 = 96"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "psda-percentages-0001",
+  "domain": "psda",
+  "skill": "percentages",
+  "difficulty": 3,
+  "format": "spr",
+  "stem": "The price of a jacket was increased by 20%. Later, the new price was decreased by 25%. The final price is what percent of the original price? (Enter your answer without the percent sign.)",
+  "figure": null,
+  "choices": null,
+  "answer": {
+   "accepted": [
+    "90"
+   ]
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "A 20% increase multiplies the price by 1.2.",
+     "math": null
+    },
+    {
+     "text": "A 25% decrease multiplies the new price by 0.75.",
+     "math": null
+    },
+    {
+     "text": "Multiply the two factors.",
+     "math": "1.2 \\cdot 0.75 = 0.9"
+    },
+    {
+     "text": "The final price is 0.9 of the original, which is 90%.",
+     "math": null
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "psda-one-var-data-0001",
+  "domain": "psda",
+  "skill": "one-variable data (distributions, centre, spread)",
+  "difficulty": 2,
+  "format": "mcq",
+  "stem": "The bar graph shows how many books each of 30 students read over the summer. What is the median number of books read?",
+  "figure": {
+   "kind": "plot",
+   "x": {
+    "min": -1,
+    "max": 5,
+    "step": 1,
+    "label": "Books read"
+   },
+   "y": {
+    "min": 0,
+    "max": 12,
+    "step": 2,
+    "label": "Students"
+   },
+   "grid": true,
+   "items": [
+    {
+     "type": "bar",
+     "x": 0,
+     "height": 2,
+     "label": "0"
+    },
+    {
+     "type": "bar",
+     "x": 1,
+     "height": 10,
+     "label": "1"
+    },
+    {
+     "type": "bar",
+     "x": 2,
+     "height": 7,
+     "label": "2"
+    },
+    {
+     "type": "bar",
+     "x": 3,
+     "height": 6,
+     "label": "3"
+    },
+    {
+     "type": "bar",
+     "x": 4,
+     "height": 5,
+     "label": "4"
+    }
+   ]
+  },
+  "choices": [
+   {
+    "key": "A",
+    "text": "$1$"
+   },
+   {
+    "key": "B",
+    "text": "$2$"
+   },
+   {
+    "key": "C",
+    "text": "$6$"
+   },
+   {
+    "key": "D",
+    "text": "$10$"
+   }
+  ],
+  "answer": {
+   "key": "B"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "With 30 students in order, the median is the average of the 15th and 16th values.",
+     "math": null
+    },
+    {
+     "text": "Count up the bars: 2 students read 0 books, then 10 more read 1 (that makes 12), then 7 more read 2 (that makes 19).",
+     "math": null
+    },
+    {
+     "text": "The 15th and 16th students both read 2 books, so the median is 2.",
+     "math": null
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "psda-probability-0001",
+  "domain": "psda",
+  "skill": "probability",
+  "difficulty": 3,
+  "format": "mcq",
+  "stem": "The table shows the club choices of 60 students in two grades. One of the students who chose Art is picked at random. What is the probability that this student is in 11th grade?",
+  "figure": {
+   "kind": "table",
+   "headers": [
+    "",
+    "Robotics",
+    "Art",
+    "Total"
+   ],
+   "rows": [
+    [
+     "10th grade",
+     "18",
+     "12",
+     "30"
+    ],
+    [
+     "11th grade",
+     "14",
+     "16",
+     "30"
+    ],
+    [
+     "Total",
+     "32",
+     "28",
+     "60"
+    ]
+   ]
+  },
+  "choices": [
+   {
+    "key": "A",
+    "text": "$\\frac{4}{15}$"
+   },
+   {
+    "key": "B",
+    "text": "$\\frac{3}{7}$"
+   },
+   {
+    "key": "C",
+    "text": "$\\frac{8}{15}$"
+   },
+   {
+    "key": "D",
+    "text": "$\\frac{4}{7}$"
+   }
+  ],
+  "answer": {
+   "key": "D"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "Only the students who chose Art count: the Art column total is 28.",
+     "math": null
+    },
+    {
+     "text": "Of those, 16 are in 11th grade.",
+     "math": null
+    },
+    {
+     "text": "Divide and simplify.",
+     "math": "\\frac{16}{28} = \\frac{4}{7}"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "psda-two-var-data-0001",
+  "domain": "psda",
+  "skill": "two-variable data (models, scatterplots)",
+  "difficulty": 2,
+  "format": "mcq",
+  "stem": "The scatterplot shows the hours of practice, $x$, and the test score, $y$, for 10 students, with the line of best fit $y = 4x + 52$. According to the line of best fit, by how many points does the predicted score increase for each additional hour of practice?",
+  "figure": {
+   "kind": "plot",
+   "x": {
+    "min": 0,
+    "max": 11,
+    "step": 1,
+    "label": "Hours of practice"
+   },
+   "y": {
+    "min": 50,
+    "max": 100,
+    "step": 5,
+    "label": "Score"
+   },
+   "grid": true,
+   "items": [
+    {
+     "type": "function",
+     "expr": "4*x+52"
+    },
+    {
+     "type": "point",
+     "at": [
+      1,
+      57
+     ]
+    },
+    {
+     "type": "point",
+     "at": [
+      2,
+      59
+     ]
+    },
+    {
+     "type": "point",
+     "at": [
+      3,
+      63
+     ]
+    },
+    {
+     "type": "point",
+     "at": [
+      4,
+      69
+     ]
+    },
+    {
+     "type": "point",
+     "at": [
+      5,
+      71
+     ]
+    },
+    {
+     "type": "point",
+     "at": [
+      6,
+      77
+     ]
+    },
+    {
+     "type": "point",
+     "at": [
+      7,
+      79
+     ]
+    },
+    {
+     "type": "point",
+     "at": [
+      8,
+      84
+     ]
+    },
+    {
+     "type": "point",
+     "at": [
+      9,
+      89
+     ]
+    },
+    {
+     "type": "point",
+     "at": [
+      10,
+      91
+     ]
+    }
+   ]
+  },
+  "choices": [
+   {
+    "key": "A",
+    "text": "$4$"
+   },
+   {
+    "key": "B",
+    "text": "$9.2$"
+   },
+   {
+    "key": "C",
+    "text": "$40$"
+   },
+   {
+    "key": "D",
+    "text": "$52$"
+   }
+  ],
+  "answer": {
+   "key": "A"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "In $y = 4x + 52$, the slope is the number multiplying $x$.",
+     "math": null
+    },
+    {
+     "text": "The slope is the change in predicted score for each 1-hour increase in $x$: 4 points.",
+     "math": null
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "geometry_trig-area-volume-0001",
+  "domain": "geometry_trig",
+  "skill": "area and volume",
+  "difficulty": 1,
+  "format": "spr",
+  "stem": "In the right triangle shown, the legs have lengths 9 and 12. What is the area of the triangle?",
+  "figure": {
+   "kind": "shape",
+   "items": [
+    {
+     "type": "polygon",
+     "points": [
+      [
+       0,
+       0
+      ],
+      [
+       12,
+       0
+      ],
+      [
+       0,
+       9
+      ]
+     ]
+    },
+    {
+     "type": "right_angle",
+     "at": [
+      0,
+      0
+     ],
+     "dirs": [
+      [
+       1,
+       0
+      ],
+      [
+       0,
+       1
+      ]
+     ]
+    },
+    {
+     "type": "label",
+     "at": [
+      6,
+      -0.8
+     ],
+     "text": "12"
+    },
+    {
+     "type": "label",
+     "at": [
+      -0.8,
+      4.5
+     ],
+     "text": "9"
+    }
+   ]
+  },
+  "choices": null,
+  "answer": {
+   "accepted": [
+    "54"
+   ]
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "The legs of a right triangle are a base and its height.",
+     "math": null
+    },
+    {
+     "text": "Use the triangle area formula.",
+     "math": "\\frac{1}{2} \\cdot 12 \\cdot 9 = 54"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "geometry_trig-lines-angles-triangles-0001",
+  "domain": "geometry_trig",
+  "skill": "lines, angles, triangles",
+  "difficulty": 2,
+  "format": "spr",
+  "stem": "In the figure, side $AB$ of triangle $ABC$ is extended past $B$. The angle at $A$ measures $52^\\circ$, the angle at $C$ measures $71^\\circ$, and the exterior angle at $B$ measures $x^\\circ$. What is the value of $x$?",
+  "figure": {
+   "kind": "shape",
+   "items": [
+    {
+     "type": "polygon",
+     "points": [
+      [
+       0,
+       0
+      ],
+      [
+       8,
+       0
+      ],
+      [
+       4.37,
+       5.59
+      ]
+     ]
+    },
+    {
+     "type": "segment",
+     "from": [
+      8,
+      0
+     ],
+     "to": [
+      10.5,
+      0
+     ]
+    },
+    {
+     "type": "label",
+     "at": [
+      -0.5,
+      -0.4
+     ],
+     "text": "A"
+    },
+    {
+     "type": "label",
+     "at": [
+      8,
+      -0.6
+     ],
+     "text": "B"
+    },
+    {
+     "type": "label",
+     "at": [
+      4.37,
+      6.1
+     ],
+     "text": "C"
+    },
+    {
+     "type": "arc_angle",
+     "at": [
+      0,
+      0
+     ],
+     "from": 0,
+     "to": 52,
+     "label": "$52^\\circ$"
+    },
+    {
+     "type": "arc_angle",
+     "at": [
+      4.37,
+      5.59
+     ],
+     "from": 232,
+     "to": 303,
+     "label": "$71^\\circ$"
+    },
+    {
+     "type": "arc_angle",
+     "at": [
+      8,
+      0
+     ],
+     "from": 0,
+     "to": 123,
+     "label": "$x^\\circ$"
+    }
+   ]
+  },
+  "choices": null,
+  "answer": {
+   "accepted": [
+    "123"
+   ]
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "An exterior angle of a triangle equals the sum of the two interior angles that are not next to it.",
+     "math": null
+    },
+    {
+     "text": "Add the angles at $A$ and $C$.",
+     "math": "x = 52 + 71 = 123"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ },
+ {
+  "id": "geometry_trig-circles-0001",
+  "domain": "geometry_trig",
+  "skill": "circles",
+  "difficulty": 2,
+  "format": "mcq",
+  "stem": "In the circle shown, the centre is $O$, the radius is 6, and $\\angle AOB$ measures $120^\\circ$. What is the length of the minor arc $AB$?",
+  "figure": {
+   "kind": "shape",
+   "items": [
+    {
+     "type": "circle",
+     "center": [
+      0,
+      0
+     ],
+     "r": 6
+    },
+    {
+     "type": "segment",
+     "from": [
+      0,
+      0
+     ],
+     "to": [
+      6,
+      0
+     ]
+    },
+    {
+     "type": "segment",
+     "from": [
+      0,
+      0
+     ],
+     "to": [
+      -3,
+      5.196
+     ]
+    },
+    {
+     "type": "label",
+     "at": [
+      -0.6,
+      -0.5
+     ],
+     "text": "O"
+    },
+    {
+     "type": "label",
+     "at": [
+      6.5,
+      0
+     ],
+     "text": "A"
+    },
+    {
+     "type": "label",
+     "at": [
+      -3.4,
+      5.6
+     ],
+     "text": "B"
+    },
+    {
+     "type": "label",
+     "at": [
+      3,
+      -0.6
+     ],
+     "text": "6"
+    },
+    {
+     "type": "arc_angle",
+     "at": [
+      0,
+      0
+     ],
+     "from": 0,
+     "to": 120,
+     "label": "$120^\\circ$"
+    }
+   ]
+  },
+  "choices": [
+   {
+    "key": "A",
+    "text": "$2\\pi$"
+   },
+   {
+    "key": "B",
+    "text": "$4\\pi$"
+   },
+   {
+    "key": "C",
+    "text": "$6\\pi$"
+   },
+   {
+    "key": "D",
+    "text": "$12\\pi$"
+   }
+  ],
+  "answer": {
+   "key": "B"
+  },
+  "solution": {
+   "steps": [
+    {
+     "text": "The whole circumference is $2\\pi r$.",
+     "math": "2\\pi \\cdot 6 = 12\\pi"
+    },
+    {
+     "text": "The arc is $\\frac{120}{360} = \\frac{1}{3}$ of the circle.",
+     "math": null
+    },
+    {
+     "text": "Take a third of the circumference.",
+     "math": "\\frac{1}{3} \\cdot 12\\pi = 4\\pi"
+    }
+   ],
+   "desmos_tip": null
+  },
+  "status": "live",
+  "version": 1
+ }
+]

@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   const { requestId, token, user, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
-  const billing = await enforceInk({ token, route: "live/proof", requestId, model: models.proof }, log);
+  const billing = await enforceInk({ token, route: "live/proof", requestId, model: models.proof, satQuestionId: ctx.satQuestionId }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(

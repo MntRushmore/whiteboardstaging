@@ -1,7 +1,8 @@
 import type { z } from "zod";
 import type pino from "pino";
 import { logger } from "@/lib/logger";
-import { requireUser, type AuthedUser } from "@/lib/server/auth";
+import { accountRequiredResponse, json, requireUser, type AuthedUser } from "@/lib/server/auth";
+import { SatQuestionIdSchema } from "@/lib/sat/contracts";
 import { checkRateLimitDistributed, rateLimitedResponse, type RateLimitBucket } from "@/lib/server/rate-limit";
 import { PROVIDER_UNAVAILABLE_MESSAGE, parseJsonBody, recordRouteError } from "@/lib/server/request";
 import { refundInk, type RefundInput, type RpcClient } from "@/lib/server/billing";
@@ -40,6 +41,12 @@ export type LiveContext<T> = {
    * give back nothing. False for every other call. See src/lib/server/training.ts.
    */
   training: boolean;
+  /**
+   * SAT mode: the bank question this call is about (`sat_question_id` in the body, sent by the
+   * iPad's SAT pages; docs/SAT-MODE.md), else null. The tutor routes pass it to `enforceInk`, which
+   * then lets a student without Unlimited through only on that question's free pass for today.
+   */
+  satQuestionId: string | null;
 };
 
 /**
@@ -56,10 +63,15 @@ export async function livePreamble<S extends z.ZodTypeAny>(
   const startedAt = Date.now();
   const requestId = crypto.randomUUID();
 
-  const auth = await requireUser(req);
+  // an anonymous (SAT-only) session gets past here, and through below only for an SAT page's call
+  const auth = await requireUser(req, { allowAnonymous: true });
   if ("response" in auth) return { response: withRequestId(auth.response, requestId) };
   const { user, token } = auth;
   const log = liveLogger.child({ requestId, route, userId: user.id });
+  if (user.anonymous && !SAT_LIVE_ROUTES.has(route)) {
+    log.info("anonymous session refused: not one of the SAT tutor's routes");
+    return { response: withRequestId(accountRequiredResponse(), requestId) };
+  }
 
   const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket });
   if (!rl.ok) {
@@ -80,6 +92,20 @@ export async function livePreamble<S extends z.ZodTypeAny>(
     return { response: withRequestId(parsed.response, requestId) };
   }
 
+  // SAT mode's question id, read from the body as sent (the schemas strip what they do not know).
+  // Present but not a bank id: a 400, so a malformed id never falls back to the ordinary rules.
+  const sat = satQuestionIdOf(parsed.raw);
+  if (sat === "invalid") {
+    log.warn("invalid sat_question_id");
+    return { response: withRequestId(json(400, "invalid_request", "sat_question_id must be a SAT question id.", { requestId }), requestId) };
+  }
+  // Without an account, the tutor's routes on an SAT page only (docs/SAT-MODE.md): the rest of Live
+  // (and these routes on any other board) need a real one.
+  if (user.anonymous && sat === null) {
+    log.info("anonymous session refused: not an SAT page's call");
+    return { response: withRequestId(accountRequiredResponse(), requestId) };
+  }
+
   // The flag is read from the body as sent (the schemas strip what they do not know) and trusted
   // only once the gate has checked who sent it.
   let training = false;
@@ -91,7 +117,22 @@ export async function livePreamble<S extends z.ZodTypeAny>(
 
   // a training call's every log line says so (the bindings feed no event: request.ts reads only
   // module, route, requestId and userId from them)
-  return { requestId, user, token, log: training ? log.child({ training: true }) : log, data: parsed.data, startedAt, training };
+  return { requestId, user, token, log: training ? log.child({ training: true }) : log, data: parsed.data, startedAt, training, satQuestionId: sat };
+}
+
+/**
+ * The Live routes an SAT page's tutor calls with `sat_question_id` (each passes it to enforceInk):
+ * the only ones an anonymous session may use.
+ */
+export const SAT_LIVE_ROUTES: ReadonlySet<string> = new Set(["recognize", "reread", "setup", "check", "solve", "ask", "chat", "proof"]);
+
+/** `sat_question_id` from a raw body: the id, null when absent (or JSON null), "invalid" otherwise. */
+export function satQuestionIdOf(raw: unknown): string | null | "invalid" {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const v = (raw as Record<string, unknown>).sat_question_id;
+  if (v === undefined || v === null) return null;
+  const parsed = SatQuestionIdSchema.safeParse(v);
+  return parsed.success ? parsed.data : "invalid";
 }
 
 /**

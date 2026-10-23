@@ -138,6 +138,7 @@ describe("allow-lists", () => {
     // start/step: /start's steps come before the account; it only records an anonymous count.
     // start/ink: static JSON built at build time (STATIC_ROUTES); public example problems only.
     // app/attest/*: App Attest for the iPad app before its account; Apple's chain is the proof.
+    // sat/anon: SAT mode's account-free session; the app's App Attest assertion is the auth (no web path).
     expect([...PUBLIC_ROUTES].sort()).toEqual([
       "src/app/api/admin/gc/route.ts",
       "src/app/api/admin/health/route.ts",
@@ -150,6 +151,7 @@ describe("allow-lists", () => {
       "src/app/api/cron/trial-reminders/route.ts",
       "src/app/api/health/route.ts",
       "src/app/api/report/unsubscribe/route.ts",
+      "src/app/api/sat/anon/route.ts",
       "src/app/api/start/ink/route.ts",
       "src/app/api/start/step/route.ts",
       "src/app/api/try/check/route.ts",
@@ -188,6 +190,13 @@ describe("allow-lists", () => {
 
   it("the iPad app's path: the headers read before the body, the assertion checked on the capped body, before the schema", () => {
     // The real invariants behind the app path (behaviour: src/lib/server/appAttest/__tests__/routes.app.test.ts).
+    // sat/anon is the app path ONLY: no same-origin web path at all
+    const anon = sources.get("src/app/api/sat/anon/route.ts") ?? "";
+    expect(anon.indexOf("appClaimOf(")).toBeGreaterThan(-1);
+    expect(/isSameOrigin/.test(anon), "sat/anon has no web path").toBe(false);
+    expect(anon.indexOf("verifyAppClaim(")).toBeGreaterThan(anon.indexOf("readCapped("));
+    expect(anon.indexOf("verifyAppClaim(")).toBeLessThan(anon.indexOf(".safeParse("));
+    expect(anon.indexOf("signIn(")).toBeGreaterThan(anon.lastIndexOf("checkRateLimit("));
     for (const file of ["src/app/api/try/check/route.ts", "src/app/api/try/help/route.ts", "src/app/api/start/step/route.ts"]) {
       const src = sources.get(file) ?? "";
       expect(src.indexOf("appClaimOf("), file).toBeGreaterThan(-1);

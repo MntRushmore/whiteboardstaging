@@ -33,7 +33,12 @@ export function json(
   return Response.json({ error, message, ...(extra ?? {}) }, { status, headers });
 }
 
-export type AuthedUser = { id: string; email: string | null };
+/**
+ * `anonymous`: a Supabase anonymous session (the JWT's `is_anonymous`), which only SAT mode makes
+ * (POST /api/sat/anon). Such a user may use SAT mode and nothing else (docs/SAT-MODE.md).
+ * requireUser always sets it; absent (a hand-made user in a test) means a real account.
+ */
+export type AuthedUser = { id: string; email: string | null; anonymous?: boolean };
 
 let verifier: SupabaseClient | null = null;
 
@@ -94,6 +99,13 @@ function authUnavailable(req: Request, error: unknown, thrown: boolean): boolean
   return true;
 }
 
+export const ACCOUNT_REQUIRED_MESSAGE = "This needs an account. Without one, SAT practice is what works.";
+
+/** 403 for an anonymous (SAT-only) session on a route that needs a real account. */
+export function accountRequiredResponse(): Response {
+  return json(403, "forbidden", ACCOUNT_REQUIRED_MESSAGE, { reason: "account_required" });
+}
+
 /**
  * Require a signed-in Supabase user. Reads `Authorization: Bearer <access token>`
  * and verifies it against Supabase Auth (`auth.getUser(token)`).
@@ -101,9 +113,15 @@ function authUnavailable(req: Request, error: unknown, thrown: boolean): boolean
  * Returns `{ user, token }` on success (`token` is the verified access token, so
  * callers can act AS the user against Supabase, e.g. `consumeInk`) or
  * `{ response }` (a ready-to-return 401 JSON response) on any failure.
+ *
+ * An ANONYMOUS session (SAT mode without an account) is refused with a 403 `forbidden`
+ * (`reason: "account_required"`) unless the route opts in with `allowAnonymous`: only the SAT
+ * routes and the Live preamble do (which then lets it through only with `sat_question_id`). So
+ * every other route, present and future, needs a real account by default.
  */
 export async function requireUser(
   req: Request,
+  opts: { allowAnonymous?: boolean } = {},
 ): Promise<{ user: AuthedUser; token: string } | { response: Response }> {
   const token = extractBearerToken(req);
   if (!token) return { response: UNAUTHORIZED() };
@@ -126,7 +144,9 @@ export async function requireUser(
     const { data, error } = await client.auth.getUser(token);
     if (error) authUnavailable(req, error, false);
     if (error || !data?.user) return { response: UNAUTHORIZED() };
-    return { user: { id: data.user.id, email: data.user.email ?? null }, token };
+    const anonymous = data.user.is_anonymous === true;
+    if (anonymous && !opts.allowAnonymous) return { response: accountRequiredResponse() };
+    return { user: { id: data.user.id, email: data.user.email ?? null, anonymous }, token };
   } catch (err) {
     authUnavailable(req, err, true);
     return { response: UNAUTHORIZED() };

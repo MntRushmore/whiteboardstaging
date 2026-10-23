@@ -43,11 +43,14 @@ struct HelloScreen: View {
                 HStack(spacing: 20) { cards }
             }
 
+            satChoice(c)
+                .reveal(3)
+
             Button { model.openSignIn(from: .hello) } label: {
                 Text(c.signIn).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }
             .buttonStyle(QuietWrapping())
-            .reveal(3)
+            .reveal(4)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, top)
@@ -55,6 +58,36 @@ struct HelloScreen: View {
         }
         .scrollDisabled(!big)
         .scrollIndicators(.hidden)
+    }
+
+    /// SAT mode (docs/SAT-MODE.md, phase 2): a quieter, grown-up choice under the two cards, straight
+    /// into SAT practice with no account.
+    private func satChoice(_ c: OnboardingCopy.Hello) -> some View {
+        Button { model.chooseSAT() } label: {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(c.sat).dsFont(.button, size: 19).foregroundStyle(DS.Color.ink)
+                    Text(c.satHint).dsFont(.caption, size: 14).foregroundStyle(DS.Color.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                DSIcon(.forward, size: 16)
+                    .foregroundStyle(DS.Color.onInk)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(DS.Color.ink))
+            }
+            .padding(.leading, 24)
+            .padding(.trailing, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: 520, minHeight: 64)
+            .background(Capsule().fill(DS.Color.surface))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(chosen != nil)
+        .accessibilityIdentifier("onboarding.who.sat")
+        .accessibilityLabel(c.sat)
+        .accessibilityHint(c.satHint)
     }
 
     private func whoCard(_ role: OnboardingRole, kind: WhoKind, small: String, big: String, hint: String,
@@ -104,6 +137,16 @@ extension FlowModel {
             try? await Task.sleep(for: FlowRules.autoAdvance)
             advance()
         }
+    }
+
+    /// "I'm studying for the SAT": the first run ends here, into SAT practice with no account.
+    func chooseSAT() {
+        record("start_who", ["role": .string("sat")])
+        OnboardingSound.shared.play(.tap)
+        // the first run is over on this iPad: SAT practice is where it opens now (an under-13 who
+        // later wants an account starts the grown-up's flow again from there)
+        state.finish()
+        onFinish(.sat)
     }
 
     func openSignIn(from step: OnboardingStep) {

@@ -50,6 +50,9 @@ export const PUBLIC_ROUTES = Object.freeze([
   // by id, per-visitor limits, and the check's reads capped per day for everyone (TRY_DAILY_READS).
   "src/app/api/try/check/route.ts",
   "src/app/api/try/help/route.ts",
+  // SAT mode's account-free session: no user JWT exists yet; the iPad's App Attest assertion over the
+  // body is the auth (no web path), limited per IP and per attested key.
+  "src/app/api/sat/anon/route.ts",
   // The new onboarding's anonymous step counts (/start, before the account): the visitor has no
   // account yet. Same-origin only, per-visitor and per-day limits, 2 KB body cap, zod; writes one
   // counted row through the service role and answers 204 with no body.
@@ -84,6 +87,7 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/cron/trial-reminders/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
   "src/app/api/report/unsubscribe/route.ts": "email unsubscribe link; requires an HMAC of the user id under REPORT_LINK_SECRET (else CRON_SECRET); GET only asks, POST only turns the weekly email off",
   "src/app/api/try/check/route.ts": "the try board, for visitors with no account; same-origin only, 1 MB body cap, zod, per-IP and per-day read limits; one Mathpix read, stores nothing",
+  "src/app/api/sat/anon/route.ts": "SAT mode's anonymous session for the iPad app only: App Attest required (no web path), 1 KB body cap, zod, per-IP and per-key limits; makes a Supabase anonymous user that can use SAT mode and nothing else",
   "src/app/api/try/help/route.ts": "the try board's next step, for visitors with no account; same-origin only, 16 KB body cap, zod, per-IP limit; the local engine only, no read, no model",
   "src/app/api/start/step/route.ts": "anonymous onboarding step counts before the account; same-origin only, per-visitor and daily limits, 2 KB body cap, zod; answers 204 with no body",
   "src/app/api/start/ink/route.ts": "static JSON built at build time (force-static, GET only, no request read): the public example problems /start shows in the tutor's hand",
@@ -571,6 +575,58 @@ export const API_ROUTES = Object.freeze([
     limit: "adminConsole",
     body: "none",
     purpose: "The iPad's Training Center (admins only): whether this server takes training calls (no ink) on the five Live routes, and their limits; a 404 means it would charge",
+    status: "active",
+  },
+  {
+    path: "/api/sat/anon",
+    file: "src/app/api/sat/anon/route.ts",
+    methods: ["POST"],
+    auth: "public",
+    limit: "ip:satAnon",
+    body: "zod",
+    // App only: 403 attest_required without the App Attest headers.
+    withoutTokenStatus: [403],
+    purpose: "SAT mode without an account (iPad, App Attest guarded): a Supabase anonymous session -> { access_token, refresh_token, expires_at, user_id }",
+    status: "active",
+  },
+  {
+    path: "/api/sat/next",
+    file: "src/app/api/sat/next/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "satRead",
+    body: "zod",
+    purpose: "SAT mode (iPad): the next questions from our own bank, picked adaptively (unseen first, weak skills up, no repeat within 30 days), answers and solutions included; never charged",
+    status: "active",
+  },
+  {
+    path: "/api/sat/attempts",
+    file: "src/app/api/sat/attempts/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "satAttempt",
+    body: "zod",
+    purpose: "SAT mode (iPad): one checked answer, saved with the student's token; the server decides `correct` from the bank's answer",
+    status: "active",
+  },
+  {
+    path: "/api/sat/tutor",
+    file: "src/app/api/sat/tutor/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "satTutor",
+    body: "zod",
+    purpose: "SAT mode (iPad): take today's free tutor pass for a question (SAT_FREE_TUTOR_PER_DAY, default 5; idempotent per question per day; Unlimited lifts the cap)",
+    status: "active",
+  },
+  {
+    path: "/api/sat/progress",
+    file: "src/app/api/sat/progress/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "satRead",
+    body: "zod",
+    purpose: "SAT mode (iPad): answered/correct by domain and skill, streak, today's free tutor use, and a rough 200-800 estimate band (null below 15 answers)",
     status: "active",
   },
   {

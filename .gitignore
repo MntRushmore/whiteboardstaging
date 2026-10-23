@@ -52,3 +52,6 @@ next-env.d.ts
 
 # A real board export for the admin viewer's dev fixture (?fixture=file): students' work, never commit
 /public/dev-fixtures/
+
+# Swift packages built with `swift test`
+ios/Packages/*/.build/

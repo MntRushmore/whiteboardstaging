@@ -155,7 +155,7 @@ export async function POST(req: Request) {
   // what the tutor knows about the student, read while the ink is checked (never throws)
   const contextPending = loadAskContext(caller).catch(() => EMPTY_ASK_CONTEXT);
 
-  const billing = await enforceInk({ token, route: "live/chat", requestId, model: models.ask }, log);
+  const billing = await enforceInk({ token, route: "live/chat", requestId, model: models.ask, satQuestionId: ctx.satQuestionId }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   // The memory model runs after the response is sent: registered now, inside the request, and handed
