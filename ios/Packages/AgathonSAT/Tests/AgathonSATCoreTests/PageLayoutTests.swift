@@ -289,3 +289,34 @@ struct HintLadderTests {
         #expect(l.nextWalkStep(count: 3) == nil)
     }
 }
+
+/// The wrong-answer note's ring and the walk-through's legs on the figure.
+struct MistakeLineTests {
+    @Test func aWhysMathsIsFound() {
+        #expect(SATMistakeLine.fragments("Subtracted 5 from 9 instead of adding it: 2x = 4.") == ["2x=4"])
+        #expect(SATMistakeLine.fragments("That's what you get if you use the rise, 31 − 19 = 12, as the slope") == ["31-19=12"])
+        #expect(SATMistakeLine.fragments("That's tan A: opposite over adjacent, 6/8.").isEmpty, "no relation, no ring")
+    }
+
+    @Test func theLineThatCarriesItRings() {
+        let why = "That's what you get if you use the rise, 31 − 19 = 12, as the slope and don't divide it by the run."
+        #expect(SATMistakeLine.match(why: why, lines: ["b = 19", "m = 31 - 19 = 12"]) == 1)
+        #expect(SATMistakeLine.match(why: "Subtracted 5 from 9 instead of adding it: 2x = 4.", lines: ["4x - 5 = 2x + 9", "2x = 4", "x = 2"]) == 1)
+        // nothing like it read: no ring
+        #expect(SATMistakeLine.match(why: why, lines: ["b = 19", "m = 6"]) == nil)
+        // two lines carry it: no guessing
+        #expect(SATMistakeLine.match(why: "Got 2x = 4.", lines: ["2x = 4", "2x=4"]) == nil)
+        #expect(SATMistakeLine.match(why: "Swapped rise and run.", lines: ["m = 2"]) == nil)
+    }
+
+    @Test func aSlopeStepGetsItsLegs() throws {
+        let q = try #require(SATFixtures.question("algebra-linear-two-var-9004"))
+        guard case .plot(let plot)? = q.figure else { return }
+        let step = q.solution.steps[0]
+        let pts = try #require(SATWalkFigure.slopePoints(plot, step: step))
+        #expect(pts.0 == SATPoint(0, 4) && pts.1 == SATPoint(2, 0))
+        #expect(SATWalkFigure.legs(pts.0, pts.1) == ("2", "4"))
+        // a step not about the slope draws nothing
+        #expect(SATWalkFigure.slopePoints(plot, step: q.solution.steps[2]) == nil)
+    }
+}

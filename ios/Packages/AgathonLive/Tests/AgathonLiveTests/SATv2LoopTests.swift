@@ -136,4 +136,10 @@ struct SATv2LoopTests {
         tag.satQuestionId = nil
         #expect(tag.fields.isEmpty)
     }
+
+    @Test func anSATPageHasNoActionCorner() {
+        #expect(!LivePages.showsActionCorner(on: ProblemPage(setId: "sat:s:1", index: 1, count: 10, origin: "sat", answer: false)))
+        #expect(LivePages.showsActionCorner(on: ProblemPage(setId: "daily:2026-10-23", index: 1, count: 5, origin: "practice")))
+        #expect(LivePages.showsActionCorner(on: nil))
+    }
 }

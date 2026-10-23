@@ -329,6 +329,27 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         updateDetail()
     }
 
+    /// Scrolls (up or down only, the zoom kept) so `box` (page units) is in view, its bottom above
+    /// `bottomInset` points from the view's bottom (SAT v2: Check brings a tall page's answer row into
+    /// view before it checks).
+    public func reveal(_ box: Box, bottomInset: CGFloat) {
+        guard bounds.height > 0 else { return }
+        let top = box.y * camera.scale + camera.offset.y
+        let bottom = (box.y + box.h) * camera.scale + camera.offset.y
+        let limit = Double(bounds.height - bottomInset)
+        var c = camera
+        if bottom > limit {
+            c.offset.y -= bottom - limit
+        } else if top < constraintsInsets.top {
+            c.offset.y += constraintsInsets.top - top
+        } else {
+            return
+        }
+        camera = constraintsInsets.clamp(c, screen: screenRect, in: bounds.size)
+        applyCamera()
+        updateDetail()
+    }
+
     /// The camera back to the fitted view (SAT v2: the window turned and the pages were laid out again).
     public func refitCamera() {
         refit()

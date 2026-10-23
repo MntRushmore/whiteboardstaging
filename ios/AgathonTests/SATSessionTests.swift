@@ -206,4 +206,47 @@ struct SATSessionTests {
         model.goOnWalk()
         #expect(model.walk == nil, "the last tap turns the pill back into Check")
     }
+
+    @Test func checkBringsATallPagesAnswerRowIntoView() async throws {
+        let (model, _, canvas) = try await session()
+        defer { model.close() }
+        let c = try #require(model.phase.session?.controller)
+        canvas.constraintsInsets = CameraConstraints(top: 0, left: 0, bottom: 0, right: 0, fitsWidth: true)
+        model.windowChanged(CGSize(width: 800, height: 834))
+        // work low on the page: the page grows past the window, its row below the fold
+        let screen = c.currentScreenID
+        c.store.put(.stroke(StrokeRecord(screen: screen, order: c.store.nextOrder(on: screen), author: .kid, color: .black, width: 2.9,
+                                         pressure: .simulated, x: 200, y: 1700, points: [AgathonBoard.InkPoint(x: 0, y: 0), AgathonBoard.InkPoint(x: 40, y: 10)], start: 0)),
+                    origin: .kid)
+        model.relayout()
+        let layout = try #require(model.layoutHere)
+        #expect(layout.pageHeight > 1800)
+        canvas.refitCamera()
+        #expect(canvas.camera.offset.y == 0, "the top of the page")
+        let rowBottom = { (layout.rowTop + layout.rowHeight) * canvas.camera.scale + canvas.camera.offset.y }
+        #expect(rowBottom() > 834)
+        model.tapCard("C", strike: false)
+        model.check()
+        #expect(rowBottom() <= 834 - Double(SATChromeSize.lane) + 0.5, "the row in view, over the dock's lane")
+        #expect(model.solutionOpen)
+    }
+
+    @Test func aTapPutsTheNudgeAwayAndTheWalkDrawsOnThePlane() async throws {
+        let (model, _, _) = try await session(cap: 20, used: 20)
+        defer { model.close() }
+        model.show(3)
+        model.helpMe()
+        #expect(model.nudge != nil)
+        model.dismissNudge()
+        #expect(model.nudge == nil)
+        model.startWalk(3)
+        let c = try #require(model.phase.session?.controller)
+        let legs = c.store.drawables(on: c.currentScreenID).filter { $0.meta["satLegs"] != nil }
+        #expect(legs.count == 4, "two rings, the run and the rise")
+        #expect(model.words.contains { $0.kind == .figureLabel && $0.text == "2" })
+        #expect(model.words.contains { $0.kind == .figureLabel && $0.text == "4" })
+        // once a walk
+        model.goOnWalk()
+        #expect(c.store.drawables(on: c.currentScreenID).filter { $0.meta["satLegs"] != nil }.count == 4)
+    }
 }

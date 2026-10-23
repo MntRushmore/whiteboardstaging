@@ -475,6 +475,7 @@ final class SATSessionModel: ObservableObject {
             }
             if inked {
                 firstInk(on: screen)
+                ladderCard = false
                 // the student writes again: the nudge and "Your turn" have done their job
                 nudge = nil
                 words.removeAll { $0.screen == screen && $0.kind == .yourTurn }
@@ -583,6 +584,10 @@ final class SATSessionModel: ObservableObject {
     func check() {
         noteUse()
         if let loop = tutor?.loop { callsAtShow[practice.index] = Self.calls(loop) }
+        // a tall page scrolled up: the answer row comes into view first
+        if let layout = layoutHere {
+            canvas?.reveal(Box(x: 0, y: layout.rowTop, w: Box.screen.w, h: layout.rowHeight), bottomInset: SATChromeSize.lane)
+        }
         let result = practice.check()
         gridInActive = false
         switch result {
@@ -592,6 +597,7 @@ final class SATSessionModel: ObservableObject {
             if tutorOnHere { tutor?.loop.checkPage() }
         case .lookAgain:
             walk = nil
+            ringMistake()
         case .notReady(let why):
             notice = why?.words ?? SATCopy.chooseFirst
         case .locked:
@@ -607,7 +613,69 @@ final class SATSessionModel: ObservableObject {
 
     func tryAgain() {
         practice.tryAgain()
+        removeRings()
         answersChanged()
+    }
+
+    // MARK: - the wrong answer's ring
+
+    /// The line the note's mistake was made on, ringed in the tutor's ink: only when a read line
+    /// clearly carries the `why`'s maths (`SATMistakeLine`); otherwise no ring.
+    func ringMistake() {
+        guard let why = practice.item.wrongNote?.why, let screen = phase.session?.controller.currentScreenID,
+              let read = tutor?.loop.readLines, let k = SATMistakeLine.match(why: why, lines: read.map(\.latex)) else { return }
+        let b = read[k].bounds
+        drawLoop(around: Box(x: b.x - 34, y: b.y - 14, w: b.w + 68, h: b.h + 28), on: screen, meta: [Self.ringMeta: true])
+    }
+
+    static let ringMeta = "satRing"
+
+    /// The note closed: its ring goes.
+    func removeRings() {
+        guard let store = phase.session?.controller.store, let screen = phase.session?.controller.currentScreenID else { return }
+        let rings = store.drawables(on: screen).filter { $0.meta[Self.ringMeta] != nil }.map(\.id)
+        if !rings.isEmpty { store.remove(rings, origin: .tutor) }
+    }
+
+    /// A loop of a little more than one turn round `box` (page units), in the tutor's ink: its ring.
+    private func drawLoop(around box: Box, on screen: RecordID, meta extra: Meta) {
+        guard let store = phase.session?.controller.store else { return }
+        let cx = box.x + box.w / 2, cy = box.y + box.h / 2, rx = box.w / 2, ry = box.h / 2
+        let n = 60
+        let pts = (0...n).map { i -> (Double, Double) in
+            let t = Double(i) / Double(n) * 2.15 * .pi - 0.5
+            let wobble = 1 + 0.03 * sin(t * 3)
+            return (cx + rx * wobble * cos(t), cy + ry * wobble * sin(t))
+        }
+        tutorStroke(pts, on: screen, store: store, meta: extra)
+    }
+
+    private func tutorStroke(_ pts: [(Double, Double)], on screen: RecordID, store: BoardStore, meta extra: Meta) {
+        guard let first = pts.first else { return }
+        var meta: Meta = ["live": true, "source": "sat", "createdAt": .number((Date().timeIntervalSince1970 * 1000).rounded())]
+        meta.merge(extra) { _, new in new }
+        let points = pts.map { AgathonBoard.InkPoint(x: $0.0 - first.0, y: $0.1 - first.1, pressure: 0.5) }
+        store.put(.stroke(StrokeRecord(screen: screen, order: store.nextOrder(on: screen), author: .tutor, color: .tutor, width: QuestionPlot.inkWidth,
+                                       pressure: .simulated, x: first.0, y: first.1, points: points, meta: meta)), origin: .tutor)
+    }
+
+    // MARK: - the walk-through on the figure
+
+    /// A slope step of the walk-through drawn on the question's plane too: the two points ringed, the
+    /// run and the rise as cobalt legs, their sizes beside them (once a walk).
+    private func drawLegs(_ i: Int, step: SATSolution.Step, on screen: RecordID) {
+        guard case .plot(let plot)? = practice.questions[i].figure, let plane = questionPlot(on: screen),
+              let (a, b) = SATWalkFigure.slopePoints(plot, step: step), let store = phase.session?.controller.store,
+              !store.drawables(on: screen).contains(where: { $0.meta["satLegs"] != nil }) else { return }
+        let pa = plane.page(a.x, a.y), pb = plane.page(b.x, b.y), corner = plane.page(b.x, a.y)
+        for p in [pa, pb] { drawLoop(around: Box(x: p.x - 22, y: p.y - 18, w: 44, h: 36), on: screen, meta: ["satLegs": true]) }
+        tutorStroke([(pa.x, pa.y), (corner.x, corner.y)], on: screen, store: store, meta: ["satLegs": true])
+        tutorStroke([(corner.x, corner.y), (pb.x, pb.y)], on: screen, store: store, meta: ["satLegs": true])
+        let legs = SATWalkFigure.legs(a, b)
+        let runAt = Vec2((pa.x + corner.x) / 2 - 8, max(pa.y, corner.y) + 14)
+        let riseAt = Vec2(corner.x + 14, (corner.y + pb.y) / 2 - 16)
+        words.append(PageWords(id: "walk:\(i):run", screen: screen, kind: .figureLabel, text: legs.run, at: runAt))
+        words.append(PageWords(id: "walk:\(i):rise", screen: screen, kind: .figureLabel, text: legs.rise, at: riseAt))
     }
 
     /// After a check for good: the next question, or the set's results.
@@ -664,6 +732,11 @@ final class SATSessionModel: ObservableObject {
         let x0 = row.map(\.x).min() ?? lowest.x, x1 = row.map { $0.x + $0.w }.max() ?? lowest.x + lowest.w
         let y0 = row.map(\.y).min() ?? lowest.y, y1 = row.map { $0.y + $0.h }.max() ?? lowest.y + lowest.h
         return Box(x: x0, y: y0, w: x1 - x0, h: y1 - y0)
+    }
+
+    /// A tap on the nudge: it goes.
+    func dismissNudge() {
+        nudge = nil
     }
 
     /// Rung 1: the bank's nudge beside the student's last line (under it when there is no room
@@ -839,6 +912,7 @@ final class SATSessionModel: ObservableObject {
         let caption = w.cursor
         words.removeAll { $0.id == "walk:\(w.question):waiting" }
         words.append(PageWords(id: "walk:\(w.question):\(k)", screen: w.screen, kind: .caption(number: k + 1, waiting: false), text: step.text, at: caption))
+        drawLegs(w.question, step: step, on: w.screen)
         w.shown = k + 1
         var next = Vec2(caption.x, caption.y + 58)
         let i = w.question
@@ -1047,9 +1121,12 @@ final class SATSessionModel: ObservableObject {
             if case .mark(let m) = r { return m.screen == s && m.kind == .tick } else { return false }
         }.count ?? 0 } ?? 0
         let plot: String = { if case .plot? = practice.current?.figure { return "yes" } else { return "no" } }()
+        let here2 = screen.map { s in phase.session?.controller.store.drawables(on: s) ?? [] } ?? []
+        let rings = here2.filter { $0.meta[Self.ringMeta] != nil }.count
+        let legs = here2.filter { $0.meta["satLegs"] != nil }.count
         return "q \(practice.index + 1) tutor \(state) live \(live) passes \(passes) attempts \(attempts) calls \(quiet?.calls ?? -1) tag \(tag.satQuestionId ?? "-") "
             + "rung \(rung) words \(here.count) yourTurn \(here.contains { $0.kind == .yourTurn } ? "yes" : "no") walk \(walk.map { "\($0.shown)/\($0.count)" } ?? "-") "
-            + "tutorInk \(tutorInk) marks \(figureMarks ?? "-") page \(page) step \(lastStepSource) read \(tutor?.loop.readLines.count ?? 0) fig \(screen.map { kidStrokes(on: $0, figure: true).count } ?? -1)/\(screen.map { kidStrokes(on: $0).count } ?? -1) ticks \(ticks) plot \(plot) scale \(scale)"
+            + "tutorInk \(tutorInk) marks \(figureMarks ?? "-") page \(page) step \(lastStepSource) read \(tutor?.loop.readLines.count ?? 0) fig \(screen.map { kidStrokes(on: $0, figure: true).count } ?? -1)/\(screen.map { kidStrokes(on: $0).count } ?? -1) ticks \(ticks) plot \(plot) scale \(scale) rings \(rings) legs \(legs) nudge \(nudge == nil ? "no" : "yes")"
     }
     #endif
 }

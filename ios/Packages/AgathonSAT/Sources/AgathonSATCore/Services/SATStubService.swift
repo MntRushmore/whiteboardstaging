@@ -114,7 +114,8 @@ public final class SATStubService: SATService, @unchecked Sendable {
             for id in order {
                 guard let a = firsts[id] else { continue }
                 if a.correct { right += 1 }
-                let q = byId[id]
+                // (a history's repeat of a question carries a suffix: `…-0001-25`)
+                let q = byId[id] ?? byId[id.replacingOccurrences(of: #"(-\d{4})-\d+$"#, with: "$1", options: .regularExpression)]
                 let domain = q?.domain ?? SATFixtures.domain(ofId: id)
                 if let domain {
                     var c = domains[domain] ?? SATProgress.Count(answered: 0, correct: 0)

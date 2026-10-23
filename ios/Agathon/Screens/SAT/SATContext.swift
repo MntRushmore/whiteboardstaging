@@ -190,8 +190,11 @@ enum SATDebug {
         // a student with history: the progress card and the estimate band
         if let n = Int(opts["answered"] ?? ""), n > 0 {
             stub.history = (0..<n).map { i in
-                let q = SATFixtures.questions[i % SATFixtures.questions.count]
-                return SATAttempt(questionId: q.id + (i >= SATFixtures.questions.count ? "-\(i)" : ""), chosen: "A", correct: i % 3 != 0, seconds: 60, usedTutor: false)
+                let q = bank[i % bank.count]
+                // (every fifth skill's answers mostly missed: the skills a student would see flagged)
+                let weak = (i % bank.count) % 5 == 3
+                return SATAttempt(questionId: q.id + (i >= bank.count ? "-\(i)" : ""), chosen: "A", correct: weak ? i % 4 == 0 : i % 3 != 0,
+                                  seconds: 60, usedTutor: false)
             }
         }
         let account = SATAccount(rawValue: value("-satAccount") ?? "") ?? .free

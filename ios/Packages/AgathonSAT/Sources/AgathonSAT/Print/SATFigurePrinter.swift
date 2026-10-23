@@ -43,6 +43,40 @@ struct SATFigurePrinter {
         return laid.items(at: origin)
     }
 
+    /// A label placed at the first spot of `spots` (an anchor point and where on the label it sits)
+    /// whose box clears `avoid` (the tick numbers, the axes, labels already placed) and the plane's
+    /// lines (`line`), inside `within`; the first spot when none does. Its box joins `avoid`.
+    func placed(_ source: String, size: Double, weight: SATTextWeight, spots: [(at: CGPoint, anchor: CGPoint)], avoid: inout [CGRect],
+                line: [CGPoint], within: CGRect) -> [PagePrint.Item] {
+        let laid = text.lay(source, size: size, weight: weight, maxWidth: .infinity, color: SATPrintStyle.ink)
+        func box(_ spot: (at: CGPoint, anchor: CGPoint)) -> CGRect {
+            CGRect(x: spot.at.x - spot.anchor.x * laid.size.w, y: spot.at.y - spot.anchor.y * laid.size.h, width: laid.size.w, height: laid.size.h)
+        }
+        let free = spots.first { spot in
+            let b = box(spot)
+            let pad = b.insetBy(dx: -3, dy: -3)
+            return within.contains(b) && !avoid.contains { $0.intersects(pad) } && !line.contains { pad.contains($0) }
+        } ?? spots[0]
+        let b = box(free)
+        avoid.append(b)
+        return laid.items(at: b.origin)
+    }
+
+    /// The eight spots round a point, `first` tried first (then the corners, then the sides).
+    static func spots(round c: CGPoint, first: Int, gap: CGFloat = 12) -> [(at: CGPoint, anchor: CGPoint)] {
+        let all: [(at: CGPoint, anchor: CGPoint)] = [
+            (CGPoint(x: c.x - gap, y: c.y - gap), CGPoint(x: 1, y: 1)), // above left
+            (CGPoint(x: c.x + gap, y: c.y - gap), CGPoint(x: 0, y: 1)), // above right
+            (CGPoint(x: c.x + gap, y: c.y + gap), CGPoint(x: 0, y: 0)), // below right
+            (CGPoint(x: c.x - gap, y: c.y + gap), CGPoint(x: 1, y: 0)), // below left
+            (CGPoint(x: c.x, y: c.y - gap - 4), CGPoint(x: 0.5, y: 1)), // above
+            (CGPoint(x: c.x + gap + 4, y: c.y), CGPoint(x: 0, y: 0.5)), // right
+            (CGPoint(x: c.x, y: c.y + gap + 4), CGPoint(x: 0.5, y: 0)), // below
+            (CGPoint(x: c.x - gap - 4, y: c.y), CGPoint(x: 1, y: 0.5)), // left
+        ]
+        return [all[first]] + all.enumerated().filter { $0.offset != first }.map(\.element)
+    }
+
     // MARK: - table
 
     func table(_ t: SATTable, in rect: CGRect) -> [PagePrint.Item] {
@@ -112,7 +146,15 @@ struct SATFigurePrinter {
         axes.addLine(to: p(axisX, plot.y.max))
         items.append(.stroke(axes, S.ink, width: Self.axis, dash: []))
 
-        // tick numbers: every tick, or every other one when they would crowd
+        // tick numbers: every tick, or every other one when they would crowd; each one's box is kept,
+        // so a point's label never lands on a number (the label-vs-tick rule)
+        var avoid: [CGRect] = []
+        func tickLabel(_ s: String, at: CGPoint, anchor: CGPoint) -> [PagePrint.Item] {
+            let laid = text.lay(s, size: Self.tickSize, maxWidth: .infinity, color: S.inkSecondary)
+            let o = CGPoint(x: at.x - anchor.x * laid.size.w, y: at.y - anchor.y * laid.size.h)
+            avoid.append(CGRect(origin: o, size: CGSize(width: laid.size.w, height: laid.size.h)))
+            return laid.items(at: o)
+        }
         func every(_ ticks: [Double], span: CGFloat) -> Int { ticks.count > 1 && span / CGFloat(ticks.count - 1) < 40 ? 2 : 1 }
         let origin = axisX == 0 && axisY == 0 && !plot.isBarChart
         if !plot.isBarChart {
@@ -120,19 +162,41 @@ struct SATFigurePrinter {
             let kx = every(xs, span: rect.width)
             for (i, t) in xs.enumerated() where i % kx == 0 && !(t == 0 && origin) {
                 let at = p(t, axisY)
-                items += label(Self.tick(t), size: Self.tickSize, at: CGPoint(x: at.x, y: at.y + 10), anchor: CGPoint(x: 0.5, y: 0), color: S.inkSecondary)
+                items += tickLabel(Self.tick(t), at: CGPoint(x: at.x, y: at.y + 10), anchor: CGPoint(x: 0.5, y: 0))
             }
         }
         let ys = plot.y.ticks
         let ky = every(ys, span: rect.height)
         for (i, t) in ys.enumerated() where i % ky == 0 && !(t == 0 && origin) {
             let at = p(axisX, t)
-            items += label(Self.tick(t), size: Self.tickSize, at: CGPoint(x: at.x - 12, y: at.y), anchor: CGPoint(x: 1, y: 0.5), color: S.inkSecondary)
+            items += tickLabel(Self.tick(t), at: CGPoint(x: at.x - 12, y: at.y), anchor: CGPoint(x: 1, y: 0.5))
         }
         if origin {
             let o = p(0, 0)
-            items += label("0", size: Self.tickSize, at: CGPoint(x: o.x - 8, y: o.y + 8), anchor: CGPoint(x: 1, y: 0), color: S.inkSecondary)
+            items += tickLabel("0", at: CGPoint(x: o.x - 8, y: o.y + 8), anchor: CGPoint(x: 1, y: 0))
         }
+        // the axes as thin boxes, and the plane's lines as points, for the labels to keep off
+        let xa = p(plot.x.min, axisY), xb = p(plot.x.max, axisY), ya = p(axisX, plot.y.max), yb = p(axisX, plot.y.min)
+        avoid.append(CGRect(x: xa.x, y: xa.y - 1.5, width: xb.x - xa.x, height: 3))
+        avoid.append(CGRect(x: ya.x - 1.5, y: ya.y, width: 3, height: yb.y - ya.y))
+        var linePoints: [CGPoint] = []
+        for item in plot.items {
+            switch item {
+            case .function(let expr, _, _, let domain):
+                guard let f = SATExpression(expr) else { continue }
+                let lo = max(plot.x.min, domain?.first ?? plot.x.min), hi = min(plot.x.max, domain?.last ?? plot.x.max)
+                guard hi > lo else { continue }
+                for i in 0...300 {
+                    let x = lo + (hi - lo) * Double(i) / 300
+                    let y = f(x)
+                    if y.isFinite, (plot.y.min...plot.y.max).contains(y) { linePoints.append(p(x, y)) }
+                }
+            case .segment(let a, let b, _, _):
+                for i in 0...60 { linePoints.append(p(a.x + (b.x - a.x) * Double(i) / 60, a.y + (b.y - a.y) * Double(i) / 60)) }
+            default: continue
+            }
+        }
+        let labelArea = rect.insetBy(dx: -88, dy: -24)
         // axis names: a one-letter name (a variable) at the axis's end; a word under the x axis's
         // ticks, and turned up the left of the y axis's
         if let name = plot.x.label, !name.isEmpty {
@@ -204,16 +268,13 @@ struct SATFigurePrinter {
                     over.append(.fill(dot, S.ink))
                 }
                 if let lbl, !lbl.isEmpty {
-                    // to the side the line isn't on; a point on the y axis: left of the axis, under it
-                    // (a line that runs on left of the axis takes the free side like any point)
-                    if at.x == axisX && (plot.x.min >= axisX || !plot.items.contains { if case .function = $0 { return true } else { return false } }) {
-                        over += label(lbl, size: Self.pointLabelSize, at: CGPoint(x: c.x - 10, y: c.y + 14), anchor: CGPoint(x: 1, y: 0), weight: .semibold)
-                    } else {
-                        // the free corner above the point: left of a rising line, right of a falling one
-                        let rising = Self.lineBelow(plot, at)
-                        over += label(lbl, size: Self.pointLabelSize, at: CGPoint(x: rising ? c.x - 10 : c.x + 12, y: c.y - 12),
-                                      anchor: CGPoint(x: rising ? 1 : 0, y: 1), weight: .semibold)
-                    }
+                    // the side the line isn't on first (a point on the y axis with no line left of it:
+                    // left of the axis, under the point), then any spot clear of the numbers, the axes
+                    // and the lines
+                    let lineLeft = plot.x.min < axisX && plot.items.contains { if case .function = $0 { return true } else { return false } }
+                    let first = at.x == axisX && !lineLeft ? 3 : (Self.lineBelow(plot, at) ? 0 : 1)
+                    over += placed(lbl, size: Self.pointLabelSize, weight: .semibold, spots: Self.spots(round: c, first: first), avoid: &avoid,
+                                   line: linePoints, within: labelArea)
                 }
             case .bar(let x, let height, let lbl, let width):
                 let w = width ?? min(0.6, plot.x.step * 0.6)

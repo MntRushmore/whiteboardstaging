@@ -163,6 +163,8 @@ public struct SATPageWords: View {
     public enum Kind: Equatable {
         case yourTurn
         case caption(number: Int, waiting: Bool)
+        /// a size on the figure (the walk-through's rise and run)
+        case figureLabel
     }
 
     let kind: Kind
@@ -183,6 +185,12 @@ public struct SATPageWords: View {
                 .foregroundStyle(DS.Color.tutorInk)
                 .fixedSize()
                 .accessibilityIdentifier("sat.yourTurn")
+        case .figureLabel:
+            Text(text)
+                .font(.custom(DSFonts.uiPostScriptName(weight: 600), fixedSize: 26 * k))
+                .foregroundStyle(DS.Color.tutorInk)
+                .fixedSize()
+                .accessibilityIdentifier("sat.walk.figureLabel")
         case .caption(let n, let waiting):
             HStack(spacing: 12 * k) {
                 Text("\(n)")
