@@ -1,0 +1,52 @@
+{
+ "at": "2026-10-23",
+ "how": "25 live generated questions drawn with a fixed seed (18 mcq with whys, 7 spr with common_wrong); every kept note worked by hand: each why/common_wrong recomputed from the question by following the stated slip, each nudge read for leaks, each Desmos way traced",
+ "checked": {
+  "questions": 25,
+  "nudges": 24,
+  "whys": 49,
+  "common_wrong": 12,
+  "desmos_steps": 4
+ },
+ "found": {
+  "wrong": [
+   "algebra-linear-one-var-0110 common_wrong 16: not a real slip (dropped)"
+  ],
+  "wording": [
+   "psda-two-var-data-0115 desmos_steps step 1 (fixed)"
+  ],
+  "weak_but_correct": [
+   "psda-two-var-data-0115 why B: the arithmetic lands on 21 but \"instead of solving\" is loose"
+  ],
+  "bank": [
+   "advanced_math-equivalent-expressions-0156 and -0161 are the same question (5300(1.21)^(x/2)) in two contexts: a v1 near-duplicate the dedupe missed"
+  ]
+ },
+ "ids": [
+  "psda-two-var-data-0115",
+  "psda-two-var-data-0114",
+  "advanced_math-nonlinear-equations-0138",
+  "algebra-linear-two-var-0110",
+  "algebra-linear-two-var-0128",
+  "advanced_math-equivalent-expressions-0161",
+  "advanced_math-nonlinear-equations-0120",
+  "algebra-linear-one-var-0120",
+  "algebra-linear-inequalities-0127",
+  "algebra-linear-functions-0147",
+  "algebra-linear-one-var-0109",
+  "algebra-linear-functions-0140",
+  "algebra-linear-systems-0139",
+  "algebra-linear-inequalities-0133",
+  "algebra-linear-functions-0146",
+  "advanced_math-nonlinear-equations-0112",
+  "advanced_math-equivalent-expressions-0156",
+  "algebra-linear-inequalities-0109",
+  "algebra-linear-one-var-0110",
+  "algebra-linear-systems-0114",
+  "algebra-linear-functions-0144",
+  "advanced_math-equivalent-expressions-0104",
+  "advanced_math-nonlinear-equations-0130",
+  "psda-probability-0105",
+  "algebra-linear-one-var-0129"
+ ]
+}

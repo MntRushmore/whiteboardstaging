@@ -14163,10 +14163,6 @@
    {
     "answer": "14",
     "why": "Stopped at $e-1=14$ and forgot to add 1 back: $154/11$."
-   },
-   {
-    "answer": "16",
-    "why": "Added 1 twice, using $e=154/11+1+1$."
    }
   ]
  },
@@ -23431,11 +23427,11 @@
    "desmos_tip": "Graph $y=2.4x+13$ and $y=3.2x+5$ and click their intersection to read its $y$-value.",
    "desmos_steps": [
     {
-     "text": "Enter both models as equations in x and y.",
+     "text": "Enter variety P's model, with x for weeks and y for height.",
      "math": "y=2.4x+13"
     },
     {
-     "text": "Enter the second model.",
+     "text": "Enter variety Q's model.",
      "math": "y=3.2x+5"
     },
     {

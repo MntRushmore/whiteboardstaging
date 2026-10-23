@@ -1,0 +1,14 @@
+{
+ "algebra-linear-one-var-0110": {
+  "drop": ["common_wrong 16"],
+  "note": "hand-check 2026-10-23: \"Added 1 twice\" is not a slip a student makes; 14 (forgot to add 1 back) stays"
+ },
+ "psda-two-var-data-0115": {
+  "desmos_steps": [
+   {"text": "Enter variety P's model, with x for weeks and y for height.", "math": "y=2.4x+13"},
+   {"text": "Enter variety Q's model.", "math": "y=3.2x+5"},
+   {"text": "Click the intersection point and read its y-value, the height.", "math": null}
+  ],
+  "note": "hand-check 2026-10-23: step 1 said \"Enter both models\" and entered one"
+ }
+}
