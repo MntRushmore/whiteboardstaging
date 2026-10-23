@@ -80,19 +80,29 @@ final class BoardTutor {
         }
     }
 
-    func start() {
+    /// The Live loop is watching the board (false while an admin tests the picture tutor instead).
+    private(set) var liveRunning = false
+
+    /// Starts the tutor's parts. `live: false` is the picture tutor's board (`PictureTutor`, an
+    /// admin's test): the Live loop is never started, so nothing of its own lands on the board — no
+    /// reads, ticks, rings, hints, steps or answers (and no recognizer calls). Ask stays; the
+    /// screen hides Live's Help me and its pill. This is the one place the current tutor is gated.
+    func start(live: Bool = true) {
         guard !started else { return }
         started = true
-        loop.start()
-        // problems on the screen it opened on (the onboarding's first board, a practice set) head
-        // their columns from the start; again on every screen the kid moves to
-        loop.problemsChanged()
-        liveBoard.controller.$currentScreenID.dropFirst().removeDuplicates()
-            .sink { [weak self] _ in
-                // after the controller and the loop have both moved
-                DispatchQueue.main.async { self?.loop.problemsChanged() }
-            }
-            .store(in: &watches)
+        liveRunning = live
+        if live {
+            loop.start()
+            // problems on the screen it opened on (the onboarding's first board, a practice set) head
+            // their columns from the start; again on every screen the kid moves to
+            loop.problemsChanged()
+            liveBoard.controller.$currentScreenID.dropFirst().removeDuplicates()
+                .sink { [weak self] _ in
+                    // after the controller and the loop have both moved
+                    DispatchQueue.main.async { self?.loop.problemsChanged() }
+                }
+                .store(in: &watches)
+        }
         // out of ink: the moment the loop's help pauses
         loop.$activity.removeDuplicates()
             .sink { [weak self] activity in if activity == .outOfInk { self?.onInkEmpty?() } }

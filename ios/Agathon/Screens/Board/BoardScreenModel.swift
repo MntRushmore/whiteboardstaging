@@ -44,6 +44,14 @@ final class BoardScreenModel: ObservableObject {
     @Published private(set) var notice: String?
     /// Today's practice on this board (its count and stars), when it is that board.
     @Published private(set) var daily: DailyPractice?
+    /// The picture tutor, when an admin switched it on (Account → Picture tutor (test)): it runs on this
+    /// board instead of the Live loop's marks (`BoardTutor.start(live: false)`).
+    @Published private(set) var picture: PictureTutor?
+    private var pictureBoard: PictureTutorBoard?
+
+    /// The Live loop, when it is the board's tutor (not while the picture tutor runs): its Help me,
+    /// status pill and settings show only then.
+    var liveLoop: LiveLoop? { picture == nil ? tutor?.loop : nil }
 
     private(set) var request: OpenBoard?
     private weak var backend: AgathonBackend?
@@ -173,9 +181,37 @@ final class BoardScreenModel: ObservableObject {
             if liveBoard?.isPenDown == true { return true }
             return canvas?.gestureRecognizers?.contains { $0.state == .began || $0.state == .changed } ?? false
         }
-        tutor.start()
         self.tutor = tutor
+        if PictureTutorSettings.enabled {
+            // an admin's test: the picture tutor instead of Live's marks (asked once per user)
+            Task { @MainActor [weak self, weak tutor] in
+                let admin = await PictureTutorAccess.isAdmin(backend)
+                guard let self, let tutor, !self.closed, self.tutor === tutor else { return }
+                if admin { self.startPicture(on: tutor, boardId: request.board.id, backend: backend) }
+                tutor.start(live: !admin)
+            }
+        } else {
+            tutor.start()
+        }
         if let practice = request.practice { writePractice(practice, with: tutor) }
+    }
+
+    /// The picture tutor on this board, on the real route (or, in Debug with `pictureTutor.stub`, the stub).
+    private func startPicture(on tutor: BoardTutor, boardId: String, backend: AgathonBackend) {
+        let client: BoardDrawClient
+        #if DEBUG
+        client = PictureTutorSettings.usesStub ? PictureTutorStub.client() : BoardDrawClient(api: backend.api)
+        #else
+        client = BoardDrawClient(api: backend.api)
+        #endif
+        let controller = tutor.liveBoard.controller
+        let picture = PictureTutor(mode: PictureTutorSettings.defaultMode, boardId: boardId,
+                                   deps: PictureTutorBoard.deps(controller: controller, canvas: { [weak tutor] in tutor?.liveBoard.canvas }, client: client))
+        pictureBoard = PictureTutorBoard(controller: controller, tutor: picture)
+        // the kid's pen (the Live loop, which would own it, is not started on this board)
+        tutor.liveBoard.onPen = { [weak picture] down in picture?.notePen(down) }
+        self.picture = picture
+        Self.log.notice("picture tutor on (\(picture.mode.rawValue, privacy: .public)\(PictureTutorSettings.usesStub ? ", stub" : "", privacy: .public))")
     }
 
     private func writePractice(_ practice: PracticeSet, with tutor: BoardTutor) {
@@ -237,6 +273,9 @@ final class BoardScreenModel: ObservableObject {
         practiceTask?.cancel()
         noticeTask?.cancel()
         watches.removeAll()
+        pictureBoard?.stop()
+        pictureBoard = nil
+        picture = nil
         tutor?.stop()
         tutor = nil
         let session = phase.session

@@ -18,7 +18,7 @@ Agathon Classroom is a single Next.js 16 App Router app. The browser talks to Su
 
 ### 1. Draw -> AI feedback (core loop)
 
-The core loop is Live Math (see "Live Math flow" below): each finished line of ink is recognized to LaTeX, checked by the local engine, and answered with typeset echoes, hints and worked steps — or, for maths the engine can do itself, in the tutor's own handwriting. The rule is **read, never paint**: every model output is text or LaTeX the client renders. No route calls an image-generation model.
+The core loop is Live Math (see "Live Math flow" below): each finished line of ink is recognized to LaTeX, checked by the local engine, and answered with typeset echoes, hints and worked steps — or, for maths the engine can do itself, in the tutor's own handwriting. The rule is **read, never paint**: every model output is text or LaTeX the client renders. One exception, admins only for now: the picture tutor (`POST /api/board/draw`, src/lib/server/boardDraw) has an image model paint on a copy of the board, and the server keeps only what it added as an overlay (never the kid's own ink). No other route calls an image-generation model.
 
 The old image pipeline (an idle timer that screenshotted the board and asked `google/gemini-3-pro-image-preview` to paint help as a 25-credit PNG overlay, with Accept/Reject and "Clear feedback") has been removed along with `/api/generate-solution`, `/api/generate-worksheet`, `/api/ocr` and `/api/check-help-needed`. Boards saved while it existed may still carry its overlays (`meta.aiOverlay`); on load an undecided suggest/answer overlay is dropped and the rest are unlocked so the student can delete them like any image (`dropPendingAiOverlays`, `src/hooks/useAiOverlayShapes.ts`).
 
