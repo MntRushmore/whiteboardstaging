@@ -338,7 +338,59 @@ const LEFT_ARROW_TAIL_RE = /\s*\\(?:Long|long)?(?:left|Left)arrow(?![a-zA-Z]).*$
  * They are only ever taken to find a step RIGHT (`judgeLine`, the loop's second look before a ring),
  * and each is a confusion of what the ink shows: a variant never makes a ring or a "?".
  */
-export function readVariants(read: string, minus = false, keep: readonly string[] = []): string[] {
+/**
+ * The line's multiplication dots as its ink shows them (SAT v2 end-to-end run, 2026-10-23): a dot stroke
+ * that sits clear of the baseline, at the height of the writing beside it (`6 · 9`), not on the line
+ * like a decimal point (`6.9`) and not over a letter like an `i`'s dot. Mathpix reads such a dot
+ * between two digits as a decimal point (`A = 6.9` for `A = 6 · 9`, a right step ringed), and drops one
+ * at the end of a line still being written (`h = 94 ·` read as `h = 94`, an unfinished line judged).
+ *
+ * `between`: raised dots with writing on both sides; `trailing`: a raised dot after all the line's
+ * writing, close to it (the line is not finished).
+ */
+export function inkTimesDots(strokes: readonly InkStroke[]): { between: number; trailing: boolean } {
+  const glyphs = strokes.filter((s) => !isDotStroke(s) && s.bounds.h > 0);
+  const out = { between: 0, trailing: false };
+  if (glyphs.length === 0) return out;
+  const heights = glyphs.filter((s) => !isLevelBar(s.bounds)).map((s) => s.bounds.h).sort((a, b) => a - b);
+  const H = heights.length ? heights[Math.floor(heights.length / 2)] : Math.max(...glyphs.map((s) => s.bounds.h));
+  if (!(H > 0)) return out;
+  const right = Math.max(...glyphs.map((s) => s.bounds.x + s.bounds.w));
+  for (const d of strokes.filter(isDotStroke)) {
+    const cx = d.bounds.x + d.bounds.w / 2;
+    const cy = d.bounds.y + d.bounds.h / 2;
+    // the writing beside it, a glyph's height either way
+    const near = glyphs.filter((s) => !isLevelBar(s.bounds) && s.bounds.x + s.bounds.w >= cx - 1.5 * H && s.bounds.x <= cx + 1.5 * H);
+    const left = near.filter((s) => s.bounds.x + s.bounds.w <= cx);
+    const after = near.filter((s) => s.bounds.x >= cx);
+    if (left.length === 0) continue;
+    const band = near.length ? near : left;
+    const top = Math.min(...band.map((s) => s.bounds.y));
+    const bottom = Math.max(...band.map((s) => s.bounds.y + s.bounds.h));
+    const rel = (cy - top) / Math.max(1e-6, bottom - top);
+    if (rel < 0.3 || rel > 0.75) continue;
+    if (after.length > 0) out.between += 1;
+    else if (cx >= right && cx - right <= 1.5 * H) out.trailing = true;
+  }
+  return out;
+}
+
+/** A read with a decimal point between digits where the ink has a raised dot: those points are `\cdot` (`inkTimesDots`). */
+export function timesDotVariant(read: string, between: number): string | null {
+  if (between <= 0) return null;
+  // every point between digits (`2.5.4` has two): more of them than raised dots, and which is which is unknown
+  const decimals = read.match(/\d\s*\.(?=\s*\d)/g) ?? [];
+  if (decimals.length === 0 || decimals.length > between) return null;
+  return read.replace(/(\d)\s*\.\s*(\d)/g, "$1 \\cdot $2");
+}
+
+/** A read Mathpix ended short of the raised dot the ink ends with (`h = 94 ·` read `h = 94`): the line goes on, `\cdot` and all. */
+export function withTrailingTimesDot(read: string, trailing: boolean): string {
+  if (!trailing || !read.trim() || /(?:\\cdot|\\times|\\div|[-+*/=×·])\s*$/.test(read)) return read;
+  return `${read.trimEnd()} \\cdot`;
+}
+
+export function readVariants(read: string, minus = false, keep: readonly string[] = [], timesDots = 0): string[] {
   // never a number taken out that the problem or the line above has (a side note's `9` may go; a
   // `9` the work is about may not): a variant must not make right what the ink does not say
   const kept = new Set(keep.flatMap(numbersIn));
@@ -367,6 +419,13 @@ export function readVariants(read: string, minus = false, keep: readonly string[
   };
   for (const step of steps) add(step(read));
   add(steps.reduce((s, step) => step(s), read));
+  // a decimal point the ink shows to be a raised multiplication dot (`inkTimesDots`): the numbers split
+  // (`6.9` is `6` and `9`), so the rule above does not apply; a number the work is about is kept
+  const dotted = timesDotVariant(read, timesDots);
+  if (dotted && !(read.match(/\d+\.\d+/g) ?? []).some((n) => kept.has(n))) {
+    const t = tidy(dotted);
+    if (t !== tidy(read) && !out.includes(t)) out.push(t);
+  }
   return out;
 }
 
