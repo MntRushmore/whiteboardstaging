@@ -131,8 +131,14 @@ public final class LiveLoop: ObservableObject {
     /// (`LiveLoop+Stacks`)
     var stacks: [AgathonBrain.JSONValue] = []
     var stackMarks: [String: (tick: BrainRect?, ring: BrainRect?)] = [:]
+    /// a stacked sum's analysis when she says she is done (`StackedLine.done`): swapped in at a Check
+    var stackDone: [String: LineAnalysis] = [:]
+    /// stacked sums finished at a Check, at that reading: they stay finished when the column is judged again
+    var stackFinished: [String: String] = [:]
     /// division bars' strokes (`clusterStrokes`' `bars`): a number under one is "divide both sides"
     var barStrokeIds = Set<String>()
+    /// strokes the split set aside as a row the kid struck out (`struckRows.ts`): in no line
+    var struckStrokeIds = Set<String>()
     /// the lines that were one problem (one column) at the last flush: they stay one (the web's
     /// `problemMates`)
     var problemMates: [String: Set<String>] = [:]
@@ -412,7 +418,10 @@ public final class LiveLoop: ObservableObject {
         diagrams = []
         stacks = []
         stackMarks = [:]
+        stackDone = [:]
+        stackFinished = [:]
         barStrokeIds = []
+        struckStrokeIds = []
         problemMates = [:]
         struckCache = [:]
         chainHolds = [:]

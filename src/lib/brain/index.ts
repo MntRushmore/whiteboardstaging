@@ -233,6 +233,11 @@ export interface StackedLineResult {
   /** where the tick goes (after the answer row, level with it) and the ring (round the first wrong digit, else the answer row) */
   tick: Rect | null;
   ring: Rect | null;
+  /**
+   * The analysis when she says she is done (Check), where it differs: an answer right so far but short
+   * of the result is wrong then (`WorkOptions.done`); null when it is the same.
+   */
+  done?: LineAnalysis | null;
 }
 
 /**
@@ -256,22 +261,25 @@ export function stackedLineOf(args: StackedLineArgs): StackedLineResult {
   const mode = (args.mode ?? "feedback") as HelpMode;
   const lines = Array.isArray(args.problem) ? args.problem.filter((l) => typeof l === "string" && l.trim().length > 0) : [];
   const problem = lines.length > 0 && lines.every(isArithmetic) ? lines : null;
-  const read = parseStacked(args.latex);
+  const read = parseStacked(args.latex, problem);
   if (!sum) {
     const analysis = read ? stackedAnalysis(workStacked(read), sure) : bracketLine(engine(), args.latex, problem, sure, mode);
     return { stacked: true, analysis, tick: null, ring: null };
   }
   // the board's `stackWork`: the read and the ink agree on the rows (long multiplication's under the answer)
   const grid = read && !(sum.more && !read.rows) && read.operands.length === sum.rows.length ? stackGrid(sum, rowPlaces(read)) : null;
-  const work = read && grid ? workStacked(read, grid.answerLast === null || read.rows ? {} : { answerLast: grid.answerLast }) : null;
+  const opts = grid && grid.answerLast !== null && !read?.rows ? { answerLast: grid.answerLast } : {};
+  const work = read && grid ? workStacked(read, opts) : null;
   const analysis = work || read ? stackedAnalysis(work, sure) : bracketLine(engine(), args.latex, problem, sure, mode);
+  const doneWork = read && grid && work && !work.right && work.wrong === -1 ? workStacked(read, { ...opts, done: true }) : null;
+  const doneAnalysis = doneWork && doneWork.wrong !== -1 ? stackedAnalysis(doneWork, sure) : null;
   // `markRect`: round the line, or after it — on a sum, after the answer row and round its first wrong digit
   const answer = sum.answer?.rect;
   if (!answer || sum.more) return { stacked: true, analysis, tick: null, ring: null };
   const block = unionRects([sum.ruleRect, answer, ...sum.rows.map((r) => r.rect)]);
   const tick = { ...answer, w: block.x + block.w - answer.x };
   const ring = (work && grid && work.wrong !== -1 && grid.answerGlyph(work.wrong)) || answer;
-  return { stacked: true, analysis, tick, ring };
+  return { stacked: true, analysis, tick, ring, done: doneAnalysis };
 }
 
 /** Each line of a column analysed as the loop holds it (`analyzeColumn` in localSolve.ts). */

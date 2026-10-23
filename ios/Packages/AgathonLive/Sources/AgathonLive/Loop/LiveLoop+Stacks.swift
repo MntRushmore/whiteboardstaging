@@ -40,16 +40,33 @@ extension LiveLoop {
     func stackedAnalysis(_ st: LiveLine, problem: [String]) async -> LineAnalysis? {
         guard stackLike(st) else {
             stackMarks[st.id] = nil
+            stackDone[st.id] = nil
             return nil
         }
         let stack = stackOf(st)
         guard let r = try? await brain.stackedLine(st.latex, confidence: st.confidence, stack: stack, problem: problem, mode: settings.mode),
               r.stacked else {
             stackMarks[st.id] = nil
+            stackDone[st.id] = nil
             return stack != nil ? LineAnalysis.unknown : nil
         }
         stackMarks[st.id] = (r.tick, r.ring)
+        stackDone[st.id] = r.done
+        if stackFinished[st.id] == st.latex, let done = r.done { return done }
         return r.analysis ?? LineAnalysis.unknown
+    }
+
+    /// At a Check (she says she is done), a stacked sum's answer right so far but short of the result is
+    /// a finished answer: wrong at its first missing place (`StackedLine.done`). Not at a pause: she may
+    /// be thinking of the carry she has still to write.
+    func finishStacks(_ released: [LiveLine], reason: CheckReason) {
+        guard reason == .button else { return }
+        for st in released {
+            guard let done = stackDone[st.id], var cur = lines[st.id], cur.latex == st.latex, cur.analysis?.verdict == "none" else { continue }
+            cur.analysis = done
+            lines[st.id] = cur
+            stackFinished[st.id] = st.latex
+        }
     }
 
     /// Where a mark of this kind goes on the line: round it or after it — on a stacked sum, after its
