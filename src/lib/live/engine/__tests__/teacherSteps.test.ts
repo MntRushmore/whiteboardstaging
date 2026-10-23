@@ -222,3 +222,35 @@ describe("decimals are exact, never rounded to the display precision", () => {
     expect(engine.solveLatex(latex)?.latex).toBe(final);
   });
 });
+
+describe("a value worked out for a letter already alone (SAT v2 end-to-end run, 2026-10-23)", () => {
+  // a slope from two points with a negative coordinate: the bracket is arithmetic, never "expanded"
+  // into a split fraction (`m = \frac{1}{2} + 1`)
+  it.each([
+    ["m=\\frac{1-(-2)}{2-0}", ["m = \\frac{3}{2}"]],
+    ["y=\\frac{5-(-3)}{4-0}", ["y = 2"]],
+  ])("%s", (latex, steps) => {
+    expect(solve(latex)).toEqual(steps);
+  });
+  it("still expands a bracket with the unknown in it", () => {
+    expect(solve("2x-(-4)=10")).toEqual(["2x + 4 = 10", "2x = 6", "x = 3"]);
+  });
+});
+
+describe("a chain of rewrites goes on from its last side (SAT v2 end-to-end run, 2026-10-23)", () => {
+  const judge = (lines: string[]) => {
+    let previous: ReturnType<LiveEngine["analyzeLine"]> | undefined;
+    return lines.map((l) => {
+      const a = engine.analyzeLine(l, { mode: "suggest", previous });
+      previous = a;
+      return `${a.kind}/${a.verdict}`;
+    });
+  };
+  it("= 26x + 50 under 10(3x+5) - 4x = 30x + 50 - 4x is right, = 34x + 50 is a slip", () => {
+    expect(judge(["10(3x+5)-4x=30x+50-4x", "=26x+50"])).toEqual(["equation/ok", "expression/ok"]);
+    expect(judge(["10(3x+5)-4x=30x+50-4x", "=34x+50"])).toEqual(["equation/ok", "expression/mismatch"]);
+  });
+  it("an equation that is no chain of rewrites keeps a lone = incomplete", () => {
+    expect(judge(["2x+3=7", "=5"])[1]).toBe("incomplete/none");
+  });
+});

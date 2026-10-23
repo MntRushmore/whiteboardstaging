@@ -748,13 +748,33 @@ export function createEngine(mod: MathModule): LiveEngine {
   };
 
   /**
+   * The last side of an equation that is a chain of rewrites of one expression in its letters (`10(3x+5) - 4x
+   * = 30x + 50 - 4x`: every side the same polynomial), else null. Such a line is the student simplifying,
+   * not an equation to solve: what follows it goes on from its last side.
+   */
+  const identityChainEnd = (a: LineAnalysis): string | null => {
+    if (a.kind !== "equation" || !a.math || /<|>|!=/.test(a.math)) return null;
+    const sides = a.math.split("==").map((s) => s.trim());
+    if (sides.length < 2 || sides.some((s) => !s)) return null;
+    const vars = safeVars(a.math);
+    if (!vars || vars.length === 0) return null;
+    for (let i = 1; i < sides.length; i++) if (expressionsEquivalent(math, sides[i - 1], sides[i], vars) !== "ok") return null;
+    return sides[sides.length - 1];
+  };
+
+  /**
    * `= 2\cos x` under `\frac{\sin 2x}{\sin x}`: the next line of a chain (a simplification, an
    * identity proved one rewrite at a time), checked against the line above by sampling. Null
    * when the line is not that, and the ordinary rules apply (a lone `=` stays incomplete).
    */
-  const continuation = (cleaned: string, ctx: AnalyzeContext): LineAnalysis | null => {
+  const continuation = (cleaned: string, ctx0: AnalyzeContext): LineAnalysis | null => {
     const m = /^=(?!=)\s*/.exec(cleaned);
-    if (!m || ctx.previous?.kind !== "expression" || !ctx.previous.math) return null;
+    if (!m) return null;
+    // `= 26x + 50` under `10(3x+5) - 4x = 30x + 50 - 4x`: the line above is a chain of rewrites (an
+    // identity), so the next line goes on from its last side, as under an expression (SAT v2 run)
+    const chainEnd = ctx0.previous ? identityChainEnd(ctx0.previous) : null;
+    const ctx: AnalyzeContext = chainEnd ? { ...ctx0, previous: { kind: "expression", math: chainEnd, resultLatex: "", verdict: "none", note: "" } } : ctx0;
+    if (ctx.previous?.kind !== "expression" || !ctx.previous.math) return null;
     const rest = cleaned.slice(m[0].length).trim();
     const pre = preClassify(rest).kind;
     // `= 5`, `= i`: after `=`, a lone number or letter is the value, not a label

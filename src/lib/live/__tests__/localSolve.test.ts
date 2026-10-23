@@ -193,3 +193,17 @@ describe("localSolve — a line ending in `=` at the values the column gives (`g
     expect(analyzeColumn(engine, ["3x + 24 =", "x = 3"], "suggest")[0]).toMatchObject({ kind: "expression", substituted: "3(3) + 24", resultLatex: "" });
   });
 });
+
+describe("a chain of rewrites (SAT v2 end-to-end run, 2026-10-23)", () => {
+  it("Help me's next step is the last side simplified, never the chain solved as an equation", async () => {
+    const { getEngine } = await import("../engine");
+    const engine = await getEngine();
+    expect(localSolve(engine, ["10(3x+5)-4x=30x+50-4x"], 0).steps).toEqual(["= 26x + 50"]);
+    expect(localSolve(engine, ["3(x+2)-x=3x+6-x"], 0).steps).toEqual(["= 2x + 6"]);
+  });
+  it("a chain already simplest (how many solutions?) keeps the equation's path", async () => {
+    const { getEngine } = await import("../engine");
+    const engine = await getEngine();
+    expect(localSolve(engine, ["2(x+3)=2x+6"], 0).steps.at(-1)).toBe("x \\in \\mathbb{R}");
+  });
+});
