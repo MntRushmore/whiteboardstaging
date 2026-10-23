@@ -88,6 +88,8 @@ export const SAT_LIMITS = {
   estimateMinAnswered: 15,
   /** The estimate reads at most this many of the newest answers (what the student can do now). */
   estimateWindow: 120,
+  /** GET /api/sat/progress's `reviews_due_skills`: at most this many. */
+  reviewsDueSkills: 3,
   /** GET /api/sat/progress reads at most this many of the newest answers. */
   progressWindow: 5000,
   /** SPR: a positive answer fills at most 5 characters, a negative one 6 (with its minus). */
@@ -302,12 +304,18 @@ export type SatProgressResponse = {
   by_domain: Array<{ domain: SatDomain } & SatCount>;
   by_skill: Array<{ domain: SatDomain; skill: string } & SatCount>;
   streak_days: number;
-  today: { answered: number; tutor_used: number; cap: number; unlimited: boolean };
+  /** `correct` (v2): right answers on the student's date */
+  today: { answered: number; correct: number; tutor_used: number; cap: number; unlimited: boolean };
   /** A rough 200–800 band from practice (src/lib/sat/estimate.ts), never a score; null below 15 answers. */
   estimate: { low: number; high: number; note: string } | null;
   /** the mistake deck (v2): reviews due today (or overdue) in the student's zone, and those scheduled for later */
   reviews_due: number;
   reviews_waiting: number;
+  /**
+   * v2, SAT home: the skills of the reviews due today, at most 3, distinct, most-missed first (most
+   * due reviews in the skill, then most wrong answers in it, then the spec's skill order)
+   */
+  reviews_due_skills: string[];
 };
 
 // ------------------------------------------------------------------ an account-free session

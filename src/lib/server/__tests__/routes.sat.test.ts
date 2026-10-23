@@ -320,7 +320,7 @@ describe("GET /api/sat/progress", () => {
     const res = await progressGet(get("/api/sat/progress?tz=America/New_York"));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toMatchObject({ answered: 2, correct: 1, streak_days: 2, today: { answered: 1, tutor_used: 1, cap: 20, unlimited: false }, estimate: null });
+    expect(body).toMatchObject({ answered: 2, correct: 1, streak_days: 2, today: { answered: 1, correct: 1, tutor_used: 1, cap: 20, unlimited: false }, estimate: null, reviews_due_skills: [] });
     expect(body.by_domain).toHaveLength(4);
   });
 
@@ -455,8 +455,13 @@ describe("v2: the mistake deck", () => {
       { user_id: fake.USER_ID, question_id: SAMPLE[5].id, due_on: "2026-10-18", step: 2, cleared_at: "2026-10-18T09:00:00Z" },
       { user_id: "someone-else", question_id: SAMPLE[6].id, due_on: "2026-10-18", step: 1, cleared_at: null },
     );
-    // Oct 21 in New York: two due, two waiting
-    expect(await (await progressGet(get("/api/sat/progress?tz=America/New_York"))).json()).toMatchObject({ reviews_due: 2, reviews_waiting: 2 });
+    // Oct 21 in New York: two due, two waiting; their skills, SAMPLE[1]'s missed before
+    db.tables.sat_attempts.push({ user_id: fake.USER_ID, question_id: SAMPLE[1].id, correct: false, created_at: "2026-10-20T15:00:00Z" });
+    expect(await (await progressGet(get("/api/sat/progress?tz=America/New_York"))).json()).toMatchObject({
+      reviews_due: 2,
+      reviews_waiting: 2,
+      reviews_due_skills: [SAMPLE[1].skill, SAMPLE[2].skill],
+    });
     expect(await (await progressGet(get("/api/sat/progress?tz=UTC"))).json()).toMatchObject({ reviews_due: 3, reviews_waiting: 1 });
     db.tables.sat_questions.find((q) => q.id === SAMPLE[4].id)!.status = "retired";
     resetSatBankCache();
