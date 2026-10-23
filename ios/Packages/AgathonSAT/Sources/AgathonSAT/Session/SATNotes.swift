@@ -71,7 +71,7 @@ public struct SATWrongNote: View {
                 .tracking(1.4 * k)
                 .foregroundStyle(SATNoteColor.label)
             if let why {
-                SATText(SATNoteWords.thatsWhat(why), size: 21 * k, color: DS.Color.onInk)
+                SATText(SATNoteWords.looksLike(why), size: 21 * k, color: DS.Color.onInk)
                     .accessibilityIdentifier("sat.wrong.why")
             }
             HStack(spacing: 12 * k) {
@@ -109,13 +109,22 @@ enum SATNoteColor {
     static let label = DS.Palette.cobalt.mixed(with: DS.Palette.white, amount: 0.72).color
 }
 
-/// The words of a `why`: "That's what you get if you …" when the bank wrote the mistake itself.
+/// The words of a `why`: the bank writes the mistake as a past-tense phrase ("Inverted the slope, run
+/// over rise: …", "Swapped rise and run …"), so it reads "Looks like you inverted the slope, run over
+/// rise: …" (the 2026-10-23 review: "That's what you get if you inverted" read wrong). A why that already
+/// speaks to the student ("You …", "That's …") is shown as it is.
 enum SATNoteWords {
-    static func thatsWhat(_ why: String) -> String {
-        let lower = why.lowercased()
-        if lower.hasPrefix("that's") || lower.hasPrefix("that is") { return why }
-        let first = why.prefix(1).lowercased() + why.dropFirst()
-        return "That's what you get if you " + first
+    static func looksLike(_ why: String) -> String {
+        let t = why.trimmingCharacters(in: .whitespaces)
+        let lower = t.lowercased()
+        if lower.hasPrefix("you ") || lower.hasPrefix("you'") || lower.hasPrefix("that's") || lower.hasPrefix("that is") || lower.hasPrefix("looks like") {
+            return t
+        }
+        // every why in the bank starts with its verb ("Added", "Used", "Divided" …): its first letter lowercased,
+        // unless that is maths or a name (`$x$`, `AB`)
+        let first = t.prefix(1)
+        let keep = first == "$" || (t.dropFirst().first?.isUppercase ?? false)
+        return "Looks like you " + (keep ? t : first.lowercased() + t.dropFirst())
     }
 }
 

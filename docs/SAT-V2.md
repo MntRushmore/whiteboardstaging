@@ -37,7 +37,7 @@ different, is the smallest thing on screen.
   - ink on a plot is understood in graph coordinates ("a mark near (2, 0)") and sent to the tutor as
     context for its checks and hints.
 - **Wrong-answer diagnosis.** A wrong choice (or a common wrong grid-in) gets its own "You picked B.
-  That's what you get if you …" note, then "Try again" / "Walk me through it".
+  Looks like you …" note (the bank's past-tense why, its first letter lowercased; a why that starts "You" or "That's" as it is), then "Try again" / "Walk me through it".
 - **Mistake deck.** A missed question comes back 1 day later, then 3 days later. Getting it right on
   a review clears it. SAT home shows "N to review today". A set starts with the due reviews.
 - **Two ways.** The solution shows the paper way (the steps) and the Desmos way (`desmos_steps`), side

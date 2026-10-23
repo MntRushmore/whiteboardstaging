@@ -102,7 +102,7 @@ public final class SATPractice {
         public var wrongNote: WrongNote?
     }
 
-    /// "You picked B. That's what you get if you …" (docs/SAT-V2.md, "Wrong-answer diagnosis").
+    /// "You picked B. Looks like you …" (docs/SAT-V2.md, "Wrong-answer diagnosis").
     public struct WrongNote: Hashable, Sendable {
         /// "B", or the grid-in as typed
         public var answer: String

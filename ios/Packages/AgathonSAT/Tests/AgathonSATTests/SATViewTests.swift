@@ -6,6 +6,17 @@ import Testing
 /// The screens' words and geometry (docs/SAT-MODE.md): the cap line by tier, the figures' fit.
 @MainActor
 struct SATViewTests {
+    /// The wrong-answer note: the bank's past-tense why as "Looks like you …"; a why that speaks to the
+    /// student already, as it is (2026-10-23 review of the live run's capture 07).
+    @Test func aWrongChoicesWhyReadsLooksLikeYou() {
+        #expect(SATNoteWords.looksLike("Inverted the slope, run over rise: $\\frac{4}{6} = \\frac{2}{3}$.")
+                == "Looks like you inverted the slope, run over rise: $\\frac{4}{6} = \\frac{2}{3}$.")
+        #expect(SATNoteWords.looksLike("Swapped rise and run: (2-0)/(0-4).") == "Looks like you swapped rise and run: (2-0)/(0-4).")
+        #expect(SATNoteWords.looksLike("You used sine instead of tangent.") == "You used sine instead of tangent.")
+        #expect(SATNoteWords.looksLike("That's the width, not the length.") == "That's the width, not the length.")
+        #expect(SATNoteWords.looksLike("Only checked the goal line.") == "Looks like you only checked the goal line.")
+    }
+
     @Test func theCapLineSaysTheServersCapAndTheTiersWay() {
         // the owner (2026-10-22): no account 5 ("make a free account for 20"), a free account 20 ("Unlimited")
         #expect(SATCopy.capped(cap: 5, hasAccount: false) == "Free tutor used up for today: 5 of 5. Make a free account for 20 a day.")

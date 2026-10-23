@@ -425,13 +425,12 @@ private struct SATDebugProbe: View {
     @ObservedObject var model: SATSessionModel
     @State private var writing = false
 
-    /// White on the white page in the screenshots (a faded button stops taking taps, and the tap
-    /// lands on the board as a dot of ink); grey otherwise.
-    private func button(_ title: String, id: String, action: @escaping () -> Void) -> some View {
-        let shots = SATDebug.args.contains("-satShots")
-        return Button(action: action) {
-            Text(title).font(.system(size: 11)).foregroundStyle(shots ? Color.white : Color.gray)
-                .frame(width: 28, height: 22).background(Color.white).contentShape(Rectangle())
+    /// The tests' buttons (Debug, stub and live runs only): no words on the page, ever — a white patch on
+    /// the white page that still takes taps (a faded or hidden button stops taking them, and the tap lands
+    /// on the board as a dot of ink). The live run's captures showed "ink o w" under Check (2026-10-23).
+    private func button(_ id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Color.white.frame(width: 28, height: 22).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
@@ -441,9 +440,9 @@ private struct SATDebugProbe: View {
         if model.context.isStub || SATDebug.isLive {
             TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                 HStack(spacing: 4) {
-                    button("ink", id: "sat.debug.ink") { model.debugInk() }
-                    button("o", id: "sat.debug.circle") { model.debugCircle(x: SATDebug.circleAt.x, y: SATDebug.circleAt.y) }
-                    button("w", id: "sat.debug.write") {
+                    button("sat.debug.ink") { model.debugInk() }
+                    button("sat.debug.circle") { model.debugCircle(x: SATDebug.circleAt.x, y: SATDebug.circleAt.y) }
+                    button("sat.debug.write") {
                         guard !writing else { return }
                         writing = true
                         Task { @MainActor in

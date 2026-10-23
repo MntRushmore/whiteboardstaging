@@ -58,6 +58,8 @@ final class SATSessionUITests: XCTestCase {
         XCTAssertLessThan(element("sat.check").frame.maxX, element("sat.tool.select").frame.minX)
         XCTAssertFalse(element("sat.check").isEnabled, "Check waits for an answer")
         snap("landscape-01-question")
+        // the tests' own buttons never put words on the page ("ink o w" under Check, 2026-10-23)
+        for word in ["ink", "o", "w"] { XCTAssertFalse(app.staticTexts[word].exists, "debug words on the page: \(word)") }
 
         // browsing takes no pass; the board follows
         for n in 2...5 {

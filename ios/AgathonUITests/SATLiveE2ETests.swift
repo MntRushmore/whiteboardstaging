@@ -155,6 +155,8 @@ final class SATLiveE2ETests: XCTestCase {
         probe("yourTurn yes", timeout: 90)
         timings.append(String(format: "Help me tap → Your turn: %.1f s (%@)", Date().timeIntervalSince(asked), (element("sat.debug").value as? String ?? "").contains("step live") ? "live step" : "bank step"))
         snap("05-help-2-one-step")
+        // the tests' own buttons never put words on the page ("ink o w" under Check, 2026-10-23)
+        for word in ["ink", "o", "w"] { XCTAssertFalse(app.staticTexts[word].exists, "debug words on the page: \(word)") }
         tap("sat.helpMe")
         probe("rung 3", timeout: 10)
         // the walk picks up after the steps already on the page; with none left it says so
