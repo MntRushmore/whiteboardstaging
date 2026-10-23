@@ -219,7 +219,7 @@ interface Column {
 }
 
 const chainEngine = { analyzeLine: (latex: string, ctx: any) => engine.analyzeLine({ latex, context: ctx }) } as any;
-const numbersIn = (l: string) => l.match(/\d+(?:\.\d+)?/g) ?? [];
+const numbersIn = (l: string): string[] => l.match(/\d+(?:\.\d+)?/g) ?? [];
 
 /** LiveLoop.holdRing / checkChain: before a ring, the step and the line above (Mathpix reads not yet re-read) are read again; a near transcription that makes the step follow takes the ring back. */
 async function secondLookBeforeRing(acct: Account, plan: QuestionPlan, head: string[], reads: Read[], i: number, marks?: string): Promise<{ reads: Read[]; looked: string[] }> {
