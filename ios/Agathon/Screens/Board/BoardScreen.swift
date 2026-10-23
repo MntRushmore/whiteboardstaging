@@ -113,9 +113,16 @@ private struct BoardRoom: View {
                 onCanvas: { canvas in model.attach(canvas) },
                 topTrailing: { BoardTopTrailing(model: model, session: session) },
                 helpButton: {
-                    if let loop = model.tutor?.loop { LiveHelpBar(loop: loop) }
+                    if let picture = model.picture {
+                        PictureTutorDrawNow(tutor: picture)
+                    } else if let loop = model.liveLoop {
+                        LiveHelpBar(loop: loop)
+                    }
                 },
-                overlay: { _ in overlay }
+                overlay: { viewport in
+                    overlay
+                    if let picture = model.picture { PictureTutorOverlay(tutor: picture, viewport: viewport) }
+                }
             )
             // the keyboard (typing to Ask) never squeezes the board; Ask's panel keeps its box above it
             .ignoresSafeArea(.keyboard)
@@ -186,7 +193,9 @@ private struct BoardTopTrailing: View {
                 HStack(spacing: DS.Space.xs) {
                     if Self.saveNeedsSaying(session.sync.status) || model.tutor == nil {
                         BoardSaveStatus(session: session, showsWords: false)
-                    } else if let loop = model.tutor?.loop {
+                    } else if let picture = model.picture {
+                        PictureTutorTopItem(tutor: picture, showsWords: false)
+                    } else if let loop = model.liveLoop {
                         GrownUpLiveButton(loop: loop)
                     }
                     askButton(words: false)
@@ -216,7 +225,9 @@ private struct BoardTopTrailing: View {
                 DailyPracticePill(daily: daily) { model.say(DailyPracticePill.reachedWords) }
             }
             BoardSaveStatus(session: session, showsWords: words)
-            if let loop = model.tutor?.loop {
+            if let picture = model.picture {
+                PictureTutorTopItem(tutor: picture, showsWords: words)
+            } else if let loop = model.liveLoop {
                 LiveStatusView(loop: loop).fixedSize()
                 GrownUpLiveButton(loop: loop)
             }
@@ -228,7 +239,11 @@ private struct BoardTopTrailing: View {
     private var compact: some View {
         HStack(spacing: DS.Space.xs) {
             BoardSaveStatus(session: session, showsWords: false)
-            if let loop = model.tutor?.loop { GrownUpLiveButton(loop: loop) }
+            if let picture = model.picture {
+                PictureTutorTopItem(tutor: picture, showsWords: false)
+            } else if let loop = model.liveLoop {
+                GrownUpLiveButton(loop: loop)
+            }
             askButton(words: false)
         }
     }
