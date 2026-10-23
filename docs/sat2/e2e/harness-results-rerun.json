@@ -1,0 +1,279 @@
+{
+  "at": "2026-10-23T18:36:30.622Z",
+  "account": "sat-e2e-main-1792780570850@example.com",
+  "openrouterCalls": 10,
+  "mathpixCalls": 10,
+  "balanceStart": 17.445324733999996,
+  "balanceEnd": 17.442317212999995,
+  "results": [
+    {
+      "id": "algebra-linear-functions-0001",
+      "kind": "plot MCQ (two labelled points)",
+      "head": [],
+      "pass": {
+        "allowed": true,
+        "used_today": 1,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "m=\\frac{1-(-2)}{2-0}",
+          "conf": 0.8310546875,
+          "ms": 334,
+          "status": 200,
+          "reread": {
+            "trigger": "unreadable",
+            "latex": "m=\\frac{1-(-2)}{2-0}",
+            "status": 200,
+            "ms": 1402,
+            "satBlock": true
+          },
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "m=\\frac{1-(-2)}{2-0}",
+          "conf": 1,
+          "ms": 332,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "engine solveLatex",
+        "step": "m = \\frac{3}{2}",
+        "ms": 14,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "simplifies the slope to 3/2"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "m=\\frac{3}{2}",
+            "same": true,
+            "ms": 270
+          },
+          "S": {
+            "latex": "m=\\frac{2}{3}",
+            "same": true,
+            "ms": 252
+          },
+          "U": {
+            "latex": "f(6)=",
+            "ms": 230
+          }
+        },
+        "good": {
+          "latexes": [
+            "m=\\frac{1-(-2)}{2-0}",
+            "m=\\frac{3}{2}"
+          ],
+          "marks": [
+            "none",
+            "tick"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "assignment/ok"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 766,
+            "ttfa": null,
+            "annotations": [],
+            "satBlock": true,
+            "marksInPrompt": true
+          }
+        },
+        "slip": {
+          "looked": [
+            "m=\\frac{2}{3} → m=\\frac{2}{3}"
+          ],
+          "latexes": [
+            "m=\\frac{1-(-2)}{2-0}",
+            "m=\\frac{2}{3}"
+          ],
+          "marks": [
+            "none",
+            "ring"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "assignment/mismatch"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 3818,
+            "ttfa": 3818,
+            "annotations": [
+              {
+                "lineId": "ln_000004",
+                "verdict": "warn",
+                "kind": "algebra",
+                "message": "Check the division when simplifying the fraction from your slope calculation above.",
+                "question": "Did you divide the change in y by the change in x, or the other way around?",
+                "expected": "3/2",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": true
+          }
+        },
+        "unfinished": {
+          "latexes": [
+            "m=\\frac{1-(-2)}{2-0}",
+            "f(6)="
+          ],
+          "marks": [
+            "none",
+            "none"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "incomplete/none held"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 3289,
+            "ttfa": 3289,
+            "annotations": [
+              {
+                "lineId": "ln_000005",
+                "verdict": "info",
+                "kind": "incomplete",
+                "message": "You have the slope and the y-intercept, so you can write the full function first.",
+                "question": "What is the equation of the function f(x) before you substitute 6?",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": true
+          },
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "psda-ratios-rates-0001",
+      "kind": "rates MCQ (arithmetic lines)",
+      "head": [],
+      "pass": {
+        "allowed": true,
+        "used_today": 2,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "4 \\cdot 60=240",
+          "conf": 1,
+          "ms": 281,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "4 \\cdot 60=240",
+          "conf": 1,
+          "ms": 226,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "model /api/live/solve",
+        "step": "\\frac{18}{45}=\\frac{2}{5}",
+        "ms": 1321,
+        "status": 200,
+        "modelSteps": [
+          "\\frac{18}{45}=\\frac{2}{5}",
+          "\\frac{2}{5}\\cdot 240=96",
+          "\\boxed{96}"
+        ],
+        "satBlock": true,
+        "marksInPrompt": false,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "works the rate 18/45 for this printer"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "\\frac{18}{45}=0.4",
+            "same": true,
+            "ms": 274
+          },
+          "S": {
+            "latex": "\\frac{18}{45}=2.5",
+            "same": true,
+            "ms": 233
+          },
+          "U": {
+            "latex": "0.4 \\cdot 240=",
+            "ms": 247
+          }
+        },
+        "good": {
+          "latexes": [
+            "4 \\cdot 60=240",
+            "\\frac{18}{45}=0.4"
+          ],
+          "marks": [
+            "tick",
+            "tick"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "equation/ok"
+          ]
+        },
+        "slip": {
+          "looked": [
+            "4 \\cdot 60=240 → 4 \\cdot 60 = 240",
+            "\\frac{18}{45}=2.5 → \\frac{18}{45} = 2.5 (2nd look disagreed)"
+          ],
+          "latexes": [
+            "4 \\cdot 60=240",
+            "\\frac{18}{45}=2.5"
+          ],
+          "marks": [
+            "tick",
+            "ring"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "equation/mismatch"
+          ]
+        },
+        "unfinished": {
+          "latexes": [
+            "4 \\cdot 60=240",
+            "0.4 \\cdot 240="
+          ],
+          "marks": [
+            "tick",
+            "none"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "expression/none held"
+          ],
+          "held": true
+        }
+      }
+    }
+  ]
+}
