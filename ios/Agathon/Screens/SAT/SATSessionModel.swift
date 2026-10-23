@@ -127,6 +127,7 @@ final class SATSessionModel: ObservableObject {
     /// rung 2 through the live tutor: waiting for its step's ink (then "Your turn"), else the bank's
     private var liveStep: (screen: RecordID, question: Int, since: Date, before: Set<RecordID>)?
     private var liveStepTimer: Task<Void, Never>?
+    private var liveStepSettle: Task<Void, Never>?
     private var opened = false
     private var closed = false
 
@@ -469,7 +470,13 @@ final class SATSessionModel: ObservableObject {
             }
             if onFigure || change.removed.count > 0 { refreshFigureMarks() }
         } else if change.origin == .tutor, let pending = liveStep, pending.screen == screen {
-            liveStepWritten(pending)
+            // the tutor's hand writes stroke by stroke: "Your turn" once it has put the pen down
+            liveStepSettle?.cancel()
+            liveStepSettle = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(900))
+                guard let self, !Task.isCancelled, let now = self.liveStep, now.screen == pending.screen else { return }
+                self.liveStepWritten(now)
+            }
         }
     }
 
@@ -656,11 +663,24 @@ final class SATSessionModel: ObservableObject {
         let w = Double(SATNudgeNote.width)
         var at = Vec2(style.stemX, layout.workTop + 8)
         if let line = lastLine(on: screen) {
-            let beside = Vec2(line.x + line.w + 48, line.y - 4)
+            // beside the line and whatever the tutor put after it (its tick)
+            let beside = Vec2(rowEnd(line, on: screen) + 48, line.y - 4)
             let inFigure = layout.keepOut.dropFirst().contains { $0.x < beside.x + w && beside.y < $0.maxY }
             at = beside.x + w <= style.right && !inFigure ? beside : Vec2(line.x, line.y + line.h + 24)
         }
         nudge = Nudge(screen: screen, text: text, at: at)
+    }
+
+    /// Where a line of the page ends: its ink and anything on its row after it (the tutor's tick).
+    func rowEnd(_ line: Box, on screen: RecordID) -> Double {
+        guard let store = phase.session?.controller.store else { return line.x + line.w }
+        let band = line.y...(line.y + line.h)
+        let ends = store.drawables(on: screen).compactMap { r -> Double? in
+            guard r.meta[Self.figureMeta] == nil, let b = RenderGeometry.item(for: r)?.bounds else { return nil }
+            let mid = b.y + b.h / 2
+            return band.contains(mid) && b.x >= line.x - 4 && b.x < line.x + line.w + 160 ? b.x + b.w : nil
+        }
+        return max(line.x + line.w, ends.max() ?? 0)
     }
 
     /// Rung 2: ONE next step. With the day's pass, the live Help me writes it under the last line
@@ -694,12 +714,21 @@ final class SATSessionModel: ObservableObject {
             guard !pending.before.contains(r.id), r.author == .tutor, r.meta["mark"] == nil else { return false }
             return r.meta["live"]?.boolValue == true
         }
+        // still writing: wait for the pen to lift
+        if tutor?.loop.busyWriting == true {
+            liveStepSettle = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, !Task.isCancelled, let now = self.liveStep else { return }
+                self.liveStepWritten(now)
+            }
+            return
+        }
         let boxes = fresh.compactMap { RenderGeometry.item(for: $0)?.bounds }
         guard let first = boxes.first else { return }
         let box = boxes.dropFirst().reduce(first) { $0.union($1) }
         liveStep = nil
         liveStepTimer?.cancel()
-        practice.updateLadder(at: pending.question) { _ in }
+        lastStepSource = "live"
         placeYourTurn(after: box, on: pending.screen)
     }
 
@@ -716,9 +745,13 @@ final class SATSessionModel: ObservableObject {
         practice.updateLadder(at: i) { $0.written.insert(k) }
         let layout = printer(i).layout
         let line = lastLine(on: screen)
-        let origin = Vec2(line?.x ?? style.stemX, (line.map { $0.y + $0.h } ?? layout.workTop) + 40)
+        // under the student's last line, and under anything the tutor already wrote there
+        let below = max(line.map { $0.y + $0.h } ?? layout.workTop, columnBottom(on: screen) ?? 0)
+        let origin = Vec2(line?.x ?? style.stemX, below + 48)
         let step = q.solution.steps[k]
-        if let math = step.math, !math.isEmpty, let loop = tutor?.loop,
+        lastStepSource = "bank"
+        // ONE line: a chain's last link (`… ⇒ 4x − 5 = 2x + 9` is the step)
+        if let math = step.math.map(Self.handLines)?.last, !math.isEmpty, let loop = tutor?.loop,
            let box = await loop.writeTutorMath([math], at: origin, lineHeight: Self.handLine, seedKey: "\(q.id):step\(k)", meta: ["satStep": .number(Double(k))]) {
             placeYourTurn(after: Box(x: box.x, y: box.y, w: box.w, h: box.h), on: screen)
         } else {
@@ -729,7 +762,30 @@ final class SATSessionModel: ObservableObject {
     }
 
     /// The tutor's hand on an SAT page: a work line (the design notes: size 38).
-    static let handLine = 44.0
+    static let handLine = 38.0
+
+    /// The lowest ink in the stem's column of a page (the student's and the tutor's, the figure's
+    /// marks left out): where the tutor's next writing goes under.
+    func columnBottom(on screen: RecordID) -> Double? {
+        guard let store = phase.session?.controller.store else { return nil }
+        let edge = style.figureX - 24
+        return store.drawables(on: screen).compactMap { r -> Double? in
+            guard case .stroke(let s) = r, s.meta[Self.figureMeta] == nil, s.meta["highlight"]?.boolValue != true, !s.points.isEmpty else { return nil }
+            let pts = s.points.map { s.pagePoint($0) }
+            guard let minX = pts.map(\.x).min(), minX < edge else { return nil }
+            return pts.map(\.y).max()
+        }.max()
+    }
+
+    /// A bank step's maths as the tutor writes it: one line a part of a chain (`a \Rightarrow b`).
+    static func handLines(_ math: String) -> [String] {
+        let parts = math.components(separatedBy: #"\Rightarrow"#).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return parts.isEmpty ? [math] : parts
+    }
+
+    /// How rung 2 was written last (the probe): "live" (the live Help me) or "bank".
+    private(set) var lastStepSource = "-"
+
 
     private func placeYourTurn(after box: Box, on screen: RecordID) {
         words.removeAll { $0.screen == screen && $0.kind == .yourTurn }
@@ -746,12 +802,8 @@ final class SATSessionModel: ObservableObject {
         if practice.index != i { show(i) }
         practice.updateLadder(at: i) { $0.reach(.walkthrough) }
         let layout = printer(i).layout
-        let start: Vec2
-        if let line = lastLine(on: screen), line.x < style.figureX - 40 {
-            start = Vec2(style.stemX, line.y + line.h + 40)
-        } else {
-            start = Vec2(style.stemX, layout.workTop + 16)
-        }
+        // from the top of the stem's column, or under what is written there already
+        let start = Vec2(style.stemX, columnBottom(on: screen).map { $0 + 40 } ?? layout.workTop + 16)
         walk = Walk(screen: screen, question: i, shown: 0, count: practice.questions[i].solution.steps.count, cursor: start)
         words.removeAll { $0.screen == screen && $0.id.hasPrefix("walk:") }
         goOnWalk()
@@ -784,7 +836,7 @@ final class SATSessionModel: ObservableObject {
             let mathTop = Vec2(caption.x, caption.y + 46)
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let box = await loop.writeTutorMath([math], at: mathTop, lineHeight: Self.handLine, seedKey: "\(q.id):walk\(k)",
+                let box = await loop.writeTutorMath(Self.handLines(math), at: mathTop, lineHeight: Self.handLine, seedKey: "\(q.id):walk\(k)",
                                                     meta: ["satWalk": .number(Double(k))])
                 next = Vec2(caption.x, (box.map { $0.y + $0.h } ?? mathTop.y + Self.handLine) + 40)
                 self.walkAdvanced(i, to: next)
@@ -981,7 +1033,7 @@ final class SATSessionModel: ObservableObject {
         let page = layoutHere.map { "\(Int($0.pageHeight))" } ?? "-"
         return "q \(practice.index + 1) tutor \(state) live \(live) passes \(passes) attempts \(attempts) calls \(quiet?.calls ?? -1) tag \(tag.satQuestionId ?? "-") "
             + "rung \(rung) words \(here.count) yourTurn \(here.contains { $0.kind == .yourTurn } ? "yes" : "no") walk \(walk.map { "\($0.shown)/\($0.count)" } ?? "-") "
-            + "tutorInk \(tutorInk) marks \(figureMarks ?? "-") page \(page)"
+            + "tutorInk \(tutorInk) marks \(figureMarks ?? "-") page \(page) step \(lastStepSource) read \(tutor?.loop.readLines.count ?? 0) fig \(screen.map { kidStrokes(on: $0, figure: true).count } ?? -1)/\(screen.map { kidStrokes(on: $0).count } ?? -1)"
     }
     #endif
 }

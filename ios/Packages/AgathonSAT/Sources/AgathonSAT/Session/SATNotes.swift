@@ -26,7 +26,7 @@ public struct SATNudgeNote: View {
             Text(SATCopy.nudgeLabel)
                 .font(.custom(DSFonts.uiPostScriptName(weight: 600), fixedSize: 14 * k))
                 .tracking(1.4 * k)
-                .foregroundStyle(DS.Color.onCobaltFaint)
+                .foregroundStyle(SATNoteColor.label)
             SATText(text, size: 21 * k, color: DS.Color.onInk)
                 .accessibilityIdentifier("sat.nudge.text")
             Text(footer)
@@ -69,7 +69,7 @@ public struct SATWrongNote: View {
             Text(label)
                 .font(.custom(DSFonts.uiPostScriptName(weight: 600), fixedSize: 14 * k))
                 .tracking(1.4 * k)
-                .foregroundStyle(DS.Color.onCobaltFaint)
+                .foregroundStyle(SATNoteColor.label)
             if let why {
                 SATText(SATNoteWords.thatsWhat(why), size: 21 * k, color: DS.Color.onInk)
                     .accessibilityIdentifier("sat.wrong.why")
@@ -102,6 +102,11 @@ public struct SATWrongNote: View {
         .buttonStyle(SATPress())
         .accessibilityIdentifier(id)
     }
+}
+
+/// The notes' quiet label on cobalt ("NUDGE", "YOU PICKED B"): a flat pale cobalt that still reads.
+enum SATNoteColor {
+    static let label = DS.Palette.cobalt.mixed(with: DS.Palette.white, amount: 0.72).color
 }
 
 /// The words of a `why`: "That's what you get if you …" when the bank wrote the mistake itself.

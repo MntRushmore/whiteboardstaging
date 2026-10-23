@@ -424,19 +424,25 @@ private struct SATDebugProbe: View {
     @ObservedObject var model: SATSessionModel
     @State private var writing = false
 
+    /// White on the white page in the screenshots (a faded button stops taking taps, and the tap
+    /// lands on the board as a dot of ink); grey otherwise.
+    private func button(_ title: String, id: String, action: @escaping () -> Void) -> some View {
+        let shots = SATDebug.args.contains("-satShots")
+        return Button(action: action) {
+            Text(title).font(.system(size: 11)).foregroundStyle(shots ? Color.white : Color.gray)
+                .frame(width: 28, height: 22).background(Color.white).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+    }
+
     var body: some View {
         if model.context.isStub || SATDebug.isLive {
             TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                 HStack(spacing: 4) {
-                    Button("ink") { model.debugInk() }
-                        .font(.system(size: 11))
-                        .frame(width: 30, height: 22)
-                        .accessibilityIdentifier("sat.debug.ink")
-                    Button("o") { model.debugCircle(x: SATDebug.circleAt.x, y: SATDebug.circleAt.y) }
-                        .font(.system(size: 11))
-                        .frame(width: 22, height: 22)
-                        .accessibilityIdentifier("sat.debug.circle")
-                    Button("w") {
+                    button("ink", id: "sat.debug.ink") { model.debugInk() }
+                    button("o", id: "sat.debug.circle") { model.debugCircle(x: SATDebug.circleAt.x, y: SATDebug.circleAt.y) }
+                    button("w", id: "sat.debug.write") {
                         guard !writing else { return }
                         writing = true
                         Task { @MainActor in
@@ -444,9 +450,6 @@ private struct SATDebugProbe: View {
                             writing = false
                         }
                     }
-                    .font(.system(size: 11))
-                    .frame(width: 22, height: 22)
-                    .accessibilityIdentifier("sat.debug.write")
                     .accessibilityValue(writing ? "busy" : "\(SATAutowriter.progress.next)")
                     Text(model.debugValue)
                         .font(.system(size: 1))
@@ -455,7 +458,6 @@ private struct SATDebugProbe: View {
                         .accessibilityValue(model.debugValue)
                 }
             }
-            .opacity(SATDebug.args.contains("-satShots") ? 0.01 : 0.6)
             .padding(.leading, 240)
             .padding(.bottom, 2)
         }

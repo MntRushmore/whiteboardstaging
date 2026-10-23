@@ -150,6 +150,9 @@ final class TileLayers {
     /// The current screen's index, read when needed and never kept: a kept copy would make the
     /// controller's next change copy the whole index (copy-on-write).
     var index: () -> SceneIndex = { SceneIndex() }
+    /// What is printed on the page (SAT v2's question, `PagePrint`), drawn under the ink in every tile
+    /// (page space): crisp at every level the tiles are drawn at. Called off the main thread.
+    var underlay: (@Sendable (CGContext) -> Void)?
     /// the last paint's draw and image times (ms), for the stats
     private(set) var lastPaintDrawMs = 0.0
     private(set) var lastPaintImageMs = 0.0
@@ -222,6 +225,7 @@ final class TileLayers {
         let index = self.index()
         let hidden = self.hidden
         let kind = Self.kind
+        let underlay = self.underlay
         let jobs = tiles.map { t -> Job in
             t.pending = true
             t.stale = false
@@ -237,7 +241,10 @@ final class TileLayers {
                     let job = (base + i).pointee
                     let items = index.items(in: job.rect, hiding: hidden)
                     let bitmap = TileBitmap.make(kind, rect: job.rect, scale: job.px)
-                    bitmap?.draw { ctx in TileRasterizer.draw(items, in: ctx) }
+                    bitmap?.draw { ctx in
+                        underlay?(ctx)
+                        TileRasterizer.draw(items, in: ctx)
+                    }
                     (base + i).pointee.bitmap = bitmap
                 }
             }
@@ -278,6 +285,7 @@ final class TileLayers {
             let cg = clips.map(\.cgRect)
             ctx.clip(to: cg)
             for r in cg { ctx.clear(r) }
+            underlay?(ctx)
             TileRasterizer.draw(items, in: ctx)
             ctx.restoreGState()
         }

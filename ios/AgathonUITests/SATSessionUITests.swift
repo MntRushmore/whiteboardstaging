@@ -21,6 +21,8 @@ import XCTest
 ///     xcodebuild test-without-building … -only-testing:AgathonUITests/SATSessionUITests -parallel-testing-enabled NO
 final class SATSessionUITests: XCTestCase {
     private var app: XCUIApplication!
+    /// the test turned the iPad upright (the captures come in the device's own orientation)
+    private var portrait = false
     private let env = ProcessInfo.processInfo.environment
 
     override func setUpWithError() throws {
@@ -73,7 +75,7 @@ final class SATSessionUITests: XCTestCase {
         waitFor("sat.choice.A", value: "Chosen", timeout: 5)
         tap("sat.check")
         XCTAssertTrue(element("sat.wrong").waitForExistence(timeout: 5))
-        waitFor("sat.wrong.why", label: "Subtracted 5 from 9", timeout: 5)
+        waitFor("sat.wrong.why", label: "subtracted 5 from 9", timeout: 5)
         waitFor("sat.choice.A", value: "Not this one", timeout: 5)
         snap("landscape-06-wrong-answer")
         tap("sat.wrong.tryAgain")
@@ -104,11 +106,12 @@ final class SATSessionUITests: XCTestCase {
     /// With the day's pass: the nudge, ONE step through the live Help me (the engine's step from the
     /// stubbed read: no model), "Your turn", then the walk-through a tap a step.
     func test2TheLadderWithTheTutorOn() throws {
-        launch(stub: "cap=20,used=0", extra: ["-satStubRead", "4x - 12 + 7 = 2x + 9"])
+        launch(stub: "cap=20,used=0", extra: ["-satStubRead", "4x - 12 + 7 = 2x + 9", "-satAutowrite", "4x - 12 + 7 = 2x + 9"])
         openSet()
-        drawOnBoard()
-        probe("tutor on live on passes 1")
-        sleep(2)
+        // the student's first line, in a student's hand through the canvas's touch path
+        tap("sat.debug.write")
+        probe("tutor on live on passes 1", timeout: 20)
+        probe("read 1", timeout: 20)
         tap("sat.helpMe")
         XCTAssertTrue(element("sat.nudge").waitForExistence(timeout: 5))
         waitFor("sat.nudge.text", label: "distribute the 4", timeout: 5)
@@ -118,6 +121,8 @@ final class SATSessionUITests: XCTestCase {
         // rung 2: one step written by the tutor, "Your turn" beside it
         probe("rung 2", timeout: 10)
         probe("yourTurn yes", timeout: 20)
+        // the live Help me wrote it (the engine's next step from the read line: no model called)
+        probe("step live", timeout: 5)
         XCTAssertTrue(element("sat.yourTurn").waitForExistence(timeout: 5))
         XCTAssertFalse(element("sat.nudge").exists)
         snap("landscape-04-rung2-one-step")
@@ -227,12 +232,14 @@ final class SATSessionUITests: XCTestCase {
         }
         if element("sat.solution.back").exists { tap("sat.solution.back") }
         XCUIDevice.shared.orientation = .portrait
+        portrait = true
         sleep(2)
         snap("portrait-13-question")
         // the plotted line question of the sample, in portrait
         for _ in 2...4 { tap("sat.next") }
         snap("portrait-13b-plot")
         XCUIDevice.shared.orientation = .landscapeLeft
+        portrait = false
         sleep(1)
         // the rest unanswered: the results
         for _ in 5...10 { tap("sat.next") }
@@ -259,6 +266,7 @@ final class SATSessionUITests: XCTestCase {
     /// Portrait: the solution's two ways as tabs.
     func test7PortraitSolutionTabs() throws {
         XCUIDevice.shared.orientation = .portrait
+        portrait = true
         launch(stub: "cap=20,used=0")
         openSet()
         snap("portrait-01-question")
@@ -334,6 +342,22 @@ final class SATSessionUITests: XCTestCase {
                        file: file, line: line)
     }
 
+    /// The screen as it reads: a landscape capture comes in the device's own (portrait) orientation.
+    static func upright(_ image: UIImage, portrait: Bool) -> UIImage {
+        // drawn once, so the capture's orientation is applied to its pixels
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        let drawn = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in image.draw(at: .zero) }
+        guard !portrait, drawn.size.height > drawn.size.width else { return drawn }
+        let size = CGSize(width: drawn.size.height, height: drawn.size.width)
+        return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            let c = ctx.cgContext
+            c.translateBy(x: size.width / 2, y: size.height / 2)
+            c.rotate(by: -.pi / 2)
+            drawn.draw(in: CGRect(x: -drawn.size.width / 2, y: -drawn.size.height / 2, width: drawn.size.width, height: drawn.size.height))
+        }
+    }
+
     private func snap(_ name: String) {
         sleep(1)
         let shot = XCUIScreen.main.screenshot()
@@ -342,7 +366,7 @@ final class SATSessionUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         if let dir = env["AGATHON_SAT_SHOTS"], !dir.isEmpty {
-            try? shot.pngRepresentation.write(to: URL(fileURLWithPath: dir).appendingPathComponent("sat2-\(name).png"))
+            try? Self.upright(shot.image, portrait: portrait).pngData()?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("sat2-\(name).png"))
         }
     }
 }

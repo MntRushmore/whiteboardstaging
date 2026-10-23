@@ -208,10 +208,10 @@ struct SATFigurePrinter {
                     if at.x == axisX {
                         over += label(lbl, size: Self.pointLabelSize, at: CGPoint(x: c.x - 10, y: c.y + 14), anchor: CGPoint(x: 1, y: 0), weight: .semibold)
                     } else {
-                        let above = Self.lineBelow(plot, at)
-                        let right = c.x < rect.maxX - 100
-                        over += label(lbl, size: Self.pointLabelSize, at: CGPoint(x: c.x + (right ? -8 : -12), y: above ? c.y - 16 : c.y + 16),
-                                      anchor: CGPoint(x: right ? 0.5 : 1, y: above ? 1 : 0), weight: .semibold)
+                        // the free corner above the point: left of a rising line, right of a falling one
+                        let rising = Self.lineBelow(plot, at)
+                        over += label(lbl, size: Self.pointLabelSize, at: CGPoint(x: rising ? c.x - 10 : c.x + 12, y: c.y - 12),
+                                      anchor: CGPoint(x: rising ? 1 : 0, y: 1), weight: .semibold)
                     }
                 }
             case .bar(let x, let height, let lbl, let width):

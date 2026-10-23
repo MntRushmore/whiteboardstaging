@@ -56,6 +56,9 @@ extension LiveLoop {
         lines.values.filter { !$0.latex.isEmpty }.sorted { ($0.bounds.y, $0.bounds.x) < ($1.bounds.y, $1.bounds.x) }.map { ($0.latex, $0.bounds) }
     }
 
+    /// The tutor's hand is writing (a block not yet finished).
+    public var busyWriting: Bool { writer?.isWriting == true }
+
     /// Rung 2 with the day's pass: ONE next step through the live Help me (Next step), under the
     /// student's last line. False when the tutor is off here or has nothing read to help with (the
     /// app then writes the bank's next step).

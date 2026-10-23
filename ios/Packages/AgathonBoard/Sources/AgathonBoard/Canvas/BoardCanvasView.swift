@@ -89,10 +89,9 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
     private let templateDots = CAShapeLayer()
     /// the page the template was drawn for (redrawn only when it changes)
     private var templateFor: (page: ProblemPage?, rect: Box)?
-    /// what is printed on the page (SAT v2: the question, its figure, the answer cards), between the
-    /// template and the ink, one tiled layer a print (`printProvider`)
-    private var printLayers: [PrintTiledLayer] = []
-    private let printRoot = CALayer()
+    /// what is printed on the page (SAT v2: the question, its figure, the answer cards), drawn in the
+    /// ink's own tiles under the ink (`printProvider`)
+    private var prints: [PagePrint] = []
     /// all ink, clipped to the screen (the last row of tiles overhangs it): a rectangular
     /// `masksToBounds` (a scissor, no offscreen pass), its bounds the screen rect so its sublayers
     /// stay in page space
@@ -207,9 +206,6 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         templateRules.lineCap = .round
         templateLayer.isHidden = true
         content.addSublayer(templateLayer)
-        printRoot.anchorPoint = .zero
-        printRoot.actions = ["sublayers": NSNull(), "position": NSNull(), "bounds": NSNull(), "hidden": NSNull()]
-        content.addSublayer(printRoot)
         inkRoot.anchorPoint = .zero
         inkRoot.masksToBounds = true
         inkRoot.actions = ["sublayers": NSNull(), "position": NSNull(), "bounds": NSNull()]
@@ -1075,6 +1071,8 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         CATransaction.setDisableActions(true)
         paper.frame = screen.rect.cgRect
         updateTemplate(screen)
+        // the prints of the screen now shown, drawn by the reset below (nothing to invalidate)
+        prints = []
         reloadPrint()
         inkRoot.position = screen.rect.cgRect.origin
         inkRoot.bounds = screen.rect.cgRect
@@ -1119,43 +1117,52 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         didSet { reloadPrint() }
     }
 
-    /// Asks `printProvider` for the current screen again: a print whose key changed is drawn again
-    /// (a choice chosen redraws the cards, not the question).
+    /// Asks `printProvider` for the current screen again: what changed (by key) is drawn again in the
+    /// tiles it covers (a choice chosen redraws the cards, not the question).
     public func reloadPrint() {
         guard let screen = controller.currentScreen else { return }
-        let prints = printProvider?(screen) ?? []
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        while printLayers.count < prints.count {
-            let l = PrintTiledLayer()
-            l.anchorPoint = .zero
-            l.tileSize = CGSize(width: 512, height: 512)
-            l.levelsOfDetail = 7
-            l.levelsOfDetailBias = 4
-            l.contentsScale = window?.screen.scale ?? UIScreen.main.scale
-            l.actions = ["position": NSNull(), "bounds": NSNull(), "contents": NSNull(), "hidden": NSNull()]
-            printRoot.addSublayer(l)
-            printLayers.append(l)
+        let next = (printProvider?(screen) ?? []).filter { !$0.items.isEmpty }
+        let rect = screen.rect
+        let k = CGFloat(rect.w / Box.screen.w)
+        let t = CGAffineTransform(translationX: CGFloat(rect.x), y: CGFloat(rect.y)).scaledBy(x: k, y: k)
+        // the areas to draw again: every print whose key changed, where it was and where it is
+        var dirty: [Box] = []
+        func add(_ b: CGRect?) {
+            guard let b else { return }
+            let r = b.applying(t).insetBy(dx: -4, dy: -4)
+            dirty.append(Box(x: Double(r.minX), y: Double(r.minY), w: Double(r.width), h: Double(r.height)))
         }
-        let rect = screen.rect.cgRect
-        let k = CGFloat(screen.rect.w / Box.screen.w)
-        for (i, layer) in printLayers.enumerated() {
-            guard i < prints.count, !prints[i].items.isEmpty else {
-                if !layer.isHidden {
-                    layer.set(.empty, scale: k)
-                    layer.isHidden = true
-                }
-                continue
-            }
-            if layer.frame != rect { layer.frame = rect }
-            layer.isHidden = false
-            if layer.print.key != prints[i].key || layer.print.key.isEmpty { layer.set(prints[i], scale: k) }
+        for i in 0..<max(next.count, prints.count) {
+            let old: PagePrint? = i < prints.count ? prints[i] : nil
+            let new: PagePrint? = i < next.count ? next[i] : nil
+            let oldKey = old?.key ?? "", newKey = new?.key ?? ""
+            if oldKey == newKey && !oldKey.isEmpty { continue }
+            add(old?.bounds)
+            add(new?.bounds)
         }
-        CATransaction.commit()
+        prints = next
+        if next.isEmpty {
+            tiles.underlay = nil
+        } else {
+            tiles.underlay = Self.underlay(next, t)
+        }
+        if !dirty.isEmpty {
+            tiles.invalidate(dirty)
+        }
     }
 
     /// The prints on show (tests).
-    public var shownPrints: [PagePrint] { printLayers.filter { !$0.isHidden }.map(\.print) }
+    public var shownPrints: [PagePrint] { prints }
+
+    /// The prints drawn into a tile's page-space context, through the screen's transform.
+    private static func underlay(_ drawn: [PagePrint], _ t: CGAffineTransform) -> @Sendable (CGContext) -> Void {
+        { (ctx: CGContext) in
+            ctx.saveGState()
+            ctx.concatenate(t)
+            for p in drawn { p.draw(in: ctx) }
+            ctx.restoreGState()
+        }
+    }
 
     /// The template for the screen's problem page (none for a plain screen or the All done page).
     private func updateTemplate(_ screen: ScreenRecord) {
