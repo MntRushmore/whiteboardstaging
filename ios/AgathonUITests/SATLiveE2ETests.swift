@@ -97,7 +97,7 @@ final class SATLiveE2ETests: XCTestCase {
     }
 
     func testALongerRealSession() throws {
-        launch(autowrite: "circle:auto|step:0|step:1|step:2")
+        launch(autowrite: "circle:auto|calc:auto|step:0|step:1")
         snap("01-home")
         // "Pick a skill": linear functions (its questions have planes and tables)
         let skill = element("sat.home.skill.linear-functions")
@@ -119,7 +119,7 @@ final class SATLiveE2ETests: XCTestCase {
         }
         // a right line in a student's hand: read, then ticked once the page is checked (the 9 s pause)
         let wrote = Date()
-        tap("sat.debug.write") // step:0
+        tap("sat.debug.write") // calc:auto (the bank's arithmetic, else step:0 next)
         waitFor("sat.debug.write", value: "busy", timeout: 5, quiet: true)
         waitFor("sat.debug.write", notValue: "busy", timeout: 60)
         let penUp = Date()
@@ -131,7 +131,7 @@ final class SATLiveE2ETests: XCTestCase {
         var tickFrom = penUp
         if !(element("sat.debug").value as? String ?? "").contains("ticks 1") {
             timings.append("step 0 left alone (no tick): \((element("sat.debug").value as? String ?? "").components(separatedBy: " tutorInk").first ?? "")")
-            tap("sat.debug.write") // step:1
+            tap("sat.debug.write") // step:0
             waitFor("sat.debug.write", value: "busy", timeout: 5, quiet: true)
             waitFor("sat.debug.write", notValue: "busy", timeout: 60)
             tickFrom = Date()
@@ -241,6 +241,42 @@ final class SATLiveE2ETests: XCTestCase {
         XCTAssertTrue(element("sat.summary").waitForExistence(timeout: 20), "the set ends in the summary")
         snap("09-summary")
         XCTAssertTrue(element("sat.summary.deck").waitForExistence(timeout: 5), "the misses go into the deck")
+    }
+
+    /// The solution two ways (the paper way and the Desmos way) on a real question: nonlinear equations,
+    /// where most of the bank's questions have a Desmos way. Choices only, no ink (no tutor calls).
+    func testYSolutionTwoWays() throws {
+        launch(autowrite: "")
+        let skill = element("sat.home.skill.nonlinear-equations")
+        XCTAssertTrue(skill.waitForExistence(timeout: 20), "no nonlinear equations skill row")
+        for _ in 0..<6 where !skill.isHittable { app.swipeUp() }
+        skill.tap()
+        waitFor("sat.position", label: "Q1 of", timeout: 60)
+        var shown = false
+        for _ in 0..<10 where !shown {
+            for key in ["A", "B", "C", "D", "A"] {
+                if element("sat.solution").exists { break }
+                if element("sat.wrong.tryAgain").exists { tap("sat.wrong.tryAgain") }
+                if element("sat.choice.\(key)").exists {
+                    tap("sat.choice.\(key)")
+                } else if element("sat.key.1").exists {
+                    tap("sat.key.\(key == "A" ? 1 : 2)")
+                }
+                tap("sat.check")
+                _ = element("sat.solution").waitForExistence(timeout: 4)
+            }
+            if element("sat.solution").exists, element("sat.solution.desmosWay").exists || element("sat.solution.ways").exists {
+                shown = true
+                snap("08b-solution-two-ways")
+            } else if element("sat.solution.next").exists {
+                tap("sat.solution.next")
+                sleep(2)
+            } else if element("sat.next").exists {
+                tap("sat.next")
+                sleep(2)
+            }
+        }
+        XCTAssertTrue(shown, "no solution with a Desmos way in the set")
     }
 
     /// SAT home after the harness moved the deck's review to today: "1 to review".

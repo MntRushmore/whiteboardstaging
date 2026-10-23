@@ -211,6 +211,9 @@ public final class LiveLoop: ObservableObject {
     /// session turns it on; an ordinary board keeps it off.
     public var checksUnjudgedLines = false
 
+    /// The steps the tutor's hand wrote under the work, by page (Help me's next step, Solve's), as LaTeX.
+    public internal(set) var tutorSteps: [RecordID: [String]] = [:]
+
     // MARK: network
 
     var offlineQueue = Set<String>()

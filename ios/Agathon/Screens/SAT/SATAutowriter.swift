@@ -46,6 +46,23 @@ enum SATAutowriter {
             }
             line = SATSessionModel.handLines(maths[k]).last ?? maths[k]
         }
+        // `calc:auto`: the first bank step that works numbers out (`m = \frac{-2-4}{2-0} = -3`), as its
+        // arithmetic (`\frac{-2-4}{2-0} = -3`): a line the engine can tick on any question (the long live run)
+        if line == "calc:auto", let q = model.practice.current {
+            let calcs = q.solution.steps.compactMap(\.math).flatMap { SATSessionModel.handLines($0) }.compactMap { m -> String? in
+                var t = m.trimmingCharacters(in: .whitespaces)
+                if let r = t.range(of: #"^[a-zA-Z](?:\([a-z0-9]+\))?\s*="#, options: .regularExpression) { t = String(t[r.upperBound...]) }
+                let letters = t.replacingOccurrences(of: #"\\[a-zA-Z]+"#, with: "", options: .regularExpression)
+                guard t.contains("="), letters.range(of: "[a-zA-Z]", options: .regularExpression) == nil,
+                      t.range(of: #"[0-9)}]\s*(?:[-+*/]|\\cdot|\\times|\\frac)|\\frac"#, options: .regularExpression) != nil else { return nil }
+                return t.trimmingCharacters(in: .whitespaces)
+            }
+            guard let first = calcs.first else {
+                log.error("no arithmetic step on this question")
+                return
+            }
+            line = first
+        }
         if line.hasPrefix("circle:") {
             // `circle:auto`: round the plane's first labelled point
             var n = line.dropFirst("circle:".count).split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }

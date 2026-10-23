@@ -57,6 +57,17 @@ extension LiveLoop {
         if let page = board.currentProblemPage, page.kind == .problem, !inAnswerSpot(st.bounds) {
             let lane = ProblemPageLayout.place(Vec2(ProblemPageLayout.laneX, 0), on: board.screenRect.box).x
             x = max(end, lane)
+            // never over what the page keeps clear (an SAT question's printed figure: the end-to-end run's
+            // "I read" sat on the graph's line); just after the mark instead
+            let chip = (x0: x, x1: x + 320, y0: st.bounds.y - 8, y1: st.bounds.maxY + 8)
+            for k in page.keepOut {
+                let a = ProblemPageLayout.place(Vec2(k.x, k.y), on: board.screenRect.box)
+                let b = ProblemPageLayout.place(Vec2(k.x + k.w, k.y + k.h), on: board.screenRect.box)
+                if chip.x0 < b.x && chip.x1 > a.x && chip.y0 < b.y && chip.y1 > a.y {
+                    x = end
+                    break
+                }
+            }
         }
         return AgathonBrain.Point(x: x, y: st.bounds.y + st.bounds.h / 2)
     }
