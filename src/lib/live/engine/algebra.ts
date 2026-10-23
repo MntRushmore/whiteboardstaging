@@ -319,7 +319,11 @@ export function linearSolveSteps(
       steps.push(line);
     };
 
-    if (hasBracket(inputLatex) || lcd > 1) write(`${termsLatex(L)} ${rel} ${termsLatex(R)}`);
+    // brackets expanded — but not when the unknown is already alone and "expanding" the numbers would
+    // split a fraction over its numerator: `m = \frac{1-(-2)}{2-0}` (a slope) is not `m = \frac{1}{2} + 1`,
+    // a step no teacher writes (SAT v2 end-to-end run, 2026-10-23); `P = 2(12) + 2(7)` still shows `24 + 14`
+    const splitsFraction = alone && R.some((t) => t.c.d !== 1);
+    if ((hasBracket(inputLatex) && !splitsFraction) || lcd > 1) write(`${termsLatex(L)} ${rel} ${termsLatex(R)}`);
 
     const Lc = combineTerms(L);
     const Rc = combineTerms(R);

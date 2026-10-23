@@ -94,6 +94,19 @@ struct RootView: View {
             OnboardingState.reset()
             if backend.auth.phase == .signedIn { try? await backend.auth.signOut(scope: .local) }
         }
+        // `-satLive` with AGATHON_TEST_EMAIL / AGATHON_TEST_PASSWORD: that free account signed in, past
+        // the first run (the end-to-end run against a local stack whose anonymous sign-ins are off)
+        let env = ProcessInfo.processInfo.environment
+        if SATDebug.isLive, let email = env["AGATHON_TEST_EMAIL"], let password = env["AGATHON_TEST_PASSWORD"] {
+            if backend.auth.phase == .signedIn, backend.auth.email?.lowercased() != email.lowercased() {
+                try? await backend.auth.signOut(scope: .local)
+            }
+            if backend.auth.phase != .signedIn { try? await backend.auth.signIn(email: email, password: password) }
+            if backend.auth.phase == .signedIn {
+                onboarding = false
+                return
+            }
+        }
         #endif
         switch backend.auth.phase {
         case .signedOut: onboarding = OnboardingState.needsOnboarding

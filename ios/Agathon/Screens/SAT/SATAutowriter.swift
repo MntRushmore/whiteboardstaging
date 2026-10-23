@@ -36,9 +36,32 @@ enum SATAutowriter {
         var line = line
         // `step:k`: the question's own bank step k, its last link (a right step the tutor can tick:
         // the end-to-end run, whatever question the server sent)
-        if line.hasPrefix("step:"), let k = Int(line.dropFirst("step:".count)), let q = model.practice.current,
-           q.solution.steps.indices.contains(k), let math = q.solution.steps[k].math {
-            line = SATSessionModel.handLines(math).last ?? math
+        // — counted among the steps that have maths (a step of words only is no line to write: the
+        // end-to-end run wrote the token itself, "step:0", under a trig question whose first step is words)
+        if line.hasPrefix("step:"), let k = Int(line.dropFirst("step:".count)), let q = model.practice.current {
+            let maths = q.solution.steps.compactMap(\.math)
+            guard maths.indices.contains(k) else {
+                log.error("no step \(k) with maths on this question")
+                return
+            }
+            line = SATSessionModel.handLines(maths[k]).last ?? maths[k]
+        }
+        // `calc:auto`: the first bank step that works numbers out (`m = \frac{-2-4}{2-0} = -3`), as its
+        // arithmetic (`\frac{-2-4}{2-0} = -3`): a line the engine can tick on any question (the long live run)
+        if line == "calc:auto", let q = model.practice.current {
+            let calcs = q.solution.steps.compactMap(\.math).flatMap { SATSessionModel.handLines($0) }.compactMap { m -> String? in
+                var t = m.trimmingCharacters(in: .whitespaces)
+                if let r = t.range(of: #"^[a-zA-Z](?:\([a-z0-9]+\))?\s*="#, options: .regularExpression) { t = String(t[r.upperBound...]) }
+                let letters = t.replacingOccurrences(of: #"\\[a-zA-Z]+"#, with: "", options: .regularExpression)
+                guard t.contains("="), letters.range(of: "[a-zA-Z]", options: .regularExpression) == nil,
+                      t.range(of: #"[0-9)}]\s*(?:[-+*/]|\\cdot|\\times|\\frac)|\\frac"#, options: .regularExpression) != nil else { return nil }
+                return t.trimmingCharacters(in: .whitespaces)
+            }
+            guard let first = calcs.first else {
+                log.error("no arithmetic step on this question")
+                return
+            }
+            line = first
         }
         if line.hasPrefix("circle:") {
             // `circle:auto`: round the plane's first labelled point
@@ -46,7 +69,9 @@ enum SATAutowriter {
             if line == "circle:auto", case .plot(let p)? = model.practice.current?.figure {
                 for item in p.items { if case .point(let at, _, _) = item { n = [at.x, at.y]; break } }
             }
-            guard n.count == 2, let plot = model.questionPlot(on: screen) else { return }
+            guard let plot = model.questionPlot(on: screen) else { return }
+            // a plane with no labelled point (a scatterplot's line, bars): round the middle of its window
+            if n.count != 2 { n = [(plot.xMin + plot.xMax) / 2, (plot.yMin + plot.yMax) / 2] }
             let c = plot.page(n[0], n[1])
             strokes = [(0...28).map { k in
                 let t = Double(k) / 26 * 2 * .pi

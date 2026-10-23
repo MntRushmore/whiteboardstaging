@@ -377,6 +377,9 @@ final class SATSessionModel: ObservableObject {
         tutor.loop.settings.mode = .suggest
         // Graph it and Graph an equation draw onto the question's own plane
         tutor.loop.questionPlot = { [weak self] screen in self?.questionPlot(on: screen) }
+        // the model reads the bank's question with every check: a setup the engine cannot judge
+        // (`3 + 6m = 51` for "6 dollars plus 3 per muffin") is checked by it, and a slip there ringed
+        tutor.loop.checksUnjudgedLines = true
         tutor.onInkEmpty = { [weak self] in self?.tutorRefused() }
         session.isPenDown = { [weak canvas, weak liveBoard = tutor.liveBoard] in
             if liveBoard?.isPenDown == true { return true }
@@ -888,7 +891,8 @@ final class SATSessionModel: ObservableObject {
         let steps = practice.questions[i].solution.steps
         // the steps on the page already are not drawn again (the student's, matched to the bank's,
         // and the one given at rung 2); the walk picks up at the first one still to do
-        let read = tutorOnHere ? tutor?.loop.readLines.map(\.latex) ?? [] : []
+        // (and the live tutor's own step at rung 2: the end-to-end run's walk wrote `h = \frac{3}{2}w + 6` again under it)
+        let read = tutorOnHere ? (tutor?.loop.readLines.map(\.latex) ?? []) + (tutor?.loop.tutorSteps[screen] ?? []) : []
         let skip = SATHintLadder.stepsOnThePage(steps, studentLines: read, written: practice.items[i].ladder.written)
         let first = steps.indices.first { !skip.contains($0) } ?? steps.count
         guard first < steps.count else {

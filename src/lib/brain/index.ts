@@ -27,7 +27,7 @@ import type { TLShapeId } from "tldraw";
 import { createEngine } from "@/lib/live/engine";
 import { arithmeticOf, bracketLine, isArithmetic, isStackRead, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "@/lib/live/engine/columnWork";
 import { parseStacked, rowPlaces, stackedAnalysis, workStacked } from "@/lib/live/engine/columnArithmetic";
-import { answerAfterRestatedEnd, inkLeadsWithMinus, leadingSigns, readVariants, readYoungHand, rightAnswerTo } from "@/lib/live/youngHand";
+import { answerAfterRestatedEnd, inkLeadsWithMinus, inkTimesDots, leadingSigns, readVariants, readYoungHand, rightAnswerTo, withTrailingTimesDot } from "@/lib/live/youngHand";
 import type { AnalyzeContext, GraphForOptions, HelpMode, InkLine, InkStroke, LineAnalysis, LiveEngine, Rect } from "@/lib/live/contracts";
 import { barGroups, fractionGroups, splitInk, type Diagram, type StrokeVerdict } from "@/lib/live/diagrams";
 import { stackGrid, stackGroups, type StackedSum } from "@/lib/live/stackedSums";
@@ -210,7 +210,9 @@ export function youngReadOf(args: { latex: string; problem?: string[] | null; st
   const signs = arithmetic && Array.isArray(args.strokes) && args.strokes.length > 0 ? leadingSigns(args.strokes.map(toInkStroke)) : null;
   // a nonsense read of her answer that can only have been the right number (`misreadVariants`)
   const rightAnswer = arithmetic ? rightAnswerTo(engine(), problem) : undefined;
-  const read = readYoungHand(args.latex, { arithmetic, signs, rightAnswer });
+  // a raised dot her line ends with, which Mathpix dropped (`h = 94 ·` read `h = 94`): the line is not finished
+  const ink = Array.isArray(args.strokes) && args.strokes.length > 0 ? args.strokes.map(toInkStroke) : [];
+  const read = withTrailingTimesDot(readYoungHand(args.latex, { arithmetic, signs, rightAnswer }), ink.length > 0 && inkTimesDots(ink).trailing);
   // a division bar and the number under it (`bar`: one of the line's strokes is a `bars`' bar): Mathpix
   // drops the bar and reads `2` — the line is "divide both sides by 2" (`LiveLoop.applyRecognition`)
   return { latex: args.bar === true ? (barDivisionLatex(read) ?? read) : read };
@@ -225,7 +227,7 @@ export function readVariantsOf(args: { latex: string; strokes?: BrainStroke[]; k
   need(typeof args.latex === "string", "latex is a string");
   const ink = Array.isArray(args.strokes) && args.strokes.length > 0 ? args.strokes.map(toInkStroke) : [];
   const keep = Array.isArray(args.keep) ? args.keep.filter((l) => typeof l === "string") : [];
-  return { variants: readVariants(args.latex, ink.length > 0 && inkLeadsWithMinus(ink), keep) };
+  return { variants: readVariants(args.latex, ink.length > 0 && inkLeadsWithMinus(ink), keep, ink.length > 0 ? inkTimesDots(ink).between : 0) };
 }
 
 export interface StackedLineArgs {
