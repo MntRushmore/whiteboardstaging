@@ -68,4 +68,37 @@ struct PagePrintTests {
         #expect(c.store["stroke:a"]?.meta["figure"]?.stringValue == "plot")
         #expect(c.store["stroke:b"]?.meta["figure"] == nil)
     }
+
+    @Test func anSATPageIsDottedPaperRoundItsQuestion() throws {
+        let stem = Box(x: 64, y: 80, w: 780, h: 118), figure = Box(x: 856, y: 84, w: 744, h: 522)
+        let page = ProblemPage(setId: "sat:s:1", index: 4, count: 10, origin: "sat", workTop: 104, answer: false, workBottom: 926,
+                               paper: .dots, keepOut: [stem, figure])
+        var screen = ScreenRecord(id: "screen:q4", order: "a1", rect: Box(x: 0, y: 0, w: 1600, h: 1199))
+        screen.problemPage = page
+        #expect(try BoardDocument.decode(BoardDocument([.screen(screen)]).encoded()).screens.first?.problemPage == page)
+        let dots = ProblemPageLayout.dots(workTop: 104, bottom: 926, keepOut: [stem, figure])
+        #expect(!dots.isEmpty)
+        #expect(!dots.contains { stem.contains($0) || figure.contains($0) })
+        // 36 apart, across the page and down to the work area's bottom
+        #expect(Set(dots.map(\.x)).count == 41)
+        #expect(dots.allSatisfy { $0.y <= 926 })
+        let t = try #require(PageTemplate(page: page, screen: screen.rect))
+        #expect(!t.dots.isEmpty)
+        #expect(t.rules.isEmpty && t.label.isEmpty, "no guide lines, no invitation")
+        #expect(try #require(PageTemplate(page: ProblemPage(), screen: .screen)).dots.isEmpty)
+    }
+
+    @Test func aFittedWidthCameraScrollsATallPage() {
+        let c = CameraConstraints(top: 0, left: 0, bottom: 0, right: 0, fitsWidth: true)
+        let size = CGSize(width: 1366, height: 1024)
+        let tall = Box(x: 0, y: 0, w: 1600, h: 1800)
+        let fit = c.fit(tall, in: size)
+        #expect(abs(fit.scale - 1366.0 / 1600) < 1e-9)
+        #expect(fit.offset.y == 0)
+        // scrolled down as far as it goes: the page's bottom at the window's
+        var down = fit
+        down.offset.y = -5000
+        let held = c.clamp(down, screen: tall, in: size)
+        #expect(abs(held.offset.y - (1024 - 1800 * fit.scale)) < 1e-6)
+    }
 }

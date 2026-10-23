@@ -39,10 +39,17 @@ public struct SATPrintText: SATTextMeasuring {
         case space
         case math(TypesetMath)
         case newline
+        /// a new line, a paragraph's gap above it
+        case paragraph
+
+        var isParagraph: Bool {
+            if case .paragraph = self { return true }
+            return false
+        }
     }
 
     public func lay(_ source: String, size: Double, weight: SATTextWeight = .regular, maxWidth: Double, color: CGColor,
-                    align: Align = .leading, displayLone: Bool = false) -> Laid {
+                    align: Align = .leading, displayLone: Bool = false, lineHeight: Double? = nil, paragraphGap: Double = 0) -> Laid {
         let blocks = SATRichText.parse(source)
         var pieces: [Piece] = []
         func inline(_ nodes: [SATInline], bold: Bool) {
@@ -64,7 +71,7 @@ public struct SATPrintText: SATTextMeasuring {
             }
         }
         for (i, b) in blocks.enumerated() {
-            if i > 0 { pieces.append(.newline) }
+            if i > 0 { pieces.append(.paragraph) }
             switch b {
             case .paragraph(let nodes): inline(nodes, bold: weight == .semibold)
             case .math(let latex): pieces.append(.math(math(latex, size: size, color: color, display: true)))
@@ -77,10 +84,15 @@ public struct SATPrintText: SATTextMeasuring {
                 }
             }
         }
-        return layout(pieces, size: size, maxWidth: maxWidth, color: color, align: align)
+        return layout(pieces, size: size, maxWidth: maxWidth, color: color, align: align, lineHeight: lineHeight, paragraphGap: paragraphGap)
     }
 
     public enum Align { case leading, center }
+
+    /// The stem's measure: a 40-unit line, 14 between paragraphs (the design notes).
+    public func measureStem(_ source: String, style: SATPageStyle, maxWidth: Double) -> SATSize {
+        lay(source, size: style.stemSize, maxWidth: maxWidth, color: SATPrintStyle.ink, lineHeight: style.stemLine, paragraphGap: style.paragraphGap).size
+    }
 
     // MARK: - lines
 
@@ -92,18 +104,21 @@ public struct SATPrintText: SATTextMeasuring {
         var item: (CGPoint) -> PagePrint.Item
     }
 
-    private func layout(_ pieces: [Piece], size: Double, maxWidth: Double, color: CGColor, align: Align) -> Laid {
+    private func layout(_ pieces: [Piece], size: Double, maxWidth: Double, color: CGColor, align: Align, lineHeight: Double?, paragraphGap: Double) -> Laid {
         let regular = font(size, bold: false), semibold = font(size, bold: true)
         let space = width(" ", regular)
         let lineAscent = Double(CTFontGetAscent(regular)), lineDescent = Double(CTFontGetDescent(regular))
         let leading = size * 0.38
         var lines: [[Run]] = [[]]
+        // the gap above each line (a paragraph's)
+        var gapAbove: [Double] = [0]
         var x = 0.0
         var pendingSpace = false
         func place(_ w: Double, _ a: Double, _ d: Double, _ make: @escaping (CGPoint) -> PagePrint.Item) {
             let gap = pendingSpace && x > 0 ? space : 0
             if x > 0 && x + gap + w > maxWidth + 0.5 {
                 lines.append([])
+                gapAbove.append(0)
                 x = 0
             } else {
                 x += gap
@@ -115,8 +130,9 @@ public struct SATPrintText: SATTextMeasuring {
         for p in pieces {
             switch p {
             case .space: pendingSpace = true
-            case .newline:
+            case .newline, .paragraph:
                 lines.append([])
+                gapAbove.append(p.isParagraph ? paragraphGap : 0)
                 x = 0
                 pendingSpace = false
             case .word(let w, let bold):
@@ -132,16 +148,25 @@ public struct SATPrintText: SATTextMeasuring {
         var items: [PagePrint.Item] = []
         var y = 0.0
         var widest = 0.0
-        let nonEmpty = lines.filter { !$0.isEmpty }
-        for (i, line) in nonEmpty.enumerated() {
+        let kept = zip(lines, gapAbove).filter { !$0.0.isEmpty }
+        for (i, (line, gap)) in kept.enumerated() {
+            if i > 0 { y += gap }
             let a = max(lineAscent, line.map(\.ascent).max() ?? 0)
             let d = max(lineDescent, line.map(\.descent).max() ?? 0)
             let w = (line.last.map { $0.x + $0.width }) ?? 0
             widest = max(widest, w)
             let dx = align == .center && maxWidth.isFinite ? (maxWidth - w) / 2 : 0
-            let baseline = y + a
-            for r in line { items.append(r.item(CGPoint(x: r.x + dx, y: baseline))) }
-            y = baseline + d + (i + 1 < nonEmpty.count ? leading : 0)
+            if let lineHeight {
+                // a fixed line (the stem: 40 a line), taller only for a tall piece of maths
+                let extra = max(0, a + d - lineHeight)
+                let baseline = y + (lineHeight - (lineAscent + lineDescent)) / 2 + lineAscent + max(0, a - lineAscent)
+                for r in line { items.append(r.item(CGPoint(x: r.x + dx, y: baseline))) }
+                y += lineHeight + extra
+            } else {
+                let baseline = y + a
+                for r in line { items.append(r.item(CGPoint(x: r.x + dx, y: baseline))) }
+                y = baseline + d + (i + 1 < kept.count ? leading : 0)
+            }
         }
         return Laid(size: SATSize(maxWidth.isFinite && align == .center ? maxWidth : widest, y), items: items)
     }
@@ -176,6 +201,7 @@ extension PagePrint.Item {
         case .text(let l, let at): return .text(l, at: at.applying(t))
         case .math(let m, let at): return .math(m, at: at.applying(t))
         case .clip(let r, let inner): return .clip(r.applying(t), inner.map { $0.moved(t) })
+        case .transformed(let m, let inner): return .transformed(m.concatenating(t), inner)
         }
     }
 }

@@ -11,11 +11,19 @@ struct SATFigurePrinter {
     let style: SATPageStyle
     let text: SATPrintText
 
-    static let tickSize = 20.0
-    static let labelSize = 22.0
-    static let line: CGFloat = 3.2
-    static let axis: CGFloat = 2.4
-    static let gridLine: CGFloat = 1.5
+    // the design notes' printed figure style (page units)
+    static let tickSize = 16.0
+    static let axisNameSize = 16.0
+    static let pointLabelSize = 18.0
+    static let shapeLabelSize = 26.0
+    static let angleLabelSize = 24.0
+    static let line: CGFloat = 3
+    static let edge: CGFloat = 2.6
+    static let arc: CGFloat = 2
+    static let axis: CGFloat = 2.2
+    static let gridLine: CGFloat = 1.4
+    static let pointR: CGFloat = 6.5
+    static let halo: CGFloat = 2.5
     static let dash: [CGFloat] = [10, 8]
 
     func items(_ figure: SATFigure, in rect: CGRect, plotGrid: CGRect?) -> [PagePrint.Item] {
@@ -28,8 +36,9 @@ struct SATFigurePrinter {
 
     // MARK: - a label: maths as maths, else words
 
-    func label(_ source: String, size: Double, at p: CGPoint, anchor: CGPoint, color: CGColor = SATPrintStyle.ink) -> [PagePrint.Item] {
-        let laid = text.lay(source, size: size, maxWidth: .infinity, color: color)
+    func label(_ source: String, size: Double, at p: CGPoint, anchor: CGPoint, color: CGColor = SATPrintStyle.ink,
+               weight: SATTextWeight = .regular) -> [PagePrint.Item] {
+        let laid = text.lay(source, size: size, weight: weight, maxWidth: .infinity, color: color)
         let origin = CGPoint(x: p.x - anchor.x * laid.size.w, y: p.y - anchor.y * laid.size.h)
         return laid.items(at: origin)
     }
@@ -38,48 +47,37 @@ struct SATFigurePrinter {
 
     func table(_ t: SATTable, in rect: CGRect) -> [PagePrint.Item] {
         let S = SATPrintStyle.self
-        let columns = max(t.headers.count, t.rows.map(\.count).max() ?? 0)
-        guard columns > 0 else { return [] }
-        let all = [t.headers] + t.rows
-        // the rows' heights as the layout measured them
-        let heights = all.enumerated().map { r, row -> Double in
-            var h = style.tableMinRow
-            for c in 0..<columns {
-                let s = c < row.count ? row[c] : ""
-                h = max(h, text.measure(s.isEmpty ? " " : s, size: style.tableSize, weight: r == 0 ? .semibold : .regular, maxWidth: .infinity).h + 2 * style.tableCellPadY)
-            }
-            return h
-        }
-        let colW = rect.width / CGFloat(columns)
+        let widths = SATPageLayout.tableColumns(t, measure: text, style: style)
+        guard !widths.isEmpty else { return [] }
+        let columns = widths.count
         var items: [PagePrint.Item] = []
-        let outline = CGPath(roundedRect: rect, cornerWidth: 18, cornerHeight: 18, transform: nil)
-        items.append(.fill(outline, S.paper))
-        // the header row in chalk, clipped to the rounded box
-        items.append(.clip(rect, [.fill(CGPath(rect: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: heights[0]), transform: nil), S.well)]))
+        // the header row on chalk, rounded at its ends
+        let head = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: CGFloat(style.tableHeaderRow))
+        items.append(.fill(CGPath(roundedRect: head, cornerWidth: 14, cornerHeight: 14, transform: nil), S.well))
+        let all = [t.headers] + t.rows
         var y = Double(rect.minY)
         let rules = CGMutablePath()
         for (r, row) in all.enumerated() {
-            if r > 0 {
+            let h = r == 0 ? style.tableHeaderRow : style.tableRow
+            if r > 1 {
                 rules.move(to: CGPoint(x: rect.minX, y: y))
                 rules.addLine(to: CGPoint(x: rect.maxX, y: y))
             }
+            // a Total row is set semibold, as the test prints it
+            let total = r > 0 && (row.first ?? "").lowercased().hasPrefix("total")
+            var x = Double(rect.minX)
             for c in 0..<columns {
-                let s = c < row.count ? row[c] : ""
-                guard !s.isEmpty else { continue }
-                let cell = CGRect(x: rect.minX + CGFloat(c) * colW, y: y, width: colW, height: heights[r])
-                let laid = text.lay(SATPrintText.numeral(s), size: style.tableSize, weight: r == 0 ? .semibold : .regular, maxWidth: .infinity,
-                                    color: S.ink)
+                let cell = CGRect(x: x, y: y, width: widths[c], height: h)
+                x += widths[c]
+                let v = c < row.count ? row[c] : ""
+                guard !v.isEmpty else { continue }
+                let laid = text.lay(SATPrintText.numeral(v), size: r == 0 ? style.tableHeaderSize : style.tableSize,
+                                    weight: r == 0 || total ? .semibold : .regular, maxWidth: .infinity, color: S.ink)
                 items += laid.items(at: CGPoint(x: cell.midX - laid.size.w / 2, y: cell.midY - laid.size.h / 2))
             }
-            y += heights[r]
+            y += h
         }
-        for c in 1..<columns {
-            let x = rect.minX + CGFloat(c) * colW
-            rules.move(to: CGPoint(x: x, y: rect.minY))
-            rules.addLine(to: CGPoint(x: x, y: rect.maxY))
-        }
-        items.append(.stroke(rules, S.grid, width: 2, dash: []))
-        items.append(.stroke(outline, S.grid, width: 2, dash: []))
+        items.append(.stroke(rules, S.line, width: 1.5, dash: []))
         return items
     }
 
@@ -105,7 +103,7 @@ struct SATFigurePrinter {
                 g.move(to: p(plot.x.min, t))
                 g.addLine(to: p(plot.x.max, t))
             }
-            items.append(.stroke(g, S.grid, width: Self.gridLine, dash: []))
+            items.append(.stroke(g, S.line, width: Self.gridLine, dash: []))
         }
         let axes = CGMutablePath()
         axes.move(to: p(plot.x.min, axisY))
@@ -122,31 +120,39 @@ struct SATFigurePrinter {
             let kx = every(xs, span: rect.width)
             for (i, t) in xs.enumerated() where i % kx == 0 && !(t == 0 && origin) {
                 let at = p(t, axisY)
-                items += label(Self.tick(t), size: Self.tickSize, at: CGPoint(x: at.x, y: at.y + 6), anchor: CGPoint(x: 0.5, y: 0), color: S.inkSecondary)
+                items += label(Self.tick(t), size: Self.tickSize, at: CGPoint(x: at.x, y: at.y + 10), anchor: CGPoint(x: 0.5, y: 0), color: S.inkSecondary)
             }
         }
         let ys = plot.y.ticks
         let ky = every(ys, span: rect.height)
         for (i, t) in ys.enumerated() where i % ky == 0 && !(t == 0 && origin) {
             let at = p(axisX, t)
-            items += label(Self.tick(t), size: Self.tickSize, at: CGPoint(x: at.x - 8, y: at.y), anchor: CGPoint(x: 1, y: 0.5), color: S.inkSecondary)
+            items += label(Self.tick(t), size: Self.tickSize, at: CGPoint(x: at.x - 12, y: at.y), anchor: CGPoint(x: 1, y: 0.5), color: S.inkSecondary)
         }
         if origin {
             let o = p(0, 0)
-            items += label("0", size: Self.tickSize, at: CGPoint(x: o.x - 6, y: o.y + 5), anchor: CGPoint(x: 1, y: 0), color: S.inkSecondary)
+            items += label("0", size: Self.tickSize, at: CGPoint(x: o.x - 8, y: o.y + 8), anchor: CGPoint(x: 1, y: 0), color: S.inkSecondary)
         }
-        // axis names: x at the right end beside the axis, y at the top beside it
+        // axis names: a one-letter name (a variable) at the axis's end; a word under the x axis's
+        // ticks, and turned up the left of the y axis's
         if let name = plot.x.label, !name.isEmpty {
-            if plot.isBarChart {
-                items += label(name, size: Self.labelSize, at: CGPoint(x: rect.midX, y: rect.maxY + 30), anchor: CGPoint(x: 0.5, y: 0))
-            } else {
+            if name.count == 1 || name.contains("$") {
                 let end = p(plot.x.max, axisY)
-                items += label(Self.name(name), size: Self.labelSize, at: CGPoint(x: end.x + 10, y: end.y), anchor: CGPoint(x: 0, y: 0.5))
+                items += label(Self.name(name), size: Self.shapeLabelSize * 0.8, at: CGPoint(x: end.x + 8, y: end.y), anchor: CGPoint(x: 0, y: 0.5))
+            } else {
+                items += label(name, size: Self.axisNameSize, at: CGPoint(x: rect.midX, y: rect.maxY + 44), anchor: CGPoint(x: 0.5, y: 0),
+                               color: S.inkSecondary, weight: .semibold)
             }
         }
         if let name = plot.y.label, !name.isEmpty {
-            let end = p(axisX, plot.y.max)
-            items += label(Self.name(name), size: Self.labelSize, at: CGPoint(x: end.x + 8, y: end.y - 4), anchor: CGPoint(x: 0, y: 1))
+            if name.count == 1 || name.contains("$") {
+                let end = p(axisX, plot.y.max)
+                items += label(Self.name(name), size: Self.shapeLabelSize * 0.8, at: CGPoint(x: end.x + 10, y: end.y + 2), anchor: CGPoint(x: 0, y: 0))
+            } else {
+                let at = CGPoint(x: rect.minX - 76, y: rect.midY)
+                let turned = label(name, size: Self.axisNameSize, at: .zero, anchor: CGPoint(x: 0.5, y: 0), color: S.inkSecondary, weight: .semibold)
+                items.append(.transformed(CGAffineTransform(translationX: at.x, y: at.y).rotated(by: -.pi / 2), turned))
+            }
         }
         // the items, the lines clipped to the plane
         var inside: [PagePrint.Item] = []
@@ -175,7 +181,7 @@ struct SATFigurePrinter {
                 }
                 inside.append(.stroke(path, S.ink, width: Self.line, dash: dashed ? Self.dash : []))
                 if let lbl, !lbl.isEmpty, let at = lastIn {
-                    over += label(lbl, size: Self.labelSize, at: CGPoint(x: at.x - 8, y: at.y - 8), anchor: CGPoint(x: 1, y: 1))
+                    over += label(lbl, size: Self.pointLabelSize, at: CGPoint(x: at.x - 8, y: at.y - 8), anchor: CGPoint(x: 1, y: 1), weight: .semibold)
                 }
             case .segment(let a, let b, let lbl, let dashed):
                 let path = CGMutablePath()
@@ -184,21 +190,29 @@ struct SATFigurePrinter {
                 inside.append(.stroke(path, S.ink, width: Self.line, dash: dashed ? Self.dash : []))
                 if let lbl, !lbl.isEmpty {
                     let m = p((a.x + b.x) / 2, (a.y + b.y) / 2)
-                    over += label(lbl, size: Self.labelSize, at: CGPoint(x: m.x + 8, y: m.y - 8), anchor: CGPoint(x: 0, y: 1))
+                    over += label(lbl, size: Self.pointLabelSize, at: CGPoint(x: m.x + 8, y: m.y - 8), anchor: CGPoint(x: 0, y: 1), weight: .semibold)
                 }
             case .point(let at, let lbl, let open):
                 let c = p(at.x, at.y)
-                let dot = CGPath(ellipseIn: CGRect(x: c.x - 7, y: c.y - 7, width: 14, height: 14), transform: nil)
+                let r = Self.pointR
+                let dot = CGPath(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r), transform: nil)
+                let halo = CGPath(ellipseIn: CGRect(x: c.x - r - Self.halo, y: c.y - r - Self.halo, width: 2 * (r + Self.halo), height: 2 * (r + Self.halo)), transform: nil)
+                over.append(.fill(halo, S.paper))
                 if open {
-                    over.append(.fill(dot, S.paper))
-                    over.append(.stroke(dot, S.ink, width: 2.6, dash: []))
+                    over.append(.stroke(dot, S.ink, width: 2.4, dash: []))
                 } else {
                     over.append(.fill(dot, S.ink))
                 }
                 if let lbl, !lbl.isEmpty {
-                    let right = c.x < rect.maxX - 100
-                    over += label(lbl, size: Self.labelSize, at: CGPoint(x: c.x + (right ? 12 : -12), y: c.y - 8),
-                                  anchor: CGPoint(x: right ? 0 : 1, y: 1))
+                    // to the side the line isn't on; a point on the y axis: left of the axis, under it
+                    if at.x == axisX {
+                        over += label(lbl, size: Self.pointLabelSize, at: CGPoint(x: c.x - 10, y: c.y + 14), anchor: CGPoint(x: 1, y: 0), weight: .semibold)
+                    } else {
+                        let above = Self.lineBelow(plot, at)
+                        let right = c.x < rect.maxX - 100
+                        over += label(lbl, size: Self.pointLabelSize, at: CGPoint(x: c.x + (right ? -8 : -12), y: above ? c.y - 16 : c.y + 16),
+                                      anchor: CGPoint(x: right ? 0.5 : 1, y: above ? 1 : 0), weight: .semibold)
+                    }
                 }
             case .bar(let x, let height, let lbl, let width):
                 let w = width ?? min(0.6, plot.x.step * 0.6)
@@ -206,7 +220,7 @@ struct SATFigurePrinter {
                 inside.append(.fill(CGPath(rect: CGRect(x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y), transform: nil), S.bar))
                 if let lbl, !lbl.isEmpty {
                     let at = p(x, axisY)
-                    over += label(lbl, size: Self.tickSize, at: CGPoint(x: at.x, y: at.y + 6), anchor: CGPoint(x: 0.5, y: 0))
+                    over += label(lbl, size: Self.tickSize, at: CGPoint(x: at.x, y: at.y + 10), anchor: CGPoint(x: 0.5, y: 0), color: S.inkSecondary)
                 }
             case .unknown:
                 continue
@@ -214,6 +228,20 @@ struct SATFigurePrinter {
         }
         items.append(.clip(rect.insetBy(dx: -1, dy: -1), inside))
         return items + over
+    }
+
+    /// Whether a point's label goes above it: the plane's lines rise through it from the left (the
+    /// label above-left would sit on the line below-right), so above when the line runs below the
+    /// point to its left.
+    static func lineBelow(_ plot: SATPlot, _ at: SATPoint) -> Bool {
+        for item in plot.items {
+            if case .function(let expr, _, _, _) = item, let f = SATExpression(expr) {
+                let slope = f(at.x + 0.01) - f(at.x - 0.01)
+                // a rising line: its left side is below, the label goes above-left of the point
+                return slope >= 0
+            }
+        }
+        return true
     }
 
     /// A one-letter axis name is a variable: italic maths.
@@ -231,9 +259,8 @@ struct SATFigurePrinter {
     func shape(_ shape: SATShape, in rect: CGRect) -> [PagePrint.Item] {
         let S = SATPrintStyle.self
         guard let b = shape.bounds else { return [] }
-        let m = 40.0
         let w = max(b.maxX - b.minX, 1e-6), h = max(b.maxY - b.minY, 1e-6)
-        let scale = min((Double(rect.width) - 2 * m) / w, (Double(rect.height) - 2 * m) / h)
+        let scale = min((Double(rect.width) - 2 * style.shapePadX) / w, (Double(rect.height) - 2 * style.shapePadY) / h)
         let ox = Double(rect.minX) + (Double(rect.width) - w * scale) / 2 - b.minX * scale
         let oy = Double(rect.minY) + (Double(rect.height) + h * scale) / 2 + b.minY * scale
         func p(_ q: SATPoint) -> CGPoint { CGPoint(x: ox + q.x * scale, y: oy - q.y * scale) }
@@ -246,22 +273,22 @@ struct SATFigurePrinter {
                 path.move(to: p(first))
                 for q in points.dropFirst() { path.addLine(to: p(q)) }
                 path.closeSubpath()
-                items.append(.stroke(path, S.ink, width: Self.line, dash: d ? Self.dash : []))
+                items.append(.stroke(path, S.ink, width: Self.edge, dash: d ? Self.dash : []))
             case .circle(let c, let r, let d):
                 let center = p(c), radius = CGFloat(r * scale)
                 items.append(.stroke(CGPath(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: 2 * radius, height: 2 * radius), transform: nil),
-                                     S.ink, width: Self.line, dash: d ? Self.dash : []))
+                                     S.ink, width: Self.edge, dash: d ? Self.dash : []))
             case .segment(let a, let bb, let d):
                 let path = CGMutablePath()
                 path.move(to: p(a))
                 path.addLine(to: p(bb))
-                items.append(.stroke(path, S.ink, width: d ? 2.6 : Self.line, dash: d ? Self.dash : []))
+                items.append(.stroke(path, S.ink, width: d ? 2.2 : Self.edge, dash: d ? Self.dash : []))
             case .point(let at, let lbl):
                 let c = p(at)
                 items.append(.fill(CGPath(ellipseIn: CGRect(x: c.x - 6, y: c.y - 6, width: 12, height: 12), transform: nil), S.ink))
-                if let lbl, !lbl.isEmpty { items += label(lbl, size: Self.labelSize, at: CGPoint(x: c.x + 10, y: c.y - 6), anchor: CGPoint(x: 0, y: 1)) }
+                if let lbl, !lbl.isEmpty { items += label(lbl, size: Self.shapeLabelSize, at: CGPoint(x: c.x + 10, y: c.y - 6), anchor: CGPoint(x: 0, y: 1)) }
             case .label(let at, let t):
-                items += label(t, size: Self.labelSize, at: p(at), anchor: CGPoint(x: 0.5, y: 0.5))
+                items += label(t, size: Self.shapeLabelSize, at: p(at), anchor: CGPoint(x: 0.5, y: 0.5))
             case .rightAngle(let at, let dirs):
                 guard dirs.count == 2 else { continue }
                 let s: CGFloat = 20
@@ -279,15 +306,16 @@ struct SATFigurePrinter {
                 let c = p(at)
                 var sweep = (to - from).truncatingRemainder(dividingBy: 360)
                 if sweep < 0 { sweep += 360 }
-                let r: CGFloat = 36
+                // the unknown's arc a little tighter
+                let r: CGFloat = (lbl ?? "").contains("x") ? 34 : 40
                 let path = CGMutablePath()
                 // y is down on the page: counter-clockwise in the figure is clockwise here
                 path.addArc(center: c, radius: r, startAngle: CGFloat(-from * .pi / 180), endAngle: CGFloat(-(from + sweep) * .pi / 180), clockwise: true)
-                items.append(.stroke(path, S.ink, width: 2.2, dash: []))
+                items.append(.stroke(path, S.ink, width: Self.arc, dash: []))
                 if let lbl, !lbl.isEmpty {
                     let mid = (from + sweep / 2) * .pi / 180
-                    let lr = Double(r) + 28
-                    items += label(lbl, size: Self.labelSize - 1, at: CGPoint(x: Double(c.x) + cos(mid) * lr, y: Double(c.y) - sin(mid) * lr),
+                    let lr = Double(r) + 34
+                    items += label(lbl, size: Self.angleLabelSize, at: CGPoint(x: Double(c.x) + cos(mid) * lr, y: Double(c.y) - sin(mid) * lr),
                                    anchor: CGPoint(x: 0.5, y: 0.5))
                 }
             case .unknown:

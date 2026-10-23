@@ -22,6 +22,8 @@ public struct PagePrint: @unchecked Sendable {
         case math(TypesetMath, at: CGPoint)
         /// everything inside clipped to a rect
         case clip(CGRect, [Item])
+        /// everything inside drawn through a transform (a turned axis name)
+        case transformed(CGAffineTransform, [Item])
     }
 
     /// What it is (two prints with the same key draw the same: the canvas keeps its tiles)
@@ -70,6 +72,11 @@ public struct PagePrint: @unchecked Sendable {
                 ctx.clip(to: rect)
                 draw(inner, in: ctx)
                 ctx.restoreGState()
+            case .transformed(let t, let inner):
+                ctx.saveGState()
+                ctx.concatenate(t)
+                draw(inner, in: ctx)
+                ctx.restoreGState()
             }
         }
     }
@@ -92,6 +99,7 @@ public struct PagePrint: @unchecked Sendable {
                 add(CGRect(x: at.x, y: at.y - a, width: w, height: a + d))
             case .math(let m, let at): add(CGRect(x: at.x, y: at.y - m.ascent, width: m.width, height: m.height))
             case .clip(let r, let inner): if let b = bounds(inner) { add(b.intersection(r)) }
+            case .transformed(let t, let inner): if let b = bounds(inner) { add(b.applying(t)) }
             }
         }
         return out

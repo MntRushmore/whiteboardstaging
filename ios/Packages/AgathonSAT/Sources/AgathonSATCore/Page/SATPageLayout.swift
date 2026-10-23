@@ -57,6 +57,14 @@ public struct SATRect: Hashable, Sendable {
 /// wrapped at `maxWidth` (`.infinity`: one line). The size of the ink, in page units.
 public protocol SATTextMeasuring {
     func measure(_ source: String, size: Double, weight: SATTextWeight, maxWidth: Double) -> SATSize
+    /// The stem, as printed: its fixed line (40) and paragraph gap (14).
+    func measureStem(_ source: String, style: SATPageStyle, maxWidth: Double) -> SATSize
+}
+
+extension SATTextMeasuring {
+    public func measureStem(_ source: String, style: SATPageStyle, maxWidth: Double) -> SATSize {
+        measure(source, size: style.stemSize, weight: .regular, maxWidth: maxWidth)
+    }
 }
 
 public enum SATTextWeight: Hashable, Sendable {
@@ -268,11 +276,11 @@ public struct SATPageLayout: Hashable, Sendable {
         // else the stem full width and the figure under it
         var place: FigurePlace = .none
         var figSize: SATSize?
-        var stemInk = measure.measure(q.stem, size: s.stemSize, weight: .regular, maxWidth: s.stemAlone)
+        var stemInk = measure.measureStem(q.stem, style: s, maxWidth: s.stemAlone)
         var stemW = s.stemAlone
         if let figure = q.figure {
             let natural = Self.figureSize(figure, maxWidth: s.figureMaxBeside, measure: measure, style: s)
-            let besideInk = measure.measure(q.stem, size: s.stemSize, weight: .regular, maxWidth: s.stemBeside)
+            let besideInk = measure.measureStem(q.stem, style: s, maxWidth: s.stemBeside)
             if natural.w <= s.figureMaxBeside, besideInk.h <= s.stemBesideMaxHeight {
                 place = .beside
                 figSize = natural

@@ -29,6 +29,11 @@ public struct CanvasAppearance: Equatable, Sendable {
         surface: UIColor(red: 0.925, green: 0.918, blue: 0.898, alpha: 1), paperRadius: 0, paperShadow: true,
         selectionInk: UIColor(red: 0.078, green: 0.082, blue: 0.122, alpha: 1))
 
+    /// SAT v2's printed page (docs/SAT-V2.md): the page is the whole window, white edge to edge.
+    public static let printedPage = CanvasAppearance(
+        surface: .white, paperRadius: 0, paperShadow: false,
+        selectionInk: UIColor(red: 0x14 / 255.0, green: 0x15 / 255.0, blue: 0x1F / 255.0, alpha: 1))
+
     /// Blocks (docs/DESIGN-SYSTEM.md): chalk ground, white page with 18 pt corners, no shadow.
     public static let blocks = CanvasAppearance(
         surface: UIColor(red: 0xF1 / 255.0, green: 0xF2 / 255.0, blue: 0xF6 / 255.0, alpha: 1), paperRadius: 18, paperShadow: false,
@@ -80,6 +85,8 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
     private let templateNotes = CAShapeLayer()
     private let templateLabel = CAShapeLayer()
     private let templateRules = CAShapeLayer()
+    /// dotted paper (SAT v2's pages)
+    private let templateDots = CAShapeLayer()
     /// the page the template was drawn for (redrawn only when it changes)
     private var templateFor: (page: ProblemPage?, rect: Box)?
     /// what is printed on the page (SAT v2: the question, its figure, the answer cards), between the
@@ -192,7 +199,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         content.addSublayer(paper)
         templateLayer.anchorPoint = .zero
         templateLayer.actions = ["sublayers": NSNull(), "hidden": NSNull()]
-        for l in [templateAnswer, templateAnswerLabel, templateNotes, templateLabel, templateRules] {
+        for l in [templateDots, templateAnswer, templateAnswerLabel, templateNotes, templateLabel, templateRules] {
             l.actions = ["path": NSNull(), "fillColor": NSNull(), "strokeColor": NSNull(), "lineWidth": NSNull(), "hidden": NSNull()]
             templateLayer.addSublayer(l)
         }
@@ -264,6 +271,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         templateNotes.fillColor = appearance.template.answerLabel
         templateLabel.fillColor = appearance.template.label
         templateRules.strokeColor = appearance.template.rule
+        templateDots.fillColor = appearance.template.dot
         selectionFrame.strokeColor = appearance.selectionInk.cgColor
         selectionHandles.strokeColor = appearance.selectionInk.cgColor
         lassoLayer.strokeColor = appearance.selectionInk.withAlphaComponent(0.7).cgColor
@@ -444,7 +452,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         CATransaction.setDisableActions(true)
         switch controller.tool {
         case .pen:
-            let r = max(2.5, CGFloat(controller.penSize.width) * scale / 2)
+            let r = max(2.5, CGFloat(controller.penWidth ?? controller.penSize.width) * scale / 2)
             path = CGPath(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r), transform: nil)
             hoverLayer.fillColor = colour.copy(alpha: 0.55)
             hoverLayer.strokeColor = nil
@@ -1164,6 +1172,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         templateLabel.path = t.label
         templateRules.path = t.rules
         templateRules.lineWidth = t.ruleWidth
+        templateDots.path = t.dots
         templateLayer.isHidden = false
         updateTemplateLabel()
     }

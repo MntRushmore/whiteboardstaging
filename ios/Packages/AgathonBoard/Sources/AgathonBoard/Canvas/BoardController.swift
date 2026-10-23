@@ -100,6 +100,9 @@ public final class BoardController: ObservableObject {
         didSet { if !InkColor.kidPalette.contains(color) { color = .black } } // never the tutor's
     }
     @Published public var penSize: InkStyle.PenSize = .regular
+    /// A pen width that overrides `penSize` (SAT v2: a grown-up's 2.9-unit pencil, 0.65 × the 4.5
+    /// default, the owner twice: the ink was too thick; docs/SAT-V2.md)
+    public var penWidth: Double?
     @Published public private(set) var canUndo = false
     @Published public private(set) var canRedo = false
     /// The running numbers. Not published per change: SwiftUI re-laying out whatever shows them
@@ -423,7 +426,7 @@ public final class BoardController: ObservableObject {
         let highlight = tool == .highlighter
         return StrokeRecord(
             screen: currentScreenID, order: store.nextOrder(on: currentScreenID), author: .kid, color: color,
-            width: highlight ? InkStyle.highlighterWidth : penSize.width, pressure: pressure, x: origin.x, y: origin.y,
+            width: highlight ? InkStyle.highlighterWidth : penWidth ?? penSize.width, pressure: pressure, x: origin.x, y: origin.y,
             points: [], start: start, meta: highlight ? ["highlight": true] : [:])
     }
 
