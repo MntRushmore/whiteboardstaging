@@ -71,6 +71,8 @@ struct LearningLoopTests {
         await h.write("2x = 8", at: Vec2(200, 220))
         await h.write("x = 5", at: Vec2(200, 320))
         await h.pass(700)
+        // a ring waits for its line to look finished (`PageTiming.doubtHoldMs`)
+        await h.pass(PageTiming.doubtHoldMs)
         await learned(h)
         let a = try only(h)
         #expect(a.outcome == .inProgress)
@@ -79,6 +81,8 @@ struct LearningLoopTests {
         // the fix under it: self-corrected
         await h.write("x = 4", at: Vec2(200, 420))
         await h.pass(700)
+        // a ring waits for its line to look finished (`PageTiming.doubtHoldMs`)
+        await h.pass(PageTiming.doubtHoldMs)
         await learned(h)
         let fixed = try only(h)
         #expect(fixed.id == a.id)
@@ -143,6 +147,8 @@ struct LearningLoopTests {
         let rect = try #require(problem.meta[LiveMeta.rect].flatMap(BrainRect.init(meta:)))
         await h.write("x = 3", at: Vec2(rect.x, rect.maxY + 40), reads: "x = 3")
         await h.pass(700)
+        // a ring waits for its line to look finished (`PageTiming.doubtHoldMs`)
+        await h.pass(PageTiming.doubtHoldMs)
         await learned(h)
         let tries = h.loop.learning.attempts().filter { $0.origin == .nowYouTry }
         let next = try #require(tries.first)

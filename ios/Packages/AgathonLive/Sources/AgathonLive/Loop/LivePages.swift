@@ -156,6 +156,11 @@ public enum PageTiming {
     public static let answerQuietMs = 1_500.0
     /// at a pause or the answer spot, a line whose ink changed this recently is still being written
     public static let unfinishedMs = 1_200.0
+    /// check as I go: a ring or a "?" waits until the line has had no new stroke this long. Kids pause
+    /// inside a line (the real-ink corpus, 916 pauses in 95 timed attempts: p90 1.3 s, p95 2.4 s), and a
+    /// ring on `x = 1` before its 2 tells a kid their unfinished step is wrong; 2.5 s holds 95% of those
+    /// pauses (96% with a pen). Ticks are not held: a right line so far is never marked wrong.
+    public static let doubtHoldMs = 2_500.0
     /// a check waits for the reads in flight at most this long
     public static let readWaitMs = 7_000.0
     /// the "I read" chips step aside this long after the pen lifts

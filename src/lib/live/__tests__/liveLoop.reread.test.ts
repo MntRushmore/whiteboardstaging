@@ -5,6 +5,7 @@ import { drawShapeFromPoints, fixtureSingleLine, writeLine } from "../__fixtures
 import { settle, settleUntil } from "@/lib/live/__fixtures__/settle";
 import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
 import {
+  LIVE_TIMING,
   isLiveMeta,
   type LiveEngine,
   type LiveSseEvent,
@@ -101,6 +102,9 @@ describe("live loop — the second reader", () => {
 
   /** Lets a second reading that is under way finish and land. */
   async function drain(): Promise<void> {
+    await settle(12);
+    // a ring waits for its line to look finished (LIVE_TIMING.doubtHoldMs)
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.doubtHoldMs);
     await settle(12);
   }
 

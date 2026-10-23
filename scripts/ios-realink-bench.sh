@@ -8,6 +8,7 @@
 #
 #   CASES=<file>   the corpus's bench cases (default ~/whiteboardstaging/agathon-corpus/bench/cases.json)
 #   ONLY=<ids, id prefixes or tag:<tag>>   PACE=real|fast|line   CHECK=whenDone|asIGo
+#   HOLD=<ms>   the wait before a ring or "?" on a line still being written (0: none; default the app's)
 #   MODE=server|replay|oracle  SERVER=prod|local  OUT=<dir>  CACHE=<file>
 #   MAX_RECOGNIZE=<n> MAX_OTHER=<n>   the budgets (default 0: no paid calls at all)
 #   PARALLEL=<n>  LABEL=<name>  DD=<DerivedData>  SIM=<simulator name>
@@ -27,6 +28,7 @@ export TEST_RUNNER_AGATHON_REALINK_ONLY=${ONLY:-}
 export TEST_RUNNER_AGATHON_REALINK_PACE=${PACE:-real}
 export TEST_RUNNER_AGATHON_REALINK_DEBUG=${DEBUG:-0}
 export TEST_RUNNER_AGATHON_REALINK_CHECK=${CHECK:-whenDone}
+export TEST_RUNNER_AGATHON_REALINK_HOLD=${HOLD:-}
 export TEST_RUNNER_AGATHON_BENCH_MODE=$MODE
 export TEST_RUNNER_AGATHON_BENCH_OUT=$OUT
 export TEST_RUNNER_AGATHON_BENCH_CACHE=${CACHE:-$OUT/cache.json}

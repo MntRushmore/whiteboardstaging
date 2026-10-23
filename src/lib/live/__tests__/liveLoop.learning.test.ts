@@ -238,11 +238,13 @@ describe("live loop — the learning record's signals", () => {
     await penLine(1, "3x=5");
     const fix = await penLine(2, "3x=15");
     await penLine(3, "x=5");
-    await wait(ANSWER_SETTLE_MS);
+    // and a ring waits for its line to look finished (LIVE_TIMING.doubtHoldMs)
+    await wait(Math.max(ANSWER_SETTLE_MS, LIVE_TIMING.doubtHoldMs) + 100);
     const last = new Map(lineSignals().map((s) => [s.latex, s.mark]));
     expect(Object.fromEntries(last)).toMatchObject({ "3x=5": "circle", "3x=15": "check", "x=5": "check" });
     expect(lineSignals().find((s) => s.lineId === fix)).toMatchObject({ previousLatex: "3x-5=10" });
-    expect(lineSignals().at(-1)).toMatchObject({ latex: "x=5", solved: true });
+    // (the slip's ring, held until its line looked finished, is heard after the lines under it)
+    expect(lineSignals().filter((s) => s.latex === "x=5").at(-1)).toMatchObject({ latex: "x=5", solved: true });
   });
 
   it("a step carried on from a slip gets no mark (the slip is ringed already); the right answer after it is ticked", async () => {

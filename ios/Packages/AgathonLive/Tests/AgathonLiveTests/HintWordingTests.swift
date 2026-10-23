@@ -46,6 +46,8 @@ struct HintWordingTests {
         h.loop.hintWriter = writer
         await h.start()
         await slip(h)
+        // a ring waits for its line to look finished (`PageTiming.doubtHoldMs`)
+        await h.pass(PageTiming.doubtHoldMs)
         #expect(writer.prewarmed >= 1, "loaded when the ring was drawn")
         h.loop.helpMe()
         await h.pass(100)

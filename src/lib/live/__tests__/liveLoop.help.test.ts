@@ -5,6 +5,7 @@ import { fixtureSingleLine, writeLine } from "../__fixtures__/strokes";
 import { settle, settleStable, settleUntil } from "@/lib/live/__fixtures__/settle";
 import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
 import {
+  LIVE_TIMING,
   isLiveMeta,
   type CheckRequest,
   type LiveEngine,
@@ -285,6 +286,8 @@ describe("live loop — Help (and Ask about this)", () => {
     await write(writeLine("2x+3=11", 100, 200, 40));
     await write(writeLine("x=4", 100, 300, 40)); // read as 2x=8: right
     await write(writeLine("x=3", 100, 400, 40)); // read as x=5: wrong
+    // a ring waits for the line to look finished (LIVE_TIMING.doubtHoldMs)
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.doubtHoldMs);
     await settle(8);
     expect(marksOf("check").length).toBeGreaterThan(0);
     expect(marksOf("circle").length).toBeGreaterThan(0);

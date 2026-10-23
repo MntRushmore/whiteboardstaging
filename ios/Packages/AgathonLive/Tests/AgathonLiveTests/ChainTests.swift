@@ -100,6 +100,8 @@ struct ChainTests {
         h.services.rereadReplies["x = 5"] = RereadResponse(latex: "x = 6", changed: true, model: "fake", ms: 1)
         await h.start()
         await slip(h)
+        // a ring waits for its line to look finished (`PageTiming.doubtHoldMs`)
+        await h.pass(PageTiming.doubtHoldMs)
         #expect(h.board.mark(on: "x = 5") == .ring)
         // once per pair of inks: the ring is not held again
         let asked = h.services.rereadRequests.count

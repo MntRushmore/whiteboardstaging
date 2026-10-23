@@ -166,6 +166,32 @@ extension LiveLoop {
         return !bare.contains("=") && bare.count <= 3
     }
 
+    /// "Check as I go": a ring or a "?" never lands on a line still being written (the real-ink bench:
+    /// `7^{2} = 4` ringed before its 9, `x = 1` before its 2). They come once it looks finished: the pen
+    /// off it and no new stroke in it for `doubtHoldMs` (`PageTiming.doubtHoldMs`), or the kid asked
+    /// about it. The ms left, nil when it looks finished (and always nil when checking when done:
+    /// lines are held until then).
+    func stillGrowing(_ st: LiveLine) -> Double? {
+        let holdMs = doubtHoldMs
+        guard !checksWhenDone, holdMs > 0 else { return nil }
+        // the kid asked about this line as it reads now (Help me, Check): they are done with it
+        if askedLines[st.id] == st.latex { return nil }
+        if (penDown || board.isPenDown) && penLineId == st.id { return holdMs }
+        // the kid's own new strokes (a moved line is not one still being written)
+        let last = st.ink.strokeIds.compactMap { lastPenUpAt[$0] }.max() ?? -.infinity
+        let age = scheduler.now - last
+        return age < holdMs ? holdMs - age : nil
+    }
+
+    /// Draws the line again when it should look finished (`stillGrowing`).
+    func renderWhenFinished(_ id: String, after ms: Double) {
+        growthTimers[id]?.cancel()
+        growthTimers[id] = scheduler.after(ms + 10) { [weak self] in
+            self?.growthTimers[id] = nil
+            self?.render(id)
+        }
+    }
+
     /// A right answer Mathpix was unsure of (a "?" the real-ink bench saw on a pen 56): one more look.
     /// Ticked only when that look, on its own, reads the same value — a kid's 58 misread as a right 56
     /// must never be ticked, so a different read (or none) keeps the "?". Only a lone answer of digits

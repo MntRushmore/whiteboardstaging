@@ -112,6 +112,11 @@ public final class LiveLoop: ObservableObject {
 
     var quietTimer: LiveTimer?
     var settleTimer: LiveTimer?
+    /// "check as I go": lines whose marks wait for them to look finished (`stillGrowing`)
+    var growthTimers: [String: LiveTimer] = [:]
+    /// how long a line must go without a new stroke before a ring or a "?" (`PageTiming.doubtHoldMs`;
+    /// the real-ink bench sets 0 to measure the tutor without it)
+    var doubtHoldMs = PageTiming.doubtHoldMs
     var stuckTimer: LiveTimer?
     var helpWaitTimer: LiveTimer?
     var readingLabelTimer: LiveTimer?
@@ -558,6 +563,10 @@ struct LineRuntime {
     /// the mark wanted on the line (its key); `markDecided` false until the first render
     var markKey: String?
     var markDecided = false
+    /// its ring or tick came off because new ink looked like more of it (`unringGrowingLine`): its
+    /// strokes then and the mark, so the next flush can tell whether that ink really joined it
+    var unrungStrokes: [String]?
+    var unrungKind: LiveMarks.Kind?
     var markPen: TutorPen?
     var markBusySince = 0.0
     var afterMark: [() -> Void] = []
