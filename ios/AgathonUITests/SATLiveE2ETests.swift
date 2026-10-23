@@ -97,9 +97,13 @@ final class SATLiveE2ETests: XCTestCase {
     }
 
     func testALongerRealSession() throws {
-        launch(autowrite: "circle:auto|step:0|step:0")
+        launch(autowrite: "circle:auto|step:0|step:1|step:2")
         snap("01-home")
-        tap("sat.home.practice10", wait: 30)
+        // "Pick a skill": linear functions (its questions have planes and tables)
+        let skill = element("sat.home.skill.linear-functions")
+        XCTAssertTrue(skill.waitForExistence(timeout: 20), "no linear functions skill row")
+        for _ in 0..<6 where !skill.isHittable { app.swipeUp() }
+        skill.tap()
         XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 60))
         waitFor("sat.position", label: "Q1 of", timeout: 30)
         // the first question with a plane (the set is adaptive: go looking)
@@ -122,8 +126,18 @@ final class SATLiveE2ETests: XCTestCase {
         probe("tutor on live on", timeout: 60)
         probe("read 1", timeout: 60)
         timings.append(String(format: "pen-up → read: %.1f s", Date().timeIntervalSince(penUp)))
+        // a bank step that is a given read off the figure (`b = 4`) is left alone, not ticked: then the next step
+        waitFor("sat.debug", value: "ticks 1", timeout: 25, quiet: true)
+        var tickFrom = penUp
+        if !(element("sat.debug").value as? String ?? "").contains("ticks 1") {
+            timings.append("step 0 left alone (no tick): \((element("sat.debug").value as? String ?? "").components(separatedBy: " tutorInk").first ?? "")")
+            tap("sat.debug.write") // step:1
+            waitFor("sat.debug.write", value: "busy", timeout: 5, quiet: true)
+            waitFor("sat.debug.write", notValue: "busy", timeout: 60)
+            tickFrom = Date()
+        }
         probe("ticks 1", timeout: 90)
-        timings.append(String(format: "pen-up → tick: %.1f s (the page is checked after a 9 s pause; writing took %.1f s)", Date().timeIntervalSince(penUp), penUp.timeIntervalSince(wrote)))
+        timings.append(String(format: "pen-up → tick: %.1f s (the page is checked after a 9 s pause; writing took %.1f s)", Date().timeIntervalSince(tickFrom), penUp.timeIntervalSince(wrote)))
         snap("03-line-ticked\(plot ? "-marks-on-figure" : "")")
 
         // Help me ×3: the nudge, ONE live step in cobalt under the last line, the walk-through
@@ -143,7 +157,11 @@ final class SATLiveE2ETests: XCTestCase {
         snap("05-help-2-one-step")
         tap("sat.helpMe")
         probe("rung 3", timeout: 10)
-        probe("walk 1/", timeout: 20)
+        // the walk picks up after the steps already on the page; with none left it says so
+        waitFor("sat.debug", valueMatches: "walk [0-9]+/", timeout: 20, quiet: true)
+        let walking = (element("sat.debug").value as? String ?? "").range(of: "walk [0-9]+/", options: .regularExpression) != nil
+        XCTAssertTrue(walking || element("sat.notice").exists, "rung 3: neither a walk nor its note")
+        timings.append(walking ? "rung 3: the walk-through" : "rung 3: no steps left to walk (\(element("sat.notice").label))")
         snap("06-help-3-walk-through")
         for _ in 0..<6 {
             guard element("sat.walk.next").exists, element("sat.walk.next").isHittable else { break }
@@ -151,11 +169,13 @@ final class SATLiveE2ETests: XCTestCase {
             sleep(2)
         }
 
-        // a wrong choice and its why: the next multiple-choice question with a note on a wrong choice
+        // a wrong choice and its why: this question or the next multiple-choice one with a note on a wrong choice
         var why = false
-        for _ in 0..<9 where !why {
-            tap("sat.next")
-            sleep(2)
+        for hop in 0..<10 where !why {
+            if hop > 0 {
+                if element("sat.next").isEnabled { tap("sat.next") } else { tap("sat.previous") }
+                sleep(2)
+            }
             guard element("sat.choice.A").waitForExistence(timeout: 3) else { continue }
             for key in ["A", "B", "C", "D"] {
                 tap("sat.choice.\(key)")
@@ -167,37 +187,42 @@ final class SATLiveE2ETests: XCTestCase {
                     }
                     break
                 }
-                // right at once: no miss here, on to the next question
-                if element("sat.verdict.right").exists || element("sat.seeSolution").exists { break }
+                // right at once: no miss here (its solution is open: back to the page), on to another question
+                if element("sat.solution.back").exists { tap("sat.solution.back") }
+                break
             }
         }
         XCTAssertTrue(why, "no wrong choice with a why in the set")
-        // the solution two ways
-        if element("sat.wrong.walk").exists {
-            // a second try first (a miss stays in the deck), then the solution
+        // the solution, two ways: a second wrong try opens it (a miss stays in the deck)
+        if element("sat.wrong.tryAgain").exists {
             for key in ["A", "B", "C", "D"] {
+                if element("sat.solution").exists { break }
                 if element("sat.wrong.tryAgain").exists { tap("sat.wrong.tryAgain") }
                 tap("sat.choice.\(key)")
                 tap("sat.check")
-                if element("sat.solution").waitForExistence(timeout: 3) || element("sat.seeSolution").waitForExistence(timeout: 1) { break }
+                _ = element("sat.solution").waitForExistence(timeout: 4)
             }
         }
         if element("sat.seeSolution").exists { tap("sat.seeSolution") }
-        if element("sat.solution").waitForExistence(timeout: 10) {
-            if element("sat.solution.desmosWay").exists || element("sat.solution.desmos").exists { snap("08-solution-two-ways") } else { snap("08-solution") }
-        }
+        XCTAssertTrue(element("sat.solution").waitForExistence(timeout: 10), "the solution opens")
+        snap(element("sat.solution.desmosWay").exists || element("sat.solution.desmos").exists || element("sat.solution.ways").exists ? "08-solution-two-ways" : "08-solution")
         if element("sat.solution.back").exists { tap("sat.solution.back") }
 
-        // finish the set: every question left answered (a key or a choice), then the summary
-        for _ in 0..<12 {
+        // finish the set, from question 1: each question answered (a choice or a key), checked, and on
+        for _ in 0..<10 {
+            if (element("sat.position").label).contains("Q1 of") { break }
+            tap("sat.previous")
+            usleep(600_000)
+        }
+        for _ in 0..<14 {
             if element("sat.summary").exists { break }
             let pos = element("sat.position").label
-            if element("sat.choice.A").exists {
+            if element("sat.choice.A").exists, element("sat.choice.A").isHittable {
                 tap("sat.choice.A")
-            } else if element("sat.key.1").exists {
+            } else if element("sat.key.1").exists, element("sat.key.1").isHittable {
                 tap("sat.key.1")
             }
-            if element("sat.check").exists, element("sat.check").isHittable { tap("sat.check") }
+            if element("sat.check").exists, element("sat.check").isHittable, element("sat.check").isEnabled { tap("sat.check") }
             sleep(1)
             if element("sat.wrong.tryAgain").exists {
                 tap("sat.wrong.tryAgain")
@@ -205,13 +230,12 @@ final class SATLiveE2ETests: XCTestCase {
                 tap("sat.check")
                 sleep(1)
             }
-            if element("sat.solution.next").waitForExistence(timeout: 2) { tap("sat.solution.next") }
+            if element("sat.solution.next").waitForExistence(timeout: 3) { tap("sat.solution.next") }
             else if element("sat.nextQuestion").exists { tap("sat.nextQuestion") }
-            else if element("sat.next").exists, element("sat.next").isHittable { tap("sat.next") }
             sleep(1)
-            if element("sat.position").exists, element("sat.position").label == pos, !element("sat.summary").exists {
-                // the last question answered: the summary is a tap of ›
-                if element("sat.next").exists { tap("sat.next") }
+            if !element("sat.summary").exists, element("sat.position").label == pos {
+                if element("sat.nextQuestion").exists { tap("sat.nextQuestion") } else if element("sat.next").exists, element("sat.next").isEnabled { tap("sat.next") }
+                sleep(1)
             }
         }
         XCTAssertTrue(element("sat.summary").waitForExistence(timeout: 20), "the set ends in the summary")

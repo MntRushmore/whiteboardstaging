@@ -299,7 +299,8 @@ export function judgeColumn(head: string[], latexes: string[], confidences: numb
 /** Help me's local next step (LiveLoop.escalate → writeNextStep → writeLocal): the engine's, or null. */
 export function localNextStep(head: string[], latexes: string[], judged: Judged[]): { step: string; source: string } | null {
   const last = judged[judged.length - 1];
-  if (last?.analysis.nextStep) return { step: `= ${last.analysis.nextStep}`, source: "engine nextStep" };
+  // (a solved line goes straight to Solve's first step: LiveLoop.helpOneStep, feat/sat2-e2e)
+  if (last?.analysis.nextStep && !last.analysis.solved) return { step: `= ${last.analysis.nextStep}`, source: "engine nextStep" };
   const local = brain.localSolveOf({ lines: [...head, ...latexes], targetIndex: head.length + latexes.length - 1, handwriting: true });
   if (local.source && local.steps.length) return { step: local.steps[0], source: `engine ${local.source}` };
   return null;

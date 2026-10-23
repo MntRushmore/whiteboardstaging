@@ -323,7 +323,10 @@ async function helpOneStep(acct: Account, plan: QuestionPlan, head: string[], re
   const given = new Set(b.lines.map((l) => num.flat(l.latex)));
   // the first step the engine reads that is not one of the given lines (the iPad's onlyFirstStep)
   const firstIdx = steps.findIndex((s) => s && !given.has(num.flat(s.replace(/\\boxed\{(.*)\}/, "$1"))) && engineReads(s.replace(/\\boxed\{(.*)\}/, "$1")));
-  const first = firstIdx >= 0 ? steps[firstIdx].replace(/\\boxed\{(.*)\}/, "$1") : null;
+  let first = firstIdx >= 0 ? steps[firstIdx].replace(/\\boxed\{(.*)\}/, "$1") : null;
+  // LiveLoop.solveWithModel: a step after a finished relation is written alone (no leading `=`)
+  const lastLine = reads[reads.length - 1].latex;
+  if (first && /^\s*=/.test(first) && /=|<|>/.test(lastLine) && !/=\s*$/.test(lastLine)) first = first.replace(/^\s*=+\s*/, "");
   const stepAt = firstIdx >= 0 ? res.events.filter((e) => e.event === "step")[firstIdx].at : null;
   return {
     source: "model /api/live/solve", step: first, ms: stepAt ?? res.ms, status: res.status, modelSteps: steps,
