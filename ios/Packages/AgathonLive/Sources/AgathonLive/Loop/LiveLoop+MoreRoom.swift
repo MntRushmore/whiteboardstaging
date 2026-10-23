@@ -93,7 +93,7 @@ extension LiveLoop {
         let rect = board.screenRect.box
         return lines.values.contains { st in
             let local = ProblemPageLayout.unplace(st.bounds.box, from: rect)
-            return local.maxY >= ProblemPageLayout.fullBand && !(page.hasAnswerSpot && ProblemPageLayout.isInAnswer(local))
+            return local.maxY >= page.fullBand && !(page.hasAnswerSpot && ProblemPageLayout.isInAnswer(local))
         }
     }
 

@@ -45,10 +45,14 @@ public struct ProblemPage: Equatable, Sendable {
     /// a small heading in the problem's place, when the problem itself is shown elsewhere (SAT mode:
     /// "Q3 · Linear functions", the question in the panel beside the board; docs/SAT-MODE.md)
     public var heading: String?
+    /// where the work area ends (page units), when not the 1600 × 900 page's (SAT v2: a page made
+    /// taller for a long question, its answer cards under the work, docs/SAT-V2.md)
+    public var workBottom: Double?
 
     public init(kind: Kind = .problem, setId: String? = nil, index: Int? = nil, count: Int? = nil, problem: RecordID? = nil,
                 origin: String? = nil, workTop: Double? = nil, answer: Bool = true, continues: RecordID? = nil, more: Bool = false,
-                heading: String? = nil) {
+                heading: String? = nil, workBottom: Double? = nil) {
+        self.workBottom = workBottom
         self.kind = kind
         self.setId = setId
         self.index = index
@@ -77,6 +81,7 @@ public struct ProblemPage: Equatable, Sendable {
         continues = v["continues"]?.stringValue.map { RecordID($0) }
         more = v["more"]?.boolValue ?? false
         heading = v["heading"]?.stringValue
+        workBottom = v["workBottom"]?.numberValue
     }
 
     /// As the screen's meta stores it (fields at their default left out).
@@ -92,6 +97,7 @@ public struct ProblemPage: Equatable, Sendable {
         if let continues { o["continues"] = .string(continues.rawValue) }
         if more { o["more"] = .bool(true) }
         if let heading { o["heading"] = .string(heading) }
+        if let workBottom { o["workBottom"] = .number((workBottom * 100).rounded() / 100) }
         return .object(o)
     }
 
@@ -103,6 +109,13 @@ public struct ProblemPage: Equatable, Sendable {
 
     /// The work area's top on this page.
     public var resolvedWorkTop: Double { workTop ?? ProblemPageLayout.defaultWorkTop }
+
+    /// The work area's bottom on this page.
+    public var resolvedWorkBottom: Double { workBottom ?? ProblemPageLayout.workBottom }
+
+    /// "More room" is offered once the work reaches this far down (the last row, and a little of
+    /// the row above).
+    public var fullBand: Double { resolvedWorkBottom - 1.25 * ProblemPageLayout.rulePitch }
 
     /// The answer spot is on this page: the problem has one, and this is its last page.
     public var hasAnswerSpot: Bool { kind == .problem && answer && !more }
@@ -194,11 +207,12 @@ public enum ProblemPageLayout {
         return min(bottom + workGap, latest)
     }
 
-    /// The guide lines' y, top to bottom, under a work area starting at `workTop`.
-    public static func rules(workTop: Double) -> [Double] {
+    /// The guide lines' y, top to bottom, under a work area starting at `workTop` (and ending at
+    /// `bottom`: the page's own, on a taller page).
+    public static func rules(workTop: Double, bottom: Double = workBottom) -> [Double] {
         var out: [Double] = []
         var y = workTop + firstRuleOffset
-        while y <= workBottom + 0.5 {
+        while y <= bottom + 0.5 {
             out.append(y)
             y += rulePitch
         }

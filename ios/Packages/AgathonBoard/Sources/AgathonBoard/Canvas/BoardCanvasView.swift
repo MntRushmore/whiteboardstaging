@@ -82,6 +82,10 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
     private let templateRules = CAShapeLayer()
     /// the page the template was drawn for (redrawn only when it changes)
     private var templateFor: (page: ProblemPage?, rect: Box)?
+    /// what is printed on the page (SAT v2: the question, its figure, the answer cards), between the
+    /// template and the ink, one tiled layer a print (`printProvider`)
+    private var printLayers: [PrintTiledLayer] = []
+    private let printRoot = CALayer()
     /// all ink, clipped to the screen (the last row of tiles overhangs it): a rectangular
     /// `masksToBounds` (a scissor, no offscreen pass), its bounds the screen rect so its sublayers
     /// stay in page space
@@ -196,6 +200,9 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         templateRules.lineCap = .round
         templateLayer.isHidden = true
         content.addSublayer(templateLayer)
+        printRoot.anchorPoint = .zero
+        printRoot.actions = ["sublayers": NSNull(), "position": NSNull(), "bounds": NSNull(), "hidden": NSNull()]
+        content.addSublayer(printRoot)
         inkRoot.anchorPoint = .zero
         inkRoot.masksToBounds = true
         inkRoot.actions = ["sublayers": NSNull(), "position": NSNull(), "bounds": NSNull()]
@@ -1060,6 +1067,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         CATransaction.setDisableActions(true)
         paper.frame = screen.rect.cgRect
         updateTemplate(screen)
+        reloadPrint()
         inkRoot.position = screen.rect.cgRect.origin
         inkRoot.bounds = screen.rect.cgRect
         CATransaction.commit()
@@ -1092,7 +1100,54 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         CATransaction.setDisableActions(true)
         updateTemplate(screen)
         CATransaction.commit()
+        reloadPrint()
     }
+
+    // MARK: - Print (docs/SAT-V2.md)
+
+    /// What is printed on a screen (the app's: SAT mode's question): drawn in tiles at the zoom on
+    /// show, under the ink, never a record. Asked again on each screen change and `reloadPrint()`.
+    public var printProvider: ((ScreenRecord) -> [PagePrint])? {
+        didSet { reloadPrint() }
+    }
+
+    /// Asks `printProvider` for the current screen again: a print whose key changed is drawn again
+    /// (a choice chosen redraws the cards, not the question).
+    public func reloadPrint() {
+        guard let screen = controller.currentScreen else { return }
+        let prints = printProvider?(screen) ?? []
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        while printLayers.count < prints.count {
+            let l = PrintTiledLayer()
+            l.anchorPoint = .zero
+            l.tileSize = CGSize(width: 512, height: 512)
+            l.levelsOfDetail = 7
+            l.levelsOfDetailBias = 4
+            l.contentsScale = window?.screen.scale ?? UIScreen.main.scale
+            l.actions = ["position": NSNull(), "bounds": NSNull(), "contents": NSNull(), "hidden": NSNull()]
+            printRoot.addSublayer(l)
+            printLayers.append(l)
+        }
+        let rect = screen.rect.cgRect
+        let k = CGFloat(screen.rect.w / Box.screen.w)
+        for (i, layer) in printLayers.enumerated() {
+            guard i < prints.count, !prints[i].items.isEmpty else {
+                if !layer.isHidden {
+                    layer.set(.empty, scale: k)
+                    layer.isHidden = true
+                }
+                continue
+            }
+            if layer.frame != rect { layer.frame = rect }
+            layer.isHidden = false
+            if layer.print.key != prints[i].key || layer.print.key.isEmpty { layer.set(prints[i], scale: k) }
+        }
+        CATransaction.commit()
+    }
+
+    /// The prints on show (tests).
+    public var shownPrints: [PagePrint] { printLayers.filter { !$0.isHidden }.map(\.print) }
 
     /// The template for the screen's problem page (none for a plain screen or the All done page).
     private func updateTemplate(_ screen: ScreenRecord) {

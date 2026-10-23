@@ -65,7 +65,7 @@ public struct PageTemplate: @unchecked Sendable {
         func at(_ x: Double, _ y: Double) -> CGPoint { L.place(Vec2(x, y), on: rect).cgPoint }
 
         let rules = CGMutablePath()
-        for y in L.rules(workTop: top) {
+        for y in L.rules(workTop: top, bottom: page.resolvedWorkBottom) {
             rules.move(to: at(L.ruleLeft, y))
             rules.addLine(to: at(L.ruleRight, y))
         }
