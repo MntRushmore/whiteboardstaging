@@ -95,6 +95,20 @@ public final class SATPractice {
         public var set = 0
         public var number = 1
         public var count = 1
+        /// Help me's ink hint ladder on the page (v2)
+        public var ladder = SATHintLadder()
+        /// the wrong-answer note after the last wrong check (v2): the choice's `why`, or the grid-in's
+        /// common wrong answer; nil when the bank has none (v1's "Look again" alone)
+        public var wrongNote: WrongNote?
+    }
+
+    /// "You picked B. Looks like you …" (docs/SAT-V2.md, "Wrong-answer diagnosis").
+    public struct WrongNote: Hashable, Sendable {
+        /// "B", or the grid-in as typed
+        public var answer: String
+        public var why: String
+        /// a choice (mcq) or a grid-in
+        public var isChoice: Bool
     }
 
     /// A finished set: what the summary shows.
@@ -107,6 +121,15 @@ public final class SATPractice {
             public var domain: SATDomain
             public var verdict: Verdict
             public var marked: Bool
+            /// the mistake deck brought it back (v2)
+            public var review: Bool = false
+            /// a wrong answer was sent: the deck brings it back this many days on (v2: 1)
+            public var backInDays: Int?
+            /// seconds on the question, and whether Help me was used on it (v2's summary)
+            public var seconds: Int = 0
+            public var helped: Bool = false
+            /// the question's stem (the deck's front card)
+            public var stem: String = ""
 
             public var id: Int { index }
         }
@@ -119,6 +142,24 @@ public final class SATPractice {
         public var count: Int
         /// the questions not right on the first try or not answered (session indices)
         public var toReview: [Int]
+
+        /// The set's time, in whole minutes (at least 1 once anything was done).
+        public var minutes: Int {
+            let s = rows.map(\.seconds).reduce(0, +)
+            return s == 0 ? 0 : max(1, Int((Double(s) / 60).rounded()))
+        }
+
+        /// Questions Help me was used on.
+        public var helped: Int { rows.filter(\.helped).count }
+
+        /// What goes into the mistake deck (a wrong answer sent).
+        public var intoDeck: [Row] { rows.filter { $0.backInDays != nil } }
+
+        /// The set's one skill, when it is a skill's set (else nil: mixed practice).
+        public var oneSkill: String? {
+            let skills = Set(rows.map(\.skill))
+            return skills.count == 1 && rows.count > 1 ? skills.first : nil
+        }
     }
 
     public let service: SATService
@@ -249,6 +290,7 @@ public final class SATPractice {
         guard !item.verdict.isLocked, current?.format == .mcq else { return }
         items[index].eliminated.remove(key)
         items[index].chosen = key
+        items[index].wrongNote = nil
     }
 
     /// Strikes a choice out, or brings it back (Bluebook's eliminator).
@@ -266,6 +308,7 @@ public final class SATPractice {
     public func press(_ key: SATGridIn.Key) {
         guard !item.verdict.isLocked, current?.format == .spr else { return }
         let r = SATGridIn.press(key, on: items[index].typed)
+        if r.text != items[index].typed { items[index].wrongNote = nil }
         items[index].typed = r.text
         items[index].hint = r.refused
     }
@@ -334,8 +377,39 @@ public final class SATPractice {
             items[i].verdict = .lookAgain
             result = .lookAgain
         }
+        items[i].wrongNote = correct ? nil : Self.wrongNote(q, chosen)
         send(SATAttempt(questionId: q.id, chosen: chosen, correct: correct, seconds: Int(seconds(at: i).rounded()), usedTutor: items[i].usedTutor))
         return result
+    }
+
+    /// The note for a wrong answer, when the bank has one.
+    static func wrongNote(_ q: SATQuestion, _ chosen: String) -> WrongNote? {
+        switch q.format {
+        case .mcq: return q.why(chosen).map { WrongNote(answer: chosen, why: $0, isChoice: true) }
+        case .spr: return q.commonWrongNote(for: chosen).map { WrongNote(answer: chosen, why: $0.why, isChoice: false) }
+        }
+    }
+
+    /// "Try again" on the wrong-answer note: the note goes and the answer is cleared for a fresh one
+    /// (the wrong one stays marked as tried).
+    public func tryAgain() {
+        guard items.indices.contains(index), !items[index].verdict.isLocked else { return }
+        items[index].wrongNote = nil
+        items[index].chosen = nil
+        items[index].typed = ""
+        items[index].hint = nil
+    }
+
+    /// The note closes (the student chose something else, or moved on).
+    public func dismissWrongNote() {
+        guard items.indices.contains(index) else { return }
+        items[index].wrongNote = nil
+    }
+
+    /// Help me's ladder on question `i` changes (the app climbs it: `SATSessionModel`).
+    public func updateLadder(at i: Int, _ change: (inout SATHintLadder) -> Void) {
+        guard items.indices.contains(i) else { return }
+        change(&items[i].ladder)
     }
 
     /// Shows (or hides) the solution: once the question is checked for good, or given up on.
@@ -461,7 +535,11 @@ public final class SATPractice {
         var review: [Int] = []
         for i in range {
             let q = questions[i], it = items[i]
-            rows.append(.init(index: i, number: it.number, skill: q.skill, domain: q.domain, verdict: it.verdict, marked: it.marked))
+            // a wrong answer sent schedules the question again, a day on (the server's deck, docs/SAT-V2.md)
+            let missedOnce = it.tries.contains { !Self.isRight(q, $0) }
+            rows.append(.init(index: i, number: it.number, skill: q.skill, domain: q.domain, verdict: it.verdict, marked: it.marked,
+                              review: q.review, backInDays: missedOnce ? 1 : nil, seconds: Int(seconds(at: i).rounded()),
+                              helped: it.ladder.reached != nil, stem: q.stem))
             switch it.verdict {
             case .right(true): first += 1
             case .right(false):
@@ -471,6 +549,13 @@ public final class SATPractice {
             }
         }
         return Summary(rows: rows, rightFirstTry: first, rightSecondTry: second, count: range.count, toReview: review)
+    }
+
+    static func isRight(_ q: SATQuestion, _ answer: String) -> Bool {
+        switch q.format {
+        case .mcq: return answer == q.answer.key
+        case .spr: return SATGridIn.isCorrect(answer, accepted: q.answer.accepted ?? [])
+        }
     }
 
     /// Steps through the set's questions that weren't right on the first try, from the first.

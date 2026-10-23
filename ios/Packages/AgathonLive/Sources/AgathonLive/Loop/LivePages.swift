@@ -98,6 +98,13 @@ public final class LivePages: ObservableObject {
 
     public init() {}
 
+    /// Whether the page's action corner (Check, Next problem, More room) shows on `page`: not on an
+    /// SAT question's page (SAT v2, docs/SAT-V2.md), whose own Check sits by Help me and whose answer
+    /// row is printed where the corner would be.
+    public static func showsActionCorner(on page: ProblemPage?) -> Bool {
+        page?.origin != "sat"
+    }
+
     /// The page on show changed (or the loop stopped): what it remembered of the last goes.
     func reset() {
         for t in [pendingCheckTimer, pauseTimer, answerTimer, chipsTimer, netTimer] { t?.cancel() }

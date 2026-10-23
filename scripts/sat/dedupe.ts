@@ -35,14 +35,20 @@ export function jaccard(a: Set<string>, b: Set<string>): number {
 export const NEAR_DUPLICATE = 0.8;
 
 /**
- * The stem's substantial math (an equation or expression of 7+ characters, spaces removed): two
- * questions of a skill built on the same equation are the same question, however they are worded.
+ * The stem's substantial math (spaces removed): every equation or inequality of 7+ characters, and
+ * every expression of 7+ characters with a letter and a number in it, written alone or as one side
+ * of an equation ("N=5300(1.21)^{\frac{x}{2}}" and a bare "5300(1.21)^{\frac{x}{2}}" share the
+ * expression). Two questions of a skill built on the same equation or expression are the same
+ * question, however they are worded.
  */
 export function mathOf(stem: string): Set<string> {
   const out = new Set<string>();
+  const substantial = (t: string) => t.length >= 7 && /[a-z]/i.test(t.replace(/\\[a-z]+/gi, "")) && /\d/.test(t);
   for (const m of stem.matchAll(/\$\$([\s\S]+?)\$\$|\$([^$]+?)\$/g)) {
     const t = (m[1] ?? m[2]).replace(/\s+/g, "");
-    if (t.length >= 7 && /[=<>]|\\le|\\ge/.test(t)) out.add(t);
+    const relation = /[=<>]|\\le|\\ge|\\ne/;
+    if (t.length >= 7 && relation.test(t)) out.add(t);
+    for (const side of t.split(/=|<|>|\\le|\\ge|\\ne/)) if (substantial(side)) out.add(side);
   }
   return out;
 }

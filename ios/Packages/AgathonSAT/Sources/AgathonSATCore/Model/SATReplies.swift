@@ -131,8 +131,11 @@ public struct SATProgress: Codable, Hashable, Sendable {
         public var tutorUsed: Int
         public var cap: Int
         public var unlimited: Bool
+        /// right today (v2, optional: nil from a server without it)
+        public var correct: Int?
 
-        public init(answered: Int, tutorUsed: Int, cap: Int, unlimited: Bool) {
+        public init(answered: Int, tutorUsed: Int, cap: Int, unlimited: Bool, correct: Int? = nil) {
+            self.correct = correct
             self.answered = answered
             self.tutorUsed = tutorUsed
             self.cap = cap
@@ -142,7 +145,7 @@ public struct SATProgress: Codable, Hashable, Sendable {
         enum CodingKeys: String, CodingKey {
             case answered
             case tutorUsed = "tutor_used"
-            case cap, unlimited
+            case cap, unlimited, correct
         }
 
         public init(from decoder: Decoder) throws {
@@ -151,6 +154,7 @@ public struct SATProgress: Codable, Hashable, Sendable {
             tutorUsed = try c.decodeIfPresent(Int.self, forKey: .tutorUsed) ?? 0
             cap = try c.decodeIfPresent(Int.self, forKey: .cap) ?? SATLimits.freeTutorPerDay
             unlimited = try c.decodeIfPresent(Bool.self, forKey: .unlimited) ?? false
+            correct = (try? c.decodeIfPresent(Int.self, forKey: .correct)) ?? nil
         }
 
         /// Free tutor questions left today (nil with Unlimited).
@@ -179,9 +183,19 @@ public struct SATProgress: Codable, Hashable, Sendable {
     public var today: Today
     /// nil until 15 questions are answered
     public var estimate: Estimate?
+    /// the mistake deck (v2, docs/SAT-V2.md): reviews due today, and waiting for a later day (nil:
+    /// a server without the deck)
+    public var reviewsDue: Int?
+    public var reviewsWaiting: Int?
+    /// the skills of the reviews due today, the soonest first (v2, optional): the deck's cards name them
+    public var reviewsDueSkills: [String]?
 
     public init(answered: Int = 0, correct: Int = 0, byDomain: [DomainCount] = [], bySkill: [SkillCount] = [], streakDays: Int = 0,
-                today: Today = Today(answered: 0, tutorUsed: 0, cap: SATLimits.freeTutorPerDay, unlimited: false), estimate: Estimate? = nil) {
+                today: Today = Today(answered: 0, tutorUsed: 0, cap: SATLimits.freeTutorPerDay, unlimited: false), estimate: Estimate? = nil,
+                reviewsDue: Int? = nil, reviewsWaiting: Int? = nil, reviewsDueSkills: [String]? = nil) {
+        self.reviewsDueSkills = reviewsDueSkills
+        self.reviewsDue = reviewsDue
+        self.reviewsWaiting = reviewsWaiting
         self.answered = answered
         self.correct = correct
         self.byDomain = byDomain
@@ -197,6 +211,22 @@ public struct SATProgress: Codable, Hashable, Sendable {
         case bySkill = "by_skill"
         case streakDays = "streak_days"
         case today, estimate
+        case reviewsDue = "reviews_due"
+        case reviewsWaiting = "reviews_waiting"
+        case reviewsDueSkills = "reviews_due_skills"
+    }
+
+    /// A skill of a due review: its name, or `{"skill": name}`.
+    struct DueSkill: Decodable {
+        let name: String?
+        enum K: String, CodingKey { case skill }
+        init(from decoder: Decoder) throws {
+            if let s = try? decoder.singleValueContainer().decode(String.self) {
+                name = s
+            } else {
+                name = try? decoder.container(keyedBy: K.self).decode(String.self, forKey: .skill)
+            }
+        }
     }
 
     public init(from decoder: Decoder) throws {
@@ -208,6 +238,9 @@ public struct SATProgress: Codable, Hashable, Sendable {
         streakDays = try c.decodeIfPresent(Int.self, forKey: .streakDays) ?? 0
         today = try c.decodeIfPresent(Today.self, forKey: .today) ?? Today(answered: 0, tutorUsed: 0, cap: SATLimits.freeTutorPerDay, unlimited: false)
         estimate = try? c.decodeIfPresent(Estimate.self, forKey: .estimate)
+        reviewsDue = (try? c.decodeIfPresent(Int.self, forKey: .reviewsDue)) ?? nil
+        reviewsWaiting = (try? c.decodeIfPresent(Int.self, forKey: .reviewsWaiting)) ?? nil
+        reviewsDueSkills = ((try? c.decodeIfPresent([Lossy<DueSkill>].self, forKey: .reviewsDueSkills)) ?? nil)?.compactMap { $0.value?.name }
     }
 
     /// A domain's count (zero when none answered).

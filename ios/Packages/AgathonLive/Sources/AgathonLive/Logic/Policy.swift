@@ -29,10 +29,16 @@ public enum LivePolicy {
         /// it — no mark, no hint, no step, no model check, no result — but its echo (the "I read"
         /// chip) stands. The grown-ups' answers after `=` still come at once: they asked for them.
         public var held: Bool
+        /// SAT v2: the page's problem is a bank question the model reads with every check (docs/SAT-V2.md,
+        /// "The tutor on an SAT page"), so a line the engine leaves unjudged (verdict `none`: a word
+        /// problem's equation, a slope, a function from a graph, a probability from a table) is checked
+        /// by the model too, not only one it cannot read (`unknown`). Off everywhere else (iPad only; the
+        /// web's `decide` has no SAT page).
+        public var checksUnjudged: Bool
 
         public init(mode: LiveMode, analysis: LineAnalysis?, confidence: Double, settled: Bool, auto: Bool, userAsked: Bool,
                     hintsShownForLine: Int = 0, openHintCount: Int = 0, rewritesWithWarn: Int = 0, liveShapeCount: Int = 0, latex: String? = nil,
-                    answerOnEquals: Bool = false, held: Bool = false) {
+                    answerOnEquals: Bool = false, held: Bool = false, checksUnjudged: Bool = false) {
             self.mode = mode
             self.analysis = analysis
             self.confidence = confidence
@@ -46,6 +52,7 @@ public enum LivePolicy {
             self.latex = latex
             self.answerOnEquals = answerOnEquals
             self.held = held
+            self.checksUnjudged = checksUnjudged
         }
     }
 
@@ -65,6 +72,8 @@ public enum LivePolicy {
     /// `continuation`: a running total (`+3 = 767`) with nothing above to go on from (`ContinuationLine`)
     static let silentKinds: Set<String> = ["label", "incomplete", "text", "continuation"]
     static let checkableKinds: Set<String> = ["equation", "expression", "inequality", "assignment"]
+    /// what an SAT page's model check also takes (`checksUnjudged`): a function from a graph or table
+    static let satCheckableKinds: Set<String> = checkableKinds.union(["function"])
     static let unjudgedKinds: Set<String> = ["label", "incomplete", "text", "unknown"]
 
     public static func badge(_ mode: LiveMode, _ analysis: LineAnalysis?) -> String {
@@ -101,6 +110,12 @@ public enum LivePolicy {
         var runLlmCheck = false
         if mode != .off && echo && !capped {
             runLlmCheck = input.userAsked || (input.auto && input.settled && verdict == "unknown" && checkableKinds.contains(kind))
+            // an SAT page: what the engine leaves unjudged goes to the model too (not a step it carried
+            // on from a slip, which is ringed where it was made, nor a line it already finds solved)
+            if input.checksUnjudged && input.auto && input.settled && verdict == "none" && analysis?.carried != true
+                && analysis?.solved != true && satCheckableKinds.contains(kind) {
+                runLlmCheck = true
+            }
         }
 
         let allowHint = (mode == .suggest || mode == .answer) && !capped && (unasked || input.userAsked)

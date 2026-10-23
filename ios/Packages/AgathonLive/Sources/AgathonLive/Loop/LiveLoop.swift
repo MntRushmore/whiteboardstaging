@@ -201,6 +201,26 @@ public final class LiveLoop: ObservableObject {
     /// Writes a ringed step's hint on the iPad (Apple Intelligence) instead of asking the server's
     /// check; nil (the default) asks the server. `start()` sets it when the owner's debug switch is on.
     public var hintWriter: HintWriter?
+    /// SAT v2 (docs/SAT-V2.md, "Write on the figure"): the question's printed coordinate plane on a
+    /// page, when it has one. Graph it and the typed "Graph an equation" draw onto it, in its own
+    /// coordinates, instead of putting a graph object beside the line.
+    public var questionPlot: ((RecordID) -> QuestionPlot?)?
+
+    /// SAT v2: every check carries the bank's question (the server adds it), so the lines the engine
+    /// leaves unjudged are checked by the model too (`LivePolicy.Input.checksUnjudged`). The SAT
+    /// session turns it on; an ordinary board keeps it off.
+    public var checksUnjudgedLines = false
+
+    /// The steps the tutor's hand wrote under the work, by page (Help me's next step, Solve's), as LaTeX.
+    public internal(set) var tutorSteps: [RecordID: [String]] = [:]
+
+    /// SAT v2, rung 2: asked before the tutor's hand writes steps under the work, with the steps and the
+    /// model's words for the first (nil from the engine). True: the caller has said it another way (the
+    /// next step is the question's answer: a pointer instead, `SATLastStep`), and nothing is written.
+    public var beforeWritingSteps: ((_ steps: [String], _ explanation: String?) -> Bool)?
+
+    /// The model's words for the step it is about to write (`solveWithModel`), for `beforeWritingSteps`.
+    var pendingStepExplanation: String?
 
     // MARK: network
 

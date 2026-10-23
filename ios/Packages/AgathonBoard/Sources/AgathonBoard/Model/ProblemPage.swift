@@ -45,10 +45,24 @@ public struct ProblemPage: Equatable, Sendable {
     /// a small heading in the problem's place, when the problem itself is shown elsewhere (SAT mode:
     /// "Q3 · Linear functions", the question in the panel beside the board; docs/SAT-MODE.md)
     public var heading: String?
+    /// where the work area ends (page units), when not the 1600 × 900 page's (SAT v2: a page made
+    /// taller for a long question, its answer cards under the work, docs/SAT-V2.md)
+    public var workBottom: Double?
+    /// the work area's paper: guide lines (a kid's problem page) or dots (SAT v2, a grown-up pad)
+    public var paper: Paper
+    /// where the dotted paper is not (the printed question's boxes, page units)
+    public var keepOut: [Box]
+
+    public enum Paper: String, Sendable {
+        case rules, dots
+    }
 
     public init(kind: Kind = .problem, setId: String? = nil, index: Int? = nil, count: Int? = nil, problem: RecordID? = nil,
                 origin: String? = nil, workTop: Double? = nil, answer: Bool = true, continues: RecordID? = nil, more: Bool = false,
-                heading: String? = nil) {
+                heading: String? = nil, workBottom: Double? = nil, paper: Paper = .rules, keepOut: [Box] = []) {
+        self.workBottom = workBottom
+        self.paper = paper
+        self.keepOut = keepOut
         self.kind = kind
         self.setId = setId
         self.index = index
@@ -77,6 +91,17 @@ public struct ProblemPage: Equatable, Sendable {
         continues = v["continues"]?.stringValue.map { RecordID($0) }
         more = v["more"]?.boolValue ?? false
         heading = v["heading"]?.stringValue
+        workBottom = v["workBottom"]?.numberValue
+        paper = v["paper"]?.stringValue.flatMap(Paper.init(rawValue:)) ?? .rules
+        if case .array(let boxes)? = v["keepOut"] {
+            keepOut = boxes.compactMap { b in
+                guard case .array(let n) = b, n.count == 4, let x = n[0].numberValue, let y = n[1].numberValue,
+                      let w = n[2].numberValue, let h = n[3].numberValue else { return nil }
+                return Box(x: x, y: y, w: w, h: h)
+            }
+        } else {
+            keepOut = []
+        }
     }
 
     /// As the screen's meta stores it (fields at their default left out).
@@ -92,6 +117,11 @@ public struct ProblemPage: Equatable, Sendable {
         if let continues { o["continues"] = .string(continues.rawValue) }
         if more { o["more"] = .bool(true) }
         if let heading { o["heading"] = .string(heading) }
+        if let workBottom { o["workBottom"] = .number((workBottom * 100).rounded() / 100) }
+        if paper != .rules { o["paper"] = .string(paper.rawValue) }
+        if !keepOut.isEmpty {
+            o["keepOut"] = .array(keepOut.map { b in .array([b.x, b.y, b.w, b.h].map { .number(($0 * 100).rounded() / 100) }) })
+        }
         return .object(o)
     }
 
@@ -103,6 +133,13 @@ public struct ProblemPage: Equatable, Sendable {
 
     /// The work area's top on this page.
     public var resolvedWorkTop: Double { workTop ?? ProblemPageLayout.defaultWorkTop }
+
+    /// The work area's bottom on this page.
+    public var resolvedWorkBottom: Double { workBottom ?? ProblemPageLayout.workBottom }
+
+    /// "More room" is offered once the work reaches this far down (the last row, and a little of
+    /// the row above).
+    public var fullBand: Double { resolvedWorkBottom - 1.25 * ProblemPageLayout.rulePitch }
 
     /// The answer spot is on this page: the problem has one, and this is its last page.
     public var hasAnswerSpot: Bool { kind == .problem && answer && !more }
@@ -194,11 +231,33 @@ public enum ProblemPageLayout {
         return min(bottom + workGap, latest)
     }
 
-    /// The guide lines' y, top to bottom, under a work area starting at `workTop`.
-    public static func rules(workTop: Double) -> [Double] {
+    /// Dotted paper (SAT v2): a dot every `dotPitch`, from `dotsLeft` to `dotsRight`.
+    public static let dotPitch = 36.0
+    public static let dotRadius = 1.8
+    public static let dotsLeft = 84.0
+    public static let dotsRight = 1528.0
+
+    /// The dots' centres under a work area from `workTop` to `bottom`, none in `keepOut`.
+    public static func dots(workTop: Double, bottom: Double, keepOut: [Box]) -> [Vec2] {
+        var out: [Vec2] = []
+        var y = workTop + dotPitch / 3
+        while y <= bottom + 0.5 {
+            var x = dotsLeft
+            while x <= dotsRight + 0.5 {
+                if !keepOut.contains(where: { $0.contains(Vec2(x, y)) }) { out.append(Vec2(x, y)) }
+                x += dotPitch
+            }
+            y += dotPitch
+        }
+        return out
+    }
+
+    /// The guide lines' y, top to bottom, under a work area starting at `workTop` (and ending at
+    /// `bottom`: the page's own, on a taller page).
+    public static func rules(workTop: Double, bottom: Double = workBottom) -> [Double] {
         var out: [Double] = []
         var y = workTop + firstRuleOffset
-        while y <= workBottom + 0.5 {
+        while y <= bottom + 0.5 {
             out.append(y)
             y += rulePitch
         }

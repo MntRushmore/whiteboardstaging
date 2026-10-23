@@ -88,6 +88,8 @@ export const SAT_LIMITS = {
   estimateMinAnswered: 15,
   /** The estimate reads at most this many of the newest answers (what the student can do now). */
   estimateWindow: 120,
+  /** GET /api/sat/progress's `reviews_due_skills`: at most this many. */
+  reviewsDueSkills: 3,
   /** GET /api/sat/progress reads at most this many of the newest answers. */
   progressWindow: 5000,
   /** SPR: a positive answer fills at most 5 characters, a negative one 6 (with its minus). */
@@ -160,14 +162,39 @@ export type ShapeItem = z.infer<typeof ShapeItemSchema>;
 
 export const SAT_CHOICE_KEYS = ["A", "B", "C", "D"] as const;
 
-export const SatChoiceSchema = z.object({ key: z.enum(SAT_CHOICE_KEYS), text: z.string().min(1).max(400) }).strict();
+/**
+ * The bank's teaching notes (docs/SAT-V2.md "Bank additions"), all optional: a question without
+ * them is still a whole question. A note that failed its check is left out, never guessed.
+ */
+export const SAT_NOTE_LIMITS = {
+  /** `nudge`, rung 1 of Help me: one short question or pointer, never the answer */
+  nudge: 120,
+  /** `choices[].why` and `common_wrong[].why`: the mistake that really gives that answer */
+  why: 140,
+  /** `common_wrong`: at most this many likely wrong grid-ins */
+  commonWrong: 3,
+  /** `solution.desmos_steps`: the Desmos way, at most this many steps */
+  desmosSteps: 6,
+} as const;
+
+const Why = z.string().trim().min(1).max(SAT_NOTE_LIMITS.why);
+
+/** One answer choice. `why` only on a WRONG choice: "That's what you get if you …". */
+export const SatChoiceSchema = z.object({ key: z.enum(SAT_CHOICE_KEYS), text: z.string().min(1).max(400), why: Why.optional() }).strict();
+
+const SatStepSchema = z.object({ text: z.string().min(1).max(400), math: z.string().max(300).nullable() }).strict();
 
 export const SatSolutionSchema = z
   .object({
-    steps: z.array(z.object({ text: z.string().min(1).max(400), math: z.string().max(300).nullable() }).strict()).min(2).max(6),
+    steps: z.array(SatStepSchema).min(2).max(6),
     desmos_tip: z.string().max(400).nullable(),
+    /** the Desmos way, step by step ("Type y = 4(x-3)+7"); null when Desmos does not really help, absent when not written yet */
+    desmos_steps: z.array(SatStepSchema).min(1).max(SAT_NOTE_LIMITS.desmosSteps).nullable().optional(),
   })
   .strict();
+
+/** spr only: a likely wrong grid-in and the mistake behind it. */
+export const SatCommonWrongSchema = z.object({ answer: z.string().trim().min(1).max(6), why: Why }).strict();
 
 export const SatAnswerSchema = z.union([
   z.object({ key: z.enum(SAT_CHOICE_KEYS) }).strict(),
@@ -187,6 +214,10 @@ export const SatQuestionSchema = z
     choices: z.array(SatChoiceSchema).length(4).nullable(),
     answer: SatAnswerSchema,
     solution: SatSolutionSchema,
+    /** rung 1 of Help me's ladder (v2), at most 120 characters, never the answer */
+    nudge: z.string().trim().min(1).max(SAT_NOTE_LIMITS.nudge).optional(),
+    /** spr only (v2): 0–3 likely wrong grid-ins, each with its mistake */
+    common_wrong: z.array(SatCommonWrongSchema).max(SAT_NOTE_LIMITS.commonWrong).optional(),
     status: z.enum(["live", "draft", "retired"]),
     version: z.number().int().min(1),
     created_at: z.string().optional(),
@@ -199,6 +230,8 @@ export const SatQuestionSchema = z
       if (!q.choices) ctx.addIssue({ code: "custom", message: "an mcq has four choices" });
       else if (q.choices.map((c) => c.key).join("") !== "ABCD") ctx.addIssue({ code: "custom", message: "choices are keyed A, B, C, D in order" });
       if (!("key" in q.answer)) ctx.addIssue({ code: "custom", message: "an mcq's answer is {key}" });
+      else if (q.choices?.some((c) => c.key === (q.answer as { key: string }).key && c.why !== undefined)) ctx.addIssue({ code: "custom", message: "only a wrong choice has a why" });
+      if (q.common_wrong !== undefined) ctx.addIssue({ code: "custom", message: "common_wrong is for spr only" });
     } else {
       if (q.choices !== null) ctx.addIssue({ code: "custom", message: "an spr has no choices" });
       if (!("accepted" in q.answer)) ctx.addIssue({ code: "custom", message: "an spr's answer is {accepted}" });
@@ -208,9 +241,16 @@ export const SatQuestionSchema = z
 export type SatQuestion = z.infer<typeof SatQuestionSchema>;
 
 /** What GET /api/sat/next selects (the whole row but `created_at`). */
-export const SAT_QUESTION_COLUMNS = "id,domain,skill,difficulty,format,stem,figure,choices,answer,solution,status,version";
+export const SAT_QUESTION_COLUMNS = "id,domain,skill,difficulty,format,stem,figure,choices,answer,solution,nudge,common_wrong,status,version";
+
+/** A question as GET /api/sat/next sends it: the row, and whether it comes from the mistake deck (v2). */
+export type SatNextQuestion = SatQuestion & { review: boolean };
+export type SatNextResponse = { questions: SatNextQuestion[] };
 
 // ------------------------------------------------------------------ routes
+
+/** An IANA zone ("America/New_York"); checked again with Intl before it is used. */
+export const SatTimeZoneSchema = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_+\-/]+$/);
 
 const Flag = z.enum(["1", "2", "3"]).transform(Number);
 
@@ -220,9 +260,12 @@ export const SatNextQuerySchema = z
     domain: z.union([z.enum(SAT_DOMAINS), z.literal("")]).optional(),
     skill: z.string().max(80).optional(),
     difficulty: z.union([Flag, z.literal("")]).optional(),
+    /** the student's IANA zone, for "the reviews due today" (v2); UTC when absent */
+    tz: z.union([SatTimeZoneSchema, z.literal("")]).optional(),
   })
   .transform((q) => ({
     count: q.count,
+    tz: q.tz ? q.tz : "UTC",
     domain: q.domain ? q.domain : null,
     skill: q.skill ? q.skill : null,
     difficulty: q.difficulty ? (q.difficulty as 1 | 2 | 3) : null,
@@ -240,10 +283,9 @@ export const SatAttemptRequestSchema = z.object({
   correct: z.boolean(),
   seconds: z.number().int().min(0).max(86_400).default(0),
   used_tutor: z.boolean().default(false),
+  /** the student's IANA zone (v2): the mistake deck's days are theirs; UTC when absent */
+  tz: SatTimeZoneSchema.optional(),
 });
-
-/** An IANA zone ("America/New_York"); checked again with Intl before it is used. */
-export const SatTimeZoneSchema = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_+\-/]+$/);
 
 export const SatTutorRequestSchema = z.object({
   question_id: SatQuestionIdSchema,
@@ -262,9 +304,18 @@ export type SatProgressResponse = {
   by_domain: Array<{ domain: SatDomain } & SatCount>;
   by_skill: Array<{ domain: SatDomain; skill: string } & SatCount>;
   streak_days: number;
-  today: { answered: number; tutor_used: number; cap: number; unlimited: boolean };
+  /** `correct` (v2): right answers on the student's date */
+  today: { answered: number; correct: number; tutor_used: number; cap: number; unlimited: boolean };
   /** A rough 200–800 band from practice (src/lib/sat/estimate.ts), never a score; null below 15 answers. */
   estimate: { low: number; high: number; note: string } | null;
+  /** the mistake deck (v2): reviews due today (or overdue) in the student's zone, and those scheduled for later */
+  reviews_due: number;
+  reviews_waiting: number;
+  /**
+   * v2, SAT home: the skills of the reviews due today, at most 3, distinct, most-missed first (most
+   * due reviews in the skill, then most wrong answers in it, then the spec's skill order)
+   */
+  reviews_due_skills: string[];
 };
 
 // ------------------------------------------------------------------ an account-free session

@@ -106,6 +106,17 @@ describe("near duplicates", () => {
     expect(mathOf("Solve $5(x-3)=2x+9$.")).toEqual(new Set(["5(x-3)=2x+9"]));
     expect(jaccard(shingles(items[2].stem), shingles(items[3].stem))).toBeLessThan(0.8);
   });
+  it("the same expression, written bare or as one side of an equation, is a duplicate (the v1 pair the old check missed)", () => {
+    const tree = "A city's tree census models the number of trees in its parks as $N=5300(1.21)^{\\frac{x}{2}}$, where $x$ is the number of years since the census began. Which expression is equivalent to $N$?";
+    const bees = "A beekeeper models the number of bees in her hives $x$ months after spring begins with the expression $5300(1.21)^{\\frac{x}{2}}$. Which of the following expressions is equivalent to the beekeeper's model?";
+    expect(Object.fromEntries(nearDuplicates([{ id: "0156", skill: "s", stem: tree }, { id: "0161", skill: "s", stem: bees }]))).toEqual({ "0161": "0156" });
+    expect(mathOf(tree)).toEqual(new Set(["N=5300(1.21)^{\\frac{x}{2}}", "5300(1.21)^{\\frac{x}{2}}"]));
+    // short sides, and a plain number, are not substantial
+    expect(mathOf("If $3x - 7 = 11$ and $y = 1250$, find $x$.")).toEqual(new Set(["3x-7=11"]));
+  });
+  it("the checked-in bank's live questions have no near duplicates left", () => {
+    expect(Object.fromEntries(nearDuplicates(BANK.filter((q) => q.status === "live")))).toEqual({});
+  });
 });
 
 describe("reading the models", () => {
@@ -151,7 +162,14 @@ describe("reading the models", () => {
 });
 
 describe("the upsert", () => {
-  const row = (q: SatQuestion, version = 1, status = q.status) => ({ id: q.id, domain: q.domain, skill: q.skill, difficulty: q.difficulty, format: q.format, stem: q.stem, figure: q.figure, choices: q.choices, answer: q.answer, solution: q.solution, status, version });
+  const row = (q: SatQuestion, version = 1, status = q.status) => ({ id: q.id, domain: q.domain, skill: q.skill, difficulty: q.difficulty, format: q.format, stem: q.stem, figure: q.figure, choices: q.choices, answer: q.answer, solution: q.solution, nudge: q.nudge ?? null, common_wrong: q.common_wrong ?? null, status, version });
+  // a sample as v1 had it, without the v2 notes
+  const v1 = (q: SatQuestion): SatQuestion => {
+    const { nudge, common_wrong, ...rest } = q;
+    void nudge;
+    void common_wrong;
+    return { ...rest, choices: q.choices ? q.choices.map(({ key, text }) => ({ key, text })) : null, solution: { steps: q.solution.steps, desmos_tip: q.solution.desmos_tip } };
+  };
   it("writes new rows, skips unchanged ones, bumps the version only on a content change, retires the missing", () => {
     const [a, b, c] = SAMPLE;
     const changed = { ...b, stem: `${b.stem} ` };
@@ -162,11 +180,29 @@ describe("the upsert", () => {
     // a status change alone writes the row with the same version
     expect(planUpsert([{ ...a, status: "draft" }], [row(a, 3)]).upsert).toEqual([expect.objectContaining({ id: a.id, version: 3, status: "draft" })]);
     // key order inside jsonb does not count as a change
-    expect(contentHash(row(a))).toBe(contentHash({ ...row(a), solution: { desmos_tip: a.solution.desmos_tip, steps: a.solution.steps } }));
+    expect(contentHash(row(a))).toBe(contentHash({ ...row(a), solution: { desmos_steps: a.solution.desmos_steps, desmos_tip: a.solution.desmos_tip, steps: a.solution.steps } }));
   });
   it("loads a live row that fails a check as draft", () => {
     const bad = { ...SAMPLE[0], stem: "Costs $5 a day" };
     expect(planUpsert([bad], []).demoted).toEqual([bad.id]);
+  });
+  it("v2 notes: written as columns (null when absent, so a removed note is cleared), a failing note left out with the question kept live, a note change is a new version", () => {
+    const a = v1(SAMPLE[0]);
+    const withNudge = { ...a, nudge: "What could you do to both sides first?" };
+    const plan = planUpsert([withNudge], [row(a, 2)]);
+    expect(plan.upsert).toEqual([expect.objectContaining({ id: a.id, nudge: withNudge.nudge, common_wrong: null, version: 3, status: "live" })]);
+    // an old row (no note columns yet) and the same question without notes: unchanged
+    expect(planUpsert([a], [row(a, 2)]).unchanged).toBe(1);
+    expect(planUpsert([a], [{ ...row(a, 2), nudge: null, common_wrong: null }]).unchanged).toBe(1);
+    // a leaking nudge is left out; the question stays live
+    const leaky = planUpsert([{ ...a, nudge: "Choice B." }], []);
+    expect(leaky.upsert[0]).toMatchObject({ status: "live", nudge: null });
+    expect(leaky.droppedNotes).toEqual({ [a.id]: ["nudge"] });
+    expect(leaky.demoted).toEqual([]);
+    const sql = bankSql([withNudge, v1(SAMPLE[1])]);
+    expect(sql).toContain("'What could you do to both sides first?'");
+    expect(sql).toContain("nudge = excluded.nudge, common_wrong = excluded.common_wrong");
+    expect(sql).toContain("null, null::jsonb, 'live'");
   });
   it("writes the bank as one idempotent SQL transaction, quotes escaped", () => {
     const sql = bankSql([{ ...SAMPLE[0], stem: "Dana's $x$" }]);

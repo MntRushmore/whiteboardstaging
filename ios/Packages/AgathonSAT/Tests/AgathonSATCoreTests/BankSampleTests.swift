@@ -59,4 +59,37 @@ struct BankSampleTests {
             for c in q.choices ?? [] { #expect(!SATRichText.parse(c.text).isEmpty, "\(q.id) \(c.key)") }
         }
     }
+
+    /// The bank lane's real v2 notes (feat/sat2-bank 443b913e) come through the app's decoding.
+    @Test func theV2NotesDecode() {
+        let qs = Self.questions
+        #expect(qs.allSatisfy { $0.nudge != nil }, "every sample question has a nudge")
+        #expect(qs.filter { $0.format == .mcq }.allSatisfy { q in (q.choices ?? []).contains { $0.why != nil } })
+        #expect(qs.filter { $0.format == .spr }.allSatisfy { !($0.commonWrong ?? []).isEmpty })
+        #expect(qs.filter { $0.solution.hasDesmosWay }.count == 3)
+        for q in qs {
+            if let key = q.answer.key { #expect(q.why(key) == nil, "\(q.id): a why on the right choice") }
+            #expect((q.nudge ?? "").count <= 120, "\(q.id)")
+            for w in q.commonWrong ?? [] { #expect(!SATGridIn.isCorrect(w.answer, accepted: q.answer.accepted ?? []), "\(q.id): \(w.answer)") }
+        }
+        #expect(SATFixtures.sample.map(\.id) == qs.map(\.id), "the stub's sample bank is the same file")
+    }
+
+    /// Every sample question lays out on its page in both orientations with its work area.
+    @Test func everySampleQuestionLaysOut() {
+        for q in Self.questions {
+            for vp in [SATViewport.landscape, .portrait] {
+                let l = SATPageLayout.make(q, measure: FakeMeasure(), viewport: vp)
+                #expect(l.workHeight >= SATPageStyle.standard.workMinUnderStem - 0.01, "\(q.id)")
+                #expect(l.format(q), "\(q.id)")
+            }
+        }
+    }
+}
+
+extension SATPageLayout {
+    /// The answer row matches the question's format.
+    func format(_ q: SATQuestion) -> Bool {
+        q.format == .mcq ? cards.count == (q.choices?.count ?? 0) && gridIn == nil : cards.isEmpty && gridIn != nil && keys.count == 14
+    }
 }

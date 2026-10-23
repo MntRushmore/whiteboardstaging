@@ -31,6 +31,10 @@ struct RootView: View {
     @State private var satTrouble: String?
     /// a stub run (Debug `-satStub`) that chose SAT on the first run: as if anonymous
     @State private var satOnly = false
+    /// the user who began in SAT practice with no account: after making one there (the upgrade keeps the
+    /// id) they stay in SAT practice, mid-question, rather than being taken to Home (the E2E run,
+    /// 2026-10-23: the account sheet and the session went at once). Home comes on the next launch.
+    @State private var keptInSAT: String?
 
     var body: some View {
         #if DEBUG
@@ -56,7 +60,7 @@ struct RootView: View {
                 SplashView()
             } else if onboarding == true {
                 OnboardingFlow(trial: trialOffering, gate: gate) { outcome in finish(outcome) }
-            } else if (backend.auth.phase == .signedIn && backend.auth.isAnonymous) || (satOnly && Self.satStubHome) {
+            } else if (backend.auth.phase == .signedIn && (backend.auth.isAnonymous || keptInSAT == backend.auth.userId)) || (satOnly && Self.satStubHome) {
                 // no account: SAT practice is the whole app (docs/SAT-MODE.md)
                 SATHomeScreen()
                     .id(backend.auth.userId)
@@ -76,6 +80,10 @@ struct RootView: View {
             }
         }
         .task(id: backend.auth.phase == .restoring) { await decide() }
+        .onChange(of: backend.auth.isAnonymous, initial: true) { _, anonymous in
+            if anonymous, backend.auth.phase == .signedIn { keptInSAT = backend.auth.userId }
+        }
+        .onChange(of: backend.auth.phase) { _, phase in if phase != .signedIn { keptInSAT = nil } }
         // an under-13 from SAT practice: the grown-up's first run, from its start
         .onReceive(NotificationCenter.default.publisher(for: SATAccountRoute.startFirstRun)) { _ in
             Task {
@@ -93,6 +101,19 @@ struct RootView: View {
         if ProcessInfo.processInfo.arguments.contains("-onboardingFresh") {
             OnboardingState.reset()
             if backend.auth.phase == .signedIn { try? await backend.auth.signOut(scope: .local) }
+        }
+        // `-satLive` with AGATHON_TEST_EMAIL / AGATHON_TEST_PASSWORD: that free account signed in, past
+        // the first run (the end-to-end run against a local stack whose anonymous sign-ins are off)
+        let env = ProcessInfo.processInfo.environment
+        if SATDebug.isLive, let email = env["AGATHON_TEST_EMAIL"], let password = env["AGATHON_TEST_PASSWORD"] {
+            if backend.auth.phase == .signedIn, backend.auth.email?.lowercased() != email.lowercased() {
+                try? await backend.auth.signOut(scope: .local)
+            }
+            if backend.auth.phase != .signedIn { try? await backend.auth.signIn(email: email, password: password) }
+            if backend.auth.phase == .signedIn {
+                onboarding = false
+                return
+            }
         }
         #endif
         switch backend.auth.phase {

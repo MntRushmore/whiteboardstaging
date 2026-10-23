@@ -1,0 +1,587 @@
+<!doctype html>
+<!--
+  SAT mode v2 mockups (docs/SAT-V2.md, docs/sat2/DESIGN-NOTES.md). Not app code: a picture of the plan.
+  One frame per hash (#f01 … #f13); with no hash, every frame on one sheet with its caption.
+  iPad Air 13": landscape 1366 x 1024 pt, portrait 1024 x 1366 pt. render.sh renders each at 2x.
+  The board's page is drawn in PAGE UNITS (1600 wide) inside a scaled box, so every number in the
+  page code is a number from DESIGN-NOTES.md. Chrome (top bar, dock, Help me, sheets) is view space, pt.
+  Handwriting is the real hand engine's strokes (ink.js, from ink-gen.ts), never a typeface.
+  Questions are real bank items (data/sat/bank.json); nudge / why / desmos_steps are mock copy
+  (the bank lane writes the real ones).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAT v2 mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Lexend:wght@300..700&display=block" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script src="ink.js"></script>
+<script src="icons.js"></script>
+<style>
+  :root {
+    --ground: #F1F2F6; --paper: #FFFFFF; --sunken: #F1F2F6; --ink: #14151F; --ink2: #5B5E6E; --onInk: #FFFFFF;
+    --onInk2: #BDBDC0; --onInkFaint: #3E3F47; --sunny: #FFD12E; --tomato: #FF5A36; --cobalt: #2D5BFF; --cobaltDeep: #2148E3;
+    --cobaltEmpty: #D9E1FF; --success: #12A150; --line: #E2E4EB; --guide: #E6E8EE; --faint: #A3A6B4; --dot: #D3D6DF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ground); font-family: "Lexend", system-ui, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+  body.single { overflow: hidden; }
+  .screen { position: relative; overflow: hidden; background: var(--paper); }
+  .abs { position: absolute; }
+  .page { position: absolute; left: 0; top: 0; width: 1600px; transform-origin: 0 0; background: var(--paper); }
+  .katex { font-size: 1.06em; }
+  .ic { display: inline-block; vertical-align: middle; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---- printed question (page units) ---- */
+  .qnum { position: absolute; width: 44px; height: 44px; border-radius: 12px; background: var(--ink); color: #fff;
+          display: grid; place-items: center; font-weight: 600; font-size: 22px; }
+  .stem { position: absolute; font-size: 25px; line-height: 40px; font-weight: 400; color: var(--ink); letter-spacing: -0.1px; }
+  .stem p + p { margin-top: 14px; }
+  .flabel { position: absolute; font-size: 18px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .tick { position: absolute; font-size: 16px; color: var(--ink2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .axl { position: absolute; font-size: 16px; color: var(--ink2); font-weight: 500; white-space: nowrap; }
+  .ptable { position: absolute; border-collapse: collapse; font-size: 21px; }
+  .ptable th { background: var(--sunken); font-weight: 600; font-size: 19px; padding: 0 22px; height: 56px; text-align: center; }
+  .ptable td { padding: 0 22px; height: 54px; text-align: center; font-variant-numeric: tabular-nums; border-top: 1.5px solid var(--line); }
+  .ptable th:first-child, .ptable td:first-child { text-align: left; }
+  .ptable tr.total td { font-weight: 600; }
+  .ptable th:first-child { border-top-left-radius: 14px; border-bottom-left-radius: 14px; }
+  .ptable th:last-child { border-top-right-radius: 14px; border-bottom-right-radius: 14px; }
+
+  /* ---- answer cards (page units) ---- */
+  .card { position: absolute; border-radius: 26px; background: var(--sunken); display: flex; align-items: center; padding: 0 20px 0 22px; gap: 18px; }
+  .card .let { width: 52px; height: 52px; border-radius: 50%; background: var(--paper); display: grid; place-items: center; font-weight: 600; font-size: 23px; flex: none; }
+  .card .txt { font-size: 28px; flex: 0 1 auto; margin-right: auto; white-space: nowrap; }
+  .card .el { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--faint); flex: none; }
+  .card.sel { background: var(--ink); color: #fff; }
+  .card.sel .let { background: #fff; color: var(--ink); }
+  .card.sel .el { color: var(--onInk2); }
+  .card.out .txt, .card.out .let { color: var(--faint); }
+  .card.out .txt { position: relative; }
+  .card.out .txt::after { content: ""; position: absolute; left: -8px; width: calc(100% + 16px); top: 50%; height: 3px; margin-top: -1.5px; background: var(--ink2); border-radius: 2px; transform: rotate(-18deg); }
+  .card.out .txt .katex { color: var(--faint); }
+  .card.out .el { color: var(--ink); background: var(--paper); }
+  .card.look { background: var(--sunny); }
+  .card.right { background: var(--success); color: #fff; }
+  .card.right .let { color: var(--success); }
+  .card .tag2 { font-size: 15px; font-weight: 600; letter-spacing: 0.4px; white-space: nowrap; }
+
+  /* ---- tutor (page units) ---- */
+  .note { position: absolute; background: var(--cobalt); color: #fff; border-radius: 6px 24px 24px 24px; padding: 16px 22px 18px; }
+  .note.up { border-radius: 26px 26px 26px 6px; }
+  .note .lab { font-size: 14px; font-weight: 600; letter-spacing: 1.4px; text-transform: uppercase; }
+  .note p { font-size: 21px; line-height: 1.4; margin-top: 6px; }
+  .note .foot { font-size: 15px; margin-top: 10px; color: #fff; }
+  .note .row { display: flex; gap: 10px; margin-top: 18px; }
+  .note .nb { height: 56px; border-radius: 28px; padding: 0 24px; display: inline-flex; align-items: center; font-weight: 600; font-size: 20px; white-space: nowrap; }
+  .note .nb.w { background: #fff; color: var(--ink); }
+  .note .nb.d { background: var(--cobaltDeep); color: #fff; }
+  .tcap { position: absolute; color: var(--cobalt); font-size: 19px; font-weight: 500; white-space: nowrap; display: flex; align-items: center; gap: 10px; }
+  .tcap b { width: 30px; height: 30px; border-radius: 50%; background: var(--cobalt); color: #fff; display: grid; place-items: center; font-size: 16px; font-weight: 600; }
+  .tcap.wait { color: var(--faint); }
+  .tcap.wait b { background: var(--cobaltEmpty); color: var(--cobalt); }
+  .turn { position: absolute; color: var(--cobalt); font-size: 20px; font-weight: 600; white-space: nowrap; }
+
+  /* ---- chrome (pt) ---- */
+  .round { width: 48px; height: 48px; border-radius: 50%; background: var(--sunken); display: grid; place-items: center; color: var(--ink); }
+  .pill { height: 48px; border-radius: 24px; background: var(--sunken); display: inline-flex; align-items: center; gap: 8px; padding: 0 18px; font-weight: 600; font-size: 16px; white-space: nowrap; color: var(--ink); }
+  .tb-title { font-family: "Bricolage Grotesque"; font-weight: 800; font-size: 21px; letter-spacing: -0.5px; white-space: nowrap; font-variation-settings: "opsz" 21; }
+  .tb-sub { font-size: 16px; font-weight: 500; color: var(--ink2); white-space: nowrap; }
+  .dock { height: 72px; border-radius: 36px; background: var(--ink); display: flex; align-items: center; padding: 0 10px; gap: 4px; }
+  .tool { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; color: var(--onInk); }
+  .tool.on { background: var(--sunny); color: var(--ink); }
+  .sep { width: 2px; height: 30px; background: var(--onInkFaint); margin: 0 6px; }
+  .sw { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; }
+  .sw i { width: 26px; height: 26px; border-radius: 50%; display: block; }
+  .sw.on { box-shadow: inset 0 0 0 3px #fff; }
+  .helpme { height: 72px; border-radius: 36px; background: var(--sunny); display: inline-flex; align-items: center; gap: 12px; padding: 0 22px 0 16px; white-space: nowrap; }
+  .helpme .t { font-family: "Bricolage Grotesque"; font-weight: 800; font-size: 26px; letter-spacing: -0.7px; font-variation-settings: "opsz" 26; }
+  .pips { display: flex; gap: 5px; margin: -2px 0 -6px 1px; }
+  .pips i { width: 22px; height: 5px; border-radius: 3px; box-shadow: inset 0 0 0 1.5px var(--ink); display: block; }
+  .pips i.on { background: var(--ink); }
+  .check { height: 64px; border-radius: 32px; background: var(--ink); color: #fff; display: inline-flex; align-items: center; gap: 10px; padding: 0 26px 0 12px; white-space: nowrap;
+           font-family: "Bricolage Grotesque"; font-weight: 800; font-size: 24px; letter-spacing: -0.6px; }
+  .check .bd { width: 42px; height: 42px; border-radius: 50%; background: var(--onInkFaint); display: grid; place-items: center; }
+  .check.off { background: var(--guide); color: var(--faint); }
+  .check.off .bd { background: var(--line); color: var(--faint); }
+  .walk { height: 64px; border-radius: 32px; background: var(--cobalt); color: #fff; display: inline-flex; align-items: center; gap: 14px; padding: 0 24px 0 20px; white-space: nowrap; font-weight: 600; font-size: 19px; }
+  .walk .pp { display: flex; gap: 6px; } .walk .pp i { width: 22px; height: 6px; border-radius: 3px; background: var(--cobaltDeep); display: block; } .walk .pp i.on { background: #fff; }
+  .quiet { height: 40px; border-radius: 20px; background: var(--sunken); display: inline-flex; align-items: center; gap: 10px; padding: 0 16px; font-size: 15px; color: var(--ink); white-space: nowrap; }
+  .quiet .d { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 2.5px var(--ink2); }
+
+  /* ---- sheets & app screens (pt) ---- */
+  .h-display { font-family: "Bricolage Grotesque"; font-weight: 800; letter-spacing: -0.045em; font-variation-settings: "opsz" 64; }
+  .h-title { font-family: "Bricolage Grotesque"; font-weight: 800; font-size: 32px; letter-spacing: -0.035em; font-variation-settings: "opsz" 32; }
+  .h-head { font-family: "Bricolage Grotesque"; font-weight: 800; font-size: 24px; letter-spacing: -0.03em; font-variation-settings: "opsz" 24; }
+  .lbl { font-size: 13px; font-weight: 600; letter-spacing: 1.3px; text-transform: uppercase; color: var(--ink2); }
+  .body { font-size: 17px; line-height: 1.45; }
+  .cap { font-size: 14px; color: var(--ink2); }
+  .btn { height: 56px; border-radius: 28px; display: inline-flex; align-items: center; gap: 10px; padding: 0 24px; font-weight: 600; font-size: 18px; white-space: nowrap; }
+  .btn.lg { height: 64px; border-radius: 32px; padding: 0 28px 0 12px; font-size: 19px; }
+  .btn.sunny { background: var(--sunny); color: var(--ink); }
+  .btn.ink { background: var(--ink); color: #fff; }
+  .btn.chalk { background: var(--sunken); color: var(--ink); }
+  .btn.paper { background: var(--paper); color: var(--ink); }
+  .btn .bd { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; }
+  .sheetcard { background: var(--paper); border-radius: 28px; }
+  .step { display: grid; grid-template-columns: 34px 1fr; gap: 14px; align-items: start; }
+  .step .n { width: 34px; height: 34px; border-radius: 50%; background: var(--sunken); display: grid; place-items: center; font-weight: 600; font-size: 15px; }
+  .step .s { font-size: 17px; line-height: 1.45; }
+  .step .m { font-size: 21px; margin-top: 6px; }
+  .expr { display: grid; grid-template-columns: 40px 1fr; align-items: center; height: 48px; background: var(--sunken); border-radius: 14px; margin-top: 10px; overflow: hidden; }
+  .expr .g { height: 100%; display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--ink2); background: var(--guide); }
+  .expr .e { padding: 0 16px; font-size: 20px; }
+  .bar { height: 8px; border-radius: 4px; background: var(--guide); position: relative; overflow: hidden; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--ink); display: block; }
+
+  /* ---- the contact sheet ---- */
+  .sheet-all { padding: 48px 40px 80px; display: flex; flex-direction: column; gap: 56px; align-items: flex-start; }
+  .sheet-all h1 { font-family: "Bricolage Grotesque"; font-weight: 800; font-size: 40px; letter-spacing: -1.4px; }
+  .sheet-all .intro { font-size: 17px; color: var(--ink2); max-width: 880px; line-height: 1.5; margin-top: 8px; }
+  .fr h2 { font-family: "Bricolage Grotesque"; font-weight: 800; font-size: 22px; letter-spacing: -0.5px; }
+  .fr p { font-size: 15px; color: var(--ink2); max-width: 1000px; line-height: 1.5; margin: 6px 0 14px; }
+  .fr .box { border-radius: 18px; overflow: hidden; background: #fff; }
+  .fr iframe { border: 0; display: block; transform-origin: 0 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// ============================================================== data (real bank items)
+const Q_PLOT = {"id":"algebra-linear-two-var-0102","skill":"linear equations in two variables","format":"mcq",
+  "stem":"A print shop charges a flat setup fee plus a fixed price per poster. The graph shows the total charge $y$, in dollars, for printing $x$ posters. Which equation represents this relationship?",
+  "figure":{"kind":"plot","x":{"min":0,"max":10,"step":1,"label":"Posters"},"y":{"min":0,"max":100,"step":10,"label":"Total charge (dollars)"},"grid":true,
+    "items":[{"type":"function","expr":"19+6*x"},{"type":"point","at":[0,19],"label":"(0, 19)"},{"type":"point","at":[2,31],"label":"(2, 31)"}]},
+  "choices":[{"key":"A","text":"$y=6x+19$"},{"key":"B","text":"$y=12x+19$"},{"key":"C","text":"$y=19x+6$"},{"key":"D","text":"$y=6x+31$"}],
+  "answer":{"key":"A"},
+  "solution":{"steps":[{"text":"The y-intercept is the setup fee, 19.","math":"b=19"},{"text":"The slope is the rise over the run between the labeled points.","math":"\\frac{31-19}{2-0}=6"},{"text":"So the equation is the following.","math":"y=6x+19"}],"desmos_tip":null},
+  // v2 mock copy (the bank lane writes the real fields)
+  "nudge":"What's the charge for 0 posters? And how much more does each extra poster add?",
+  "why":{"B":"use the rise, 31 − 19 = 12, as the slope and don't divide it by the run, 2 − 0.","C":"swap the slope and the starting fee.","D":"read the second point's 31 as the starting fee."},
+  "desmos_steps":[{"text":"Type the two labeled points into a table.","math":null,"table":[["x_1","y_1"],["0","19"],["2","31"]]},{"text":"Fit a line through them.","math":"y_1 \\sim mx_1+b"},{"text":"Desmos shows m = 6 and b = 19.","math":"y=6x+19"}]};
+
+const Q_SHAPE = {"id":"geometry_trig-lines-angles-triangles-0001","skill":"lines, angles, triangles","format":"spr",
+  "stem":"In the figure, side $AB$ of triangle $ABC$ is extended past $B$. The angle at $A$ measures $52^\\circ$, the angle at $C$ measures $71^\\circ$, and the exterior angle at $B$ measures $x^\\circ$. What is the value of $x$?",
+  "figure":{"kind":"shape","items":[{"type":"polygon","points":[[0,0],[8,0],[4.37,5.59]]},{"type":"segment","from":[8,0],"to":[10.5,0]},{"type":"label","at":[-0.5,-0.4],"text":"A"},{"type":"label","at":[8,-0.6],"text":"B"},{"type":"label","at":[4.37,6.1],"text":"C"},{"type":"arc_angle","at":[0,0],"from":0,"to":52,"label":"$52^\\circ$"},{"type":"arc_angle","at":[4.37,5.59],"from":232,"to":303,"label":"$71^\\circ$"},{"type":"arc_angle","at":[8,0],"from":0,"to":123,"label":"$x^\\circ$"}]},
+  "answer":{"accepted":["123"]}};
+
+const Q_TABLE = {"id":"psda-probability-0107","skill":"probability","format":"mcq",
+  "stem":"A music streaming app surveyed users about their preferred listening device and whether they have a premium plan. The results are shown in the table. If a user who does not have a premium plan is selected at random, what is the probability that the user prefers a phone?",
+  "figure":{"kind":"table","headers":["Device","Premium","Free","Total"],"rows":[["Phone","55","66","121"],["Laptop","12","22","34"],["Speaker","13","32","45"],["Total","80","120","200"]]},
+  "choices":[{"key":"A","text":"$\\frac{66}{200}$"},{"key":"B","text":"$\\frac{66}{121}$"},{"key":"C","text":"$\\frac{11}{20}$"},{"key":"D","text":"$\\frac{121}{200}$"}],
+  "answer":{"key":"C"}};
+
+// ============================================================== helpers
+const K = (t, display = false) => katex.renderToString(t, { throwOnError: false, displayMode: display });
+const md = (s) => s.replace(/\$([^$]+)\$/g, (_, t) => K(t));
+const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const icon = (name, size = 24, sw = 2.2) => `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" stroke-width="${sw}">${ICONS[name] || ""}</svg>`;
+function rng(seed) { let a = seed >>> 0; return () => { a += 0x6d2b79f5; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function smooth(pts) {
+  let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+    d += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)} ${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1)} ${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)} ${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+
+// ---- ink (page units). Student pencil: dark ink, 2.9 wide (0.65 x the app's 4.5). Tutor: cobalt, 3.6.
+const STU = { c: "#14151F", w: 2.9 }, TUT = { c: "#2D5BFF", w: 3.6 };
+let INKS = [];
+function ink(key, x, y, pen) { const p = INK[key]; if (!p) throw new Error("no ink " + key);
+  INKS.push(`<g transform="translate(${x} ${y})" stroke="${pen.c}" stroke-width="${pen.w}">${p.d.map((d) => `<path d="${d}"/>`).join("")}</g>`);
+  return { x, y, w: p.w, top: y + p.top, bottom: y + p.bottom, right: x + p.w }; }
+const stu = (k, x, y) => ink(k, x, y, STU), tut = (k, x, y) => ink(k, x, y, TUT);
+function path(d, pen, extra = "") { INKS.push(`<path d="${d}" stroke="${pen.c}" stroke-width="${pen.w}" ${extra}/>`); }
+/** A hand-drawn loop around (cx, cy): a bit more than one turn, wobbly, not closed neatly. */
+function loop(cx, cy, rx, ry, seed, pen = STU) {
+  const r = rng(seed), pts = [], n = 30, a0 = -2.2 + r() * 0.4, turn = 2 * Math.PI * 1.07;
+  for (let i = 0; i <= n; i++) { const t = i / n, a = a0 + t * turn, k = 1 + (r() - 0.5) * 0.05 + t * 0.07;
+    pts.push([cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k * 0.97]); }
+  path(smooth(pts), pen);
+}
+/** A sketched straight line: slight bow and tremor, ends overshoot a touch. */
+function sketch(x1, y1, x2, y2, seed, pen = STU) {
+  const r = rng(seed), n = 9, pts = [], len = Math.hypot(x2 - x1, y2 - y1), nx = -(y2 - y1) / len, ny = (x2 - x1) / len, bow = (r() - 0.5) * len * 0.03;
+  for (let i = 0; i <= n; i++) { const t = -0.03 + i / n * 1.06, b = Math.sin(t * Math.PI) * bow + (r() - 0.5) * 0.9;
+    pts.push([x1 + (x2 - x1) * t + nx * b, y1 + (y2 - y1) * t + ny * b]); }
+  path(smooth(pts), pen);
+}
+/** The tutor's tick: a short down-stroke, then a long sweep up. */
+function tickMark(x, y, s = 1) { path(`M${x} ${y - 14 * s} q ${6 * s} ${8 * s} ${11 * s} ${18 * s} q ${9 * s} ${-24 * s} ${30 * s} ${-42 * s}`, { c: TUT.c, w: 4.4 }); }
+/** The tutor's ring round a line. */
+function ring(cx, cy, rx, ry, seed) { loop(cx, cy, rx, ry, seed, { c: TUT.c, w: 3.6 }); }
+
+// ============================================================== the page
+const PAGE_W = 1600, M = 72, QTOP = 104;
+const STEM_X = 140, STEM_W_BESIDE = 680, FIG_X = 880, FIG_W = 648;
+const CARD_H = 112, CARD_H_TALL = 132, GAP = 24, DOCK_LANE_PT = 110, WORK_MIN = 360, BAND_MIN = 200;
+
+let PG, L, SCR;   // the page element, its layout, the screen
+function screen(orient = "land", bg = "var(--paper)") {
+  const w = orient === "port" ? 1024 : 1366, h = orient === "port" ? 1366 : 1024;
+  document.getElementById("root").innerHTML = "";
+  SCR = document.createElement("div"); SCR.className = "screen"; SCR.style.cssText = `width:${w}px;height:${h}px;background:${bg}`;
+  document.getElementById("root").appendChild(SCR);
+  return { w, h };
+}
+function put(html, x, y, css = "", parent) { const d = document.createElement("div"); d.className = "abs"; d.style.left = x + "px"; d.style.top = y + "px";
+  if (css) d.style.cssText += css; d.innerHTML = html; (parent || SCR).appendChild(d); return d; }
+const putP = (html, x, y, css = "") => put(html, x, y, css, PG);
+
+/**
+ * Lays a question out on its page (the rules in DESIGN-NOTES.md):
+ * the question block at the top (stem, figure beside when it fits, else below), the answer row at
+ * the bottom of the page, and the work area as everything between, at least WORK_MIN tall.
+ */
+function questionPage(q, { orient = "land", num = 4, cards = {}, answerBox = null } = {}) {
+  const { w, h } = screen(orient);
+  const k = w / PAGE_W;
+  const offY = Math.max(0, 84 - QTOP * k);           // the question never sits under the top bar
+  const viewH = (h - offY) / k;
+  PG = document.createElement("div"); PG.className = "page"; SCR.appendChild(PG); PG.style.transform = `translateY(${offY}px) scale(${k})`;
+  INKS = [];
+  // the question number, hanging in the margin like a printed test
+  putP(`${num}`, M, QTOP + 2, "").className = "qnum";
+  // figure placement: beside when the stem fits a 680 column and the figure fits 648 wide
+  const fig = q.figure, beside = !!fig;
+  const stemW = beside ? STEM_W_BESIDE : 1388;
+  const stem = putP(`<p>${md(q.stem)}</p>`, STEM_X, QTOP, `width:${stemW}px`); stem.className = "stem";
+  const stemH = stem.offsetHeight;
+  let figBox = null;
+  if (fig) figBox = drawFigure(fig, FIG_X, QTOP + 4);
+  const qBottom = Math.max(QTOP + stemH, figBox ? figBox.y + figBox.h : 0);
+  // answer row at the page bottom, above the dock lane; the page grows when the work area would be < WORK_MIN
+  const tall = q.choices && q.choices.some((c) => c.text.includes("frac"));
+  const rowH = answerBox ? 132 : (tall ? CARD_H_TALL : CARD_H);
+  const dockLane = DOCK_LANE_PT / k;
+  let pageH = Math.max(viewH, QTOP + stemH + 48 + WORK_MIN + 32 + rowH + dockLane, qBottom + 32 + BAND_MIN + 32 + rowH + dockLane);
+  const rowTop = pageH - dockLane - rowH;
+  PG.style.height = pageH + "px";
+  L = { k, offY, w, h, stemH, stemBottom: QTOP + stemH, fig: figBox, qBottom, rowTop, rowH, pageH,
+        workTop: QTOP + stemH + 48, workBottom: rowTop - 32 };
+  dots(L, stem);
+  if (q.choices) drawCards(q.choices, rowTop, rowH, cards);
+  if (answerBox) drawAnswerBox(rowTop, answerBox);
+  return L;
+}
+
+/** The dot grid: the work area is dotted paper, the printed question is clean paper. */
+function dots(L) {
+  const P = 36, out = [];
+  const keep = [];
+  keep.push({ x0: STEM_X - 80, y0: QTOP - 20, x1: STEM_X + STEM_W_BESIDE + 24, y1: L.stemBottom + 24 });
+  if (L.fig) keep.push({ x0: L.fig.x - 28, y0: L.fig.y - 24, x1: PAGE_W, y1: L.fig.y + L.fig.h + 24 });
+  for (let y = QTOP + 18; y <= L.workBottom; y += P) for (let x = M + 14; x <= PAGE_W - M; x += P) {
+    if (keep.some((b) => x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1)) continue;
+    out.push(`<circle cx="${x}" cy="${y}" r="1.8"/>`);
+  }
+  const s = putP(`<svg width="1600" height="${L.pageH}" fill="var(--dot)">${out.join("")}</svg>`, 0, 0, "z-index:0");
+  PG.prepend(s);
+}
+
+function drawCards(choices, top, h, state) {
+  const n = choices.length, cw = (PAGE_W - 2 * M - (n - 1) * GAP) / n;
+  choices.forEach((c, i) => {
+    const s = state[c.key] || "";
+    const tail = s === "right" ? `<span class="el" style="color:#fff">${icon("check", 26, 3)}</span>` : "";
+    const el = s === "right" || s === "look" ? "" : `<span class="el">${icon(s === "out" ? "rotate-ccw" : "x", 22, 2.4)}</span>`;
+    putP(`<span class="let">${c.key}</span><span class="txt">${c.text.replace(/\$([^$]+)\$/g, (_, t) => K(t.includes("frac") ? "\\displaystyle " + t : t))}</span>${tail}${el}`, M + i * (cw + GAP), top, `width:${cw}px;height:${h}px`).className = "card " + s;
+  });
+}
+
+function drawAnswerBox(top, { value = "", caret = true, keypad = true } = {}) {
+  putP(`<div style="font-size:17px;font-weight:600;color:var(--ink2);letter-spacing:1.2px;text-transform:uppercase">Your answer</div>
+        <div style="margin-top:12px;width:400px;height:84px;border-radius:26px;background:var(--sunken);box-shadow:inset 0 0 0 3px var(--cobalt);display:flex;align-items:center;padding:0 26px;font-size:40px;font-weight:500;font-variant-numeric:tabular-nums">${value}${caret ? `<span style="display:inline-block;width:3px;height:42px;background:var(--cobalt);margin-left:3px"></span>` : ""}</div>`, M, top - 4);
+  putP(`<div style="font-size:17px;color:var(--ink2);line-height:1.45;width:300px">Up to 5 characters.<br>A fraction like 3/4 or a decimal.</div>`, M + 424, top + 46);
+  if (keypad) {
+    const keys = [["1", "2", "3", "4", "5", "6", "7"], ["8", "9", "0", ".", "/", "−", "⌫"]];
+    const kw = 96, kh = 60, g = 10, x0 = PAGE_W - M - (7 * kw + 6 * g);
+    keys.forEach((row, r) => row.forEach((t, i) => putP(t === "⌫" ? icon("delete", 30, 2) : t, x0 + i * (kw + g), top + r * (kh + 12),
+      `width:${kw}px;height:${kh}px;border-radius:18px;background:${/[0-9]/.test(t) ? "var(--sunken)" : "var(--guide)"};display:grid;place-items:center;font-size:28px;font-weight:600`)));
+  }
+}
+
+// ---- figures (printed: ink lines, Lexend labels, KaTeX math), drawn natively in the app
+function drawFigure(fig, x, y) {
+  if (fig.kind === "plot") return drawPlot(fig, x, y);
+  if (fig.kind === "shape") return drawShape(fig, x, y);
+  if (fig.kind === "table") return drawTable(fig, x, y);
+}
+let PLOT;   // graph coords -> page units, for ink on the figure
+function drawPlot(f, x, y) {
+  const padL = 92, padB = 70, W = 640, H = 470, ix = x + padL, iy = y + 8, iw = W - padL - 12, ih = H - padB - 8;
+  const sx = (v) => ix + (v - f.x.min) / (f.x.max - f.x.min) * iw, sy = (v) => iy + ih - (v - f.y.min) / (f.y.max - f.y.min) * ih;
+  PLOT = { sx, sy, px: (a, b) => [sx(a), sy(b)] };
+  let g = "";
+  for (let v = f.x.min; v <= f.x.max; v += f.x.step) g += `<line x1="${sx(v)}" x2="${sx(v)}" y1="${iy}" y2="${iy + ih}" stroke="var(--line)" stroke-width="1.4"/>`;
+  for (let v = f.y.min; v <= f.y.max; v += f.y.step) g += `<line x1="${ix}" x2="${ix + iw}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)" stroke-width="1.4"/>`;
+  g += `<line x1="${ix}" x2="${ix + iw + 6}" y1="${sy(0)}" y2="${sy(0)}" stroke="var(--ink)" stroke-width="2.2"/><line x1="${sx(0)}" x2="${sx(0)}" y1="${iy - 6}" y2="${iy + ih}" stroke="var(--ink)" stroke-width="2.2"/>`;
+  for (const it of f.items) if (it.type === "function") {
+    const fn = new Function("x", "return " + it.expr), pts = [];
+    for (let i = 0; i <= 80; i++) { const xv = f.x.min + (f.x.max - f.x.min) * i / 80, yv = fn(xv); if (yv >= f.y.min && yv <= f.y.max) pts.push(`${sx(xv).toFixed(1)},${sy(yv).toFixed(1)}`); }
+    g += `<polyline points="${pts.join(" ")}" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>`;
+  }
+  for (const it of f.items) if (it.type === "point") g += `<circle cx="${sx(it.at[0])}" cy="${sy(it.at[1])}" r="9" fill="#fff"/><circle cx="${sx(it.at[0])}" cy="${sy(it.at[1])}" r="6.5" fill="var(--ink)"/>`;
+  putP(`<svg width="${W}" height="${H}" viewBox="${x} ${y} ${W} ${H}" style="overflow:visible">${g}</svg>`, x, y, "z-index:1");
+  for (let v = f.x.min; v <= f.x.max; v += f.x.step * (f.x.max - f.x.min > 12 ? 2 : 1)) putP(`${v}`, sx(v), sy(0) + 10, "transform:translateX(-50%);z-index:1").className = "tick";
+  for (let v = f.y.min; v <= f.y.max; v += f.y.step * 2) if (v !== 0 || f.x.min !== 0) putP(`${v}`, ix - 12, sy(v) - 10, "transform:translateX(-100%);z-index:1").className = "tick";
+  putP(f.x.label, ix + iw / 2, iy + ih + 40, "transform:translateX(-50%);z-index:1").className = "axl";
+  putP(f.y.label, x + 8, iy + ih / 2, "transform:translate(-50%,-50%) rotate(-90deg) translateY(10px);transform-origin:50% 50%;z-index:1;left:" + (x + 22) + "px").className = "axl";
+  const offs = { "(0, 19)": [-14, 10, "right"], "(2, 31)": [-16, -40, "right"] };
+  for (const it of f.items) if (it.type === "point" && it.label) { const o = offs[it.label] || [12, -30, "left"];
+    const lab = putP(it.label, sx(it.at[0]) + o[0], sy(it.at[1]) + o[1], `z-index:1;${o[2] === "right" ? "transform:translateX(-100%)" : ""}`); lab.className = "flabel"; }
+  return { x, y, w: W, h: H };
+}
+function drawShape(f, x, y) {
+  const s = 52, pts = f.items.flatMap((it) => it.points || (Array.isArray(it.from) ? [it.from, it.to] : []));
+  const minX = Math.min(...pts.map((p) => p[0])), maxX = Math.max(...pts.map((p) => p[0])), maxY = Math.max(...pts.map((p) => p[1]));
+  const ox = x + 50 - minX * s, oy = y + 40 + maxY * s;
+  const P = (p) => [ox + p[0] * s, oy - p[1] * s];
+  PLOT = { px: (a, b) => P([a, b]) };
+  let g = "";
+  for (const it of f.items) {
+    if (it.type === "polygon") g += `<polygon points="${it.points.map((p) => P(p).join(",")).join(" ")}" fill="none" stroke="var(--ink)" stroke-width="2.6" stroke-linejoin="round"/>`;
+    if (it.type === "segment") { const [a, b] = [P(it.from), P(it.to)]; g += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="var(--ink)" stroke-width="2.6" stroke-linecap="round"/>`; }
+    if (it.type === "arc_angle") { const c = P(it.at), r = it.label.includes("x") ? 34 : 40, a0 = it.from * Math.PI / 180, a1 = it.to * Math.PI / 180;
+      const p0 = [c[0] + r * Math.cos(a0), c[1] - r * Math.sin(a0)], p1 = [c[0] + r * Math.cos(a1), c[1] - r * Math.sin(a1)];
+      const large = Math.abs(it.to - it.from) > 180 ? 1 : 0;
+      g += `<path d="M${p0[0]} ${p0[1]} A ${r} ${r} 0 ${large} 0 ${p1[0]} ${p1[1]}" fill="none" stroke="var(--ink)" stroke-width="2"/>`;
+      const mid = (it.from + it.to) / 2 * Math.PI / 180, lr = r + 34;
+      putP(md(it.label), c[0] + lr * Math.cos(mid), c[1] - lr * Math.sin(mid), "transform:translate(-50%,-50%);font-size:24px;z-index:1;white-space:nowrap"); }
+  }
+  for (const it of f.items) if (it.type === "label") { const c = P(it.at); putP(K(it.text), c[0], c[1], "transform:translate(-50%,-50%);font-size:26px;z-index:1"); }
+  const W = (maxX - minX) * s + 100, H = maxY * s + 80;
+  putP(`<svg width="${W}" height="${H}" viewBox="${x} ${y} ${W} ${H}" style="overflow:visible">${g}</svg>`, x, y, "z-index:1");
+  return { x, y, w: W, h: H };
+}
+function drawTable(f, x, y) {
+  const t = putP(`<table class="ptable"><tr>${f.headers.map((hh) => `<th>${md(hh)}</th>`).join("")}</tr>${f.rows.map((r, i) =>
+    `<tr class="${r[0] === "Total" ? "total" : ""}">${r.map((c) => `<td>${md(c)}</td>`).join("")}</tr>`).join("")}</table>`, x, y + 6, "z-index:1");
+  const tb = t.firstChild; tb.style.position = "static";
+  const W = tb.offsetWidth, H = tb.offsetHeight;
+  // cell centres, for ink on the table
+  PLOT = { cell: (r, c) => { const cell = tb.rows[r].cells[c]; return [x + cell.offsetLeft + cell.offsetWidth / 2, y + 6 + cell.offsetTop + cell.offsetHeight / 2, cell.offsetWidth]; } };
+  return { x, y, w: W, h: H + 6 };
+}
+
+function flushInk() {
+  putP(`<svg width="1600" height="${L.pageH}" fill="none" stroke-linecap="round" stroke-linejoin="round" style="overflow:visible">${INKS.join("")}</svg>`, 0, 0, "z-index:5;pointer-events:none");
+}
+
+// ============================================================== chrome (pt)
+function topBar({ q = 4, n = 10, skill = "Linear equations in two variables", marked = false, w = 1366, extra = "" } = {}) {
+  put(`<div class="round">${icon("x", 22, 2.4)}</div>`, 20, 14);
+  put(`<span class="tb-title">Q${q} of ${n}</span><span class="tb-sub" style="margin-left:10px">·&nbsp; ${skill}</span>`, 84, 26, "display:flex;align-items:baseline");
+  put(`${extra}<div class="pill">${icon(marked ? "bookmark-check" : "bookmark", 20, 2.2)}Mark</div>
+       <div class="pill" style="padding:0 6px;gap:2px"><span class="round" style="width:36px;height:36px;background:none">${icon("chevron-left", 22, 2.4)}</span><span style="font-variant-numeric:tabular-nums;min-width:44px;text-align:center">${q}/${n}</span><span class="round" style="width:36px;height:36px;background:none">${icon("chevron-right", 22, 2.4)}</span></div>`,
+      w - 20, 14, "transform:translateX(-100%);display:flex;gap:10px;align-items:center");
+}
+function dock({ w = 1366, h = 1024, rung = 0, check = "off", walk = null, tool = "pencil" } = {}) {
+  // Bottom row (owner, 2026-10-23): Help me then Check (or the walk-through pill) at the bottom
+  // LEFT, the pen dock at the bottom RIGHT, nothing in between.
+  const t = (n) => `<div class="tool ${tool === n ? "on" : ""}">${icon(n, 24, 2.2)}</div>`;
+  const pens = `<div class="dock">${t("lasso")}${t("pencil")}${t("highlighter")}${t("eraser")}${t("chart-spline")}<div class="sep"></div>
+       <div class="tool">${icon("undo-2", 24, 2.2)}</div><div class="tool">${icon("redo-2", 24, 2.2)}</div><div class="sep"></div>
+       <div class="sw on"><i style="background:#14151F;box-shadow:0 0 0 2px #fff"></i></div><div class="sw"><i style="background:#E5302A"></i></div><div class="sw"><i style="background:#12A150"></i></div></div>`;
+  const pips = [1, 2, 3].map((i) => `<i class="${i <= rung ? "on" : ""}"></i>`).join("");
+  const mid = walk ? `<div class="walk"><span class="pp">${[1, 2, 3].map((i) => `<i class="${i <= walk ? "on" : ""}"></i>`).join("")}</span>Step ${walk} of 3 · Tap to go on${icon("arrow-right", 22, 2.4)}</div>`
+    : `<div class="check ${check === "off" ? "off" : ""}"><span class="bd">${icon("check", 24, 2.8)}</span>Check</div>`;
+  const help = `<div class="helpme"><svg width="42" height="42" viewBox="0 0 46 46"><circle cx="17" cy="17" r="11" fill="none" stroke="#14151F" stroke-width="6"/><circle cx="35" cy="12" r="5" fill="#14151F"/><rect x="6" y="34" width="34" height="7" rx="3.5" fill="#14151F"/></svg><span style="display:flex;flex-direction:column;gap:5px"><span class="t">Help me</span>${rung ? `<span class="pips">${pips}</span>` : ""}</span></div>`;
+  put(`${help}${mid}`, 20, h - 20 - 72, "display:flex;gap:10px;align-items:center");
+  put(pens, w - 20, h - 20 - 72, "transform:translateX(-100%)");
+}
+
+// ============================================================== frames
+// Work rows in the left work area (page units): baselines under the stem.
+const rowY = (i) => L.workTop + 64 + i * 118;
+function plotMarks({ circle19 = true, circle31 = true, triangle = true, labels = true, pen = STU } = {}) {
+  const a = PLOT.px(0, 19), b = PLOT.px(2, 31), c = PLOT.px(2, 19);
+  if (circle19) loop(a[0] + 4, a[1] + 1, 19, 16, 5, pen);
+  if (circle31) loop(b[0], b[1] - 1, 20, 16, 9, pen);
+  if (triangle) { sketch(a[0] + 4, a[1] + 1, c[0] + 2, c[1] + 1, 12, pen); sketch(c[0] + 1, c[1] + 2, b[0] + 1, b[1] + 12, 14, pen); }
+  if (labels) { const k = pen === STU ? "s_" : "t_"; if (pen !== STU) ink(k + "2", (a[0] + c[0]) / 2 + 2, c[1] + 36, pen); ink(k + "12", c[0] + 16, (c[1] + b[1]) / 2 + 12, pen); }
+}
+
+const FRAMES = {
+  f01: { name: "question", title: "1 · The question is the page", cap: "Full-screen board. The stem and figure are printed at the top like a test sheet (number hanging in the margin), dotted paper below is the work area, and the answer cards sit at the bottom of the page. Slim top bar. Help me and Check sit bottom left, the pen dock bottom right, nothing in between.",
+    draw() { questionPage(Q_PLOT); flushInk(); topBar(); dock(); } },
+  f02: { name: "working", title: "2 · Mid-work: writing on the figure", cap: "The student circles the two labeled points and sketches the rise and the run on the graph, then works down the page in a thin pencil. The tutor ticks the true lines. The unfinished line is not judged.",
+    draw() { questionPage(Q_PLOT); plotMarks();
+      const l1 = stu("s_b19", STEM_X + 6, rowY(0)); tickMark(l1.right + 34, rowY(0) - 6);
+      const l2 = stu("s_m", STEM_X + 4, rowY(1) + 10); tickMark(l2.right + 34, rowY(1) + 4);
+      stu("s_y_part", STEM_X + 8, rowY(2) + 30);
+      flushInk(); topBar(); dock(); } },
+  f03: { name: "rung1", title: "3 · Help me, rung 1: the nudge", cap: "One tap. A short question in the tutor's voice, as a small note beside the last line. It comes from the bank, so it is free and works without a tutor pass. The pips on Help me show the rung; the note says what the next tap does.",
+    draw() { questionPage(Q_PLOT); plotMarks({ circle31: false, triangle: false, labels: false });
+      const l1 = stu("s_b19", STEM_X + 6, rowY(0));
+      putP(`<div class="lab">Nudge</div><p>${Q_PLOT.nudge}</p><div class="foot">Stuck still? Tap Help me again for one step.</div>`, l1.right + 48, l1.top - 4, "width:420px;z-index:6").className = "note";
+      flushInk(); topBar(); dock({ rung: 1 }); } },
+  f04: { name: "rung2", title: "4 · Rung 2: one step, in the tutor's ink", cap: "The tutor writes ONE next line in cobalt, right under the student's last line, then hands the pen back. Live tutor when there is a pass; without one, the bank's next step is written the same way.",
+    draw() { questionPage(Q_PLOT); plotMarks({ circle31: false, triangle: false, labels: false });
+      stu("s_b19", STEM_X + 6, rowY(0));
+      const t = tut("t_mfrac", STEM_X + 4, rowY(1) + 10);
+      putP(`Your turn: the next line.`, t.right + 40, rowY(1) - 12, "z-index:6").className = "turn";
+      flushInk(); topBar(); dock({ rung: 2 }); } },
+  f05: { name: "rung3", title: "5 · Rung 3: walk me through it", cap: "The full solution drawn step by step in cobalt, on the work area and on the figure itself (the rise and the run on the graph). It pauses after each step: step 2 of 3, tap to go on (the pill takes Check's place, next to Help me). Step 3 waits in pale cobalt.",
+    draw() { questionPage(Q_PLOT); plotMarks({ circle31: false, triangle: false, labels: false });
+      plotMarks({ circle19: false, circle31: true, pen: TUT });
+      const c1 = putP(`<b>1</b>The setup fee is the y-intercept.`, STEM_X, L.workTop + 4, "z-index:6"); c1.className = "tcap";
+      tut("t_b19", STEM_X + 8, L.workTop + 96);
+      const c2 = putP(`<b>2</b>The slope is the rise over the run.`, STEM_X, L.workTop + 150, "z-index:6"); c2.className = "tcap";
+      tut("t_m6", STEM_X + 6, L.workTop + 266);
+      const c3 = putP(`<b>3</b>Write the equation.`, STEM_X, L.workTop + 350, "z-index:6"); c3.className = "tcap wait";
+      flushInk(); topBar(); dock({ rung: 3, walk: 2 }); } },
+  f06: { name: "wrong", title: "6 · A wrong choice, diagnosed", cap: "B chosen and checked. The card turns to Look again (yellow, never red) and the note names the mistake that really gives B, pointing at the line where it happened. Try again, or Walk me through it.",
+    draw() { questionPage(Q_PLOT, { cards: { B: "look" } }); plotMarks({ circle31: true, triangle: false, labels: false });
+      stu("s_b19", STEM_X + 6, rowY(0));
+      const l2 = stu("s_mwrong", STEM_X + 4, rowY(1) - 20);
+      ring(STEM_X + 4 + l2.w * 0.5, rowY(1) - 34, l2.w * 0.5 + 34, 44, 21);
+      const cw = (PAGE_W - 2 * M - 3 * GAP) / 4;
+      putP(`<div class="lab">You picked B</div><p>That's what you get if you ${Q_PLOT.why.B}</p><div class="row"><span class="nb w">Try again</span><span class="nb d">Walk me through it</span></div>`,
+        M + cw + GAP, L.rowTop - 24, "width:600px;z-index:6;transform:translateY(-100%)").className = "note up";
+      flushInk(); topBar(); dock({ check: "on", rung: 0 }); } },
+  f07: { name: "solution", title: "7 · The solution, two ways", cap: "After the answer: a sheet over the lower half, the question still in view. The paper way (the bank's steps) beside the Desmos way (desmos_steps), with the expressions exactly as you'd type them. Tabs in portrait.",
+    draw() { questionPage(Q_PLOT, { cards: { A: "right" } }); plotMarks();
+      const l1 = stu("s_b19", STEM_X + 6, rowY(0)); tickMark(l1.right + 34, rowY(0) - 6);
+      flushInk(); topBar();
+      const top = 504;
+      put("", 0, top, `width:1366px;height:${1024 - top}px;background:var(--ground);border-radius:32px 32px 0 0`);
+      put(`<div style="display:flex;align-items:center;gap:14px"><span style="width:44px;height:44px;border-radius:50%;background:var(--success);display:grid;place-items:center;color:#fff">${icon("check", 26, 3)}</span>
+           <span class="h-head">A is right.</span><span style="font-size:22px;margin-left:4px">${K("y=6x+19")}</span></div>`, 40, top + 30);
+      put(`<div class="btn chalk" style="background:var(--paper)">Back to my work</div><div class="btn lg sunny"><span class="bd" style="background:var(--ink);color:var(--sunny)">${icon("arrow-right", 24, 2.6)}</span>Next question</div>`, 1326, top + 20, "transform:translateX(-100%);display:flex;gap:10px;align-items:center");
+      const colW = 633, cy = top + 92;
+      const paper = Q_PLOT.solution.steps.map((s, i) => `<div class="step" style="margin-top:${i ? 22 : 0}px"><span class="n">${i + 1}</span><div><div class="s">${md(s.text)}</div>${s.math ? `<div class="m">${K("\\displaystyle " + s.math)}</div>` : ""}</div></div>`).join("");
+      put(`<div class="lbl">The paper way</div><div style="margin-top:18px">${paper}</div>`, 40, cy, `width:${colW}px;height:${1024 - cy - 24}px;padding:22px 28px`).className = "abs sheetcard";
+      const ds = Q_PLOT.desmos_steps.map((s, i) => `<div class="step" style="margin-top:${i ? 14 : 0}px"><span class="n">${i + 1}</span><div><div class="s">${s.text}</div>${s.table ?
+        `<div style="display:inline-grid;grid-template-columns:84px 84px;margin-top:8px;border-radius:12px;overflow:hidden;background:var(--sunken);font-size:18px;text-align:center">${s.table.map((r, ri) => r.map((c) => `<div style="height:30px;display:grid;place-items:center;${ri === 0 ? "background:var(--guide);font-weight:600" : ""}">${K(c)}</div>`).join("")).join("")}</div>`
+        : s.math ? `<div class="expr"><span class="g">${i + 1}</span><span class="e">${K(s.math)}</span></div>` : ""}</div></div>`).join("");
+      put(`<div class="lbl">The Desmos way <span style="text-transform:none;letter-spacing:0;font-weight:400">· the graphing calculator in the SAT app</span></div><div style="margin-top:18px">${ds}</div>`, 40 + colW + 20, cy, `width:${colW}px;height:${1024 - cy - 24}px;padding:22px 28px`).className = "abs sheetcard";
+    } },
+  f08: { name: "gridin", title: "8 · A grid-in, with a geometry figure", cap: "A student-produced response: the answer box sits on the page where the cards would be, with its keypad beside it (only the characters a grid-in allows). The student has marked the angle at B on the figure and worked it out below.",
+    draw() { questionPage(Q_SHAPE, { num: 7, answerBox: { value: "123" } });
+      const B = PLOT.px(8, 0), C = PLOT.px(4.37, 5.59);
+      // the student marks the interior angle at B and writes 57 inside it
+      const r = 46, a0 = 123 * Math.PI / 180, a1 = Math.PI, pts = [];
+      for (let i = 0; i <= 10; i++) { const a = a0 + (a1 - a0) * i / 10; pts.push([B[0] + r * Math.cos(a) + (i % 3 - 1) * 0.6, B[1] - r * Math.sin(a)]); }
+      path(smooth(pts), STU);
+      stu("s_57", B[0] - 112, B[1] - 18);
+      const l1 = stu("s_ext1", STEM_X + 6, rowY(0) + 20); tickMark(l1.right + 34, rowY(0) + 14);
+      const l2 = stu("s_ext2", STEM_X + 6, rowY(1) + 4);
+      const l3 = stu("s_ext3", l2.right + 22, rowY(1) + 2); tickMark(l3.right + 34, rowY(1) - 4);
+      flushInk(); topBar({ q: 7, skill: "Lines, angles, and triangles" }); dock({ check: "on" }); } },
+  f09: { name: "long", title: "9 · A long word problem with a table", cap: "Layout stress: a 6-line stem and a 5 × 4 table. The table still fits beside the stem, so the work area keeps the whole left side and the band under the table. The student circles two cells on the table, has crossed out A and D, and works it out.",
+    draw() { questionPage(Q_TABLE, { num: 9, cards: { A: "out", D: "out" } });
+      const f = PLOT.cell(1, 2), t = PLOT.cell(4, 2);
+      loop(f[0], f[1], 34, 22, 31); loop(t[0], t[1] + 1, 42, 23, 33);
+      const l1 = stu("s_prob", STEM_X + 8, L.workTop + 120); tickMark(l1.right + 34, L.workTop + 112);
+      flushInk(); topBar({ q: 9, skill: "Probability" }); dock(); } },
+  f10: { name: "capped", title: "10 · No tutor pass today", cap: "The free tutor is used up: no ticks, no reading, no live checks, said once in a quiet line. Help me still climbs the same ladder from the bank: the nudge, the next solution step written in the same cobalt hand, and the walk-through. Shown with the one-time ladder card, just above Help me.",
+    draw() { questionPage(Q_PLOT); plotMarks({ circle31: true, triangle: false, labels: false });
+      stu("s_b19", STEM_X + 6, rowY(0));
+      const t = tut("t_mfrac", STEM_X + 4, rowY(1) + 10);
+      putP(`Your turn: the next line.`, t.right + 40, rowY(1) - 12, "z-index:6").className = "turn";
+      flushInk();
+      topBar({ extra: `<div class="quiet"><span class="d"></span>Tutor checks used up today: 20 of 20. Help me still works.</div>` });
+      dock({ rung: 2 });
+      const rows = [["Nudge", "A question to get you going.", "Free"], ["One step", "The next line of the solution.", "From the solution today"], ["Walk me through it", "The whole solution, step by step.", "Free"]];
+      const card = put(`<div class="lbl" style="margin-bottom:14px">Help me, three taps</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:22px">${rows.map((r, i) => `<div style="display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start">
+            <span style="width:30px;height:30px;border-radius:50%;${i < 2 ? "background:#fff;color:var(--ink)" : "box-shadow:inset 0 0 0 2px #fff"};display:grid;place-items:center;font-size:14px;font-weight:600">${i + 1}</span>
+            <div><div style="font-weight:600;font-size:17px">${r[0]}</div><div class="cap" style="margin-top:2px">${r[2]}. ${r[1]}</div></div></div>`).join("")}</div>
+          <div class="cap" style="margin-top:16px">The board, Graph it and the answer check all still work.</div>`,
+        20, L.offY + L.rowTop * L.k - 20, "transform:translateY(-100%);width:760px;background:var(--ink);color:#fff;border-radius:28px 28px 28px 6px;padding:22px 26px");
+      card.querySelectorAll(".cap,.lbl").forEach((e) => (e.style.color = "#BDBDC0"));
+    } },
+  f11: { name: "summary", title: "11 · End of the set", cap: "The score, each question as a dot (right) or a ring (missed), and the missed ones going into the mistake deck: back in 1 day, then 3 days. Practice 10 more starts with whatever is due.",
+    draw() { screen("land", "var(--ground)");
+      put(`<div class="round" style="background:var(--paper)">${icon("x", 22, 2.4)}</div>`, 20, 14);
+      const res = [1, 1, 0, 1, 1, 0, 1, 1, 0, 1];
+      put(`<div class="lbl">Set done · Mixed practice</div><div class="h-display" style="font-size:72px;margin-top:6px;letter-spacing:-0.025em">7 of 10</div>
+           <div class="body" style="color:var(--ink2);margin-top:4px">14 minutes. Help me on 2 questions.</div>
+           <div style="display:flex;gap:14px;margin-top:28px">${res.map((r, i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:8px"><span style="width:26px;height:26px;border-radius:50%;${r ? "background:var(--ink)" : "box-shadow:inset 0 0 0 3.5px var(--ink)"}"></span><span class="cap" style="font-variant-numeric:tabular-nums">${i + 1}</span></div>`).join("")}</div>`, 64, 96);
+      const qs = [["Linear equations in two variables", 1, "0:52"], ["Percentages", 1, "1:10"], ["Systems of linear equations", 0, "2:41"], ["Linear functions", 1, "0:48"], ["Probability", 1, "1:30"],
+                  ["Nonlinear functions", 0, "2:05"], ["Lines, angles, and triangles", 1, "1:02"], ["Equivalent expressions", 1, "0:39"], ["Circles", 0, "1:58"], ["Ratios, rates, and units", 1, "0:44"]];
+      put(qs.map((q, i) => `<div style="display:grid;grid-template-columns:44px 1fr 120px 60px;align-items:center;height:46px;${i ? "border-top:1.5px solid var(--line)" : ""}">
+          <span class="cap" style="font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)">Q${i + 1}</span><span style="font-size:16px">${q[0]}</span>
+          <span style="font-size:15px;${q[1] ? "color:var(--ink2)" : "color:var(--ink);font-weight:600"}">${q[1] ? "Right" : "Into the deck"}</span><span class="cap" style="text-align:right;font-variant-numeric:tabular-nums">${q[2]}</span></div>`).join(""),
+        64, 392, "width:700px;background:var(--paper);border-radius:28px;padding:14px 28px");
+      // the deck
+      const missed = qs.filter((q) => !q[1]);
+      put(`<div class="lbl">Your mistake deck</div><div class="h-title" style="margin-top:8px">3 come back tomorrow.</div>
+           <div class="body" style="color:var(--ink2);margin-top:8px">Each missed question returns in 1 day, then in 3 days. Get it right on a review and it's cleared.</div>
+           <div style="position:relative;height:208px;margin-top:28px">${missed.map((q, i) => `<div style="position:absolute;left:${i * 18}px;top:${i * 26}px;width:404px;height:156px;border-radius:24px;background:${["#E2E4EB", "#E6E8EE", "#F1F2F6"][i]};padding:22px 24px;${i === 2 ? "" : ""}">
+             ${i === 2 ? `<div class="lbl">Q3 · Systems of linear equations</div><div style="font-size:17px;margin-top:10px;line-height:1.45">If ${K("5x+3y=41")} and ${K("3x+y=24")}, what is the value of ${K("2x+2y")}?</div>
+             <div style="position:absolute;left:24px;bottom:18px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600">${icon("calendar-clock", 18, 2.2)}Back in 1 day</div>` : ""}</div>`).join("")}</div>
+           <div style="display:flex;gap:10px;margin-top:22px"><div class="btn lg sunny"><span class="bd" style="background:var(--ink);color:var(--sunny)">${icon("play", 20, 2.6)}</span>Practice 10 more</div><div class="btn chalk">See the 3 missed</div></div>`,
+        822, 96, "width:504px;background:var(--paper);border-radius:32px;padding:32px");
+    } },
+  f12: { name: "home", title: "12 · SAT home", cap: "Reviews first: 3 due today, and Practice 10 starts with them. Today's count and the free tutor left, the skills as quiet bars (weakest flagged, tap to practice one), and an honest estimate band labeled as practice, not a score.",
+    draw() { screen("land", "var(--ground)");
+      put(`<div class="round" style="background:var(--paper)">${icon("chevron-left", 24, 2.4)}</div>`, 20, 14);
+      put(`<span class="h-title">SAT math</span>`, 84, 18);
+      put(`<div class="pill" style="background:var(--paper)">${icon("flame", 20, 2.2)}5 days in a row</div>`, 1346, 14, "transform:translateX(-100%)");
+      // today
+      const today = put(`<div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="lbl">Today</div>
+             <div class="h-display" style="font-size:52px;margin-top:8px;line-height:1">3 to review</div>
+             <div class="body" style="color:var(--ink2);margin-top:12px;max-width:360px">Questions you missed earlier this week. They start your next set.</div></div>
+             <div style="position:relative;width:230px;height:150px;margin-top:6px">${["Systems of linear equations", "Nonlinear functions", "Circles"].map((s, i) => `<div style="position:absolute;right:${(2 - i) * 14}px;top:${i * 22}px;width:200px;height:104px;border-radius:20px;background:${["#E2E4EB", "#E6E8EE", "#F1F2F6"][i]};padding:16px 18px">${i === 2 ? `<div style="font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--ink2)">Due today</div><div style="font-size:15px;font-weight:600;margin-top:8px;line-height:1.3">${s}</div>` : ""}</div>`).join("")}</div></div>
+           <div style="display:flex;gap:10px;align-items:center;margin-top:20px"><div class="btn lg sunny"><span class="bd" style="background:var(--ink);color:var(--sunny)">${icon("play", 20, 2.6)}</span>Practice 10</div>
+             <span class="cap" style="margin-left:8px">3 reviews, then 7 new picked for you.</span></div>
+           <div style="display:flex;gap:44px;margin-top:30px;padding-top:24px;border-top:1.5px solid var(--line)">
+             <div><div class="cap">Answered today</div><div style="font-size:30px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums">12</div></div>
+             <div><div class="cap">Right today</div><div style="font-size:30px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums">9</div></div>
+             <div style="flex:1"><div class="cap">Free tutor left today</div><div style="display:flex;align-items:center;gap:14px;margin-top:12px"><div class="bar" style="flex:1;height:10px;border-radius:5px"><i style="width:60%;background:var(--cobalt)"></i></div><span style="font-size:17px;font-weight:600;font-variant-numeric:tabular-nums">12 of 20</span></div></div></div>`,
+        40, 84, "width:760px;background:var(--paper);border-radius:32px;padding:32px 36px");
+      // progress
+      const prog = put(`<div class="lbl">Progress</div>
+           <div style="display:flex;align-items:baseline;gap:12px;margin-top:10px"><span class="h-display" style="font-size:40px">560–640</span><span class="cap">rough estimate, math section</span></div>
+           <div style="position:relative;height:40px;margin-top:16px"><div style="position:absolute;left:0;right:0;top:14px;height:10px;border-radius:5px;background:var(--guide)"></div>
+             <div style="position:absolute;left:${(560 - 200) / 600 * 100}%;width:${80 / 600 * 100}%;top:14px;height:10px;border-radius:5px;background:var(--ink)"></div>
+             ${[200, 400, 600, 800].map((v) => `<span class="cap" style="position:absolute;top:30px;left:${(v - 200) / 600 * 100}%;transform:translateX(${v === 200 ? 0 : v === 800 ? -100 : -50}%);font-variant-numeric:tabular-nums">${v}</span>`).join("")}</div>
+           <div class="cap" style="margin-top:20px">A rough estimate from 86 practice questions, not an SAT score. It narrows as you practice.</div>${[["Algebra", 31, 42], ["Advanced math", 13, 19], ["Problem-solving and data", 17, 21], ["Geometry and trig", 7, 12]].map(([d, r, a], i) => `${i ? "" : `<div style="margin-top:18px;border-top:1.5px solid var(--line);height:12px"></div>`}<div style="display:grid;grid-template-columns:220px 1fr 60px;gap:16px;align-items:center;height:36px"><span style="font-size:15px">${d}</span><div class="bar"><i style="width:${r / a * 100}%"></i></div><span class="cap" style="text-align:right;font-variant-numeric:tabular-nums">${r}/${a}</span></div>`).join("")}`,
+        40, today.offsetTop + today.offsetHeight + 20, "width:760px;background:var(--paper);border-radius:32px;padding:28px 36px");
+      // skills
+      const doms = [["Algebra", [["Linear equations in one variable", 9, 10], ["Linear equations in two variables", 7, 9], ["Linear functions", 8, 11], ["Systems of linear equations", 3, 7], ["Linear inequalities", 4, 5]]],
+        ["Advanced math", [["Equivalent expressions", 6, 7], ["Nonlinear equations", 4, 6], ["Nonlinear functions", 3, 6]]],
+        ["Problem-solving and data", [["Ratios, rates, and units", 5, 6], ["Percentages", 4, 5], ["One-variable data", 3, 4], ["Two-variable data", 2, 3], ["Probability", 3, 3], ["Samples and margin of error", 0, 0], ["Statistical claims", 0, 0]]],
+        ["Geometry and trig", [["Area and volume", 2, 3], ["Lines, angles, and triangles", 3, 4], ["Right triangles and trig", 1, 2], ["Circles", 1, 3]]]];
+      put(`<div style="display:flex;justify-content:space-between;align-items:baseline"><span class="h-head">Skills</span><span class="cap">Tap one to practice it</span></div>${doms.map(([d, sk]) => `<div class="lbl" style="margin:18px 0 4px">${d}</div>${sk.map(([n, r, a]) => {
+          const weak = a && r / a < 0.5;
+          return `<div style="display:grid;grid-template-columns:1fr 96px 44px;gap:12px;align-items:center;height:30px"><span style="font-size:15px;white-space:nowrap;${weak ? "font-weight:600" : ""}">${n}${weak ? ` <span style="font-size:12px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--tomato);margin-left:4px">Practice</span>` : ""}</span>
+            <div class="bar">${a ? `<i style="width:${r / a * 100}%;${weak ? "background:var(--tomato)" : ""}"></i>` : ""}</div><span class="cap" style="text-align:right;font-variant-numeric:tabular-nums">${a ? r + "/" + a : "—"}</span></div>`; }).join("")}`).join("")}`,
+        820, 84, `width:526px;background:var(--paper);border-radius:32px;padding:26px 30px 24px;min-height:${prog.offsetTop + prog.offsetHeight - 84}px`);
+    } },
+  f13: { name: "portrait", title: "13 · Portrait: the same page", cap: "The same page in portrait, scaled to the width (the question block never moves, so ink on the figure stays on it). The taller screen goes to the work area; the answer row stays at the page bottom, above the dock.",
+    draw() { questionPage(Q_PLOT, { orient: "port" }); flushInk(); topBar({ w: 1024, skill: "Linear equations in two variables" });
+      dock({ w: 1024, h: 1366 }); } },
+};
+
+// ============================================================== boot
+async function boot() {
+  await document.fonts.ready;
+  const id = location.hash.slice(1);
+  if (FRAMES[id]) {
+    document.body.classList.add("single");
+    FRAMES[id].draw();
+    await document.fonts.ready;           // KaTeX's fonts load on first use: lay out again once they're in
+    await new Promise((r) => setTimeout(r, 300));
+    FRAMES[id].draw();
+    document.title = "ready";
+    return;
+  }
+  // the contact sheet: every frame at half size, with its caption
+  const root = document.getElementById("root");
+  root.className = "sheet-all";
+  root.innerHTML = `<div><h1>SAT mode v2 · iPad mockups</h1><div class="intro">iPad Air 13", real size. The question is the page: the board fills the screen, the question is printed on it, the tutor writes in cobalt, the student in a thin pencil. Questions are real bank items. Layout rules: DESIGN-NOTES.md.</div></div>` +
+    Object.entries(FRAMES).map(([k, f]) => { const port = k === "f13", w = port ? 1024 : 1366, h = port ? 1366 : 1024, s = port ? 0.6 : 0.75;
+      return `<section class="fr"><h2>${f.title}</h2><p>${f.cap}</p><div class="box" style="width:${w * s}px;height:${h * s}px"><iframe src="#${k}" width="${w}" height="${h}" style="transform:scale(${s})" loading="lazy"></iframe></div></section>`; }).join("");
+  root.querySelectorAll("iframe").forEach((f) => { const k = f.getAttribute("src"); f.src = location.pathname + k; });
+}
+boot();
+</script>
+</body>
+</html>

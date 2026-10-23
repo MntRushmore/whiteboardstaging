@@ -32,13 +32,17 @@ public struct CameraConstraints: Equatable, Sendable {
     public var bottom: Double
     public var right: Double
     public var maxZoom: Double
+    /// fit the screen's width, its top at the top (SAT v2's printed page: a page taller than the
+    /// window scrolls up and down, docs/SAT-V2.md); else the whole screen, centred
+    public var fitsWidth: Bool
 
-    public init(top: Double = 16, left: Double = 16, bottom: Double = 16, right: Double = 16, maxZoom: Double = 4) {
+    public init(top: Double = 16, left: Double = 16, bottom: Double = 16, right: Double = 16, maxZoom: Double = 4, fitsWidth: Bool = false) {
         self.top = top
         self.left = left
         self.bottom = bottom
         self.right = right
         self.maxZoom = maxZoom
+        self.fitsWidth = fitsWidth
     }
 
     func available(_ size: CGSize) -> Box {
@@ -48,6 +52,10 @@ public struct CameraConstraints: Equatable, Sendable {
     /// The camera that shows the whole screen, centred.
     public func fit(_ screen: Box, in size: CGSize) -> Camera {
         let a = available(size)
+        if fitsWidth {
+            let s = a.w / screen.w
+            return Camera(scale: s, offset: Vec2(a.x - screen.x * s, a.y - screen.y * s))
+        }
         let s = min(a.w / screen.w, a.h / screen.h)
         let ox = a.x + (a.w - screen.w * s) / 2 - screen.x * s
         let oy = a.y + (a.h - screen.h * s) / 2 - screen.y * s
@@ -62,7 +70,8 @@ public struct CameraConstraints: Equatable, Sendable {
         let a = available(size)
         func axis(_ off: Double, _ origin: Double, _ length: Double, _ aMin: Double, _ aLen: Double) -> Double {
             let content = length * c.scale
-            if content <= aLen { return aMin + (aLen - content) / 2 - origin * c.scale }
+            // (fitted to its width, a page shorter than the window sits at the top)
+            if content <= aLen { return fitsWidth ? aMin - origin * c.scale : aMin + (aLen - content) / 2 - origin * c.scale }
             let lo = aMin + aLen - (origin + length) * c.scale
             let hi = aMin - origin * c.scale
             return min(max(off, lo), hi)

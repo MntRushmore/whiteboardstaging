@@ -19,15 +19,18 @@ public struct PageTemplate: @unchecked Sendable {
         public var answer: CGColor
         /// "Answer:"
         public var answerLabel: CGColor
+        /// dotted paper's dots (`templateDot`, SAT v2)
+        public var dot: CGColor
 
-        public init(rule: CGColor, label: CGColor, answer: CGColor, answerLabel: CGColor) {
+        public init(rule: CGColor, label: CGColor, answer: CGColor, answerLabel: CGColor, dot: CGColor = Colors.rgb(0xD3D6DF)) {
             self.rule = rule
             self.label = label
             self.answer = answer
             self.answerLabel = answerLabel
+            self.dot = dot
         }
 
-        private static func rgb(_ hex: UInt32) -> CGColor {
+        public static func rgb(_ hex: UInt32) -> CGColor {
             CGColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
         }
 
@@ -47,6 +50,8 @@ public struct PageTemplate: @unchecked Sendable {
     public let answerLabel: CGPath
     /// filled in `answerLabel` too: "Problem 2, continued", "Answer on the next page" ("More room")
     public let notes: CGPath
+    /// dotted paper's dots, filled in `dot` (SAT v2; empty on ruled paper)
+    public let dots: CGPath
 
     /// The work label's and the answer label's words (kid copy).
     public static let workWords = "Work it out here"
@@ -65,11 +70,21 @@ public struct PageTemplate: @unchecked Sendable {
         func at(_ x: Double, _ y: Double) -> CGPoint { L.place(Vec2(x, y), on: rect).cgPoint }
 
         let rules = CGMutablePath()
-        for y in L.rules(workTop: top) {
-            rules.move(to: at(L.ruleLeft, y))
-            rules.addLine(to: at(L.ruleRight, y))
+        let dots = CGMutablePath()
+        if page.paper == .dots {
+            let r = CGFloat(L.dotRadius * k)
+            for d in L.dots(workTop: top, bottom: page.resolvedWorkBottom, keepOut: page.keepOut) {
+                let c = at(d.x, d.y)
+                dots.addEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r))
+            }
+        } else {
+            for y in L.rules(workTop: top, bottom: page.resolvedWorkBottom) {
+                rules.move(to: at(L.ruleLeft, y))
+                rules.addLine(to: at(L.ruleRight, y))
+            }
         }
         self.rules = rules
+        self.dots = dots
         ruleWidth = CGFloat(L.ruleWidth * k)
 
         // a continued page says so at its top, and its work needs no invitation
@@ -78,6 +93,9 @@ public struct PageTemplate: @unchecked Sendable {
             label = CGMutablePath()
             notes.addPath(Self.text(Self.continuedWords(page.inSet ? page.index : nil), size: L.continuedSize * k, weight: .semibold,
                                     baseline: at(L.problemOrigin.x, L.continuedBaseline)))
+        } else if page.paper == .dots {
+            // a grown-up's pad needs no invitation
+            label = CGMutablePath()
         } else {
             label = Self.text(Self.workWords, size: L.workLabelSize * k, weight: .regular, baseline: at(L.ruleLeft, top + L.workLabelBaseline))
             // a page whose problem is shown elsewhere says which it is, small (SAT mode: "Q3 · Linear functions")
@@ -111,6 +129,9 @@ public struct PageTemplate: @unchecked Sendable {
     /// The template drawn into a page-space context (y down), under the ink.
     public func draw(in ctx: CGContext, colors: Colors) {
         ctx.saveGState()
+        ctx.setFillColor(colors.dot)
+        ctx.addPath(dots)
+        ctx.fillPath()
         ctx.setFillColor(colors.answer)
         ctx.addPath(answer)
         ctx.fillPath()

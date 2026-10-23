@@ -59,11 +59,19 @@ public enum MathText {
         var s = stacked(latex) ?? latex
         // \text{…} and friends: their words
         s = s.replacingOccurrences(of: #"\\(?:text|textrm|mathrm|mbox|operatorname)\s*\{([^{}]*)\}"#, with: "$1", options: .regularExpression)
-        // fractions, innermost first
-        for _ in 0..<6 {
-            let next = s.replacingOccurrences(of: #"\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}"#, with: "$1/$2", options: .regularExpression)
-            if next == s { break }
-            s = next
+        // fractions, innermost first; a numerator or denominator of more than one term in brackets
+        // (`\\frac{48-24}{6-2}` is `(48 - 24)/(6 - 2)`, never `48 - 24/6 - 2`: the SAT v2 end-to-end run's "I read")
+        if let frac = try? NSRegularExpression(pattern: #"\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}"#) {
+            for _ in 0..<6 {
+                let ns = s as NSString
+                guard let m = frac.firstMatch(in: s, range: NSRange(location: 0, length: ns.length)) else { break }
+                let part = { (r: NSRange) -> String in
+                    let t = ns.substring(with: r).trimmingCharacters(in: .whitespaces)
+                    // a sign after the first character: two terms (`48-24`, `x+1`); `-3` alone is one
+                    return t.dropFirst().range(of: #"[+\-]"#, options: .regularExpression) != nil ? "(\(t))" : t
+                }
+                s = ns.replacingCharacters(in: m.range, with: "\(part(m.range(at: 1)))/\(part(m.range(at: 2)))")
+            }
         }
         s = s.replacingOccurrences(of: #"\\sqrt\s*\{([^{}]*)\}"#, with: "√($1)", options: .regularExpression)
         s = s.replacingOccurrences(of: #"√\(([A-Za-z0-9.]+)\)"#, with: "√$1", options: .regularExpression)

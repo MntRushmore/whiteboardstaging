@@ -1,0 +1,63 @@
+{
+ "at": "2026-10-23T14:03:57.225Z",
+ "models": {
+  "writer": "anthropic/claude-sonnet-5.5",
+  "verifier": "openai/gpt-5.4-mini"
+ },
+ "live": 351,
+ "hand_written_samples": 20,
+ "generated_live": 331,
+ "batches": {
+  "total": 67,
+  "run": 67
+ },
+ "stopped": null,
+ "coverage": {
+  "nudge": 346,
+  "mcq": 247,
+  "mcq_with_any_why": 240,
+  "mcq_with_all_three_whys": 171,
+  "whys": 636,
+  "wrong_choices": 741,
+  "spr": 104,
+  "spr_with_common_wrong": 100,
+  "common_wrong": 204,
+  "desmos_steps": 85,
+  "desmos_steps_null": 262
+ },
+ "dropped": {
+  "total": 154,
+  "by_kind": {
+   "why: verifier": 76,
+   "desmos_steps: verifier": 1,
+   "common_wrong: verifier": 37,
+   "nudge: verifier": 1,
+   "common_wrong: mechanical": 17,
+   "why: mechanical": 20,
+   "nudge: mechanical": 2
+  }
+ },
+ "errors": 2,
+ "spend_usd": {
+  "total": 2.2827,
+  "this_run": 0,
+  "cap": 4,
+  "by_model": {
+   "anthropic/claude-sonnet-5.5": {
+    "usd": 1.30934034,
+    "calls": 69
+   },
+   "openai/gpt-5.4-mini": {
+    "usd": 0.97331949,
+    "calls": 70
+   }
+  }
+ },
+ "balance_usd": {
+  "at_start": null,
+  "at_end": null,
+  "floor": 8
+ },
+ "network_calls": 0,
+ "hand_checked_overrides": 2
+}

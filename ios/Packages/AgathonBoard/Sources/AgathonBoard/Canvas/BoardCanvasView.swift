@@ -29,6 +29,11 @@ public struct CanvasAppearance: Equatable, Sendable {
         surface: UIColor(red: 0.925, green: 0.918, blue: 0.898, alpha: 1), paperRadius: 0, paperShadow: true,
         selectionInk: UIColor(red: 0.078, green: 0.082, blue: 0.122, alpha: 1))
 
+    /// SAT v2's printed page (docs/SAT-V2.md): the page is the whole window, white edge to edge.
+    public static let printedPage = CanvasAppearance(
+        surface: .white, paperRadius: 0, paperShadow: false,
+        selectionInk: UIColor(red: 0x14 / 255.0, green: 0x15 / 255.0, blue: 0x1F / 255.0, alpha: 1))
+
     /// Blocks (docs/DESIGN-SYSTEM.md): chalk ground, white page with 18 pt corners, no shadow.
     public static let blocks = CanvasAppearance(
         surface: UIColor(red: 0xF1 / 255.0, green: 0xF2 / 255.0, blue: 0xF6 / 255.0, alpha: 1), paperRadius: 18, paperShadow: false,
@@ -80,8 +85,13 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
     private let templateNotes = CAShapeLayer()
     private let templateLabel = CAShapeLayer()
     private let templateRules = CAShapeLayer()
+    /// dotted paper (SAT v2's pages)
+    private let templateDots = CAShapeLayer()
     /// the page the template was drawn for (redrawn only when it changes)
     private var templateFor: (page: ProblemPage?, rect: Box)?
+    /// what is printed on the page (SAT v2: the question, its figure, the answer cards), drawn in the
+    /// ink's own tiles under the ink (`printProvider`)
+    private var prints: [PagePrint] = []
     /// all ink, clipped to the screen (the last row of tiles overhangs it): a rectangular
     /// `masksToBounds` (a scissor, no offscreen pass), its bounds the screen rect so its sublayers
     /// stay in page space
@@ -188,7 +198,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         content.addSublayer(paper)
         templateLayer.anchorPoint = .zero
         templateLayer.actions = ["sublayers": NSNull(), "hidden": NSNull()]
-        for l in [templateAnswer, templateAnswerLabel, templateNotes, templateLabel, templateRules] {
+        for l in [templateDots, templateAnswer, templateAnswerLabel, templateNotes, templateLabel, templateRules] {
             l.actions = ["path": NSNull(), "fillColor": NSNull(), "strokeColor": NSNull(), "lineWidth": NSNull(), "hidden": NSNull()]
             templateLayer.addSublayer(l)
         }
@@ -257,6 +267,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         templateNotes.fillColor = appearance.template.answerLabel
         templateLabel.fillColor = appearance.template.label
         templateRules.strokeColor = appearance.template.rule
+        templateDots.fillColor = appearance.template.dot
         selectionFrame.strokeColor = appearance.selectionInk.cgColor
         selectionHandles.strokeColor = appearance.selectionInk.cgColor
         lassoLayer.strokeColor = appearance.selectionInk.withAlphaComponent(0.7).cgColor
@@ -316,6 +327,33 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         applyCamera()
         tiles.rebase(px: basePx)
         updateDetail()
+    }
+
+    /// Scrolls (up or down only, the zoom kept) so `box` (page units) is in view, its bottom above
+    /// `bottomInset` points from the view's bottom (SAT v2: Check brings a tall page's answer row into
+    /// view before it checks).
+    public func reveal(_ box: Box, bottomInset: CGFloat) {
+        guard bounds.height > 0 else { return }
+        let top = box.y * camera.scale + camera.offset.y
+        let bottom = (box.y + box.h) * camera.scale + camera.offset.y
+        let limit = Double(bounds.height - bottomInset)
+        var c = camera
+        if bottom > limit {
+            c.offset.y -= bottom - limit
+        } else if top < constraintsInsets.top {
+            c.offset.y += constraintsInsets.top - top
+        } else {
+            return
+        }
+        camera = constraintsInsets.clamp(c, screen: screenRect, in: bounds.size)
+        applyCamera()
+        updateDetail()
+    }
+
+    /// The camera back to the fitted view (SAT v2: the window turned and the pages were laid out again).
+    public func refitCamera() {
+        refit()
+        tiles.rebase(px: basePx)
     }
 
     private func refit() {
@@ -437,7 +475,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         CATransaction.setDisableActions(true)
         switch controller.tool {
         case .pen:
-            let r = max(2.5, CGFloat(controller.penSize.width) * scale / 2)
+            let r = max(2.5, CGFloat(controller.penWidth ?? controller.penSize.width) * scale / 2)
             path = CGPath(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r), transform: nil)
             hoverLayer.fillColor = colour.copy(alpha: 0.55)
             hoverLayer.strokeColor = nil
@@ -1060,6 +1098,9 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         CATransaction.setDisableActions(true)
         paper.frame = screen.rect.cgRect
         updateTemplate(screen)
+        // the prints of the screen now shown, drawn by the reset below (nothing to invalidate)
+        prints = []
+        reloadPrint()
         inkRoot.position = screen.rect.cgRect.origin
         inkRoot.bounds = screen.rect.cgRect
         CATransaction.commit()
@@ -1092,6 +1133,62 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         CATransaction.setDisableActions(true)
         updateTemplate(screen)
         CATransaction.commit()
+        reloadPrint()
+    }
+
+    // MARK: - Print (docs/SAT-V2.md)
+
+    /// What is printed on a screen (the app's: SAT mode's question): drawn in tiles at the zoom on
+    /// show, under the ink, never a record. Asked again on each screen change and `reloadPrint()`.
+    public var printProvider: ((ScreenRecord) -> [PagePrint])? {
+        didSet { reloadPrint() }
+    }
+
+    /// Asks `printProvider` for the current screen again: what changed (by key) is drawn again in the
+    /// tiles it covers (a choice chosen redraws the cards, not the question).
+    public func reloadPrint() {
+        guard let screen = controller.currentScreen else { return }
+        let next = (printProvider?(screen) ?? []).filter { !$0.items.isEmpty }
+        let rect = screen.rect
+        let k = CGFloat(rect.w / Box.screen.w)
+        let t = CGAffineTransform(translationX: CGFloat(rect.x), y: CGFloat(rect.y)).scaledBy(x: k, y: k)
+        // the areas to draw again: every print whose key changed, where it was and where it is
+        var dirty: [Box] = []
+        func add(_ b: CGRect?) {
+            guard let b else { return }
+            let r = b.applying(t).insetBy(dx: -4, dy: -4)
+            dirty.append(Box(x: Double(r.minX), y: Double(r.minY), w: Double(r.width), h: Double(r.height)))
+        }
+        for i in 0..<max(next.count, prints.count) {
+            let old: PagePrint? = i < prints.count ? prints[i] : nil
+            let new: PagePrint? = i < next.count ? next[i] : nil
+            let oldKey = old?.key ?? "", newKey = new?.key ?? ""
+            if oldKey == newKey && !oldKey.isEmpty { continue }
+            add(old?.bounds)
+            add(new?.bounds)
+        }
+        prints = next
+        if next.isEmpty {
+            tiles.underlay = nil
+        } else {
+            tiles.underlay = Self.underlay(next, t)
+        }
+        if !dirty.isEmpty {
+            tiles.invalidate(dirty)
+        }
+    }
+
+    /// The prints on show (tests).
+    public var shownPrints: [PagePrint] { prints }
+
+    /// The prints drawn into a tile's page-space context, through the screen's transform.
+    private static func underlay(_ drawn: [PagePrint], _ t: CGAffineTransform) -> @Sendable (CGContext) -> Void {
+        { (ctx: CGContext) in
+            ctx.saveGState()
+            ctx.concatenate(t)
+            for p in drawn { p.draw(in: ctx) }
+            ctx.restoreGState()
+        }
     }
 
     /// The template for the screen's problem page (none for a plain screen or the All done page).
@@ -1109,6 +1206,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         templateLabel.path = t.label
         templateRules.path = t.rules
         templateRules.lineWidth = t.ruleWidth
+        templateDots.path = t.dots
         templateLayer.isHidden = false
         updateTemplateLabel()
     }

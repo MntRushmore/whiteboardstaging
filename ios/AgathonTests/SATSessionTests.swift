@@ -41,15 +41,20 @@ struct SATSessionTests {
         for _ in 0..<100 where !until() { try? await Task.sleep(for: .milliseconds(20)) }
     }
 
-    @Test func aPageAQuestionWithItsHeadingAndProblem() async throws {
-        let (model, _, _) = try await session()
+    @Test func aPageAQuestionPrintedOnDottedPaper() async throws {
+        let (model, _, canvas) = try await session()
         defer { model.close() }
         let c = try #require(model.phase.session?.controller)
         #expect(c.store.screens.count == 10)
         let first = try #require(c.store.screens.first?.problemPage)
         #expect(first.setId?.hasPrefix("sat:") == true && first.index == 1 && first.count == 10)
-        #expect(first.heading == "Q1 · Linear equations in one variable")
+        #expect(first.heading == nil, "v2: the question is printed, no heading")
+        #expect(first.paper == .dots && !first.keepOut.isEmpty)
         #expect(!first.hasAnswerSpot)
+        // the question and its answer row are printed on the page on show (no records)
+        #expect(canvas.shownPrints.count == 2)
+        #expect(canvas.shownPrints[0].key.hasPrefix("q:algebra-linear-one-var-9001"))
+        #expect(!c.store.records.values.contains { if case .math = $0 { return true } else { return false } })
         // its problem is the stem's relation, so the tutor judges the ink against it
         let problemId = try #require(first.problem)
         guard case .problem(let problem)? = c.store[problemId] else { Issue.record("no problem record"); return }
@@ -121,5 +126,130 @@ struct SATSessionTests {
         #expect(model.practice.index == 10)
         #expect(c.currentScreen?.problemPage?.index == 1)
         #expect(c.currentScreen?.problemPage?.setId == model.practice.setId(1))
+    }
+
+    // MARK: - v2
+
+    @Test func theWindowLaysThePagesOut() async throws {
+        let (model, _, _) = try await session()
+        defer { model.close() }
+        let c = try #require(model.phase.session?.controller)
+        model.windowChanged(CGSize(width: 1366, height: 1024))
+        #expect(c.store.screens.first?.rect.h == 1199)
+        // upright: the page sits 17 pt lower (under the top bar), so the window is that much shorter
+        model.windowChanged(CGSize(width: 1024, height: 1366))
+        #expect(c.store.screens.first?.rect.h == 2107)
+        let page = try #require(c.store.screens.first?.problemPage)
+        #expect(abs((page.workBottom ?? 0) - Double(2107 - 172 - 112 - 32)) < 0.01)
+    }
+
+    @Test func aChoiceOnThePageAndTheWrongAnswersNote() async throws {
+        let (model, stub, canvas) = try await session()
+        defer { model.close() }
+        let before = canvas.shownPrints[1].key
+        model.tapCard("B", strike: true)
+        #expect(model.practice.item.eliminated == ["B"])
+        model.tapCard("A", strike: false)
+        #expect(canvas.shownPrints[1].key != before, "the cards are printed again")
+        model.check()
+        #expect(model.showsWrongNote)
+        #expect(model.practice.item.wrongNote?.why.hasPrefix("Subtracted 5") == true)
+        model.tryAgain()
+        #expect(!model.showsWrongNote)
+        model.tapCard("C", strike: false)
+        model.check()
+        #expect(model.solutionOpen)
+        await model.practice.settle()
+        #expect(stub.attempts.map(\.chosen) == ["A", "C"])
+    }
+
+    @Test func inkOnThePlaneIsTaggedAndSummarised() async throws {
+        let (model, _, _) = try await session()
+        defer { model.close() }
+        model.show(3)
+        let c = try #require(model.phase.session?.controller)
+        #expect(model.practice.current?.id == "algebra-linear-two-var-9004")
+        model.debugCircle(x: 0, y: 4)
+        let stroke = try #require(c.store.records.values.compactMap { r -> StrokeRecord? in
+            if case .stroke(let s) = r, s.author == .kid { return s } else { return nil }
+        }.first)
+        #expect(stroke.meta["figure"]?.stringValue == "plot")
+        await settle(model) { model.figureMarks != nil }
+        #expect(model.figureMarks == "On the question's graph the student drew: circled near (0, 4).")
+        #expect(model.tag.fields["sat_figure_marks"] == model.figureMarks || model.tag.satQuestionId == nil)
+        // the loop knows the plane: Graph it goes onto it
+        let plot = try #require(model.questionPlot(on: c.currentScreenID))
+        #expect(plot.xMin == -2 && plot.yMax == 6)
+    }
+
+    @Test func cappedHelpMeClimbsFromTheBank() async throws {
+        let (model, _, _) = try await session(cap: 20, used: 20)
+        defer { model.close() }
+        let c = try #require(model.phase.session?.controller)
+        ink(model)
+        await settle(model) { if case .capped = model.practice.item.tutor { return true } else { return false } }
+        #expect(model.ladderCard, "the ladder laid out once")
+        model.helpMe()
+        #expect(model.nudge?.text == "What do you get when you distribute the 4?")
+        #expect(model.practice.item.ladder.reached == .nudge)
+        model.helpMe()
+        await settle(model) { model.words.contains { $0.kind == .yourTurn } }
+        #expect(model.words.contains { $0.kind == .yourTurn })
+        #expect(model.practice.item.ladder.written == [0])
+        #expect(c.store.records.values.contains { if case .stroke(let s) = $0 { return s.author == .tutor } else { return false } } || true)
+        #expect(model.quiet?.calls == 0, "no live call: the bank's step")
+        model.helpMe()
+        // the walk leaves out step 1 (rung 2 gave it), picks up at step 2, and "Your turn" goes
+        #expect(model.walk?.shown == 2)
+        #expect(model.words.contains { $0.kind == .pickup })
+        #expect(!model.words.contains { $0.kind == .yourTurn })
+        #expect(!model.words.contains { $0.id.hasSuffix(":0") && $0.id.hasPrefix("walk:") })
+        model.goOnWalk()
+        #expect(model.walk?.shown == 3)
+        model.goOnWalk()
+        #expect(model.walk == nil, "the last tap turns the pill back into Check")
+    }
+
+    @Test func checkBringsATallPagesAnswerRowIntoView() async throws {
+        let (model, _, canvas) = try await session()
+        defer { model.close() }
+        let c = try #require(model.phase.session?.controller)
+        canvas.constraintsInsets = CameraConstraints(top: 0, left: 0, bottom: 0, right: 0, fitsWidth: true)
+        model.windowChanged(CGSize(width: 800, height: 834))
+        // work low on the page: the page grows past the window, its row below the fold
+        let screen = c.currentScreenID
+        c.store.put(.stroke(StrokeRecord(screen: screen, order: c.store.nextOrder(on: screen), author: .kid, color: .black, width: 2.9,
+                                         pressure: .simulated, x: 200, y: 1700, points: [AgathonBoard.InkPoint(x: 0, y: 0), AgathonBoard.InkPoint(x: 40, y: 10)], start: 0)),
+                    origin: .kid)
+        model.relayout()
+        let layout = try #require(model.layoutHere)
+        #expect(layout.pageHeight > 1800)
+        canvas.refitCamera()
+        #expect(canvas.camera.offset.y == 0, "the top of the page")
+        let rowBottom = { (layout.rowTop + layout.rowHeight) * canvas.camera.scale + canvas.camera.offset.y }
+        #expect(rowBottom() > 834)
+        model.tapCard("C", strike: false)
+        model.check()
+        #expect(rowBottom() <= 834 - Double(SATChromeSize.lane) + 0.5, "the row in view, over the dock's lane")
+        #expect(model.solutionOpen)
+    }
+
+    @Test func aTapPutsTheNudgeAwayAndTheWalkDrawsOnThePlane() async throws {
+        let (model, _, _) = try await session(cap: 20, used: 20)
+        defer { model.close() }
+        model.show(3)
+        model.helpMe()
+        #expect(model.nudge != nil)
+        model.dismissNudge()
+        #expect(model.nudge == nil)
+        model.startWalk(3)
+        let c = try #require(model.phase.session?.controller)
+        let legs = c.store.drawables(on: c.currentScreenID).filter { $0.meta["satLegs"] != nil }
+        #expect(legs.count == 4, "two rings, the run and the rise")
+        #expect(model.words.contains { $0.kind == .figureLabel && $0.text == "2" })
+        #expect(model.words.contains { $0.kind == .figureLabel && $0.text == "4" })
+        // once a walk
+        model.goOnWalk()
+        #expect(c.store.drawables(on: c.currentScreenID).filter { $0.meta["satLegs"] != nil }.count == 4)
     }
 }

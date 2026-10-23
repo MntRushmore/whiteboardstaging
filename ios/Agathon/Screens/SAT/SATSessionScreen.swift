@@ -8,13 +8,11 @@ import AgathonStore
 import AgathonSync
 import SwiftUI
 
-/// SAT practice (docs/SAT-MODE.md, "The session"): the question panel beside the real board.
-///
-///  - **Held sideways:** the panel on the left (about 38 %, a draggable divider, folded to a tab),
-///    the board on the right.
-///  - **Upright:** the panel on top (resizable the same way), the board below.
-///  - The board is `BoardEditorView` with the tutor on it (Help me, the status pill, hint cards); the
-///    panel and the board follow each other page for page. The end of a set covers both.
+/// SAT practice, v2 (docs/SAT-V2.md, "The question is the page"; docs/sat2/DESIGN-NOTES.md): the
+/// board full screen, white edge to edge, one page a question with the question printed on it. The
+/// top bar ("Q4 of 10 · skill", the capped line, Mark, ‹ 4/10 ›, close) and the bottom row (Help me
+/// and Check at the bottom LEFT, the pens at the bottom right: the owner, 2026-10-23) float over the
+/// paper; the solution, two ways, comes up over the lower half. The status bar is hidden in a set.
 struct SATSessionScreen: View {
     @StateObject private var model: SATSessionModel
     let onClose: () -> Void
@@ -24,42 +22,16 @@ struct SATSessionScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// the panel's share of the width (sideways: about 38 %) or of the height (upright: half, so a
-    /// grid-in's keypad shows whole)
-    @State private var shareSideways: CGFloat = 0.38
-    @State private var shareUpright: CGFloat = 0.5
-    @State private var sideways = true
-    private var share: CGFloat {
-        get { sideways ? shareSideways : shareUpright }
-        nonmutating set { if sideways { shareSideways = newValue } else { shareUpright = newValue } }
-    }
-    @State private var dragStart: CGFloat?
-    @State private var collapsed = false
-
     init(context: SATContext, questions: [SATQuestion], onClose: @escaping () -> Void) {
         _model = StateObject(wrappedValue: SATSessionModel(context: context, questions: questions))
         self.onClose = onClose
     }
 
-    static let shares: ClosedRange<CGFloat> = 0.28...0.6
-
     var body: some View {
         GeometryReader { geo in
-            let sideways = geo.size.width > geo.size.height
             ZStack {
-                Color.clear.onAppear { self.sideways = sideways }.onChange(of: sideways) { _, now in self.sideways = now }
-                DS.Color.ground.ignoresSafeArea()
-                if sideways {
-                    HStack(spacing: 0) {
-                        panelArea(sideways: true, total: geo.size.width)
-                        board
-                    }
-                } else {
-                    VStack(spacing: 0) {
-                        panelArea(sideways: false, total: geo.size.height)
-                        board
-                    }
-                }
+                DS.Color.paper.ignoresSafeArea()
+                board(size: geo.size)
                 if model.showingSummary {
                     SATSummaryView(summary: model.practice.summary(), busy: model.fetchingMore,
                                    review: { model.reviewMissed() },
@@ -67,18 +39,18 @@ struct SATSessionScreen: View {
                                    home: close,
                                    open: { i in
                                        model.showingSummary = false
-                                       model.practice.show(i)
                                        model.show(i)
                                    })
                     .transition(.opacity)
-                    .zIndex(2)
+                    .zIndex(3)
                 }
             }
             .overlay(alignment: .top) { noticeBanner }
-            #if DEBUG
-            .overlay(alignment: .bottomLeading) { debugProbe }
-            #endif
+            .onAppear { model.windowChanged(geo.size) }
+            .onChange(of: geo.size) { _, size in model.windowChanged(size) }
         }
+        .ignoresSafeArea()
+        .statusBarHidden(true)
         .animation(reduceMotion ? nil : DS.Motion.fade, value: model.showingSummary)
         .task { await model.open(backend: backend) }
         .onChange(of: scenePhase) { _, phase in
@@ -97,116 +69,16 @@ struct SATSessionScreen: View {
         onClose()
     }
 
-    // MARK: the panel
-
-    @ViewBuilder private func panelArea(sideways: Bool, total: CGFloat) -> some View {
-        if collapsed {
-            collapsedTab(sideways: sideways)
-        } else {
-            let size = max(sideways ? 340 : 260, min(total * Self.shares.upperBound, total * share))
-            Group {
-                if sideways {
-                    HStack(spacing: 0) {
-                        panel(sideways: true).frame(width: size)
-                        divider(sideways: true, total: total)
-                    }
-                } else {
-                    VStack(spacing: 0) {
-                        panel(sideways: false).frame(height: size)
-                        divider(sideways: false, total: total)
-                    }
-                }
-            }
-        }
-    }
-
-    private func panel(sideways: Bool) -> some View {
-        var actions = SATPanelActions()
-        actions.moved = { model.show(model.practice.index) }
-        actions.results = { model.showingSummary = true }
-        actions.capTapped = { capTapped() }
-        actions.retryTutor = { model.retryTutor() }
-        actions.collapse = { withAnimation(reduceMotion ? nil : DS.Motion.snap) { collapsed = true } }
-        actions.graph = { typed in await model.graph(typed) }
-        actions.endReview = { model.endReview() }
-        actions.close = close
-        actions.beforeCheck = { model.beforeCheck() }
-        return SATQuestionPanel(practice: model.practice, account: model.context.account(backend), actions: actions, collapsesUp: !sideways)
-            .background(DS.Color.paper.ignoresSafeArea())
-    }
-
-    /// The draggable divider: a hairline with a grip, the whole strip a 24 pt target.
-    private func divider(sideways: Bool, total: CGFloat) -> some View {
-        ZStack {
-            Rectangle().fill(DS.Color.line).frame(width: sideways ? 1 : nil, height: sideways ? nil : 1)
-            Capsule().fill(DS.Color.inkSecondary)
-                .frame(width: sideways ? 5 : 44, height: sideways ? 44 : 5)
-        }
-        .frame(width: sideways ? 20 : nil, height: sideways ? nil : 20)
-        .frame(maxWidth: sideways ? 20 : .infinity, maxHeight: sideways ? .infinity : 20)
-        .background(DS.Color.ground)
-        .contentShape(Rectangle())
-        .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global).onChanged { g in
-            let start = dragStart ?? share
-            if dragStart == nil { dragStart = share }
-            let moved = (sideways ? g.translation.width : g.translation.height) / max(1, total)
-            share = min(Self.shares.upperBound, max(Self.shares.lowerBound, start + moved))
-        }.onEnded { _ in dragStart = nil })
-        .accessibilityElement()
-        .accessibilityLabel("Resize the question")
-        .accessibilityValue("\(Int((share * 100).rounded())) percent")
-        .accessibilityAdjustableAction { dir in
-            share = min(Self.shares.upperBound, max(Self.shares.lowerBound, share + (dir == .increment ? 0.05 : -0.05)))
-        }
-        .accessibilityIdentifier("sat.divider")
-    }
-
-    /// The panel folded: a tab at the board's edge with the question's number.
-    private func collapsedTab(sideways: Bool) -> some View {
-        Button {
-            withAnimation(reduceMotion ? nil : DS.Motion.snap) { collapsed = false }
-        } label: {
-            Group {
-                if sideways {
-                    VStack(spacing: 10) {
-                        DSIcon(.forward, size: 16)
-                        Text("Q\(model.practice.item.number)").dsFont(.button, size: 16)
-                    }
-                    .frame(width: 56)
-                    .frame(maxHeight: .infinity)
-                } else {
-                    HStack(spacing: 10) {
-                        Text("Q\(model.practice.item.number) · \(SATCopy.showPanel)").dsFont(.button, size: 16)
-                        DSIcon(.forward, size: 14).rotationEffect(.degrees(90))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                }
-            }
-            .foregroundStyle(DS.Color.ink)
-            .background(DS.Color.paper)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(SATCopy.showPanel)
-        .accessibilityIdentifier("sat.expand")
-    }
-
-    // MARK: the board
-
-    @ViewBuilder private var board: some View {
+    @ViewBuilder private func board(size: CGSize) -> some View {
         switch model.phase {
         case .loading:
-            ZStack {
-                DS.Color.ground
-                ProgressView().controlSize(.large)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ProgressView().controlSize(.large).frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let words):
             EmptyState(.icon(.offline, .sunny), title: "The board didn't open.", message: words, actionTitle: "Back", actionIcon: .back, action: close)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .ready(let session):
-            SATBoardRoom(model: model, session: session, controller: session.controller)
+            SATBoardRoom(model: model, session: session, controller: session.controller, practice: model.practice, size: size, close: close,
+                         capTapped: capTapped)
         }
     }
 
@@ -234,7 +106,7 @@ struct SATSessionScreen: View {
         if let words = model.notice {
             Banner(.tutor, words, surface: .ink)
                 .frame(maxWidth: 560)
-                .padding(.top, DS.Space.l)
+                .padding(.top, 84)
                 .onTapGesture { model.notice = nil }
                 .task(id: words) {
                     try? await Task.sleep(for: .seconds(5))
@@ -243,64 +115,353 @@ struct SATSessionScreen: View {
                 .accessibilityIdentifier("sat.notice")
         }
     }
-
-    #if DEBUG
-    /// The UI tests' probe and their ink (a stub run only).
-    @ViewBuilder private var debugProbe: some View {
-        if model.context.isStub {
-            HStack(spacing: 4) {
-                Button("ink") { model.debugInk() }
-                    .font(.system(size: 11))
-                    .frame(width: 30, height: 22)
-                    .accessibilityIdentifier("sat.debug.ink")
-                Text(model.debugValue)
-                    .font(.system(size: 1))
-                    .opacity(0.01)
-                    .accessibilityIdentifier("sat.debug")
-                    .accessibilityValue(model.debugValue)
-            }
-            .opacity(SATDebug.args.contains("-satShots") ? 0.01 : 0.6)
-            .padding(4)
-        }
-    }
-    #endif
 }
 
-/// The board beside the panel: the Blocks editor with the tutor's pieces in its slots.
+/// The board and everything over it.
 private struct SATBoardRoom: View {
+    @Environment(AgathonBackend.self) private var backend
     @ObservedObject var model: SATSessionModel
     @ObservedObject var session: BoardSession
     @ObservedObject var controller: BoardController
+    let practice: SATPractice
+    let size: CGSize
+    let close: () -> Void
+    let capTapped: () -> Void
     @State private var popoverOpen = false
+    @State private var graphOpen = false
+
+    /// Upright, the page sits a little lower so the question never goes under the top bar.
+    private var topInset: Double { SATSessionModel.topInset(width: size.width) }
 
     var body: some View {
-        BoardEditorView(
-            controller: controller, title: "SAT practice", onBack: nil,
-            onCanvas: { canvas in model.attach(canvas) },
-            topTrailing: {
-                HStack(spacing: DS.Space.xs) {
-                    if !model.context.isStub { BoardSaveStatus(session: session, showsWords: false) }
-                    // the tutor's status only while it is on for this page (off, the panel's line says why)
-                    if let loop = model.tutor?.loop, model.tutorOnHere { LiveStatusView(loop: loop).fixedSize() }
+        ZStack {
+            BoardEditorView(
+                controller: controller, title: "SAT practice", onBack: nil,
+                onCanvas: { canvas in model.attach(canvas) },
+                chrome: false,
+                bareInsets: CameraConstraints(top: topInset, left: 0, bottom: 0, right: 0, fitsWidth: true),
+                appearance: .printedPage,
+                topTrailing: { EmptyView() },
+                helpButton: { EmptyView() },
+                overlay: { viewport in
+                    ZStack {
+                        if let tutor = model.tutor {
+                            // (on an SAT page the tutor's own Check / Next corner never shows: LivePages)
+                            LiveOverlay(loop: tutor.loop, geometry: tutor.liveBoard, onGrownUp: { model.cover = .plan },
+                                        onSpeak: nil, showsOutOfInk: false)
+                        }
+                        SATPageLayer(model: model, practice: practice, viewport: viewport)
+                    }
                 }
-            },
-            helpButton: {
-                if let loop = model.tutor?.loop { LiveHelpBar(loop: loop) }
-            },
-            overlay: { _ in
-                if let tutor = model.tutor {
-                    LiveOverlay(loop: tutor.loop, geometry: tutor.liveBoard, onGrownUp: { model.cover = .plan },
-                                onSpeak: { [weak speech = tutor.ask.speech] words in speech?.speak(text: words) }, showsOutOfInk: false)
+            )
+            .ignoresSafeArea(.keyboard)
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .onPreferenceChange(LivePopoverOpenKey.self) { popoverOpen = $0 }
+            chrome
+            if model.solutionOpen, let q = practice.current {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    SATSolutionSheet(question: q, right: { if case .right = practice.item.verdict { return true } else { return false } }(),
+                                     sideBySide: size.width > size.height,
+                                     nextTitle: practice.isLastInSet || practice.setDone ? SATCopy.seeResults : SATCopy.nextQuestion,
+                                     back: { model.solutionOpen = false }, next: { model.afterCheck() })
+                        .frame(height: max(420, size.height - (size.width > size.height ? 504 : size.height * 0.5)))
                 }
+                .ignoresSafeArea(edges: .bottom)
+                .transition(.move(edge: .bottom))
+                .zIndex(2)
             }
-        )
-        .ignoresSafeArea(.keyboard)
-        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        .onPreferenceChange(LivePopoverOpenKey.self) { popoverOpen = $0 }
+        }
         .overlay {
             if popoverOpen {
                 Color.clear.contentShape(Rectangle()).ignoresSafeArea().onTapGesture {}.accessibilityHidden(true)
             }
         }
+        #if DEBUG
+        .overlay(alignment: .bottomLeading) { SATDebugProbe(model: model) }
+        #endif
+    }
+
+    // MARK: chrome
+
+    private var chrome: some View {
+        VStack(spacing: 0) {
+            SATTopBar(model: topModel, close: close, mark: { practice.toggleMarked(); model.objectWillChange.send() },
+                      previous: { model.previous() }, next: { model.next() }, capTapped: capTapped)
+            Spacer(minLength: 0)
+            HStack(alignment: .center, spacing: SATChromeSize.gap) {
+                SATHelpButton(used: practice.item.ladder.reached?.rawValue) { model.helpMe() }
+                checkOrWalk
+                Spacer(minLength: 12)
+                SATDock(controller: controller, compact: size.width < 1100) { graphOpen = true }
+                    .popover(isPresented: $graphOpen, arrowEdge: .bottom) {
+                        SATGraphField { typed in await model.graph(typed) }
+                            .presentationCompactAdaptation(.popover)
+                    }
+            }
+            .padding(.horizontal, SATChromeSize.edge)
+            .padding(.bottom, 19)
+        }
+        // the chrome never widens the board (a row too wide for the window squeezes, it doesn't push)
+        .frame(width: size.width, height: size.height)
+    }
+
+    @ViewBuilder private var checkOrWalk: some View {
+        let item = practice.item
+        if let w = model.walk, w.question == practice.index {
+            SATWalkPill(step: w.shown, count: w.count) { model.goOnWalk() }
+        } else if item.verdict.isLocked {
+            if practice.reviewing != nil {
+                SATCheckButton(title: SATCopy.endReview, enabled: true, icon: .forward, id: "sat.endReview") { model.endReview() }
+            } else {
+                SATCheckButton(title: practice.isLastInSet || practice.setDone ? SATCopy.seeResults : SATCopy.nextShort, enabled: true, icon: .forward,
+                               id: practice.isLastInSet || practice.setDone ? "sat.results" : "sat.nextQuestion") { model.afterCheck() }
+            }
+        } else {
+            SATCheckButton(title: SATCopy.checkShort, enabled: practice.answerNow != nil && !practice.answerAlreadyTried) { model.check() }
+        }
+    }
+
+    private var topModel: SATTopBar.Model {
+        let item = practice.item
+        let title: String
+        if let list = practice.reviewing, let k = list.firstIndex(of: practice.index) {
+            title = SATCopy.reviewing(k + 1, list.count)
+        } else {
+            title = SATCopy.questionShort(item.number, item.count)
+        }
+        return SATTopBar.Model(title: title, skill: practice.current.map(\.skillTitle) ?? "",
+                               review: practice.current?.review ?? false, marked: item.marked,
+                               position: "\(item.number)/\(item.count)", hasPrevious: practice.hasPrevious, hasNext: practice.hasNext,
+                               capped: model.cappedLine(hasAccount: model.context.account(backend) != .none))
     }
 }
+
+/// Over the page, following the camera: the answer row's targets (the cards, the eliminators, the
+/// grid-in's field and keys), the tutor's words, the nudge, the wrong-answer note, and the
+/// walk-through's tap to go on.
+private struct SATPageLayer: View {
+    @ObservedObject var model: SATSessionModel
+    let practice: SATPractice
+    @ObservedObject var viewport: BoardViewport
+
+    private var k: CGFloat { CGFloat(viewport.camera.scale) }
+
+    private func rect(_ r: SATRect) -> CGRect { viewport.toView(Box(x: r.x, y: r.y, w: r.w, h: r.h)) }
+
+    var body: some View {
+        let screen = model.phase.session?.controller.currentScreenID
+        // over a flexible clear base: what is placed past the edge never sizes the layer (nor, with
+        // it, the board's ZStack, the canvas and the camera's fit)
+        Color.clear.allowsHitTesting(false).overlay(alignment: .topLeading) { ZStack(alignment: .topLeading) {
+            // the origin every placement is measured from: the layer's top-left
+            Color.clear.allowsHitTesting(false)
+            if let layout = model.layoutHere, let q = practice.current {
+                ForEach(model.words.filter { $0.screen == screen }) { w in
+                    let at = viewport.toView(w.at)
+                    SATPageWords(w.kind, text: w.text, k: k)
+                        .alignmentGuide(.leading) { _ in -at.x }
+                        .alignmentGuide(.top) { _ in -at.y }
+                        .allowsHitTesting(false)
+                }
+                if let n = model.nudge, n.screen == screen {
+                    let at = viewport.toView(n.at)
+                    SATNudgeNote(text: n.text, k: k)
+                        .alignmentGuide(.leading) { _ in -at.x }
+                        .alignmentGuide(.top) { _ in -at.y }
+                        .onTapGesture { model.dismissNudge() }
+                }
+                answerTargets(layout, q)
+                if model.showsWrongNote { wrongNote(layout, q) }
+                if model.ladderCard {
+                    // over Help me (bottom left), clear of the answer row
+                    let rowTop = viewport.toView(Vec2(0, layout.rowTop)).y
+                    SATLadderCard { model.ladderCard = false }
+                        .alignmentGuide(.leading) { _ in -SATChromeSize.edge }
+                        .alignmentGuide(.top) { d in -(rowTop - 20 - d.height) }
+                        .transition(.opacity)
+                }
+            }
+        } }
+        .clipped()
+        .id(model.layoutTick)
+    }
+
+    // MARK: the answer row
+
+    @ViewBuilder private func answerTargets(_ layout: SATPageLayout, _ q: SATQuestion) -> some View {
+        let item = practice.item
+        ForEach(layout.cards, id: \.key) { card in
+            let look = SATCardLook.of(card.key, q, item)
+            let f = rect(card.frame), s = rect(card.strike)
+            target(CGRect(x: f.minX, y: f.minY, width: s.minX - f.minX, height: f.height), id: "sat.choice.\(card.key)",
+                   label: "\(card.key). \(SATRichText.plain(q.choices?.first { $0.key == card.key }?.text ?? ""))", value: look.spoken,
+                   enabled: !item.verdict.isLocked) { model.tapCard(card.key, strike: false) }
+            if !item.verdict.isLocked && look != .tried {
+                target(s, id: "sat.strike.\(card.key)", label: look == .struck ? "\(SATCopy.restore) \(card.key)" : "\(SATCopy.strike) \(card.key)",
+                       value: "", enabled: true) { model.tapCard(card.key, strike: true) }
+            }
+        }
+        if let field = layout.gridIn {
+            target(rect(field), id: "sat.gridin", label: SATCopy.gridInLabel, value: item.typed.isEmpty ? "Empty" : item.typed,
+                   enabled: !item.verdict.isLocked) { model.focusGridIn() }
+            if !item.verdict.isLocked {
+                ForEach(layout.keys, id: \.key) { key in
+                    target(rect(key.frame), id: "sat.key.\(Self.keyId(key.key))", label: Self.keySpoken(key.key), value: "", enabled: true) {
+                        model.press(key.key)
+                    }
+                }
+            }
+        }
+    }
+
+    private func target(_ r: CGRect, id: String, label: String, value: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Color.clear.frame(width: max(1, r.width), height: max(1, r.height)).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
+        .accessibilityIdentifier(id)
+        .alignmentGuide(.leading) { _ in -r.minX }
+        .alignmentGuide(.top) { _ in -r.minY }
+    }
+
+    static func keyId(_ key: SATGridIn.Key) -> String {
+        switch key {
+        case .digit(let d): "\(d)"
+        case .point: "point"
+        case .slash: "slash"
+        case .minus: "minus"
+        case .delete: "delete"
+        case .clear: "clear"
+        }
+    }
+
+    static func keySpoken(_ key: SATGridIn.Key) -> String {
+        switch key {
+        case .digit(let d): "\(d)"
+        case .point: "Decimal point"
+        case .slash: "Fraction bar"
+        case .minus: "Minus"
+        case .delete: "Delete"
+        case .clear: "Clear"
+        }
+    }
+
+    // MARK: the wrong-answer note
+
+    /// Above the chosen card (left edge on its left, 24 above the row), or over the grid-in's field.
+    @ViewBuilder private func wrongNote(_ layout: SATPageLayout, _ q: SATQuestion) -> some View {
+        let item = practice.item
+        let anchor: SATRect? = layout.cards.first { $0.key == item.chosen }?.frame ?? layout.gridIn
+        if let a = anchor {
+            let width = SATWrongNote.width * k
+            let left = min(rect(a).minX, max(16, viewport.viewSize.width - width - 16))
+            let bottom = rect(SATRect(a.x, layout.rowTop, a.w, 0)).minY - 24 * k - (layout.gridIn != nil ? 16 * k : 0)
+            SATWrongNote(label: q.format == .mcq ? SATCopy.youPicked(item.chosen ?? "") : SATCopy.youTyped(SATGridIn.display(item.typed)),
+                         why: item.wrongNote?.why, k: k,
+                         tryAgain: { model.tryAgain() }, walk: { model.startWalk(practice.index) })
+                .alignmentGuide(.leading) { _ in -left }
+                .alignmentGuide(.top) { d in -(bottom - d.height) }
+        }
+    }
+}
+
+/// "Graph an equation" from the dock: typed, onto the question's plane when it has one.
+private struct SATGraphField: View {
+    let run: (String) async -> String?
+    @State private var text = ""
+    @State private var note: String?
+    @State private var busy = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
+            Text(SATCopy.graphTitle).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
+            HStack(spacing: DS.Space.xs) {
+                TextField(SATCopy.graphPlaceholder, text: $text)
+                    .font(DS.Font.fixed(.callout, size: 17))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.numbersAndPunctuation)
+                    .focused($focused)
+                    .submitLabel(.go)
+                    .onSubmit(go)
+                    .padding(.horizontal, 16)
+                    .frame(height: 48)
+                    .background(Capsule().fill(DS.Color.surfaceSunken))
+                    .accessibilityIdentifier("sat.graph.field")
+                PillButton(busy ? "…" : SATCopy.graphButton, kind: .primary, action: go)
+                    .fixedSize()
+                    .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                    .accessibilityIdentifier("sat.graph.go")
+            }
+            if let note {
+                Text(note).dsFont(.caption).foregroundStyle(DS.Color.inkSecondary).accessibilityIdentifier("sat.graph.note")
+            }
+        }
+        .padding(DS.Space.m)
+        .frame(width: 420)
+        .onAppear { focused = true }
+    }
+
+    private func go() {
+        let typed = text.trimmingCharacters(in: .whitespaces)
+        guard !typed.isEmpty, !busy else { return }
+        busy = true
+        Task { @MainActor in
+            let why = await run(typed)
+            busy = false
+            note = why ?? SATCopy.graphDone
+            if why == nil { text = "" }
+        }
+    }
+}
+
+#if DEBUG
+/// The UI tests' probe and their ink (a stub or live run only).
+private struct SATDebugProbe: View {
+    @ObservedObject var model: SATSessionModel
+    @State private var writing = false
+
+    /// The tests' buttons (Debug, stub and live runs only): no words on the page, ever — a white patch on
+    /// the white page that still takes taps (a faded or hidden button stops taking them, and the tap lands
+    /// on the board as a dot of ink). The live run's captures showed "ink o w" under Check (2026-10-23).
+    private func button(_ id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Color.white.frame(width: 28, height: 22).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+    }
+
+    var body: some View {
+        if model.context.isStub || SATDebug.isLive {
+            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                HStack(spacing: 4) {
+                    button("sat.debug.ink") { model.debugInk() }
+                    button("sat.debug.circle") { model.debugCircle(x: SATDebug.circleAt.x, y: SATDebug.circleAt.y) }
+                    button("sat.debug.write") {
+                        guard !writing else { return }
+                        writing = true
+                        Task { @MainActor in
+                            await SATAutowriter.writeNext(model)
+                            writing = false
+                        }
+                    }
+                    .accessibilityValue(writing ? "busy" : "\(SATAutowriter.progress.next)")
+                    Text(model.debugValue)
+                        .font(.system(size: 1))
+                        .opacity(0.01)
+                        .accessibilityIdentifier("sat.debug")
+                        .accessibilityValue(model.debugValue)
+                }
+            }
+            .padding(.leading, 240)
+            .padding(.bottom, 2)
+        }
+    }
+}
+#endif

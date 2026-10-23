@@ -3,6 +3,7 @@ import type pino from "pino";
 import { logger } from "@/lib/logger";
 import { accountRequiredResponse, json, requireUser, type AuthedUser } from "@/lib/server/auth";
 import { SatQuestionIdSchema } from "@/lib/sat/contracts";
+import { satFigureMarksOf } from "@/lib/sat/tutorContext";
 import { checkRateLimitDistributed, rateLimitedResponse, type RateLimitBucket } from "@/lib/server/rate-limit";
 import { PROVIDER_UNAVAILABLE_MESSAGE, parseJsonBody, recordRouteError } from "@/lib/server/request";
 import { refundInk, type RefundInput, type RpcClient } from "@/lib/server/billing";
@@ -47,6 +48,12 @@ export type LiveContext<T> = {
    * then lets a student without Unlimited through only on that question's free pass for today.
    */
   satQuestionId: string | null;
+  /**
+   * SAT v2: the student's marks on the question's figure (`sat_figure_marks`, plain text, at most
+   * 300 characters; ignored when longer), only with `satQuestionId`; else null. The tutor routes
+   * add it to the bank's problem context (src/lib/server/sat/context.ts).
+   */
+  satFigureMarks: string | null;
 };
 
 /**
@@ -117,7 +124,7 @@ export async function livePreamble<S extends z.ZodTypeAny>(
 
   // a training call's every log line says so (the bindings feed no event: request.ts reads only
   // module, route, requestId and userId from them)
-  return { requestId, user, token, log: training ? log.child({ training: true }) : log, data: parsed.data, startedAt, training, satQuestionId: sat };
+  return { requestId, user, token, log: training ? log.child({ training: true }) : log, data: parsed.data, startedAt, training, satQuestionId: sat, satFigureMarks: sat ? satFigureMarksOf(parsed.raw) : null };
 }
 
 /**

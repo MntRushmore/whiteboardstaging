@@ -1,0 +1,1737 @@
+{
+  "at": "2026-10-23T17:13:23.965Z",
+  "account": "sat-e2e-main-1792775475259@example.com",
+  "openrouterCalls": 64,
+  "mathpixCalls": 64,
+  "balanceStart": 17.538532192999995,
+  "balanceEnd": 17.467575280000005,
+  "results": [
+    {
+      "id": "algebra-linear-functions-0001",
+      "kind": "plot MCQ (two labelled points)",
+      "head": [],
+      "pass": {
+        "allowed": true,
+        "used_today": 1,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "m=\\frac{1-(-2)}{2-0}",
+          "conf": 0.826171875,
+          "ms": 437,
+          "status": 200,
+          "reread": {
+            "trigger": "unreadable",
+            "latex": "m=\\frac{1-(-2)}{2-0}",
+            "status": 200,
+            "ms": 1282,
+            "satBlock": true
+          },
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "m=\\frac{1-(-2)}{2-0}",
+          "conf": 1,
+          "ms": 565,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "engine solveLatex",
+        "step": "m = \\frac{3}{2}",
+        "ms": 21,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "simplifies the slope to 3/2"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "m=\\frac{3}{2}",
+            "same": true,
+            "ms": 401
+          },
+          "S": {
+            "latex": "m=\\frac{2}{3}",
+            "same": true,
+            "ms": 369
+          },
+          "U": {
+            "latex": "f(6)=",
+            "ms": 286
+          }
+        },
+        "good": {
+          "latexes": [
+            "m=\\frac{1-(-2)}{2-0}",
+            "m=\\frac{3}{2}"
+          ],
+          "marks": [
+            "none",
+            "tick"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "assignment/ok"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1476,
+            "ttfa": 1476,
+            "annotations": [
+              {
+                "lineId": "ln_000003",
+                "verdict": "ok",
+                "kind": "praise",
+                "message": "Great job finding the slope of the line.",
+                "confidence": 0.8
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": true
+          }
+        },
+        "slip": {
+          "looked": [
+            "m=\\frac{2}{3} → m=\\frac{2}{3}"
+          ],
+          "latexes": [
+            "m=\\frac{1-(-2)}{2-0}",
+            "m=\\frac{2}{3}"
+          ],
+          "marks": [
+            "none",
+            "ring"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "assignment/mismatch"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1566,
+            "ttfa": 1566,
+            "annotations": [
+              {
+                "lineId": "ln_000004",
+                "verdict": "warn",
+                "kind": "algebra",
+                "message": "Check how you simplified the fraction from your slope formula above.",
+                "question": "Did you divide the change in y by the change in x, or the other way around?",
+                "expected": "3/2",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": true
+          }
+        },
+        "unfinished": {
+          "latexes": [
+            "m=\\frac{1-(-2)}{2-0}",
+            "f(6)="
+          ],
+          "marks": [
+            "none",
+            "none"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "incomplete/none held"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 2166,
+            "ttfa": 2166,
+            "annotations": [
+              {
+                "lineId": "ln_000005",
+                "verdict": "info",
+                "kind": "incomplete",
+                "message": "You have the slope and the y-intercept, so you can write the full function first.",
+                "question": "What is the equation of the function f(x) before you substitute 6?",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": true
+          },
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "geometry_trig-area-volume-0001",
+      "kind": "geometry shape grid-in",
+      "head": [],
+      "pass": {
+        "allowed": true,
+        "used_today": 2,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "A=\\frac{1}{2} \\cdot 12 \\cdot 9",
+          "conf": 1,
+          "ms": 426,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "A=\\frac{1}{2} \\cdot 12 \\cdot 9",
+          "conf": 1,
+          "ms": 331,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "engine solveLatex",
+        "step": "A = 54",
+        "ms": 4,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "A = 54 (or 6·9): one step left"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "A=6 \\cdot 9",
+            "same": true,
+            "ms": 299
+          },
+          "S": {
+            "latex": "A=12.9",
+            "same": false,
+            "ms": 319
+          },
+          "U": {
+            "latex": "A = \\frac{1}{2} \\cdot",
+            "ms": 310
+          }
+        },
+        "good": {
+          "latexes": [
+            "A=\\frac{1}{2} \\cdot 12 \\cdot 9",
+            "A=6 \\cdot 9"
+          ],
+          "marks": [
+            "none",
+            "tick"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "assignment/ok"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1303,
+            "ttfa": 1303,
+            "annotations": [
+              {
+                "lineId": "ln_000008",
+                "verdict": "ok",
+                "kind": "praise",
+                "message": "Great progress so far.",
+                "confidence": 0.8
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "slip": {
+          "looked": [
+            "A=\\frac{1}{2} \\cdot 12 \\cdot 9 → A=\\frac{1}{2} \\cdot 12 \\cdot 9",
+            "A=12.9 → A = 12 \\cdot 9"
+          ],
+          "latexes": [
+            "A=\\frac{1}{2} \\cdot 12 \\cdot 9",
+            "A=12.9"
+          ],
+          "marks": [
+            "none",
+            "ring"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "assignment/mismatch"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1363,
+            "ttfa": 1363,
+            "annotations": [
+              {
+                "lineId": "ln_000009",
+                "verdict": "warn",
+                "kind": "arithmetic",
+                "message": "Check how you simplified the multiplication on the right side of this step.",
+                "question": "What is half of 12 times 9?",
+                "expected": "1/2 * 12 * 9",
+                "confidence": 0.9
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "unfinished": {
+          "latexes": [
+            "A=\\frac{1}{2} \\cdot 12 \\cdot 9",
+            "A = \\frac{1}{2} \\cdot"
+          ],
+          "marks": [
+            "none",
+            "none"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "incomplete/none held"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 4376,
+            "ttfa": 4376,
+            "annotations": [
+              {
+                "lineId": "ln_00000a",
+                "verdict": "warn",
+                "kind": "incomplete",
+                "message": "This step seems to have stopped mid-calculation after writing the fraction.",
+                "question": "What is the product of the base and height that you need to multiply by half?",
+                "confidence": 0.9
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          },
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "psda-probability-0001",
+      "kind": "table MCQ",
+      "head": [],
+      "pass": {
+        "allowed": true,
+        "used_today": 3,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "P=\\frac{16}{28}",
+          "conf": 1,
+          "ms": 654,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "P=\\frac{16}{28}",
+          "conf": 1,
+          "ms": 512,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "engine solveLatex",
+        "step": "P = \\frac{4}{7}",
+        "ms": 6,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "simplifies 16/28"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "P=\\frac{4}{7}",
+            "same": true,
+            "ms": 277
+          },
+          "S": {
+            "latex": "P=\\frac{4}{15}",
+            "same": true,
+            "ms": 336
+          },
+          "U": {
+            "latex": "P=",
+            "ms": 340
+          }
+        },
+        "good": {
+          "latexes": [
+            "P=\\frac{16}{28}",
+            "P=\\frac{4}{7}"
+          ],
+          "marks": [
+            "none",
+            "tick"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "assignment/ok"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 2097,
+            "ttfa": 2097,
+            "annotations": [
+              {
+                "lineId": "ln_00000d",
+                "verdict": "ok",
+                "kind": "praise",
+                "message": "Beautifully solved. You simplified the fraction perfectly.",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "slip": {
+          "looked": [
+            "P=\\frac{16}{28} → P=\\frac{16}{28}",
+            "P=\\frac{4}{15} → P=\\frac{4}{15}"
+          ],
+          "latexes": [
+            "P=\\frac{16}{28}",
+            "P=\\frac{4}{15}"
+          ],
+          "marks": [
+            "none",
+            "ring"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "assignment/mismatch"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1825,
+            "ttfa": 1825,
+            "annotations": [
+              {
+                "lineId": "ln_00000e",
+                "verdict": "warn",
+                "kind": "algebra",
+                "message": "Check your fraction simplification from the previous step to this one.",
+                "question": "What common factor can you divide both 16 and 28 by?",
+                "expected": "4/7",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "unfinished": {
+          "latexes": [
+            "P=\\frac{16}{28}",
+            "P="
+          ],
+          "marks": [
+            "none",
+            "none"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "incomplete/none held"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1381,
+            "ttfa": null,
+            "annotations": [],
+            "satBlock": true,
+            "marksInPrompt": false
+          },
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "algebra-linear-one-var-0111",
+      "kind": "word problem grid-in",
+      "head": [],
+      "pass": {
+        "allowed": true,
+        "used_today": 4,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "6+3 m=51",
+          "conf": 1,
+          "ms": 292,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "6+3 m=51",
+          "conf": 1,
+          "ms": 322,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "engine solveLatex",
+        "step": "3m = 45",
+        "ms": 19,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "an equivalent next equation"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "3 m=45",
+            "same": true,
+            "ms": 274
+          },
+          "S": {
+            "latex": "3 m=57",
+            "same": true,
+            "ms": 362
+          },
+          "U": {
+            "latex": "3 m=",
+            "ms": 320
+          }
+        },
+        "good": {
+          "latexes": [
+            "6+3 m=51",
+            "3 m=45"
+          ],
+          "marks": [
+            "none",
+            "tick"
+          ],
+          "verdicts": [
+            "equation/none",
+            "equation/ok"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1571,
+            "ttfa": 1571,
+            "annotations": [
+              {
+                "lineId": "ln_00000i",
+                "verdict": "ok",
+                "kind": "praise",
+                "message": "Great start. You have set up and simplified the equation perfectly.",
+                "confidence": 0.9
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "slip": {
+          "looked": [
+            "6+3 m=51 → 6 + 3m = 51",
+            "3 m=57 → 3m = 57"
+          ],
+          "latexes": [
+            "6+3 m=51",
+            "3 m=57"
+          ],
+          "marks": [
+            "none",
+            "ring"
+          ],
+          "verdicts": [
+            "equation/none",
+            "equation/mismatch"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1473,
+            "ttfa": 1473,
+            "annotations": [
+              {
+                "lineId": "ln_00000j",
+                "verdict": "warn",
+                "kind": "algebra",
+                "message": "Check the operation you used to remove 6 from the left side of the equation",
+                "question": "Should you add or subtract 6 to isolate the term with m?",
+                "expected": "51-6",
+                "confidence": 0.9
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "unfinished": {
+          "latexes": [
+            "6+3 m=51",
+            "3 m="
+          ],
+          "marks": [
+            "none",
+            "none"
+          ],
+          "verdicts": [
+            "equation/none",
+            "incomplete/none held"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1373,
+            "ttfa": 1373,
+            "annotations": [
+              {
+                "lineId": "ln_00000k",
+                "verdict": "info",
+                "kind": "incomplete",
+                "message": "You are on the right track by isolating the term with the variable.",
+                "question": "What do you get when you subtract the flat fee from the total cost?",
+                "expected": "51-6",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          },
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "algebra-linear-one-var-0103",
+      "kind": "equation MCQ (stem relation as the page's head)",
+      "head": [
+        "5(x - 4) = 2x + 37"
+      ],
+      "pass": {
+        "allowed": true,
+        "used_today": 5,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "5 x-20=2 x+37",
+          "conf": 1,
+          "ms": 674,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "5 x-20=2 x+37",
+          "conf": 1,
+          "ms": 484,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "engine solveLatex",
+        "step": "5x - 2x = 37 + 20",
+        "ms": 124,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "an equivalent next equation"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "3 x=57",
+            "same": true,
+            "ms": 382
+          },
+          "S": {
+            "latex": "3 x=17",
+            "same": true,
+            "ms": 283
+          },
+          "U": {
+            "latex": "3 x=",
+            "ms": 219
+          }
+        },
+        "good": {
+          "latexes": [
+            "5 x-20=2 x+37",
+            "3 x=57"
+          ],
+          "marks": [
+            "tick",
+            "tick"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "equation/ok"
+          ]
+        },
+        "slip": {
+          "looked": [
+            "5 x-20=2 x+37 → 5x - 20 = 2x + 37",
+            "3 x=17 → 3x = 17"
+          ],
+          "latexes": [
+            "5 x-20=2 x+37",
+            "3 x=17"
+          ],
+          "marks": [
+            "tick",
+            "ring"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "equation/mismatch"
+          ]
+        },
+        "unfinished": {
+          "latexes": [
+            "5 x-20=2 x+37",
+            "3 x="
+          ],
+          "marks": [
+            "tick",
+            "none"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "incomplete/none held"
+          ],
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "algebra-linear-systems-0105",
+      "kind": "system grid-in (two stem equations)",
+      "head": [
+        "4x+3y=59",
+        "2x+3y=21"
+      ],
+      "pass": {
+        "allowed": true,
+        "used_today": 6,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "2 x=38",
+          "conf": 1,
+          "ms": 345,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "2 x=38",
+          "conf": 1,
+          "ms": 264,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "engine solveLatex",
+        "step": "x = 19",
+        "ms": 18,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "true for the system, a step on"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "x=19",
+            "same": true,
+            "ms": 338
+          },
+          "S": {
+            "latex": "x=17",
+            "same": true,
+            "ms": 399
+          },
+          "U": {
+            "latex": "3 y=21-",
+            "ms": 272
+          }
+        },
+        "good": {
+          "latexes": [
+            "2 x=38",
+            "x=19"
+          ],
+          "marks": [
+            "none",
+            "tick"
+          ],
+          "verdicts": [
+            "equation/none",
+            "equation/ok"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1581,
+            "ttfa": 1581,
+            "annotations": [
+              {
+                "lineId": "ln_00000s",
+                "verdict": "info",
+                "kind": "concept",
+                "message": "You found the correct value for $x$, but the problem asks for a different variable.",
+                "question": "How can you use this $x$ value to find the value of $y$?",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "slip": {
+          "looked": [
+            "2 x=38 → 2x=38",
+            "x=17 → x=17"
+          ],
+          "latexes": [
+            "2 x=38",
+            "x=17"
+          ],
+          "marks": [
+            "none",
+            "ring"
+          ],
+          "verdicts": [
+            "equation/none",
+            "equation/mismatch"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1569,
+            "ttfa": 1569,
+            "annotations": [
+              {
+                "lineId": "ln_00000t",
+                "verdict": "warn",
+                "kind": "arithmetic",
+                "message": "Check your division when solving for x on this line.",
+                "question": "What do you get when you divide 38 by 2?",
+                "expected": "38/2",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "unfinished": {
+          "latexes": [
+            "2 x=38",
+            "3 y=21-"
+          ],
+          "marks": [
+            "none",
+            "none"
+          ],
+          "verdicts": [
+            "equation/none",
+            "incomplete/none held"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1501,
+            "ttfa": 1501,
+            "annotations": [
+              {
+                "lineId": "ln_00000u",
+                "verdict": "warn",
+                "kind": "incomplete",
+                "message": "This equation stops abruptly on the right side.",
+                "question": "What value do you get when you substitute your x-value into the second equation?",
+                "expected": "21-2*(19)",
+                "confidence": 0.9
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          },
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "advanced_math-equivalent-expressions-0101",
+      "kind": "equivalent expressions MCQ",
+      "head": [],
+      "pass": {
+        "allowed": true,
+        "used_today": 7,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "10(3 x+5)-4 x=30 x+50-4 x",
+          "conf": 1,
+          "ms": 375,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "10(3 x+5)-4 x=30 x+50-4 x",
+          "conf": 1,
+          "ms": 312,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "engine simplifySteps",
+        "step": "= 26x + 50",
+        "ms": 25,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "combines to 26x + 50 (one step left)"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "=26 x+50",
+            "same": true,
+            "ms": 544
+          },
+          "S": {
+            "latex": "=34 x+50",
+            "same": true,
+            "ms": 264
+          },
+          "U": {
+            "latex": "=30 x-",
+            "ms": 261
+          }
+        },
+        "good": {
+          "latexes": [
+            "10(3 x+5)-4 x=30 x+50-4 x",
+            "=26 x+50"
+          ],
+          "marks": [
+            "tick",
+            "tick"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "expression/ok"
+          ]
+        },
+        "slip": {
+          "looked": [
+            "10(3 x+5)-4 x=30 x+50-4 x → 10(3x + 5) - 4x = 30x + 50 - 4x (2nd look disagreed)",
+            "=34 x+50 → = 34x + 50"
+          ],
+          "latexes": [
+            "10(3 x+5)-4 x=30 x+50-4 x",
+            "=34 x+50"
+          ],
+          "marks": [
+            "tick",
+            "ring"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "expression/mismatch"
+          ]
+        },
+        "unfinished": {
+          "latexes": [
+            "10(3 x+5)-4 x=30 x+50-4 x",
+            "=30 x-"
+          ],
+          "marks": [
+            "tick",
+            "none"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "incomplete/none held"
+          ],
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "advanced_math-nonlinear-equations-0108",
+      "kind": "radical equation grid-in (stem relation as head)",
+      "head": [
+        "\\sqrt{x + 20} = 7"
+      ],
+      "pass": {
+        "allowed": true,
+        "used_today": 8,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "x+20=49",
+          "conf": 1,
+          "ms": 460,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "x+20=49",
+          "conf": 1,
+          "ms": 212,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "engine solveLatex",
+        "step": "x = 29",
+        "ms": 44,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "x = 29: one step left"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "x=29",
+            "same": true,
+            "ms": 249
+          },
+          "S": {
+            "latex": "x=69",
+            "same": true,
+            "ms": 258
+          },
+          "U": {
+            "latex": "\\times=",
+            "ms": 258
+          }
+        },
+        "good": {
+          "latexes": [
+            "x+20=49",
+            "x=29"
+          ],
+          "marks": [
+            "tick",
+            "tick"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "equation/ok"
+          ]
+        },
+        "slip": {
+          "looked": [
+            "x+20=49 → x + 20 = 49",
+            "x=69 → x = 69"
+          ],
+          "latexes": [
+            "x+20=49",
+            "x=69"
+          ],
+          "marks": [
+            "tick",
+            "ring"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "equation/mismatch"
+          ]
+        },
+        "unfinished": {
+          "latexes": [
+            "x+20=49",
+            "\\times="
+          ],
+          "marks": [
+            "tick",
+            "none"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "incomplete/none held"
+          ],
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "advanced_math-nonlinear-equations-0147",
+      "kind": "quadratic word problem MCQ",
+      "head": [],
+      "pass": {
+        "allowed": true,
+        "used_today": 9,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "w(w+3)=54",
+          "conf": 1,
+          "ms": 354,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "w(w+3)=54",
+          "conf": 1,
+          "ms": 256,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "engine solveLatex",
+        "step": "w^{2} + 3w = 54",
+        "ms": 26,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "expands / rearranges (roots 6 and -9 kept)"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "w^{2}+3 w-54=0",
+            "same": true,
+            "ms": 365
+          },
+          "S": {
+            "latex": "w^{2}+3 w+54=0",
+            "same": true,
+            "ms": 388
+          },
+          "U": {
+            "latex": "w^{2}+3 w=",
+            "ms": 323
+          }
+        },
+        "good": {
+          "latexes": [
+            "w(w+3)=54",
+            "w^{2}+3 w-54=0"
+          ],
+          "marks": [
+            "none",
+            "tick"
+          ],
+          "verdicts": [
+            "equation/none",
+            "equation/ok"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1048,
+            "ttfa": null,
+            "annotations": [],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "slip": {
+          "looked": [
+            "w(w+3)=54 → w(w+3)=54",
+            "w^{2}+3 w+54=0 → w^{2}+3w+54=0"
+          ],
+          "latexes": [
+            "w(w+3)=54",
+            "w^{2}+3 w+54=0"
+          ],
+          "marks": [
+            "none",
+            "ring"
+          ],
+          "verdicts": [
+            "equation/none",
+            "equation/mismatch"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1521,
+            "ttfa": 1521,
+            "annotations": [
+              {
+                "lineId": "ln_000018",
+                "verdict": "warn",
+                "kind": "sign",
+                "message": "Check the sign of the constant term when you move it to the left side of this equation.",
+                "question": "What happens to the sign of 54 when you subtract it from both sides?",
+                "expected": "w^2+3w-54",
+                "confidence": 0.9
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "unfinished": {
+          "latexes": [
+            "w(w+3)=54",
+            "w^{2}+3 w="
+          ],
+          "marks": [
+            "none",
+            "none"
+          ],
+          "verdicts": [
+            "equation/none",
+            "incomplete/none held"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1331,
+            "ttfa": 1331,
+            "annotations": [
+              {
+                "lineId": "ln_000019",
+                "verdict": "info",
+                "kind": "incomplete",
+                "message": "This equation is incomplete on the right side.",
+                "question": "What should the expanded equation equal?",
+                "expected": "54",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          },
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "psda-ratios-rates-0001",
+      "kind": "rates MCQ (arithmetic lines)",
+      "head": [],
+      "pass": {
+        "allowed": true,
+        "used_today": 10,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "4 \\cdot 60=240",
+          "conf": 1,
+          "ms": 341,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "4 \\cdot 60=240",
+          "conf": 1,
+          "ms": 335,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "model /api/live/solve",
+        "step": "= \\frac{18}{45} = 0.4",
+        "ms": 2229,
+        "status": 200,
+        "modelSteps": [
+          "= \\frac{18}{45} = 0.4",
+          "\\boxed{96}"
+        ],
+        "satBlock": true,
+        "marksInPrompt": false,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "works the rate 18/45 for this printer"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "\\frac{18}{45}=0.4",
+            "same": true,
+            "ms": 262
+          },
+          "S": {
+            "latex": "\\frac{18}{45}=2.5",
+            "same": true,
+            "ms": 263
+          },
+          "U": {
+            "latex": "0.4 \\cdot 240=",
+            "ms": 363
+          }
+        },
+        "good": {
+          "latexes": [
+            "4 \\cdot 60=240",
+            "\\frac{18}{45}=0.4"
+          ],
+          "marks": [
+            "tick",
+            "tick"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "equation/ok"
+          ]
+        },
+        "slip": {
+          "looked": [
+            "4 \\cdot 60=240 → 4 \\cdot 60 = 240",
+            "\\frac{18}{45}=2.5 → \\frac{18}{45}=2.5"
+          ],
+          "latexes": [
+            "4 \\cdot 60=240",
+            "\\frac{18}{45}=2.5"
+          ],
+          "marks": [
+            "tick",
+            "ring"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "equation/mismatch"
+          ]
+        },
+        "unfinished": {
+          "latexes": [
+            "4 \\cdot 60=240",
+            "0.4 \\cdot 240="
+          ],
+          "marks": [
+            "tick",
+            "none"
+          ],
+          "verdicts": [
+            "equation/ok",
+            "expression/none held"
+          ],
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "geometry_trig-right-triangles-trig-0103",
+      "kind": "right-triangle trig grid-in (word)",
+      "head": [],
+      "pass": {
+        "allowed": true,
+        "used_today": 11,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "h=94 \\sin 30^{\\circ}",
+          "conf": 1,
+          "ms": 362,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "h=94 \\sin 30^{\\circ}",
+          "conf": 1,
+          "ms": 224,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        }
+      },
+      "help": {
+        "source": "engine solveLatex",
+        "step": "h = 94 \\cdot \\frac{1}{2}",
+        "ms": 6,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "sin 30° = 1/2 (or 47): one step left"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "h=94 \\cdot \\frac{1}{2}",
+            "same": true,
+            "ms": 232
+          },
+          "S": {
+            "latex": "h=94 \\cdot \\frac{\\sqrt{3}}{2}",
+            "same": true,
+            "ms": 307
+          },
+          "U": {
+            "latex": "h = 94 \\cdot",
+            "ms": 297
+          }
+        },
+        "good": {
+          "latexes": [
+            "h=94 \\sin 30^{\\circ}",
+            "h=94 \\cdot \\frac{1}{2}"
+          ],
+          "marks": [
+            "none",
+            "tick"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "assignment/ok"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1362,
+            "ttfa": 1362,
+            "annotations": [
+              {
+                "lineId": "ln_00001h",
+                "verdict": "ok",
+                "kind": "praise",
+                "message": "Great work, you have set up the calculation perfectly.",
+                "confidence": 0.9
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "slip": {
+          "looked": [
+            "h=94 \\sin 30^{\\circ} → h = 94 \\sin 30^\\circ (2nd look disagreed)",
+            "h=94 \\cdot \\frac{\\sqrt{3}}{2} → h=94 \\cdot \\frac{\\sqrt{3}}{2}"
+          ],
+          "latexes": [
+            "h=94 \\sin 30^{\\circ}",
+            "h=94 \\cdot \\frac{\\sqrt{3}}{2}"
+          ],
+          "marks": [
+            "none",
+            "ring"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "assignment/mismatch"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 3010,
+            "ttfa": 3010,
+            "annotations": [
+              {
+                "lineId": "ln_00001i",
+                "verdict": "warn",
+                "kind": "concept",
+                "message": "Check the value you used for the sine of thirty degrees on this line.",
+                "question": "What is the exact value of sin(30°)?",
+                "expected": "94 * (1/2)",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          }
+        },
+        "unfinished": {
+          "latexes": [
+            "h=94 \\sin 30^{\\circ}",
+            "h = 94 \\cdot"
+          ],
+          "marks": [
+            "none",
+            "none"
+          ],
+          "verdicts": [
+            "assignment/none",
+            "incomplete/none held"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1557,
+            "ttfa": 1557,
+            "annotations": [
+              {
+                "lineId": "ln_00001j",
+                "verdict": "info",
+                "kind": "incomplete",
+                "message": "You are on the right track here, but the expression is incomplete.",
+                "question": "What is the value of the sine of 30 degrees?",
+                "expected": "94 * (1/2)",
+                "confidence": 0.9
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": false
+          },
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "advanced_math-nonlinear-functions-0002",
+      "kind": "plot grid-in (parabola, labelled points)",
+      "head": [
+        "y = f(x)"
+      ],
+      "pass": {
+        "allowed": true,
+        "used_today": 12,
+        "cap": 20,
+        "unlimited": false
+      },
+      "reading": {
+        "clean": {
+          "latex": "f(x)=a(x-1)^{2}+9",
+          "conf": 1,
+          "ms": 436,
+          "status": 200,
+          "clusters": 1,
+          "same": true
+        },
+        "slanted": {
+          "latex": "f(x)=o(x-1)^{2}+9",
+          "conf": 0.93896484375,
+          "ms": 245,
+          "status": 200,
+          "clusters": 1,
+          "same": false
+        }
+      },
+      "help": {
+        "source": "model /api/live/solve",
+        "step": "0 = a(4-1)^{2}+9",
+        "ms": 1462,
+        "status": 200,
+        "modelSteps": [
+          "0 = a(4-1)^{2}+9",
+          "0 = 9a+9",
+          "-9 = 9a",
+          "a = -1",
+          "f(0)=(-1)(0-1)^2+9",
+          "\\boxed{f(0)=8}"
+        ],
+        "satBlock": true,
+        "marksInPrompt": true,
+        "verdict": {
+          "correct": true,
+          "progress": true,
+          "jumped": false,
+          "specific": true,
+          "why": "substitutes the point (4, 0)"
+        }
+      },
+      "checking": {
+        "reads": {
+          "L2": {
+            "latex": "0=o(4-1)^{2}+9",
+            "same": false,
+            "ms": 291
+          },
+          "S": {
+            "latex": "0=o(4-1)^{2}-9",
+            "same": false,
+            "ms": 315
+          },
+          "U": {
+            "latex": "0=",
+            "ms": 310
+          }
+        },
+        "good": {
+          "latexes": [
+            "f(x)=a(x-1)^{2}+9",
+            "0=o(4-1)^{2}+9"
+          ],
+          "marks": [
+            "none",
+            "none"
+          ],
+          "verdicts": [
+            "function/none",
+            "equation/none"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1852,
+            "ttfa": 1852,
+            "annotations": [
+              {
+                "lineId": "ln_00001m",
+                "verdict": "warn",
+                "kind": "notation",
+                "message": "I might have misread this line as having an 'o' instead of an 'a' — tap to fix it",
+                "question": "Did you mean to write the coefficient 'a' here?",
+                "expected": "a*(4-1)^2+9",
+                "confidence": 0.4
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": true
+          }
+        },
+        "slip": {
+          "latexes": [
+            "f(x)=a(x-1)^{2}+9",
+            "0=o(4-1)^{2}-9"
+          ],
+          "marks": [
+            "none",
+            "ring"
+          ],
+          "verdicts": [
+            "function/none",
+            "equation/none"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 2138,
+            "ttfa": 1575,
+            "annotations": [
+              {
+                "lineId": "ln_00001n",
+                "verdict": "warn",
+                "kind": "sign",
+                "message": "Check the sign of the constant term on the right side of this equation.",
+                "question": "Should the vertex's y-coordinate be added or subtracted in your vertex form?",
+                "expected": "a*(4-1)^2+9",
+                "confidence": 0.9
+              },
+              {
+                "lineId": "ln_00001n",
+                "verdict": "warn",
+                "kind": "notation",
+                "message": "It looks like there is a typo in your coefficient variable here.",
+                "question": "Did you mean to write the variable a instead of the letter o?",
+                "expected": "a*(4-1)^2+9",
+                "confidence": 0.8
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": true
+          }
+        },
+        "unfinished": {
+          "latexes": [
+            "f(x)=a(x-1)^{2}+9",
+            "0="
+          ],
+          "marks": [
+            "none",
+            "none"
+          ],
+          "verdicts": [
+            "function/none",
+            "expression/none held"
+          ],
+          "check": {
+            "status": 200,
+            "ms": 1541,
+            "ttfa": 1540,
+            "annotations": [
+              {
+                "lineId": "ln_00001o",
+                "verdict": "info",
+                "kind": "incomplete",
+                "message": "You have set up the vertex form. Now use the given x-intercept to find the value of a.",
+                "question": "What do you get when you substitute the point (4, 0) into your equation?",
+                "confidence": 1
+              }
+            ],
+            "satBlock": true,
+            "marksInPrompt": true
+          },
+          "held": true
+        }
+      }
+    },
+    {
+      "id": "marks-probe",
+      "read": "m=\\frac{y_{2}-y_{1}}{x_{2}-x_{1}}",
+      "help": {
+        "source": "model /api/live/solve",
+        "step": "m=\\frac{1-(-2)}{2-0}",
+        "ms": 8992,
+        "status": 200,
+        "modelSteps": [
+          "m=\\frac{1-(-2)}{2-0}",
+          "m=\\frac{3}{2}",
+          "f(x)=\\frac{3}{2}x-2",
+          "f(6)=\\frac{3}{2}(6)-2",
+          "\\boxed{f(6)=7}"
+        ],
+        "satBlock": true,
+        "marksInPrompt": true
+      }
+    }
+  ]
+}

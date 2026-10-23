@@ -8,6 +8,7 @@ import { jsonlToEvents, sseResponse, type SseEmit } from "@/lib/server/sse";
 import { buildSolveMessages, buildSolveRetryMessages } from "@/lib/server/prompts/solve";
 import { livePreamble, runChargedStream, sseErrorPayload, withRequestId } from "@/lib/server/live-route";
 import { normalizeStep } from "@/lib/server/live-rules";
+import { satPromptBlock, withSatContext } from "@/lib/server/sat/context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -82,7 +83,9 @@ export async function POST(req: Request) {
   const billing = await enforceInk({ token, route: "live/solve", requestId, model: models.solve, satQuestionId: ctx.satQuestionId, training: ctx.training }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
-  const messages = buildSolveMessages(data);
+  // an SAT page: the bank's question is the problem
+  const satBlock = await satPromptBlock(ctx);
+  const messages = withSatContext(buildSolveMessages(data), satBlock);
   const deadline = startedAt + SOLVE_BUDGET_MS;
 
   const res = sseResponse(
@@ -164,7 +167,7 @@ export async function POST(req: Request) {
           retried = true;
           const firstModel = model;
           log.info({ model: firstModel, reason: firstRejection.reason, introduced: firstRejection.introduced, steps: first.steps.length }, "solve: no usable step; asking once more");
-          const retryMessages: ChatMessage[] = buildSolveRetryMessages(data, first.steps, firstRejection);
+          const retryMessages: ChatMessage[] = withSatContext(buildSolveRetryMessages(data, first.steps, firstRejection), satBlock);
           emit("meta", { requestId, model: models.solve });
           const again = await run(
             streamWithFallback(

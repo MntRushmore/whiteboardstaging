@@ -120,3 +120,35 @@ export function casCheck(q: Pick<SatQuestion, "format" | "choices" | "answer">, 
   }
   return { result: "pass", detail: "equivalent at 5 points, others differ" };
 }
+
+/**
+ * The notes stage's numeric re-check (scripts/sat/notes.ts): does the arithmetic of a described
+ * mistake (`check`, a mathjs expression the writer computes from the givens by following the
+ * mistake) land exactly on the answer it claims to explain? `target` is a choice's text (LaTeX)
+ * or a grid-in. A number is compared as a value; an expression in x at five values of x. Anything
+ * that does not evaluate (a sentence, an equation, an ordered pair, a missing check) is `skipped`:
+ * that note rests on the verifier model alone.
+ */
+export function mistakeCheck(target: string, check: string | null | undefined): CasResult {
+  if (!check || !check.trim()) return { result: "skipped", detail: "no check" };
+  const t = /^\s*-?(\d+|\d*\.\d+|\d+\/\d+)\s*$/.test(target) ? target.trim() : latexToMathjs(target);
+  if (t === null) return { result: "skipped", detail: "the answer is not a number or an expression in x" };
+  const expr = check.replace(/\b([a-z])\s*\(/g, "$1*(");
+  // a single number cannot be checked against an expression (the writer gave a coefficient, say)
+  if (/\bx\b/.test(t) && !/\bx\b/.test(expr)) return { result: "skipped", detail: `check "${check}" is not an expression in x` };
+  if (/\bx\b/.test(t) || /\bx\b/.test(expr)) {
+    const a = POINTS.map((x) => num(t, { x }));
+    const b = POINTS.map((x) => num(expr, { x }));
+    if (a.some((v) => v === null)) return { result: "skipped", detail: "the answer did not evaluate" };
+    if (b.some((v) => v === null)) return { result: "skipped", detail: `check "${check}" did not evaluate` };
+    return a.every((v, i) => close(v!, b[i]!, 1e-6)) ? { result: "pass", detail: "equivalent at 5 points" } : { result: "fail", detail: `check "${check}" is not ${target}` };
+  }
+  const a = num(t);
+  const b = num(expr);
+  if (a === null) return { result: "skipped", detail: "the answer did not evaluate" };
+  if (b === null) return { result: "skipped", detail: `check "${check}" did not evaluate` };
+  // a grid-in decimal is as precise as its digits (".6667" for 2/3)
+  const decimals = /^\s*-?\d*\.(\d+)\s*$/.exec(target)?.[1]?.length ?? 0;
+  const tol = decimals ? Math.pow(10, -decimals) * 1.0001 : 0;
+  return Math.abs(a - b) <= tol || close(a, b, 1e-6) ? { result: "pass", detail: `= ${b}` } : { result: "fail", detail: `check "${check}" = ${b}, not ${target}` };
+}

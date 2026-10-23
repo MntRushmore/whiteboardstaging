@@ -26,6 +26,9 @@ public enum SATCopy {
     public static let strike = "Cross out"
     public static let restore = "Bring back"
     public static let gridInLabel = "Your answer"
+    public static let gridInTap = "Tap to type your answer"
+    /// the grid-in's rule beside the box on the page (the design notes)
+    public static let gridInRulesShort = "Up to 5 characters. A fraction like 3/4 or a decimal."
     public static let gridInRules = "Fractions or decimals. Up to 5 characters, 6 with a minus. No mixed numbers."
     public static let solution = "Solution"
     public static let desmos = "On the graphing calculator"
@@ -63,7 +66,7 @@ public enum SATCopy {
     public static let graphDone = "Graphed on your board."
 
     // the end of a set
-    public static let setDone = "Set complete"
+    public static let setDone = "Set done"
     public static func score(_ right: Int, _ count: Int) -> String { "\(right)/\(count)" }
     public static let scoreLine = "right on the first try"
     public static func secondTries(_ n: Int) -> String { n == 1 ? "1 more right on the second try." : "\(n) more right on the second try." }
@@ -97,4 +100,84 @@ public enum SATCopy {
     public static let setFailed = "Couldn't get questions. Check the Wi-Fi, then try again."
     public static let noQuestions = "No questions for that yet. Try another skill."
     public static func correctOf(_ c: Int, _ a: Int) -> String { "\(c) of \(a)" }
+
+    // v2: the question is the page (docs/SAT-V2.md, docs/sat2/DESIGN-NOTES.md)
+    public static func questionShort(_ n: Int, _ count: Int) -> String { "Q\(n) of \(count)" }
+    public static let reviewChip = "REVIEW"
+    public static let helpMe = "Help me"
+    public static let checkShort = "Check"
+    public static let nextShort = "Next"
+    public static func walkStep(_ k: Int, _ n: Int) -> String { "Step \(k) of \(n) · Tap to go on" }
+    public static func walkDone(_ n: Int) -> String { "All \(n) steps · Tap to check" }
+    public static let nudgeLabel = "NUDGE"
+    public static let nudgeFooter = "Stuck still? Tap Help me again for one step."
+    public static let stepFooter = "Still stuck? Help me walks you through it."
+    public static let yourTurn = "Your turn: the next line."
+    public static func youPicked(_ key: String) -> String { "YOU PICKED \(key)" }
+    public static func youTyped(_ answer: String) -> String { "YOU TYPED \(answer)" }
+    public static let notQuite = "Not quite."
+    public static let walkMeThrough = "Walk me through it"
+    /// The session's capped line: a free account's says Help me still works; no account's, what an account gives.
+    public static func cappedLine(cap: Int, hasAccount: Bool = true) -> String {
+        hasAccount ? "Tutor checks used up today: \(cap) of \(cap). Help me still works."
+            : "Tutor checks used up today: \(cap) of \(cap). Make a free account for 20 a day."
+    }
+    public static let ladderTitle = "HELP ME, THREE TAPS"
+    public static let ladderNudge = "Nudge"
+    public static let ladderNudgeLine = "A question to get you going."
+    public static let ladderStep = "One step"
+    public static let ladderStepLine = "The next line of the solution."
+    public static let ladderWalk = "Walk me through it"
+    public static let ladderWalkLine = "The whole solution, step by step."
+    public static let free = "Free"
+    public static let fromSolutionToday = "From the solution today"
+    public static let ladderFooter = "The board, Graph it and the answer check all still work."
+    public static func isRight(_ a: String) -> String { "\(a) is right." }
+    public static func answerIsShort(_ a: String) -> String { "The answer is \(a)." }
+    public static let backToWork = "Back to my work"
+    public static let nextQuestion = "Next question"
+    public static let seeResults = "See results"
+    public static let paperWay = "THE PAPER WAY"
+    public static let desmosWay = "THE DESMOS WAY"
+    public static let desmosWayLine = "the graphing calculator in the SAT app"
+    public static let intoTheDeck = "Into the deck"
+    public static let backInADay = "Back in 1 day"
+    public static func comeBackTomorrow(_ n: Int) -> String { n == 1 ? "1 comes back tomorrow." : "\(n) come back tomorrow." }
+    public static let deckRule = "Each missed question returns in 1 day, then in 3 days. Get it right on a review and it's cleared."
+    public static let deckTitle = "YOUR MISTAKE DECK"
+    public static func toReviewToday(_ n: Int) -> String { "\(n) to review today" }
+    public static func reviewsThenNew(_ r: Int, _ count: Int) -> String {
+        "\(r) review\(r == 1 ? "" : "s"), then \(max(0, count - r)) new picked for you."
+    }
+    public static func seeMissed(_ n: Int) -> String { "See the \(n) missed" }
+    public static let graphField = "Graph an equation"
+    public static let noMoreSteps = "That's the whole solution."
+    public static let pickingUp = "Picking up from your work"
+
+    // v2: the end of a set and SAT home (docs/sat2/DESIGN-NOTES.md frames 11 and 12)
+    public static let mixedPractice = "Mixed practice"
+    public static func scoreOf(_ r: Int, _ n: Int) -> String { "\(r) of \(n)" }
+    public static func setLine(minutes: Int, helped: Int) -> String {
+        let time = minutes == 1 ? "1 minute." : "\(minutes) minutes."
+        let help = helped == 0 ? "No Help me." : helped == 1 ? "Help me on 1 question." : "Help me on \(helped) questions."
+        return "\(time) \(help)"
+    }
+    public static func clock(_ seconds: Int) -> String { "\(seconds / 60):" + String(format: "%02d", seconds % 60) }
+    public static let deckEmpty = "Nothing for the deck."
+    public static let homeTitle = "SAT math"
+    public static func toReview(_ n: Int) -> String { "\(n) to review" }
+    public static let toReviewLine = "Questions you missed earlier this week. They start your next set."
+    public static let noReviewsTitle = "Practice 10"
+    public static let noReviewsLine = "A mixed set that adapts to you. Missed questions come back as reviews."
+    public static let dueToday = "DUE TODAY"
+    public static func dueCount(_ n: Int) -> String { n == 1 ? "1 question" : "\(n) questions" }
+    public static let answeredTodayShort = "Answered today"
+    public static let rightToday = "Right today"
+    public static let freeTutorLeft = "Free tutor left today"
+    public static func ofCap(_ left: Int, _ cap: Int) -> String { "\(left) of \(cap)" }
+    public static let progressLabel = "PROGRESS"
+    public static let roughEstimate = "rough estimate, math section"
+    public static let skills = "Skills"
+    public static let tapToPractice = "Tap one to practice it"
+    public static let practiceTag = "PRACTICE"
 }

@@ -101,6 +101,29 @@ function safely<T>(fn: () => T): T | null {
   }
 }
 
+/**
+ * The next rewrite of a line that is a chain of rewrites of one expression in its letters (every side
+ * the same expression: `10(3x+5) - 4x = 30x + 50 - 4x`): its last side simplified, or null (not such a
+ * chain, or its last side is as simple as it gets).
+ */
+function nextRewrite(engine: LiveEngine, latex: string, mode: HelpMode): string[] | null {
+  if (/<|>|\\(?:le|ge|leq|geq|neq|ne|approx|lt|gt)(?![a-zA-Z])/.test(latex)) return null;
+  const sides = latex.split("=").map((s) => s.trim());
+  if (sides.length < 2 || sides.some((s) => !s)) return null;
+  const analyses = sides.map((s) => safely(() => engine.analyzeLine(s, { mode })));
+  if (analyses.some((a) => !a || a.kind !== "expression" || !a.math || !/[a-zA-Z]/.test(a.math))) return null;
+  for (let i = 1; i < sides.length; i++) {
+    const same = safely(() => engine.analyzeLine(sides[i], { mode, previous: analyses[i - 1]! }));
+    if (same?.verdict !== "ok") return null;
+  }
+  const steps = safely(() => engine.simplifySteps!(sides[sides.length - 1]));
+  if (!steps || steps.length === 0) return null;
+  // a rewrite back to a side already in the chain (`2x + 6` factored to `2(x + 3)`) is no step on
+  const flat = (s: string) => s.replace(/^\s*=/, "").replace(/\\left|\\right|\\cdot|\s|[{}*]/g, "");
+  const written = new Set(sides.map(flat));
+  return steps.some((s) => written.has(flat(s))) ? null : steps;
+}
+
 function capped(steps: readonly string[]): string[] {
   return steps.slice(0, LIVE_LIMITS.maxSolveSteps);
 }
@@ -192,6 +215,13 @@ export function localSolve(engine: LiveEngine, lines: readonly string[], targetI
   // target with a domain of its own refuses a second one and is solved as written.
   const domain = opts.domain ?? targetAnalysis?.domain?.latex;
   const inDomain = domain && TRIG.test(target) && !OWN_DOMAIN.test(target) ? `${target}, \\ ${domain}` : null;
+  // 0c. a chain of rewrites of one expression (`10(3x+5) - 4x = 30x + 50 - 4x`): the next rewrite of its
+  //     last side (`= 26x + 50`), never the chain "solved" as an equation (`30x + 50 - 4x = 30x + 50 - 4x`,
+  //     `0 = 0`, every x). A chain whose last side is already simplest (`2(x+3) = 2x + 6`, how many
+  //     solutions?) keeps the equation's path below.
+  const rewrite = target && engine.simplifySteps ? nextRewrite(engine, target, mode) : null;
+  if (rewrite) return { source: "simplifySteps", steps: capped(rewrite.map(localAnswerStep)) };
+
   if (handwriting && target) {
     const solved = (inDomain ? safely(() => engine.solveLatex(inDomain, solveOptions)) : null) ?? safely(() => engine.solveLatex(target, solveOptions));
     if (solved && solved.steps.length > 0) {

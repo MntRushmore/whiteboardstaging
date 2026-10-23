@@ -86,11 +86,28 @@ struct MemoryBoardRemote: BoardRemote {
 
 /// The Live routes in a stub run: a read of anything is "unknown" (no maths is judged, nothing is
 /// called), check and solve finish at once. Every call is counted: a capped page must make none.
+/// `reads` (Debug `-satStubRead "4x - 5 = 2x + 9|2x = 14"`): the reads in turn instead, so the live
+/// Help me has a line to help with (the engine's step is the iPad's own: no model is called).
 final class SATQuietLiveServices: LiveServices, @unchecked Sendable {
     private let lock = NSLock()
     private var _calls = 0
+    private var _reads: [String]
+    private var readsServed = 0
     var calls: Int { lock.withLock { _calls } }
     private func count() { lock.withLock { _calls += 1 } }
+
+    init(reads: [String] = []) {
+        _reads = reads
+    }
+
+    private func nextRead() -> String? {
+        lock.withLock {
+            guard !_reads.isEmpty else { return nil }
+            let r = _reads[min(readsServed, _reads.count - 1)]
+            readsServed += 1
+            return r
+        }
+    }
 
     // (the replies with no public initialiser fail as offline would: nothing the session needs)
     func capabilities() async throws -> LiveCapabilities {
@@ -99,6 +116,7 @@ final class SATQuietLiveServices: LiveServices, @unchecked Sendable {
 
     func recognize(_ request: RecognizeRequest) async throws -> RecognizeResponse {
         count()
+        if let latex = nextRead() { return RecognizeResponse(latex: latex, text: latex, kind: "math", confidence: 0.995, provider: "mathpix", ms: 5) }
         return RecognizeResponse(latex: "", text: "", kind: "unknown", confidence: 0.2, provider: "mathpix", ms: 5)
     }
 
@@ -125,8 +143,15 @@ final class SATQuietLiveServices: LiveServices, @unchecked Sendable {
 
 #if DEBUG
 /// Debug launch arguments for SAT mode (the UI tests and the screenshots):
-///  - `-satStub [cap=5,used=0,unlimited=0,answered=0]`: the stub routes, an in-memory board, a quiet
-///    tutor; Home shows signed out too;
+///  - `-satStub [cap=5,used=0,unlimited=0,answered=0,bank=sample,reviews=2]`: the stub routes, an
+///    in-memory board, a quiet tutor; Home shows signed out too; `bank=sample` the bank lane's 20 with
+///    their real v2 notes; `reviews=N` that many due reviews first;
+///  - `-satStubRead "a|b"`: the quiet tutor's reads, in turn (so Help me's live rung has a line);
+///  - `-satLive`: NO stubs — the real routes and the real live services, against whatever server the
+///    scheme points at (`AGATHON_API_URL`: the local stack, docs/IPAD-HANDOFF.md), with the probe and
+///    the test ink shown (the end-to-end run, `SATLiveE2ETests`);
+///  - `-satAutowrite "2x = 8|circle:0,4"`: writes those lines in a student's hand (the training
+///    machinery's `StudentHand`) through the canvas's touch path, one a tap of `sat.debug.write`;
 ///  - `-satAccount none|free|unlimited`: who the stub run is;
 ///  - `-satOpen home|session|summary`: open SAT home (or a session, or a finished set) at launch.
 enum SATDebug {
@@ -137,9 +162,18 @@ enum SATDebug {
         return args[i + 1]
     }
 
-    static var isStub: Bool { args.contains("-satStub") }
+    static var isStub: Bool { args.contains("-satStub") && !isLive }
+
+    /// The end-to-end run: real services, no stubs (the probe shows).
+    static var isLive: Bool { args.contains("-satLive") }
 
     static var openAtLaunch: String? { value("-satOpen") }
+
+    /// Where the probe's "o" circles on the page's plane (graph units; `-satCircle 2,0`).
+    static var circleAt: (x: Double, y: Double) {
+        let parts = (value("-satCircle") ?? "0,4").split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        return parts.count == 2 ? (parts[0], parts[1]) : (0, 4)
+    }
 
     @MainActor static let stubContext: SATContext? = {
         guard isStub else { return nil }
@@ -149,16 +183,37 @@ enum SATDebug {
             if kv.count == 2 { opts[kv[0]] = kv[1] }
         }
         let cap = Int(opts["cap"] ?? "") ?? 5
-        let stub = SATStubService(cap: cap, usedBefore: Int(opts["used"] ?? "") ?? 0, unlimited: opts["unlimited"] == "1")
+        let bank = opts["bank"] == "sample" ? SATFixtures.sample : SATFixtures.questions
+        let stub = SATStubService(questions: bank, cap: cap, usedBefore: Int(opts["used"] ?? "") ?? 0, unlimited: opts["unlimited"] == "1")
+        stub.reviewsDue = Int(opts["reviews"] ?? "") ?? 0
+        stub.reviewsWaiting = stub.reviewsDue > 0 ? 4 : 0
         // a student with history: the progress card and the estimate band
         if let n = Int(opts["answered"] ?? ""), n > 0 {
             stub.history = (0..<n).map { i in
-                let q = SATFixtures.questions[i % SATFixtures.questions.count]
-                return SATAttempt(questionId: q.id + (i >= SATFixtures.questions.count ? "-\(i)" : ""), chosen: "A", correct: i % 3 != 0, seconds: 60, usedTutor: false)
+                let q = bank[i % bank.count]
+                // (every fifth skill's answers mostly missed: the skills a student would see flagged)
+                let weak = (i % bank.count) % 5 == 3
+                return SATAttempt(questionId: q.id + (i >= bank.count ? "-\(i)" : ""), chosen: "A", correct: weak ? i % 4 == 0 : i % 3 != 0,
+                                  seconds: 60, usedTutor: false)
             }
         }
         let account = SATAccount(rawValue: value("-satAccount") ?? "") ?? .free
         return SATContext(service: stub, isStub: true, stubAccount: account)
     }()
+}
+
+/// SAT's Debug flags read by the session (the stub's reads, the autowrite script).
+enum SATDebugFlags {
+    static var stubReads: [String] {
+        (SATDebug.value("-satStubRead") ?? "").split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    static var autowrite: [String] {
+        (SATDebug.value("-satAutowrite") ?? "").split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+}
+#else
+enum SATDebugFlags {
+    static var stubReads: [String] { [] }
 }
 #endif
