@@ -1597,7 +1597,7 @@
     },
     {
      "text": "Divide each term by $13x$.",
-     "math": "\\frac{13x^2}{13x}=x,, \\frac{39x}{13x}=3"
+     "math": "\\frac{13x^2}{13x}=x, \\frac{39x}{13x}=3"
     },
     {
      "text": "So the expression equals the following.",
@@ -2346,7 +2346,7 @@
    "steps": [
     {
      "text": "Distribute each product.",
-     "math": "4(53-2t) = 212 - 8t,, 3(40-2t) = 120 - 6t"
+     "math": "4(53-2t) = 212 - 8t, 3(40-2t) = 120 - 6t"
     },
     {
      "text": "Subtract the second product from the first. The minus sign changes the sign of both terms.",
@@ -2406,7 +2406,7 @@
    "steps": [
     {
      "text": "Expand both squares.",
-     "math": "(x+7)^2 = x^2 + 14x + 49,, (x-7)^2 = x^2 - 14x + 49"
+     "math": "(x+7)^2 = x^2 + 14x + 49, (x-7)^2 = x^2 - 14x + 49"
     },
     {
      "text": "Subtract the second expansion from the first. The $x^2$ terms and the constants cancel.",
@@ -3979,11 +3979,11 @@
    "steps": [
     {
      "text": "A product is zero when one of its factors is zero.",
-     "math": "x - 5 = 0  or  2x + 3 = 0"
+     "math": "x - 5 = 0, 2x + 3 = 0"
     },
     {
      "text": "Solve each factor's equation.",
-     "math": "x = 5,, x = -\\frac{3}{2}"
+     "math": "x = 5, x = -\\frac{3}{2}"
     }
    ],
    "desmos_tip": null,
@@ -5294,7 +5294,7 @@
     },
     {
      "text": "This gives two candidates.",
-     "math": "x=4  or  x=-4"
+     "math": "x=4, x=-4"
     },
     {
      "text": "Check each candidate in the original equation. For $x = 4$, the left side is $\\sqrt{25} = 5$ and the right side is $5$, so it works. For $x = -4$, the right side is $-3$, which cannot equal a square root, so $-4$ is extraneous.",
@@ -5436,7 +5436,7 @@
    "steps": [
     {
      "text": "Write the parabola in vertex form. Use $(0, 0)$ to find $a$.",
-     "math": "h = a(t-6)^2 + 36,, 0 = 36a + 36,, a = -1"
+     "math": "h = a(t-6)^2 + 36, 0 = 36a + 36, a = -1"
     },
     {
      "text": "Set the height equal to 32.",
@@ -5444,7 +5444,7 @@
     },
     {
      "text": "Solve for $t$.",
-     "math": "(t-6)^2 = 4,, t = 4  or  t = 8"
+     "math": "(t-6)^2 = 4, t = 4, t = 8"
     },
     {
      "text": "The drone is at or above 32 meters from $t = 4$ to $t = 8$, which is 4 minutes.",
@@ -6881,11 +6881,11 @@
    "steps": [
     {
      "text": "Let the sides be $L$ and $W$. Half the perimeter gives the sum of the sides, and the area gives their product.",
-     "math": "L+W=17,, LW=60"
+     "math": "L+W=17, LW=60"
     },
     {
      "text": "The two numbers with sum $17$ and product $60$ are $12$ and $5$.",
-     "math": "L=12,, W=5"
+     "math": "L=12, W=5"
     },
     {
      "text": "Use the Pythagorean theorem to find the diagonal.",
@@ -7042,7 +7042,7 @@
    "steps": [
     {
      "text": "Let $r$ be the number of rows and $t$ the number of trees per row.",
-     "math": "rt=600,, (r-5)(t+20)=600"
+     "math": "rt=600, (r-5)(t+20)=600"
     },
     {
      "text": "Expand the second equation and substitute $rt=600$.",
@@ -7114,7 +7114,7 @@
     },
     {
      "text": "Set the difference equal to 77 and solve for $n$.",
-     "math": "7n-28=77,, n=15"
+     "math": "7n-28=77, n=15"
     },
     {
      "text": "The number of players who competed is $15-7=8$. Check: $105-28=77$.",
@@ -7172,7 +7172,7 @@
     },
     {
      "text": "Rearrange into a quadratic and factor it.",
-     "math": "t^2-21t-270=0,, (t-30)(t+9)=0"
+     "math": "t^2-21t-270=0, (t-30)(t+9)=0"
     },
     {
      "text": "A time must be positive, so $t=30$. Pump A therefore takes $30+15=45$ minutes.",
@@ -7240,7 +7240,7 @@
     },
     {
      "text": "Solve for $k$.",
-     "math": "64=4k+12,, k=13"
+     "math": "64=4k+12, k=13"
     }
    ],
    "desmos_tip": "Graph $y=x^2-6x+k$ with a slider for $k$ along with $y=2x-3$, and adjust $k$ until the line just touches the parabola."
@@ -7274,7 +7274,7 @@
     },
     {
      "text": "Factor to get the two times.",
-     "math": "(t-5)(t-9)=0,, t=5  or  t=9"
+     "math": "(t-5)(t-9)=0, t=5, t=9"
     },
     {
      "text": "The parabola opens downward, so the balloon is at or above 130 meters between these two times, which lasts $9-5=4$ minutes.",
@@ -7337,7 +7337,7 @@
     },
     {
      "text": "Rearrange into a quadratic and factor it.",
-     "math": "x^2-3x-40=0,, (x-8)(x+5)=0"
+     "math": "x^2-3x-40=0, (x-8)(x+5)=0"
     },
     {
      "text": "Check $x=-5$ in the original equation: the left side is $\\sqrt{36}=6$ but the right side is $-6$, so $x=-5$ is extraneous.",
@@ -10719,7 +10719,7 @@
   "common_wrong": [
    {
     "answer": "23/4",
-    "why": "Sign slip at the end: from $4x+23=0$ wrote $x=\\frac{23}{4}$."
+    "why": "Made a sign slip at the end: from $4x+23=0$ wrote $x=\\frac{23}{4}$."
    }
   ]
  },
@@ -13406,7 +13406,7 @@
     },
     {
      "text": "Mara's conditions form a system of inequalities.",
-     "math": "y>38-2x,, y\\ge 11,, x\\ge 4"
+     "math": "y>38-2x, y\\ge 11, x\\ge 4"
     },
     {
      "text": "Test $(12, 15)$: the line's value is $38-24=14$, and $15>14$. Also $15\\ge 11$ and $12\\ge 4$, so all three conditions hold.",
@@ -15805,7 +15805,7 @@
    "steps": [
     {
      "text": "Let $f$ be the fixed fee and $g$ the price per gigabyte, which gives a system of two equations.",
-     "math": "f+16g=51,, f+9g=37"
+     "math": "f+16g=51, f+9g=37"
     },
     {
      "text": "Subtract the second equation from the first to get $7g=14$.",
@@ -15918,7 +15918,7 @@
    "steps": [
     {
      "text": "Let $c$ be the number of café shifts and $b$ the number of bookstore shifts.",
-     "math": "c+b=39,, c-b=7"
+     "math": "c+b=39, c-b=7"
     },
     {
      "text": "Add the two equations to eliminate $b$.",
@@ -16027,7 +16027,7 @@
     },
     {
      "text": "Substitute $x=19$ into the second equation and solve for $y$.",
-     "math": "3y=21-38=-17,, y=-\\frac{17}{3}"
+     "math": "3y=21-38=-17, y=-\\frac{17}{3}"
     }
    ],
    "desmos_tip": "Graph both equations and click the intersection to read the value of y.",
@@ -16111,7 +16111,7 @@
     },
     {
      "text": "Solve for $x$.",
-     "math": "5x = 10,, x = 2"
+     "math": "5x = 10, x = 2"
     },
     {
      "text": "Substitute $x = 2$ into either equation to find the temperature.",
@@ -16188,7 +16188,7 @@
    "steps": [
     {
      "text": "Let $c$ be the number of cars and $s$ the number of SUVs.",
-     "math": "c + s = 58,, 9c + 12s = 570"
+     "math": "c + s = 58, 9c + 12s = 570"
     },
     {
      "text": "Substitute $c = 58 - s$ into the money equation.",
@@ -16196,7 +16196,7 @@
     },
     {
      "text": "Simplify and solve for $s$.",
-     "math": "522 + 3s = 570,, s = 16"
+     "math": "522 + 3s = 570, s = 16"
     }
    ],
    "desmos_tip": null,
@@ -16252,11 +16252,11 @@
    "steps": [
     {
      "text": "Add the equations to eliminate $y$.",
-     "math": "8x = 56,, x = 7"
+     "math": "8x = 56, x = 7"
     },
     {
      "text": "Substitute $x = 7$ into the first equation.",
-     "math": "35 + 2y = 59,, y = 12"
+     "math": "35 + 2y = 59, y = 12"
     },
     {
      "text": "Add the values.",
@@ -16286,7 +16286,7 @@
    "steps": [
     {
      "text": "Let $a$ be the number of adult tickets and $c$ the number of child tickets.",
-     "math": "a + c = 49,, 25a + 21c = 1149"
+     "math": "a + c = 49, 25a + 21c = 1149"
     },
     {
      "text": "Substitute $a = 49 - c$ into the sales equation.",
@@ -16294,7 +16294,7 @@
     },
     {
      "text": "Simplify and solve for $c$.",
-     "math": "1225 - 4c = 1149,, c = 19"
+     "math": "1225 - 4c = 1149, c = 19"
     }
    ],
    "desmos_tip": null,
@@ -16409,7 +16409,7 @@
    "steps": [
     {
      "text": "Let $b$ be the number of bean seeds and $p$ the number of pea seeds.",
-     "math": "b + p = 48,, b = 3p"
+     "math": "b + p = 48, b = 3p"
     },
     {
      "text": "Substitute $b = 3p$ into the first equation and solve.",
@@ -16577,7 +16577,7 @@
    "steps": [
     {
      "text": "Let $s$ be the number of small packages and $l$ the number of large packages.",
-     "math": "s + l = 27,, s + 3l = 59"
+     "math": "s + l = 27, s + 3l = 59"
     },
     {
      "text": "Subtract the first equation from the second.",
@@ -16690,7 +16690,7 @@
    "steps": [
     {
      "text": "Let $g$ be the number of granola bars and $j$ be the number of juice bottles. Write one equation for the total and one for the difference.",
-     "math": "g + j = 45,, g - j = 17"
+     "math": "g + j = 45, g - j = 17"
     },
     {
      "text": "Subtract the second equation from the first to eliminate $g$.",
@@ -16836,7 +16836,7 @@
    "steps": [
     {
      "text": "Let $s$ be the small parts and $L$ the large parts.",
-     "math": "s+L=49,, 4s+16L=340"
+     "math": "s+L=49, 4s+16L=340"
     },
     {
      "text": "Substitute $s = 49 - L$ into the second equation.",
@@ -16844,7 +16844,7 @@
     },
     {
      "text": "Simplify and solve for $L$.",
-     "math": "196+12L=340,, L=12"
+     "math": "196+12L=340, L=12"
     },
     {
      "text": "Then the number of small parts is $49 - 12$.",
@@ -16939,7 +16939,7 @@
    "steps": [
     {
      "text": "Write the two orders as equations.",
-     "math": "3s+2h=51,, 2s+3h=39"
+     "math": "3s+2h=51, 2s+3h=39"
     },
     {
      "text": "Add the equations.",
@@ -17052,7 +17052,7 @@
    "steps": [
     {
      "text": "Let $a$ be the number of adult tickets and $s$ the number of student tickets.",
-     "math": "a+s=55,, 11a+7s=505"
+     "math": "a+s=55, 11a+7s=505"
     },
     {
      "text": "Substitute $a=55-s$ into the revenue equation.",
@@ -17154,7 +17154,7 @@
    "steps": [
     {
      "text": "Let $s$ be the number of small cups and $l$ the number of large cups.",
-     "math": "s+l=39,, 1.5s+2.25l=71.25"
+     "math": "s+l=39, 1.5s+2.25l=71.25"
     },
     {
      "text": "Substitute $s=39-l$ into the money equation.",
@@ -17315,11 +17315,11 @@
    "steps": [
     {
      "text": "Use the labeled points to find each line's slope and intercept.",
-     "math": "\\frac{43-25}{2}=9,, \\frac{53-45}{2}=4"
+     "math": "\\frac{43-25}{2}=9, \\frac{53-45}{2}=4"
     },
     {
      "text": "Write the two cost equations.",
-     "math": "y=25+9x,, y=45+4x"
+     "math": "y=25+9x, y=45+4x"
     },
     {
      "text": "Set the costs equal and solve for $x$.",
@@ -17396,7 +17396,7 @@
    "steps": [
     {
      "text": "Let $w$ be walking minutes and $r$ be running minutes.",
-     "math": "w+r=37,, 4w+10r=220"
+     "math": "w+r=37, 4w+10r=220"
     },
     {
      "text": "Substitute $w=37-r$ into the calorie equation.",
@@ -17404,7 +17404,7 @@
     },
     {
      "text": "Simplify and solve for $r$.",
-     "math": "148+6r=220,, r=12"
+     "math": "148+6r=220, r=12"
     }
    ],
    "desmos_tip": null,
@@ -17445,7 +17445,7 @@
    "steps": [
     {
      "text": "Let $L$ be the longer piece and $S$ be the shorter piece.",
-     "math": "L+S=24,, L=2S+3"
+     "math": "L+S=24, L=2S+3"
     },
     {
      "text": "Substitute the second equation into the first.",
@@ -17453,7 +17453,7 @@
     },
     {
      "text": "Solve for $S$.",
-     "math": "3S=21,, S=7"
+     "math": "3S=21, S=7"
     },
     {
      "text": "Find the longer piece.",
@@ -17495,7 +17495,7 @@
     },
     {
      "text": "The $x$-coefficient doubles from 3 to 6, so the $y$-coefficient must also double.",
-     "math": "2k=14,, k=7"
+     "math": "2k=14, k=7"
     },
     {
      "text": "Check that the lines are distinct: doubling the first equation gives $6x+14y=92$, and $92 \\ne 47$.",
@@ -17578,11 +17578,11 @@
    "steps": [
     {
      "text": "From the graph, Hive P rises 2 frames per week from 2, and Hive Q rises 1 frame per week from 10.",
-     "math": "y=2x+2,, y=x+10"
+     "math": "y=2x+2, y=x+10"
     },
     {
      "text": "Set the expressions equal to each other and solve for $x$.",
-     "math": "2x+2=x+10,, x=8"
+     "math": "2x+2=x+10, x=8"
     },
     {
      "text": "Substitute $x=8$ into either equation to get the number of frames.",
@@ -17705,7 +17705,7 @@
    "steps": [
     {
      "text": "Let $b$ be the number of banner orders and $c$ be the number of business card orders. Write one equation for the count of orders and one for the money collected.",
-     "math": "b + c = 54,, 42b + 18c = 1452"
+     "math": "b + c = 54, 42b + 18c = 1452"
     },
     {
      "text": "Substitute $c = 54 - b$ into the money equation.",
@@ -17758,7 +17758,7 @@
    "steps": [
     {
      "text": "Let $L$ be the number of local trains and $E$ the number of express trains.",
-     "math": "L+E=14,, 55L+37E=680"
+     "math": "L+E=14, 55L+37E=680"
     },
     {
      "text": "Substitute $L=14-E$ into the time equation.",
@@ -17954,7 +17954,7 @@
    "steps": [
     {
      "text": "Let $p$ be the number of pastry kits and $c$ the number of cookie kits.",
-     "math": "2p+c=38,, p+2c=34"
+     "math": "2p+c=38, p+2c=34"
     },
     {
      "text": "Add the two equations.",
@@ -17990,7 +17990,7 @@
    "steps": [
     {
      "text": "Let $f$ be the entry fee and $r$ the hourly charge.",
-     "math": "f+5r=17,, f+12r=38"
+     "math": "f+5r=17, f+12r=38"
     },
     {
      "text": "Subtract the first equation from the second to find the hourly charge.",
@@ -18036,7 +18036,7 @@
    "steps": [
     {
      "text": "Let $a$ be the number of apple trees and $p$ the number of pear trees. Write one equation for the trees and one for the fruit.",
-     "math": "a+p=52,, 55a+40p=2530"
+     "math": "a+p=52, 55a+40p=2530"
     },
     {
      "text": "Substitute $p=52-a$ into the fruit equation.",
@@ -18351,7 +18351,7 @@
    "steps": [
     {
      "text": "Let $t$ be the number of minutes after noon. Write each balloon's height in terms of $t$.",
-     "math": "h=44+31t,, h=344+11t"
+     "math": "h=44+31t, h=344+11t"
     },
     {
      "text": "Set the two heights equal and solve for $t$.",
@@ -18418,7 +18418,7 @@
    "steps": [
     {
      "text": "Let $g$ be the number of group sessions and $p$ the number of private sessions.",
-     "math": "g + p = 38,, 4g + p = 107"
+     "math": "g + p = 38, 4g + p = 107"
     },
     {
      "text": "Subtract the first equation from the second.",
@@ -18426,7 +18426,7 @@
     },
     {
      "text": "Solve for $g$, then find $p$.",
-     "math": "g = 23,, p = 38 - 23 = 15"
+     "math": "g = 23, p = 38 - 23 = 15"
     },
     {
      "text": "Find the difference between the two counts.",
@@ -18534,7 +18534,7 @@
    "steps": [
     {
      "text": "Let $x$ be the liters of the 20% paint and $y$ the liters of the 45% paint.",
-     "math": "x + y = 30,, 0.20x + 0.45y = 0.30 \\cdot 30 = 9"
+     "math": "x + y = 30, 0.20x + 0.45y = 0.30 \\cdot 30 = 9"
     },
     {
      "text": "Substitute $x = 30 - y$ into the pigment equation.",
@@ -18728,7 +18728,7 @@
    "steps": [
     {
      "text": "Let $g$ be the weight of a gear and $a$ the weight of an axle, in grams, and write the two equations.",
-     "math": "3g+2a=39,, 2g+3a=33"
+     "math": "3g+2a=39, 2g+3a=33"
     },
     {
      "text": "Add the equations and divide by 5 to get the combined weight of one gear and one axle.",
@@ -20012,7 +20012,7 @@
     },
     {
      "text": "Solve for $b$ and write the equation.",
-     "math": "b = 30,, y = 15x + 30"
+     "math": "b = 30, y = 15x + 30"
     }
    ],
    "desmos_tip": null,
@@ -20062,7 +20062,7 @@
     },
     {
      "text": "Substitute $(2, 4)$ to find $b$.",
-     "math": "4 = 12(2) + b,, b = -20"
+     "math": "4 = 12(2) + b, b = -20"
     },
     {
      "text": "Compute $m - b$.",
@@ -20553,7 +20553,7 @@
     },
     {
      "text": "Use the point $(6, 41)$ to find the fixed fee.",
-     "math": "41 = 4 \\cdot 6 + b,, b = 17"
+     "math": "41 = 4 \\cdot 6 + b, b = 17"
     },
     {
      "text": "So the cost is",
@@ -20609,7 +20609,7 @@
     },
     {
      "text": "Parallel lines have equal slopes, so set the slopes equal and solve.",
-     "math": "-\\frac{3}{k} = -2,, k = \\frac{3}{2}"
+     "math": "-\\frac{3}{k} = -2, k = \\frac{3}{2}"
     }
    ],
    "desmos_tip": null,
@@ -20637,7 +20637,7 @@
    "steps": [
     {
      "text": "Let $c$ be the café hours and $t$ the lifeguard hours.",
-     "math": "c + t = 39,, 11c + 15t = 501"
+     "math": "c + t = 39, 11c + 15t = 501"
     },
     {
      "text": "Substitute $c = 39 - t$ into the earnings equation.",
@@ -20645,7 +20645,7 @@
     },
     {
      "text": "Simplify and solve for $t$.",
-     "math": "429 + 4t = 501,, t = 18"
+     "math": "429 + 4t = 501, t = 18"
     },
     {
      "text": "Then $c = 21$, so she worked $21 - 18 = 3$ more hours at the café.",
@@ -20766,7 +20766,7 @@
    "steps": [
     {
      "text": "Let $m$ be the number of mugs and $b$ the number of bowls.",
-     "math": "m+b=37,, 18m+26b=794"
+     "math": "m+b=37, 18m+26b=794"
     },
     {
      "text": "Substitute $m=37-b$ into the money equation.",
@@ -21059,7 +21059,7 @@
     },
     {
      "text": "Find $b$, then add.",
-     "math": "b=3(2)-1=5,, a+b=7"
+     "math": "b=3(2)-1=5, a+b=7"
     }
    ],
    "desmos_tip": "Graph $8x+2y=26$ and $y=3x-1$ and click their intersection to read off $a$ and $b$.",
