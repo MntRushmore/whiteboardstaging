@@ -49,6 +49,28 @@ struct LogicTests {
         #expect(n == 4 * 8 * 5 * 3 * 3)
     }
 
+    /// SAT v2 end-to-end run (2026-10-23): on an SAT page the model, which reads the bank's question, checks
+    /// the lines the engine leaves unjudged — a word problem's `3 + 6m = 51` was never checked, so its
+    /// slip was never ringed. Only there, only settled and asked by Auto, never a carried step or a solved line.
+    @Test func anSATPageChecksWhatTheEngineLeavesUnjudged() {
+        func check(_ a: LineAnalysis?, sat: Bool, settled: Bool = true, auto: Bool = true) -> Bool {
+            LivePolicy.decide(LivePolicy.Input(mode: .suggest, analysis: a, confidence: 0.98, settled: settled, auto: auto, userAsked: false,
+                                               latex: "3 + 6m = 51", checksUnjudged: sat)).runLlmCheck
+        }
+        let unjudged = Self.analysis(kind: "equation", verdict: "none")
+        #expect(check(unjudged, sat: true))
+        #expect(!check(unjudged, sat: false))
+        #expect(!check(unjudged, sat: true, settled: false))
+        #expect(!check(unjudged, sat: true, auto: false))
+        #expect(check(Self.analysis(kind: "function", verdict: "none"), sat: true))
+        #expect(!check(Self.analysis(kind: "equation", verdict: "ok"), sat: true))
+        #expect(!check(Self.analysis(kind: "equation", verdict: "ok", solved: true), sat: true))
+        #expect(!check(Self.analysis(kind: "label", verdict: "none"), sat: true))
+        var carried = Self.analysis(kind: "equation", verdict: "none")
+        carried.carried = true
+        #expect(!check(carried, sat: true))
+    }
+
     @Test func markKeysAndSpotsMatchTheWeb() {
         let line = BrainRect(x: 100, y: 200, w: 300, h: 60)
         // marks.ts markKey: kind, then the rect in 4 px units (Math.round: halves up)

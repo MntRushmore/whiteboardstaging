@@ -314,9 +314,15 @@ extension LiveLoop {
         if let expected = a.expected, !expected.isEmpty,
            (try? await brain.verifyExpected(expected, latex: st.latex)) == .equal { return false }
         if a.kind == "praise" || a.kind == "notation" { return false }
+        // a line still being written is no mistake (SAT v2 end-to-end run, 2026-10-23: the model's "This
+        // equation stops abruptly after the minus sign" ringed `3y = 21 -` mid-thought): a line not checked
+        // yet (held: unfinished, ending in `=` or an operator) or a warn that says only "unfinished" is never
+        // ringed unasked; asked about, its words may still come as a card
+        let unfinished = a.kind == "incomplete" || isHeld(st)
+        if a.verdict == .warn && unfinished && !userAsked && !forceHint { return false }
         guard a.verdict == .warn || (forceHint && id == focus) else { return false }
         guard let cur = lines[id], cur.latex == st.latex else { return false }
-        if a.verdict == .warn {
+        if a.verdict == .warn && !unfinished {
             lines[id]?.modelWarned = cur.latex
             persistLine(id)
             if let fresh = lines[id] {
@@ -332,7 +338,7 @@ extension LiveLoop {
             openHint(cur, message: a.message, question: settings.mode == .feedback && !forceHint ? nil : a.question, level: 1)
             carded = true
         }
-        if a.verdict == .warn && !forceHint { suggestNextStep(id) }
+        if a.verdict == .warn && !forceHint && !unfinished { suggestNextStep(id) }
         return carded
     }
 

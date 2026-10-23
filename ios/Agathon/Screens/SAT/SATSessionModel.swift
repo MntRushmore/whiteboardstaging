@@ -375,6 +375,9 @@ final class SATSessionModel: ObservableObject {
         tutor.loop.settings.mode = .suggest
         // Graph it and Graph an equation draw onto the question's own plane
         tutor.loop.questionPlot = { [weak self] screen in self?.questionPlot(on: screen) }
+        // the model reads the bank's question with every check: a setup the engine cannot judge
+        // (`3 + 6m = 51` for "6 dollars plus 3 per muffin") is checked by it, and a slip there ringed
+        tutor.loop.checksUnjudgedLines = true
         tutor.onInkEmpty = { [weak self] in self?.tutorRefused() }
         session.isPenDown = { [weak canvas, weak liveBoard = tutor.liveBoard] in
             if liveBoard?.isPenDown == true { return true }

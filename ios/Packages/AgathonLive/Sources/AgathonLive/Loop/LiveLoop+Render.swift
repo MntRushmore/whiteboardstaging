@@ -204,7 +204,7 @@ extension LiveLoop {
             mode: settings.mode, analysis: st.analysis, confidence: judgedConfidence(st), settled: settled ?? self.settled,
             auto: autoFor(st), userAsked: userAsked, hintsShownForLine: st.hintsShown, openHintCount: hints.count,
             rewritesWithWarn: st.rewritesWithWarn, liveShapeCount: liveShapeCount(), latex: st.latex,
-            answerOnEquals: settings.answerOnEquals, held: isHeld(st))
+            answerOnEquals: settings.answerOnEquals, held: isHeld(st), checksUnjudged: checksUnjudgedLines)
     }
 
     func decision(_ st: LiveLine, userAsked: Bool = false, settled: Bool? = nil) -> LivePolicy.Decision {

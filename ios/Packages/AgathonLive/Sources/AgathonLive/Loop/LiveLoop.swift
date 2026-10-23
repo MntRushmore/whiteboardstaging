@@ -206,6 +206,11 @@ public final class LiveLoop: ObservableObject {
     /// coordinates, instead of putting a graph object beside the line.
     public var questionPlot: ((RecordID) -> QuestionPlot?)?
 
+    /// SAT v2: every check carries the bank's question (the server adds it), so the lines the engine
+    /// leaves unjudged are checked by the model too (`LivePolicy.Input.checksUnjudged`). The SAT
+    /// session turns it on; an ordinary board keeps it off.
+    public var checksUnjudgedLines = false
+
     // MARK: network
 
     var offlineQueue = Set<String>()
