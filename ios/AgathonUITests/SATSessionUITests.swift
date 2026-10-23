@@ -112,11 +112,18 @@ final class SATSessionUITests: XCTestCase {
         tap("sat.debug.write")
         probe("tutor on live on passes 1", timeout: 20)
         probe("read 1", timeout: 20)
+        sleep(2)
+        // the tutor's own Check / Next corner never shows on an SAT page (its Check is by Help me)
+        XCTAssertFalse(element("live.check").exists)
+        XCTAssertFalse(element("live.next").exists)
         tap("sat.helpMe")
         XCTAssertTrue(element("sat.nudge").waitForExistence(timeout: 5))
         waitFor("sat.nudge.text", label: "distribute the 4", timeout: 5)
         waitFor("sat.helpMe", value: "1 of 3", timeout: 5)
         snap("landscape-03-rung1-nudge")
+        // a tap on the nudge puts it away; Help me again climbs on
+        tap("sat.nudge")
+        probe("nudge no", timeout: 5)
         tap("sat.helpMe")
         // rung 2: one step written by the tutor, "Your turn" beside it
         probe("rung 2", timeout: 10)
@@ -182,6 +189,41 @@ final class SATSessionUITests: XCTestCase {
         snap("landscape-02-figure-marks-graph")
     }
 
+    /// The walk-through on a plotted question draws the rise and the run on its plane (frame 5).
+    func test9TheWalkThroughDrawsOnTheFigure() throws {
+        launch(stub: "cap=20,used=20")
+        openSet()
+        for _ in 2...4 { tap("sat.next") }
+        waitFor("sat.position", label: "Q4 of 10", timeout: 10)
+        tap("sat.helpMe")
+        XCTAssertTrue(element("sat.nudge").waitForExistence(timeout: 5))
+        tap("sat.helpMe")
+        probe("yourTurn yes", timeout: 15)
+        tap("sat.helpMe")
+        probe("walk 1/3", timeout: 10)
+        // step 1 finds the slope from the two points: both ringed, the run and the rise drawn and sized
+        probe("legs 4", timeout: 10)
+        XCTAssertTrue(element("sat.walk.figureLabel").waitForExistence(timeout: 5))
+        probe("calls 0")
+        snap("landscape-05b-walk-on-the-figure")
+    }
+
+    /// A wrong choice whose why names maths the tutor read on the page rings that line; Try again
+    /// takes the ring away. (The stubbed read: no model.)
+    func test10TheWrongAnswerRingsItsLine() throws {
+        launch(stub: "cap=20,used=0", extra: ["-satStubRead", "2x = 4", "-satAutowrite", "2x = 4"])
+        openSet()
+        tap("sat.debug.write")
+        probe("read 1", timeout: 20)
+        tap("sat.choice.A")
+        tap("sat.check")
+        waitFor("sat.wrong.why", label: "2x = 4", timeout: 5)
+        probe("rings 1", timeout: 5)
+        snap("landscape-06b-wrong-answer-ringed")
+        tap("sat.wrong.tryAgain")
+        probe("rings 0", timeout: 5)
+    }
+
     // MARK: - the grid-in
 
     func test5TheGridInsKeypadAndACommonWrongAnswer() throws {
@@ -208,9 +250,9 @@ final class SATSessionUITests: XCTestCase {
     /// The bank lane's sample with two reviews due: SAT home's line, the review chip, the end of the
     /// set's deck; then portrait: the page scaled to the width, the solution's ways as tabs.
     func test6TheDeckAndPortrait() throws {
-        launch(stub: "cap=20,used=0,bank=sample,reviews=2")
+        launch(stub: "cap=20,used=8,bank=sample,reviews=2,answered=46")
         tap("home.sat", wait: 40)
-        waitFor("sat.home.reviews", label: "2 to review today", timeout: 20)
+        waitFor("sat.home.reviews", label: "2 to review", timeout: 20)
         snap("landscape-12-home")
         tap("sat.home.practice10")
         waitFor("sat.position", label: "Q1 of 10", timeout: 30)
@@ -269,8 +311,13 @@ final class SATSessionUITests: XCTestCase {
     func test7PortraitSolutionTabs() throws {
         XCUIDevice.shared.orientation = .portrait
         portrait = true
-        launch(stub: "cap=20,used=0")
-        openSet()
+        launch(stub: "cap=20,used=12,answered=40,reviews=3")
+        tap("home.sat", wait: 40)
+        XCTAssertTrue(element("sat.home.estimate").waitForExistence(timeout: 20))
+        snap("portrait-12-home")
+        tap("sat.home.practice10")
+        XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 30))
+        waitFor("sat.position", label: "Q1 of 10", timeout: 15)
         // upright the page is the window's height (less the top bar's offset) in page units
         probe("page 2107")
         probe("scale 0.640")

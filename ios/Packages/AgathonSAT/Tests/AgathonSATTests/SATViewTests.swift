@@ -34,5 +34,28 @@ struct SATViewTests {
         #expect(f.axisX == 0 && f.axisY == 0)
         #expect(satTick(-3) == "−3" && satTick(2.5) == "2.5")
     }
+
+    /// A point's label never lands on a tick number, an axis or the line: the next free spot round the
+    /// point is taken (the label-vs-tick rule, docs/sat2/DESIGN-NOTES.md "Point labels avoid the line").
+    @Test func aPointLabelTakesTheFirstFreeSpot() {
+        let printer = SATFigurePrinter(style: .standard, text: SATPrintText())
+        let c = CGPoint(x: 500, y: 500)
+        let spots = SATFigurePrinter.spots(round: c, first: 0)
+        #expect(spots.count == 8)
+        #expect(spots[0].anchor == CGPoint(x: 1, y: 1), "above left first")
+        // a tick number sits where above-left would be: the label goes above right
+        var avoid = [CGRect(x: 380, y: 440, width: 110, height: 50)]
+        let items = printer.placed("(0, −2)", size: 18, weight: .semibold, spots: spots, avoid: &avoid, line: [], within: CGRect(x: 0, y: 0, width: 1000, height: 1000))
+        #expect(!items.isEmpty)
+        #expect(avoid.count == 2)
+        #expect(avoid[1].minX >= c.x, "it moved to the right of the point")
+        #expect(!avoid[1].intersects(avoid[0]))
+        // the line through above right too: below right
+        var avoid2 = [CGRect(x: 380, y: 440, width: 110, height: 50)]
+        let line = (0...40).map { CGPoint(x: 500 + Double($0) * 3, y: 500 - Double($0) * 1.2) }
+        _ = printer.placed("(0, −2)", size: 18, weight: .semibold, spots: spots, avoid: &avoid2, line: line, within: CGRect(x: 0, y: 0, width: 1000, height: 1000))
+        #expect(avoid2[1].minY >= c.y, "below the point")
+        #expect(!line.contains { avoid2[1].contains($0) })
+    }
 }
 #endif

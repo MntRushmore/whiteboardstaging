@@ -125,6 +125,11 @@ public final class SATPractice {
             public var review: Bool = false
             /// a wrong answer was sent: the deck brings it back this many days on (v2: 1)
             public var backInDays: Int?
+            /// seconds on the question, and whether Help me was used on it (v2's summary)
+            public var seconds: Int = 0
+            public var helped: Bool = false
+            /// the question's stem (the deck's front card)
+            public var stem: String = ""
 
             public var id: Int { index }
         }
@@ -137,6 +142,24 @@ public final class SATPractice {
         public var count: Int
         /// the questions not right on the first try or not answered (session indices)
         public var toReview: [Int]
+
+        /// The set's time, in whole minutes (at least 1 once anything was done).
+        public var minutes: Int {
+            let s = rows.map(\.seconds).reduce(0, +)
+            return s == 0 ? 0 : max(1, Int((Double(s) / 60).rounded()))
+        }
+
+        /// Questions Help me was used on.
+        public var helped: Int { rows.filter(\.helped).count }
+
+        /// What goes into the mistake deck (a wrong answer sent).
+        public var intoDeck: [Row] { rows.filter { $0.backInDays != nil } }
+
+        /// The set's one skill, when it is a skill's set (else nil: mixed practice).
+        public var oneSkill: String? {
+            let skills = Set(rows.map(\.skill))
+            return skills.count == 1 && rows.count > 1 ? skills.first : nil
+        }
     }
 
     public let service: SATService
@@ -515,7 +538,8 @@ public final class SATPractice {
             // a wrong answer sent schedules the question again, a day on (the server's deck, docs/SAT-V2.md)
             let missedOnce = it.tries.contains { !Self.isRight(q, $0) }
             rows.append(.init(index: i, number: it.number, skill: q.skill, domain: q.domain, verdict: it.verdict, marked: it.marked,
-                              review: q.review, backInDays: missedOnce ? 1 : nil))
+                              review: q.review, backInDays: missedOnce ? 1 : nil, seconds: Int(seconds(at: i).rounded()),
+                              helped: it.ladder.reached != nil, stem: q.stem))
             switch it.verdict {
             case .right(true): first += 1
             case .right(false):

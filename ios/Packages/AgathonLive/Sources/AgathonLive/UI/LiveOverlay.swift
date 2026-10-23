@@ -160,7 +160,9 @@ struct PagesLayer: View {
                 ForEach(pages.readings) { r in chip(r) }
             }
             if let offer = pages.offer { offerBar(offer) }
-            if pages.action != nil || pages.moreRoom { corner(pages.action, moreRoom: pages.moreRoom) }
+            if (pages.action != nil || pages.moreRoom) && LivePages.showsActionCorner(on: pages.page) {
+                corner(pages.action, moreRoom: pages.moreRoom)
+            }
             if pages.page?.kind == .done { allDone }
             if let offer = tryOffer { nowYouTry(offer) }
         }

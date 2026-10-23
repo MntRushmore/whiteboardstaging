@@ -145,6 +145,7 @@ private struct SATBoardRoom: View {
                 overlay: { viewport in
                     ZStack {
                         if let tutor = model.tutor {
+                            // (on an SAT page the tutor's own Check / Next corner never shows: LivePages)
                             LiveOverlay(loop: tutor.loop, geometry: tutor.liveBoard, onGrownUp: { model.cover = .plan },
                                         onSpeak: nil, showsOutOfInk: false)
                         }
@@ -265,7 +266,7 @@ private struct SATPageLayer: View {
                     SATNudgeNote(text: n.text, k: k)
                         .alignmentGuide(.leading) { _ in -at.x }
                         .alignmentGuide(.top) { _ in -at.y }
-                        .onTapGesture { model.objectWillChange.send() }
+                        .onTapGesture { model.dismissNudge() }
                 }
                 answerTargets(layout, q)
                 if model.showsWrongNote { wrongNote(layout, q) }

@@ -148,4 +148,30 @@ public enum SATCopy {
     public static func seeMissed(_ n: Int) -> String { "See the \(n) missed" }
     public static let graphField = "Graph an equation"
     public static let noMoreSteps = "That's the whole solution."
+
+    // v2: the end of a set and SAT home (docs/sat2/DESIGN-NOTES.md frames 11 and 12)
+    public static let mixedPractice = "Mixed practice"
+    public static func scoreOf(_ r: Int, _ n: Int) -> String { "\(r) of \(n)" }
+    public static func setLine(minutes: Int, helped: Int) -> String {
+        let time = minutes == 1 ? "1 minute." : "\(minutes) minutes."
+        let help = helped == 0 ? "No Help me." : helped == 1 ? "Help me on 1 question." : "Help me on \(helped) questions."
+        return "\(time) \(help)"
+    }
+    public static func clock(_ seconds: Int) -> String { "\(seconds / 60):" + String(format: "%02d", seconds % 60) }
+    public static let deckEmpty = "Nothing for the deck."
+    public static let homeTitle = "SAT math"
+    public static func toReview(_ n: Int) -> String { "\(n) to review" }
+    public static let toReviewLine = "Questions you missed earlier this week. They start your next set."
+    public static let noReviewsTitle = "Practice 10"
+    public static let noReviewsLine = "A mixed set that adapts to you. Missed questions come back as reviews."
+    public static let dueToday = "DUE TODAY"
+    public static func dueCount(_ n: Int) -> String { n == 1 ? "1 question" : "\(n) questions" }
+    public static let answeredTodayShort = "Answered today"
+    public static let freeTutorLeft = "Free tutor left today"
+    public static func ofCap(_ left: Int, _ cap: Int) -> String { "\(left) of \(cap)" }
+    public static let progressLabel = "PROGRESS"
+    public static let roughEstimate = "rough estimate, math section"
+    public static let skills = "Skills"
+    public static let tapToPractice = "Tap one to practice it"
+    public static let practiceTag = "PRACTICE"
 }

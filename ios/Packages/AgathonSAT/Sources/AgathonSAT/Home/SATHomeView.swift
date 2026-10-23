@@ -13,9 +13,12 @@ public struct SATHomeActions {
     public init() {}
 }
 
-/// SAT home (docs/SAT-MODE.md, "SAT home"): today (questions answered, free tutor questions left),
-/// Practice 10 (mixed and adaptive), Pick a skill, and progress by domain and skill, with the rough
-/// estimate band once there is one, labelled honestly. Two columns held sideways, one upright.
+/// SAT home (docs/SAT-V2.md; docs/sat2/DESIGN-NOTES.md frame 12). Left: today (the mistake deck's
+/// "3 to review" with its cards, Practice 10 and what the set starts with, answered today and the free
+/// tutor left as a cobalt bar) and progress (the rough estimate's band on 200–800 with its honest
+/// note, then the four domains). Right: every skill by domain, right of answered as a bar, a skill
+/// under half right flagged in tomato with PRACTICE, untried ones "—"; a tap starts a set of it.
+/// One column upright.
 public struct SATHomeView: View {
     let progress: SATProgress?
     let loading: Bool
@@ -25,7 +28,6 @@ public struct SATHomeView: View {
     let actions: SATHomeActions
 
     @State private var width: CGFloat = 0
-    @State private var openDomain: SATDomain?
 
     public init(progress: SATProgress?, loading: Bool, failed: Bool, account: SATAccount, starting: SATNextRequest?, actions: SATHomeActions) {
         self.progress = progress
@@ -38,29 +40,29 @@ public struct SATHomeView: View {
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: DS.Space.xl) {
+            VStack(alignment: .leading, spacing: DS.Space.l) {
                 topBar
                 if width >= 900 {
                     HStack(alignment: .top, spacing: DS.Space.l) {
                         VStack(spacing: DS.Space.l) {
                             todayCard
-                            skillsCard
+                            progressCard
                         }
-                        .frame(width: (width - DS.Space.l) * 0.56)
-                        progressCard
+                        .frame(width: (width - DS.Space.l) * 0.58)
+                        skillsCard
                     }
                 } else {
                     todayCard
-                    progressCard
                     skillsCard
+                    progressCard
                 }
             }
-            .padding(.horizontal, width < 700 ? DS.Space.l : DS.Space.xxl)
+            .padding(.horizontal, width < 700 ? DS.Space.l : DS.Space.xl)
             .padding(.top, DS.Space.m)
             .padding(.bottom, DS.Space.xxxl)
-            .frame(maxWidth: 1240)
+            .frame(maxWidth: 1320)
             .frame(maxWidth: .infinity)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 - 2 * ($0 < 700 ? DS.Space.l : DS.Space.xxl) }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 - 2 * ($0 < 700 ? DS.Space.l : DS.Space.xl) }
         }
         .background(DS.Color.ground.ignoresSafeArea())
         .accessibilityIdentifier("sat.home")
@@ -74,8 +76,8 @@ public struct SATHomeView: View {
                 RoundButton(.back, label: "Back to Home", action: close)
                     .accessibilityIdentifier("sat.home.back")
             }
-            Text(SATCopy.title)
-                .dsFont(.title)
+            Text(SATCopy.homeTitle)
+                .dsFont(.title, size: 40)
                 .foregroundStyle(DS.Color.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -86,49 +88,65 @@ public struct SATHomeView: View {
                     .fixedSize()
                     .accessibilityIdentifier("sat.home.signUp")
             }
+            if let p = progress, p.streakDays > 0 {
+                HStack(spacing: 10) {
+                    DSIcon(.flame, size: 18)
+                    Text(SATCopy.streak(p.streakDays)).dsFont(.button, size: 17)
+                }
+                .foregroundStyle(DS.Color.ink)
+                .padding(.horizontal, 22)
+                .frame(height: 56)
+                .background(Capsule().fill(DS.Color.paper))
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("sat.home.streak")
+            }
         }
         .frame(minHeight: DS.Size.minTarget)
     }
 
     // MARK: today
 
+    private var due: Int { progress?.reviewsDue ?? 0 }
+
     private var todayCard: some View {
         let today = progress?.today
-        return Card(.paper, radius: DS.Radius.cardLarge, padding: DS.Space.xl) {
-            Text(SATCopy.today).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
-            // the mistake deck (v2): the reviews due today come first in a set
-            if let due = progress?.reviewsDue, due > 0 {
-                HStack(alignment: .center, spacing: DS.Space.m) {
-                    SATDeckStack().frame(width: 64, height: 52)
-                    Text(SATCopy.toReviewToday(due))
-                        .dsFont(.display, size: 46)
+        return Card(.paper, radius: 36, padding: DS.Space.xl) {
+            HStack(alignment: .top, spacing: DS.Space.l) {
+                VStack(alignment: .leading, spacing: DS.Space.s) {
+                    Text(SATCopy.today.uppercased()).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
+                    Text(due > 0 ? SATCopy.toReview(due) : SATCopy.noReviewsTitle)
+                        .dsFont(.display, size: 64)
                         .foregroundStyle(DS.Color.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .accessibilityIdentifier(due > 0 ? "sat.home.reviews" : "sat.home.hero")
+                    Text(due > 0 ? SATCopy.toReviewLine : SATCopy.noReviewsLine)
+                        .dsFont(.body, size: 19).foregroundStyle(DS.Color.inkSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("sat.home.reviews")
+                if due > 0 && width >= 700 {
+                    Spacer(minLength: 0)
+                    SATDeckCards(count: due).frame(width: 300, height: 200)
+                }
             }
-            Text(SATCopy.answeredToday(today?.answered ?? 0))
-                .dsFont(.headline, size: 30)
-                .foregroundStyle(DS.Color.ink)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("sat.home.answered")
-            tutorRow(today)
-                .padding(.top, DS.Space.xxs)
             HStack(alignment: .center, spacing: DS.Space.m) {
-                PillButton(starting == SATNextRequest() ? "Getting questions…" : SATCopy.practice10, icon: .play, kind: .primary, size: .large) {
+                PillButton(starting == SATNextRequest() ? "Getting questions…" : SATCopy.practice10, icon: .play, kind: .sunny, size: .large) {
                     actions.practice(SATNextRequest())
                 }
                 .disabled(starting != nil)
                 .fixedSize()
                 .accessibilityIdentifier("sat.home.practice10")
-                Text((progress?.reviewsDue ?? 0) > 0 ? SATCopy.reviewsThenNew(min(progress?.reviewsDue ?? 0, SATLimits.setSize), SATLimits.setSize)
-                     : SATCopy.practice10Line)
-                    .dsFont(.callout, size: 15)
+                Text(due > 0 ? SATCopy.reviewsThenNew(min(due, SATLimits.setSize), SATLimits.setSize) : SATCopy.practice10Line)
+                    .dsFont(.callout, size: 17)
                     .foregroundStyle(DS.Color.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.top, DS.Space.s)
+            .padding(.top, DS.Space.m)
+            Rectangle().fill(DS.Color.line).frame(height: 1.5).padding(.vertical, DS.Space.m)
+            HStack(alignment: .bottom, spacing: DS.Space.xl) {
+                stat(SATCopy.answeredTodayShort, "\(today?.answered ?? 0)", id: "sat.home.answered")
+                tutorStat(today)
+            }
             if failed {
                 HStack(spacing: DS.Space.xs) {
                     Text(SATCopy.loadFailed).dsFont(.caption).foregroundStyle(DS.Color.ink)
@@ -141,76 +159,52 @@ public struct SATHomeView: View {
         .accessibilityIdentifier("sat.home.today")
     }
 
-    /// The day's free tutor questions as the mark's dots: used are filled (the tutor's cobalt), left are rings.
-    @ViewBuilder private func tutorRow(_ today: SATProgress.Today?) -> some View {
-        if account == .unlimited || today?.unlimited == true {
-            Text(SATCopy.tutorUnlimited).dsFont(.callout, size: 16).foregroundStyle(DS.Color.ink)
-        } else if let today {
-            let cap = max(1, today.cap), used = min(today.tutorUsed, cap)
-            VStack(alignment: .leading, spacing: 8) {
-                if cap <= 20 {
-                    HStack(spacing: cap > 10 ? 4 : 6) {
-                        ForEach(0..<cap, id: \.self) { i in
-                            if i < used {
-                                Circle().fill(DS.Color.tutorInkEmpty).frame(width: cap > 10 ? 10 : 14, height: cap > 10 ? 10 : 14)
-                            } else {
-                                Circle().fill(DS.Color.tutorInk).frame(width: cap > 10 ? 10 : 14, height: cap > 10 ? 10 : 14)
-                            }
-                        }
-                    }
-                    .accessibilityHidden(true)
-                }
-                Text(SATCopy.tutorLeftToday(cap - used, cap))
-                    .dsFont(.callout, size: 16)
-                    .foregroundStyle(DS.Color.ink)
-                    .accessibilityIdentifier("sat.home.tutorLeft")
-            }
-        } else if loading {
-            Text(" ").dsFont(.callout, size: 16)
+    private func stat(_ label: String, _ value: String, id: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).dsFont(.callout, size: 17).foregroundStyle(DS.Color.inkSecondary)
+            Text(value).dsFont(.bigNumber, size: 40).foregroundStyle(DS.Color.ink).monospacedDigit()
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(id)
     }
 
-    // MARK: pick a skill
-
-    private var skillsCard: some View {
-        Card(.paper, radius: DS.Radius.cardLarge, padding: DS.Space.xl) {
-            Text(SATCopy.pickSkill).dsFont(.headline, size: 22).foregroundStyle(DS.Color.ink)
-                .accessibilityAddTraits(.isHeader)
-            ForEach(SATDomain.allCases) { domain in
-                VStack(alignment: .leading, spacing: DS.Space.xs) {
-                    Text(domain.title).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
-                        .padding(.top, DS.Space.xs)
-                    FlowStack(spacing: DS.Space.xs) {
-                        ForEach(SATTaxonomy.skills(in: domain)) { skill in
-                            Chip(skill.title, onPaper: true) {
-                                actions.practice(SATNextRequest(domain: domain, skill: skill.name))
-                            }
-                            .disabled(starting != nil)
-                            .accessibilityIdentifier("sat.home.skill.\(skill.slug)")
+    /// The free tutor left today as a cobalt bar (cobalt is the tutor's), its count beside it.
+    @ViewBuilder private func tutorStat(_ today: SATProgress.Today?) -> some View {
+        if account == .unlimited || today?.unlimited == true {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(SATCopy.freeTutorLeft).dsFont(.callout, size: 17).foregroundStyle(DS.Color.inkSecondary)
+                Text(SATCopy.tutorUnlimited).dsFont(.button, size: 19).foregroundStyle(DS.Color.ink)
+            }
+            .accessibilityIdentifier("sat.home.tutorLeft")
+        } else if let today {
+            let cap = max(1, today.cap), left = max(0, cap - min(today.tutorUsed, cap))
+            VStack(alignment: .leading, spacing: 10) {
+                Text(SATCopy.freeTutorLeft).dsFont(.callout, size: 17).foregroundStyle(DS.Color.inkSecondary)
+                HStack(spacing: DS.Space.m) {
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(DS.Color.surfaceSunken)
+                            if left > 0 { Capsule().fill(DS.Color.tutorInk).frame(width: max(12, g.size.width * CGFloat(left) / CGFloat(cap))) }
                         }
                     }
+                    .frame(height: 14)
+                    Text(SATCopy.ofCap(left, cap)).dsFont(.button, size: 20).foregroundStyle(DS.Color.ink).monospacedDigit().fixedSize()
                 }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(SATCopy.tutorLeftToday(left, cap))
+            .accessibilityIdentifier("sat.home.tutorLeft")
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("sat.home.skills")
     }
 
     // MARK: progress
 
     private var progressCard: some View {
-        Card(.paper, radius: DS.Radius.cardLarge, padding: DS.Space.xl) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(SATCopy.progress).dsFont(.headline, size: 22).foregroundStyle(DS.Color.ink)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                if let p = progress, p.streakDays > 0 {
-                    Text(SATCopy.streak(p.streakDays)).dsFont(.button, size: 15).foregroundStyle(DS.Color.inkSecondary)
-                }
-            }
+        Card(.paper, radius: 36, padding: DS.Space.xl) {
+            Text(SATCopy.progressLabel).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
             estimate
-                .padding(.vertical, DS.Space.xs)
             if let p = progress, p.answered > 0 {
+                Rectangle().fill(DS.Color.line).frame(height: 1.5).padding(.vertical, DS.Space.xs)
                 ForEach(SATDomain.allCases) { domain in domainRow(domain, p) }
             } else if !loading {
                 Text(SATCopy.noProgress).dsFont(.callout).foregroundStyle(DS.Color.inkSecondary)
@@ -224,15 +218,17 @@ public struct SATHomeView: View {
     /// The band, honestly labelled; hidden while there is none (fewer than 15 answers).
     @ViewBuilder private var estimate: some View {
         if let e = progress?.estimate {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(SATCopy.estimateTitle).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
-                Text("\(e.low)–\(e.high)")
-                    .dsFont(.bigNumber, size: 44)
-                    .foregroundStyle(DS.Color.ink)
-                    .monospacedDigit()
+            VStack(alignment: .leading, spacing: DS.Space.s) {
+                HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
+                    Text("\(e.low)–\(e.high)")
+                        .dsFont(.bigNumber, size: 56)
+                        .foregroundStyle(DS.Color.ink)
+                        .monospacedDigit()
+                    Text(SATCopy.roughEstimate).dsFont(.callout, size: 18).foregroundStyle(DS.Color.inkSecondary)
+                }
                 band(e)
                 Text(e.note?.isEmpty == false ? e.note! : SATCopy.estimateFallbackNote)
-                    .dsFont(.caption)
+                    .dsFont(.callout, size: 16)
                     .foregroundStyle(DS.Color.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -240,105 +236,136 @@ public struct SATHomeView: View {
             .accessibilityIdentifier("sat.home.estimate")
         } else if let p = progress, p.answered > 0 {
             Text(SATCopy.estimateLater(max(1, SATLimits.estimateMinAnswered - p.answered)))
-                .dsFont(.callout, size: 15)
+                .dsFont(.callout, size: 16)
                 .foregroundStyle(DS.Color.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("sat.home.estimateLater")
         }
     }
 
-    /// 200–800 as a track, the band on it as the mark's bar.
+    /// 200–800 as a track with its hundreds, the band on it in ink.
     private func band(_ e: SATProgress.Estimate) -> some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let x0 = CGFloat(e.low - 200) / 600 * w, x1 = CGFloat(e.high - 200) / 600 * w
-            ZStack(alignment: .leading) {
-                Capsule().fill(DS.Color.surfaceSunken).frame(height: 10)
-                Capsule().fill(DS.Color.ink).frame(width: max(10, x1 - x0), height: 10).offset(x: x0)
-            }
-            .frame(height: 10)
-            .overlay(alignment: .bottom) {
-                HStack {
-                    Text("200")
-                    Spacer()
-                    Text("800")
+        VStack(spacing: 10) {
+            GeometryReader { geo in
+                let w = geo.size.width
+                let x0 = CGFloat(e.low - 200) / 600 * w, x1 = CGFloat(e.high - 200) / 600 * w
+                ZStack(alignment: .leading) {
+                    Capsule().fill(DS.Color.surfaceSunken).frame(height: 14)
+                    Capsule().fill(DS.Color.ink).frame(width: max(14, x1 - x0), height: 14).offset(x: x0)
                 }
-                .dsFont(.caption, size: 12)
-                .foregroundStyle(DS.Color.inkSecondary)
-                .offset(y: 20)
             }
+            .frame(height: 14)
+            HStack {
+                Text("200")
+                Spacer()
+                Text("400")
+                Spacer()
+                Text("600")
+                Spacer()
+                Text("800")
+            }
+            .dsFont(.callout, size: 16)
+            .foregroundStyle(DS.Color.inkSecondary)
+            .monospacedDigit()
         }
-        .frame(height: 32)
+        .padding(.vertical, DS.Space.xs)
         .accessibilityHidden(true)
     }
 
     private func domainRow(_ domain: SATDomain, _ p: SATProgress) -> some View {
         let c = p.count(domain)
-        let skills = SATTaxonomy.skills(in: domain).filter { p.count(skill: $0.name).answered > 0 }
-        let open = openDomain == domain
-        return VStack(alignment: .leading, spacing: DS.Space.xs) {
-            Button {
-                withAnimation(DS.Motion.fade) { openDomain = open ? nil : domain }
-            } label: {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(domain.title).dsFont(.button, size: 16).foregroundStyle(DS.Color.ink)
-                            .lineLimit(1).minimumScaleFactor(0.8)
-                        Spacer(minLength: DS.Space.xs)
-                        Text(c.answered > 0 ? SATCopy.correctOf(c.correct, c.answered) : "—")
-                            .dsFont(.button, size: 15).foregroundStyle(DS.Color.inkSecondary).monospacedDigit()
-                        if !skills.isEmpty {
-                            DSIcon(open ? .back : .forward, size: 12).foregroundStyle(DS.Color.inkSecondary)
-                                .rotationEffect(.degrees(open ? -90 : 0))
-                        }
-                    }
-                    meter(c.share, answered: c.answered)
-                }
-                .frame(minHeight: DS.Size.minTarget)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(SATPress())
-            .disabled(skills.isEmpty)
-            .accessibilityLabel("\(domain.title): \(c.correct) right of \(c.answered)")
-            .accessibilityIdentifier("sat.home.domain.\(domain.rawValue)")
-            if open {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(skills) { s in
-                        let sc = p.count(skill: s.name)
-                        HStack {
-                            Text(s.title).dsFont(.callout, size: 15).foregroundStyle(DS.Color.ink).lineLimit(1)
-                            Spacer()
-                            Text(SATCopy.correctOf(sc.correct, sc.answered)).dsFont(.callout, size: 15).foregroundStyle(DS.Color.inkSecondary).monospacedDigit()
-                        }
-                        .accessibilityElement(children: .combine)
-                    }
-                }
-                .padding(.leading, DS.Space.m)
-                .padding(.bottom, DS.Space.xs)
-            }
+        return HStack(spacing: DS.Space.m) {
+            Text(domain.shortTitle).dsFont(.callout, size: 18).foregroundStyle(DS.Color.ink).lineLimit(1)
+                .frame(width: 220, alignment: .leading)
+            meter(c.share, answered: c.answered, weak: false)
+            Text(c.answered > 0 ? "\(c.correct)/\(c.answered)" : "—").dsFont(.callout, size: 16).foregroundStyle(DS.Color.inkSecondary)
+                .monospacedDigit().frame(width: 56, alignment: .trailing)
         }
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sat.home.domain.\(domain.rawValue)")
     }
 
-    /// Right as a share of answered: the mark's bar on a chalk track.
-    private func meter(_ share: Double, answered: Int) -> some View {
+    // MARK: skills
+
+    /// A skill is flagged when it is under half right with a few answered.
+    static func isWeak(_ c: SATProgress.Count) -> Bool { c.answered >= 2 && c.share < 0.5 }
+
+    private var skillsCard: some View {
+        Card(.paper, radius: 36, padding: DS.Space.xl) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(SATCopy.skills).dsFont(.title, size: 32).foregroundStyle(DS.Color.ink).accessibilityAddTraits(.isHeader)
+                Spacer()
+                Text(SATCopy.tapToPractice).dsFont(.callout, size: 16).foregroundStyle(DS.Color.inkSecondary)
+            }
+            ForEach(SATDomain.allCases) { domain in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(domain.title.uppercased()).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
+                        .padding(.top, DS.Space.m)
+                        .padding(.bottom, DS.Space.xxs)
+                    ForEach(SATTaxonomy.skills(in: domain)) { skill in skillRow(skill, domain) }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("sat.home.skills")
+    }
+
+    private func skillRow(_ skill: SATTaxonomy.Skill, _ domain: SATDomain) -> some View {
+        let c = progress?.count(skill: skill.name) ?? SATProgress.Count(answered: 0, correct: 0)
+        let weak = Self.isWeak(c)
+        return Button {
+            actions.practice(SATNextRequest(domain: domain, skill: skill.name))
+        } label: {
+            HStack(spacing: DS.Space.s) {
+                Text(skill.title).dsFont(weak ? .button : .callout, size: 18).foregroundStyle(DS.Color.ink).lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                if weak {
+                    Text(SATCopy.practiceTag).dsFont(.label, size: 13).foregroundStyle(DS.Color.tomato)
+                }
+                Spacer(minLength: DS.Space.s)
+                meter(c.share, answered: c.answered, weak: weak).frame(width: 120)
+                Text(c.answered > 0 ? "\(c.correct)/\(c.answered)" : "—").dsFont(.callout, size: 16).foregroundStyle(DS.Color.inkSecondary)
+                    .monospacedDigit().frame(width: 48, alignment: .trailing)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SATPress())
+        .disabled(starting != nil)
+        .accessibilityLabel("\(skill.title): \(c.answered > 0 ? "\(c.correct) right of \(c.answered)" : "not tried yet")\(weak ? ". Worth practicing." : "")")
+        .accessibilityIdentifier("sat.home.skill.\(skill.slug)")
+    }
+
+    /// Right as a share of answered: the ink bar on a chalk track (tomato for a weak skill).
+    private func meter(_ share: Double, answered: Int, weak: Bool) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(DS.Color.surfaceSunken)
-                if answered > 0 { Capsule().fill(DS.Color.ink).frame(width: max(8, geo.size.width * CGFloat(share))) }
+                if answered > 0 { Capsule().fill(weak ? DS.Color.tomato : DS.Color.ink).frame(width: max(10, geo.size.width * CGFloat(share))) }
             }
         }
-        .frame(height: 8)
+        .frame(height: 10)
     }
 }
-/// The mistake deck drawn as three flat stacked cards (no shadow: the design notes' `line`, `guide`, chalk).
-struct SATDeckStack: View {
+
+/// The mistake deck as three flat stacked cards (`line`, `guide`, chalk; no shadow), the front one
+/// "DUE TODAY" and how many.
+struct SATDeckCards: View {
+    let count: Int
+
     var body: some View {
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(DS.Color.line).offset(x: 0, y: 0).frame(width: 52, height: 40)
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(SATChromeColor.guide).offset(x: 6, y: 6).frame(width: 52, height: 40)
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(DS.Color.surfaceSunken)
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(DS.Color.line, lineWidth: 1))
-                .offset(x: 12, y: 12).frame(width: 52, height: 40)
+            RoundedRectangle(cornerRadius: 26, style: .continuous).fill(DS.Color.line).frame(width: 260, height: 140)
+            RoundedRectangle(cornerRadius: 26, style: .continuous).fill(SATChromeColor.guide).frame(width: 260, height: 140).offset(x: 18, y: 26)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(SATCopy.dueToday).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
+                Text(SATCopy.dueCount(count)).dsFont(.button, size: 19).foregroundStyle(DS.Color.ink)
+            }
+            .padding(24)
+            .frame(width: 260, height: 140, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(DS.Color.surfaceSunken))
+            .offset(x: 36, y: 56)
         }
         .accessibilityHidden(true)
     }
