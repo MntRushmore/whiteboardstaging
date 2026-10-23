@@ -13,6 +13,8 @@ describe("the tutor prompt", () => {
       'The picture is the student\'s whiteboard. The board\'s assistance mode is "feedback".',
       "First decide whether the student needs help: a mistake, unfinished work, a question, or being stuck. Finished correct work, doodles and a word still being written do not need help.",
       'If they need help, write the instructions for your tool draw_on_canvas (Use the Gemini 3 Pro canvas solver to add feedback, hints, or full solutions directly onto the whiteboard image.) with mode "feedback": exactly what to add to the board and where — the words, numbers, marks and arrows, each next to the part of the student\'s work it is about. Be exactly right about the maths. Under 50 words.',
+      "Put additions in the empty space beside the work, at the same size as the student's writing; if there is not room for everything, write less.",
+      "Never ask to circle, ring, box or rewrite any of the student's writing; point at it with an arrow from your note instead.",
       "Mode feedback: point out the mistake and where it is; do not write the corrected answer.",
       'Reply with only this JSON, nothing before or after it: {"needsHelp": true or false, "instructions": "..."}',
     ]);

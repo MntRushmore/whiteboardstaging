@@ -153,7 +153,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
           model: BOARD_DRAW_MODELS.tutor,
           messages: tutorMessages(input.mode, input.imageDataUrl),
           temperature: 0,
-          max_tokens: 500,
+          max_tokens: 1500, // 500 cut off 4 of 9 Solve (cone) replies in the fast-chain check: the kid saw nothing
           reasoning: { effort: "minimal" },
           provider: { sort: "latency" },
           usage: { include: true },

@@ -188,7 +188,7 @@ describe("POST /api/board/draw: a run", () => {
     expect(tutor.body).toMatchObject({
       model: BOARD_DRAW_MODELS.tutor,
       temperature: 0,
-      max_tokens: 500,
+      max_tokens: 1500,
       reasoning: { effort: "minimal" },
       provider: { sort: "latency", data_collection: "deny", zdr: true },
       usage: { include: true },
