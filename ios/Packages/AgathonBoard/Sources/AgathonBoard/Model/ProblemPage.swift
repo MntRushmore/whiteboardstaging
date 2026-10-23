@@ -42,9 +42,13 @@ public struct ProblemPage: Equatable, Sendable {
     public var continues: RecordID?
     /// "More room": the problem goes on on the next page (this page's answer spot moved there)
     public var more: Bool
+    /// a small heading in the problem's place, when the problem itself is shown elsewhere (SAT mode:
+    /// "Q3 · Linear functions", the question in the panel beside the board; docs/SAT-MODE.md)
+    public var heading: String?
 
     public init(kind: Kind = .problem, setId: String? = nil, index: Int? = nil, count: Int? = nil, problem: RecordID? = nil,
-                origin: String? = nil, workTop: Double? = nil, answer: Bool = true, continues: RecordID? = nil, more: Bool = false) {
+                origin: String? = nil, workTop: Double? = nil, answer: Bool = true, continues: RecordID? = nil, more: Bool = false,
+                heading: String? = nil) {
         self.kind = kind
         self.setId = setId
         self.index = index
@@ -55,6 +59,7 @@ public struct ProblemPage: Equatable, Sendable {
         self.answer = answer
         self.continues = continues
         self.more = more
+        self.heading = heading
     }
 
     /// The page in a screen's meta, if it is one (an unknown kind is no page: an older build's
@@ -71,6 +76,7 @@ public struct ProblemPage: Equatable, Sendable {
         answer = v["answer"]?.boolValue ?? true
         continues = v["continues"]?.stringValue.map { RecordID($0) }
         more = v["more"]?.boolValue ?? false
+        heading = v["heading"]?.stringValue
     }
 
     /// As the screen's meta stores it (fields at their default left out).
@@ -85,6 +91,7 @@ public struct ProblemPage: Equatable, Sendable {
         if !answer { o["answer"] = .bool(false) }
         if let continues { o["continues"] = .string(continues.rawValue) }
         if more { o["more"] = .bool(true) }
+        if let heading { o["heading"] = .string(heading) }
         return .object(o)
     }
 

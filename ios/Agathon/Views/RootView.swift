@@ -1,4 +1,5 @@
 import AgathonBoard
+import AgathonDesign
 import AgathonKit
 import AgathonOnboarding
 import AgathonStore
@@ -26,6 +27,10 @@ struct RootView: View {
     /// The kid's first board, handed from the first run to Home.
     @State private var firstBoard: FirstBoardRequest?
     @State private var gate = AppParentalGate()
+    /// "I'm studying for the SAT" couldn't get its session (no App Attest here, offline): why
+    @State private var satTrouble: String?
+    /// a stub run (Debug `-satStub`) that chose SAT on the first run: as if anonymous
+    @State private var satOnly = false
 
     var body: some View {
         #if DEBUG
@@ -51,16 +56,33 @@ struct RootView: View {
                 SplashView()
             } else if onboarding == true {
                 OnboardingFlow(trial: trialOffering, gate: gate) { outcome in finish(outcome) }
-            } else if backend.auth.phase == .signedIn {
+            } else if (backend.auth.phase == .signedIn && backend.auth.isAnonymous) || (satOnly && Self.satStubHome) {
+                // no account: SAT practice is the whole app (docs/SAT-MODE.md)
+                SATHomeScreen()
+                    .id(backend.auth.userId)
+            } else if backend.auth.phase == .signedIn || Self.satStubHome {
                 // A new profile (sign-in, a family switch) starts Home over: nothing read as the last
                 // one carries over.
                 HomeView(firstBoard: firstBoard, tookFirstBoard: { firstBoard = nil })
                     .id(backend.auth.userId)
             } else {
                 SignInView()
+                    .overlay(alignment: .top) {
+                        if let satTrouble {
+                            Banner(.lookAgain, satTrouble, surface: .ink).padding(.top, DS.Space.xl)
+                                .onTapGesture { self.satTrouble = nil }
+                        }
+                    }
             }
         }
         .task(id: backend.auth.phase == .restoring) { await decide() }
+        // an under-13 from SAT practice: the grown-up's first run, from its start
+        .onReceive(NotificationCenter.default.publisher(for: SATAccountRoute.startFirstRun)) { _ in
+            Task {
+                if backend.auth.isAnonymous { try? await backend.auth.signOut(scope: .local) }
+                onboarding = true
+            }
+        }
     }
 
     /// Whether the first run opens, once the stored session has been read.
@@ -86,8 +108,31 @@ struct RootView: View {
             firstBoard = FirstBoardRequest(boardId: handoff.boardId, document: handoff.document, kidName: handoff.kidName)
         case .signedIn:
             firstBoard = nil
+        case .sat:
+            firstBoard = nil
+            satOnly = true
+            Task { await startSAT() }
         }
         onboarding = false
+    }
+
+    /// "I'm studying for the SAT": an anonymous session from the server, then SAT practice.
+    private func startSAT() async {
+        do {
+            try await SATAnonymous.ensureSession(backend)
+            satTrouble = nil
+        } catch {
+            satTrouble = "SAT practice couldn't start on this iPad. Check the Wi-Fi, or sign in."
+        }
+    }
+
+    /// Debug `-satStub`: Home (and its SAT card) without signing in, for the UI tests.
+    static var satStubHome: Bool {
+        #if DEBUG
+        return SATDebug.isStub
+        #else
+        return false
+        #endif
     }
 
     /// Apple's trial through AgathonStore; Debug's `-onboardingTrial started|pending|cancelled` (the UI

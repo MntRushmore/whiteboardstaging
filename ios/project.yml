@@ -47,6 +47,11 @@ packages:
   # checker, Apple's trial and the parental gate.
   AgathonOnboarding:
     path: Packages/AgathonOnboarding
+  # SAT practice (docs/SAT-MODE.md): the contract's models, the /api/sat client, the grid-in rules and
+  # the answer flow (AgathonSATCore), and the question panel, figures, summary and SAT home in grown-up
+  # Blocks (AgathonSAT).
+  AgathonSAT:
+    path: Packages/AgathonSAT
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -76,6 +81,7 @@ targets:
       - package: AgathonStore
       - package: AgathonAsk
       - package: AgathonOnboarding
+      - package: AgathonSAT
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon
@@ -146,6 +152,8 @@ targets:
         - package: AgathonStore/AgathonStoreTests
         - package: AgathonAsk/AgathonAskTests
         - package: AgathonOnboarding/AgathonOnboardingTests
+        - package: AgathonSAT/AgathonSATCoreTests
+        - package: AgathonSAT/AgathonSATTests
       gatherCoverageData: false
       environmentVariables:
         # Tick in Product > Scheme > Edit Scheme > Run > Arguments to call a local `npm run dev`.

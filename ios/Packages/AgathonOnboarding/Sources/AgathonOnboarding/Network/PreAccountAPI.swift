@@ -130,6 +130,35 @@ public final class PreAccountAPI: Sendable {
         _ = try? await attested(Paths.step, body)
     }
 
+    // MARK: - SAT mode with no account
+
+    /// The anonymous session `POST /api/sat/anon` mints for SAT practice (docs/SAT-MODE.md): App
+    /// Attest proves it is the real app (the simulator's debug header off production). The app adopts
+    /// it with `AuthService.setSession`; it never signs in anonymously itself.
+    public struct AnonSession: Decodable, Sendable, Equatable {
+        public let accessToken: String
+        public let refreshToken: String
+        public let expiresAt: Double?
+        public let userId: String?
+
+        enum CodingKeys: String, CodingKey {
+            case accessToken = "access_token"
+            case refreshToken = "refresh_token"
+            case expiresAt = "expires_at"
+            case userId = "user_id"
+        }
+    }
+
+    public static let anonPath = "/api/sat/anon"
+
+    /// `POST /api/sat/anon` with the body the assertion signs, `{}`.
+    public func satAnonSession() async throws -> AnonSession {
+        let (status, data) = try await attested(Self.anonPath, Data("{}".utf8))
+        guard status == 200 else { throw Self.error(status, data) }
+        guard let session = try? JSONDecoder().decode(AnonSession.self, from: data) else { throw TryCheckError.unavailable }
+        return session
+    }
+
     public func warmUp() async {
         await attestor.warmUp()
     }
