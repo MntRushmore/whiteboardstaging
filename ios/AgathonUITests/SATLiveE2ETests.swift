@@ -57,11 +57,15 @@ final class SATLiveE2ETests: XCTestCase {
         } else {
             app.launchArguments += ["-onboardingFresh"]
         }
-        for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY", "AGATHON_TEST_EMAIL", "AGATHON_TEST_PASSWORD"] {
+        for key in ["AGATHON_API_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY", "AGATHON_TEST_EMAIL", "AGATHON_TEST_PASSWORD"] where signedIn || !key.hasPrefix("AGATHON_TEST") {
             if let v = env[key] { app.launchEnvironment[key] = v }
         }
         app.launch()
-        if !signedIn { tap("onboarding.who.sat", wait: 60) }
+        if !signedIn {
+            XCTAssertTrue(element("onboarding.who.sat").waitForExistence(timeout: 60), "the first run's SAT path")
+            snap("10-onboarding-sat-path")
+            tap("onboarding.who.sat", wait: 60)
+        }
         XCTAssertTrue(element("sat.home").waitForExistence(timeout: 90), "SAT home")
     }
 
@@ -243,6 +247,117 @@ final class SATLiveE2ETests: XCTestCase {
         XCTAssertTrue(element("sat.summary").waitForExistence(timeout: 20), "the set ends in the summary")
         snap("09-summary")
         XCTAssertTrue(element("sat.summary.deck").waitForExistence(timeout: 5), "the misses go into the deck")
+    }
+
+    /// Rung 2 when the next step IS the answer (the 2026-10-23 review): never the answer, a cobalt pointer
+    /// ("One step left: …"). Linear functions (two-step questions: a slope, then the line or the value): on
+    /// each question the bank's arithmetic in a student's hand, Help me twice; two pointers are wanted.
+    func testRungTwoPointsAtTheLastStep() throws {
+        try XCTSkipUnless(signedIn, "a free account (the pointer is the live tutor's)")
+        launch(autowrite: "calc:auto|calc:auto|calc:auto|calc:auto|calc:auto|calc:auto")
+        let skill = element("sat.home.skill.linear-functions")
+        XCTAssertTrue(skill.waitForExistence(timeout: 20))
+        for _ in 0..<6 where !skill.isHittable { app.swipeUp() }
+        skill.tap()
+        waitFor("sat.position", label: "Q1 of", timeout: 60)
+        var pointers = 0
+        for q in 0..<6 where pointers < 2 {
+            if q > 0 { tap("sat.next"); sleep(2) }
+            tap("sat.debug.write")
+            waitFor("sat.debug.write", value: "busy", timeout: 5, quiet: true)
+            waitFor("sat.debug.write", notValue: "busy", timeout: 60)
+            waitFor("sat.debug", value: "read 1", timeout: 60, quiet: true)
+            guard (element("sat.debug").value as? String ?? "").contains("read 1") else { continue }
+            tap("sat.helpMe")
+            probe("rung 1", timeout: 10)
+            tap("sat.helpMe")
+            probe("yourTurn yes", timeout: 60)
+            let v = element("sat.debug").value as? String ?? ""
+            timings.append("Q\(q + 1): rung 2 wrote \(v.contains("step pointer") ? "a pointer" : "a step") (\(v.components(separatedBy: " step ").dropFirst().first?.split(separator: " ").first ?? "-"))")
+            if v.contains("step pointer") {
+                pointers += 1
+                let pointer = element("sat.pointer")
+                XCTAssertTrue(pointer.exists)
+                timings.append("  pointer: \(pointer.label)")
+                XCTAssertTrue(pointer.label.hasPrefix("One step left:"))
+                snap("16-rung2-pointer-\(pointers)")
+            }
+        }
+        XCTAssertEqual(pointers, 2, "two questions whose next step is the answer")
+    }
+
+    /// The NO-ACCOUNT path (the server with SAT_ANON_TUTOR_PER_DAY=2, the local stack's anonymous sign-ins
+    /// on): the first run's "I'm studying for the SAT" (`POST /api/sat/anon`, the simulator's debug header),
+    /// the first ink taking a pass on two questions, the cap at 2 on the third with its line ("… Make a free
+    /// account for 20 a day."), a miss into the deck, then the account made from the capped line (13+, an
+    /// email and a password: `upgradeAnonymous`, the terms first). The harness checks the user id after.
+    func testNoAccountCapAndUpgrade() throws {
+        try XCTSkipIf(signedIn, "the no-account run is without AGATHON_TEST_EMAIL")
+        let email = try XCTUnwrap(env["AGATHON_UPGRADE_EMAIL"], "AGATHON_UPGRADE_EMAIL: the address the anonymous student signs up with")
+        launch(autowrite: "step:0|step:0|step:0")
+        snap("11-anon-home")
+        tap("sat.home.practice10", wait: 30)
+        XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 60))
+        waitFor("sat.position", label: "Q1 of", timeout: 30)
+        // two questions: the first ink takes a pass, the line is read
+        for q in 1...2 {
+            if q > 1 { tap("sat.next"); sleep(2) }
+            tap("sat.debug.write")
+            probe("tutor on live on", timeout: 60)
+            probe("read 1", timeout: 60)
+            if q == 1 { _ = missOnce() }
+        }
+        // the third: capped, and the line says what an account gives
+        tap("sat.next")
+        sleep(2)
+        tap("sat.debug.write")
+        probe("tutor capped", timeout: 60)
+        let capped = element("sat.tutor.capped")
+        XCTAssertTrue(capped.waitForExistence(timeout: 10))
+        XCTAssertTrue(capped.label.contains("2 of 2") && capped.label.contains("Make a free account for 20 a day."), "the capped line: \(capped.label)")
+        snap("12-anon-capped")
+        // the account from the capped line: 13+, an email and a password
+        capped.tap()
+        tap("sat.account.13plus", wait: 15)
+        let field = element("sat.account.email")
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText(email)
+        let password = element("sat.account.password")
+        password.tap()
+        password.typeText("sat-practice-2026")
+        snap("13-anon-make-account")
+        tap("sat.account.make")
+        XCTAssertTrue(element("sat.account.done").waitForExistence(timeout: 30), "the account is made: \(element("sat.account.error").exists ? element("sat.account.error").label : "no error shown")")
+        snap("14-anon-account-made")
+        tap("sat.account.done")
+        sleep(2)
+        // the session goes on as a free account: the cap is the free one's now
+        snap("15-anon-after-upgrade")
+    }
+
+    /// A wrong answer on the question on show (a choice, or a grid-in no question here has), once: true when one was missed.
+    private func missOnce() -> Bool {
+        if element("sat.choice.A").exists {
+            for key in ["A", "B", "C", "D"] {
+                tap("sat.choice.\(key)")
+                tap("sat.check")
+                if element("sat.wrong").waitForExistence(timeout: 4) {
+                    if element("sat.wrong.tryAgain").exists { tap("sat.wrong.tryAgain") }
+                    return true
+                }
+                if element("sat.solution.back").exists { tap("sat.solution.back") }
+                return false
+            }
+        } else if element("sat.key.9").exists {
+            for _ in 0..<3 { tap("sat.key.9") }
+            tap("sat.check")
+            let missed = element("sat.wrong").waitForExistence(timeout: 4) || element("sat.solution").exists
+            if element("sat.wrong.tryAgain").exists { tap("sat.wrong.tryAgain") }
+            if element("sat.solution.back").exists { tap("sat.solution.back") }
+            return missed
+        }
+        return false
     }
 
     /// The solution two ways (the paper way and the Desmos way) on a real question: nonlinear equations,

@@ -246,6 +246,9 @@ extension LiveLoop {
     @discardableResult
     func writeSteps(_ steps: [String], for st: LiveLine, column: Int, meta extra: Meta, onDone: (() -> Void)? = nil) async -> Bool {
         guard !steps.isEmpty else { return false }
+        let explanation = pendingStepExplanation
+        pendingStepExplanation = nil
+        if let ask = beforeWritingSteps, ask(steps, explanation) { return false }
         // what the tutor wrote on this page (SAT v2: the walk-through never writes a step again)
         tutorSteps[board.currentScreenID, default: []].append(contentsOf: steps)
         let work = columnLines(column).filter { !$0.latex.isEmpty }

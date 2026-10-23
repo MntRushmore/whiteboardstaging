@@ -483,6 +483,7 @@ extension LiveLoop {
                                    goal: goal.map { String($0.prefix(200)) })
         let given = Set(built.lines.map { SolveSteps.key($0.latex) })
         var accepted: [String] = []
+        var firstExplanation: String?
         var discarded = 0
         var failed = false
         let gen = generation
@@ -507,6 +508,7 @@ extension LiveLoop {
                         discarded += 1
                         continue
                     }
+                    if accepted.isEmpty { firstExplanation = s.explanation }
                     accepted.append(latex)
                 case .error(let e):
                     failed = true
@@ -528,6 +530,7 @@ extension LiveLoop {
             if !onlyFirstStep { clearSolveOutput(built.states.map(\.id)) }
             let problem = problemKey(for: st)
             let lines = built.states.map(\.latex)
+            pendingStepExplanation = firstExplanation
             await writeSteps(accepted, for: st, column: st.column, meta: onlyFirstStep ? [:] : [LiveMeta.solvedLatex: .string(accepted.joined(separator: " ; "))]) { [weak self] in
                 if !onlyFirstStep { self?.tutorSolved(problem: problem, lines: lines) }
             }

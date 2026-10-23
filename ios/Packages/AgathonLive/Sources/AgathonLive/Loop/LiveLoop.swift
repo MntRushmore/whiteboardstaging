@@ -214,6 +214,14 @@ public final class LiveLoop: ObservableObject {
     /// The steps the tutor's hand wrote under the work, by page (Help me's next step, Solve's), as LaTeX.
     public internal(set) var tutorSteps: [RecordID: [String]] = [:]
 
+    /// SAT v2, rung 2: asked before the tutor's hand writes steps under the work, with the steps and the
+    /// model's words for the first (nil from the engine). True: the caller has said it another way (the
+    /// next step is the question's answer: a pointer instead, `SATLastStep`), and nothing is written.
+    public var beforeWritingSteps: ((_ steps: [String], _ explanation: String?) -> Bool)?
+
+    /// The model's words for the step it is about to write (`solveWithModel`), for `beforeWritingSteps`.
+    var pendingStepExplanation: String?
+
     // MARK: network
 
     var offlineQueue = Set<String>()

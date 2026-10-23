@@ -176,6 +176,8 @@ public struct SATPageWords: View {
         case figureLabel
         /// the walk-through's first words when it starts after work already on the page
         case pickup
+        /// rung 2 when the next step is the answer: how to finish, never the result ("One step left: …")
+        case pointer
     }
 
     let kind: Kind
@@ -202,6 +204,12 @@ public struct SATPageWords: View {
                 .foregroundStyle(DS.Color.tutorInk)
                 .fixedSize()
                 .accessibilityIdentifier("sat.walk.pickup")
+        case .pointer:
+            Text(text)
+                .font(.custom(DSFonts.uiPostScriptName(weight: 600), fixedSize: 21 * k))
+                .foregroundStyle(DS.Color.tutorInk)
+                .fixedSize()
+                .accessibilityIdentifier("sat.pointer")
         case .figureLabel:
             Text(text)
                 .font(.custom(DSFonts.uiPostScriptName(weight: 600), fixedSize: 26 * k))

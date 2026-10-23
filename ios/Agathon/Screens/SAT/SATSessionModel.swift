@@ -774,6 +774,19 @@ final class SATSessionModel: ObservableObject {
     /// the bank's next step in the tutor's hand.
     private func oneStep(_ i: Int) {
         guard let screen = pageOf[i] else { return }
+        if tutorOnHere, let loop = tutor?.loop {
+            // the live step, unless it is the question's answer: then a pointer, not the answer (SATLastStep)
+            loop.beforeWritingSteps = { [weak self, weak loop] steps, explanation in
+                loop?.beforeWritingSteps = nil
+                guard let self, let first = steps.first, self.practice.questions.indices.contains(i),
+                      SATLastStep.revealsAnswer(first, of: self.practice.questions[i]) else { return false }
+                self.liveStepTimer?.cancel()
+                self.liveStep = nil
+                self.lastStepSource = "pointer-live"
+                self.writePointer(i, SATLastStep.pointer(explanation: explanation, for: self.practice.questions[i]))
+                return true
+            }
+        }
         if tutorOnHere, let loop = tutor?.loop, loop.helpOneStep() {
             let before = Set(phase.session?.controller.store.drawables(on: screen).map(\.id) ?? [])
             liveStep = (screen, i, Date(), before)
@@ -813,6 +826,7 @@ final class SATSessionModel: ObservableObject {
         guard let first = boxes.first else { return }
         let box = boxes.dropFirst().reduce(first) { $0.union($1) }
         liveStep = nil
+        tutor?.loop.beforeWritingSteps = nil
         liveStepTimer?.cancel()
         lastStepSource = "live"
         placeYourTurn(after: box, on: pending.screen)
@@ -826,6 +840,14 @@ final class SATSessionModel: ObservableObject {
         let read = tutor?.loop.readLines.map(\.latex) ?? []
         guard let k = SATHintLadder.nextBankStep(q.solution.steps, studentLines: tutorOnHere ? read : [], written: practice.items[i].ladder.written) else {
             notice = SATCopy.noMoreSteps
+            return
+        }
+        tutor?.loop.beforeWritingSteps = nil
+        let candidate = q.solution.steps[k]
+        // the bank's step is the question's answer: how to finish it, never the result (SATLastStep)
+        if let math = candidate.math.map(Self.handLines)?.last, SATLastStep.revealsAnswer(math, of: q) {
+            lastStepSource = "pointer-bank"
+            writePointer(i, SATLastStep.pointer(explanation: nil, for: q))
             return
         }
         practice.updateLadder(at: i) { $0.written.insert(k) }
@@ -844,6 +866,21 @@ final class SATSessionModel: ObservableObject {
             // a step of words only: the tutor's words, typeset (it never handwrites words)
             words.append(PageWords(id: "\(q.id):step\(k)", screen: screen, kind: .caption(number: k + 1, waiting: false), text: step.text, at: origin))
         }
+        layoutTick &+= 1
+    }
+
+    /// Rung 2's pointer when the next step is the answer: "One step left: divide both sides by 3.", in
+    /// cobalt under the student's last line, then "Your turn" beside it (the 2026-10-23 review).
+    func writePointer(_ i: Int, _ text: String) {
+        guard let screen = pageOf[i] else { return }
+        let layout = printer(i).layout
+        let line = lastLine(on: screen)
+        let below = max(line.map { $0.y + $0.h } ?? layout.workTop, columnBottom(on: screen) ?? 0)
+        let origin = Vec2(line?.x ?? style.stemX, below + 40)
+        words.removeAll { $0.screen == screen && $0.kind == .pointer }
+        words.append(PageWords(id: "pointer:\(screen.rawValue)", screen: screen, kind: .pointer, text: text, at: origin))
+        // "Your turn" after the words (about 11 page units a character at the pointer's size)
+        placeYourTurn(after: Box(x: origin.x, y: origin.y, w: Double(text.count) * 11, h: 28), on: screen)
         layoutTick &+= 1
     }
 
