@@ -120,3 +120,29 @@ different, is the smallest thing on screen.
 ## Not this round
 
 Pencil gestures, R&W, ACT, timed modules, teacher classes.
+
+## Deploy checklist (v2; the owner, at merge time; nothing here is applied to production before)
+
+In this order, on the production project:
+
+1. **Migration, before the code**: `20261023000000_sat_reviews.sql` (the `sat_reviews` table and
+   its owner-only RLS, `sat_questions.nudge` and `.common_wrong`, and `anonymous_request_guard()`
+   replaced with `/sat_reviews` added to what an anonymous SAT session may write). It is idempotent
+   and additive. `npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING" --include-all`, or run
+   the file with psql. Then check:
+   `select count(*) from public.sat_reviews;` (0),
+   `select count(*) from public.sat_questions where nudge is not null;` (0 until step 2), and
+   `select prosrc like '%/sat_reviews%' from pg_proc where proname = 'anonymous_request_guard';` (t).
+   The v2 code reads the new columns, so it must not be deployed before this step.
+2. **Reload the bank** (the notes): `data/sat/sat-bank-v2.sql`, written with
+   `JITI_ALIAS='{"@/":"'$PWD'/src/"}' npx jiti scripts/sat/upsert.ts --sql data/sat/sat-bank-v2.sql`
+   (no database touched). Run it with psql against `$POSTGRES_URL_NON_POOLING` (or paste it in the
+   SQL editor). One transaction, idempotent: every row whose content changed gets `version + 1`; the
+   ids and the live set are the same as v1's. Check:
+   `select count(*) filter (where status = 'live'), count(nudge) from public.sat_questions;`
+   (the live count as before, and the nudges in data/sat/notes-report.json's coverage).
+3. **Deploy** the code (the routes and the iPad build that reads the notes and sends `tz`). An
+   older iPad build keeps working: the new fields are optional and the routes default `tz` to UTC.
+4. Check: miss a question on the iPad, then
+   `select step, due_on from public.sat_reviews where user_id = '<that user>';` shows step 1 due
+   tomorrow in the student's zone, and the next day `GET /api/sat/progress` shows `reviews_due: 1`.
