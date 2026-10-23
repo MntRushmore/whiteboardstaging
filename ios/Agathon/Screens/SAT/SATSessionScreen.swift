@@ -130,10 +130,7 @@ private struct SATBoardRoom: View {
     @State private var graphOpen = false
 
     /// Upright, the page sits a little lower so the question never goes under the top bar.
-    private var topInset: Double {
-        let k = size.width / 1600
-        return max(0, 84 - 104 * k)
-    }
+    private var topInset: Double { SATSessionModel.topInset(width: size.width) }
 
     var body: some View {
         ZStack {
@@ -190,20 +187,11 @@ private struct SATBoardRoom: View {
             SATTopBar(model: topModel, close: close, mark: { practice.toggleMarked(); model.objectWillChange.send() },
                       previous: { model.previous() }, next: { model.next() }, capTapped: capTapped)
             Spacer(minLength: 0)
-            if model.ladderCard {
-                HStack {
-                    SATLadderCard { model.ladderCard = false }
-                    Spacer()
-                }
-                .padding(.horizontal, SATChromeSize.edge)
-                .padding(.bottom, 12)
-                .transition(.opacity)
-            }
             HStack(alignment: .center, spacing: SATChromeSize.gap) {
                 SATHelpButton(used: practice.item.ladder.reached?.rawValue) { model.helpMe() }
                 checkOrWalk
                 Spacer(minLength: 12)
-                SATDock(controller: controller) { graphOpen = true }
+                SATDock(controller: controller, compact: size.width < 1100) { graphOpen = true }
                     .popover(isPresented: $graphOpen, arrowEdge: .bottom) {
                         SATGraphField { typed in await model.graph(typed) }
                             .presentationCompactAdaptation(.popover)
@@ -212,7 +200,8 @@ private struct SATBoardRoom: View {
             .padding(.horizontal, SATChromeSize.edge)
             .padding(.bottom, 19)
         }
-        .padding(.top, 0)
+        // the chrome never widens the board (a row too wide for the window squeezes, it doesn't push)
+        .frame(width: size.width, height: size.height)
     }
 
     @ViewBuilder private var checkOrWalk: some View {
@@ -260,8 +249,9 @@ private struct SATPageLayer: View {
 
     var body: some View {
         let screen = model.phase.session?.controller.currentScreenID
-        ZStack(alignment: .topLeading) {
-            Color.clear.allowsHitTesting(false)
+        // over a flexible clear base: what is placed past the edge never sizes the layer (nor, with
+        // it, the board's ZStack, the canvas and the camera's fit)
+        Color.clear.allowsHitTesting(false).overlay(alignment: .topLeading) { ZStack(alignment: .topLeading) {
             if let layout = model.layoutHere, let q = practice.current {
                 ForEach(model.words.filter { $0.screen == screen }) { w in
                     let at = viewport.toView(w.at)
@@ -279,9 +269,17 @@ private struct SATPageLayer: View {
                 }
                 answerTargets(layout, q)
                 if model.showsWrongNote { wrongNote(layout, q) }
+                if model.ladderCard {
+                    // over Help me (bottom left), clear of the answer row
+                    let rowTop = viewport.toView(Vec2(0, layout.rowTop)).y
+                    SATLadderCard { model.ladderCard = false }
+                        .alignmentGuide(.leading) { _ in -SATChromeSize.edge }
+                        .alignmentGuide(.top) { d in -(rowTop - 20 - d.height) }
+                        .transition(.opacity)
+                }
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } }
+        .clipped()
         .id(model.layoutTick)
     }
 

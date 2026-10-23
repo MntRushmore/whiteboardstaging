@@ -205,7 +205,8 @@ struct SATFigurePrinter {
                 }
                 if let lbl, !lbl.isEmpty {
                     // to the side the line isn't on; a point on the y axis: left of the axis, under it
-                    if at.x == axisX {
+                    // (a line that runs on left of the axis takes the free side like any point)
+                    if at.x == axisX && (plot.x.min >= axisX || !plot.items.contains { if case .function = $0 { return true } else { return false } }) {
                         over += label(lbl, size: Self.pointLabelSize, at: CGPoint(x: c.x - 10, y: c.y + 14), anchor: CGPoint(x: 1, y: 0), weight: .semibold)
                     } else {
                         // the free corner above the point: left of a rising line, right of a falling one

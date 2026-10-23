@@ -265,10 +265,16 @@ final class SATSessionModel: ObservableObject {
     /// its dots); the question itself never moves.
     func windowChanged(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
-        let next = SATViewport(points: size.width, size.height, dockPoints: SATChromeSize.lane)
+        // (upright the page sits a little lower, under the top bar: the window is that much shorter)
+        let next = SATViewport(points: size.width, size.height - Self.topInset(width: size.width), dockPoints: SATChromeSize.lane)
         guard next != viewport else { return }
         viewport = next
         relayout()
+    }
+
+    /// How far down the page sits (pt): upright, enough that the question never goes under the top bar.
+    static func topInset(width: Double) -> Double {
+        max(0, 84 - 104 * width / 1600)
     }
 
     /// Every page laid out again at the window (and its ink): taller pages stay taller, the answer
@@ -285,6 +291,8 @@ final class SATSessionModel: ObservableObject {
             controller.setProblemPage(page, on: screen)
         }
         canvas?.reloadPrint()
+        // the camera fitted to the page's width in the new window
+        DispatchQueue.main.async { [weak self] in self?.canvas?.refitCamera() }
         layoutTick &+= 1
     }
 
@@ -1031,9 +1039,14 @@ final class SATSessionModel: ObservableObject {
         let here = words.filter { $0.screen == screen }
         let tutorInk = screen.map { s in phase.session?.controller.store.drawables(on: s).filter { $0.author == .tutor && $0.meta["live"]?.boolValue == true }.count ?? 0 } ?? 0
         let page = layoutHere.map { "\(Int($0.pageHeight))" } ?? "-"
+        let scale = canvas.map { String(format: "%.3f %.0fx%.0f", $0.camera.scale, $0.bounds.width, $0.bounds.height) } ?? "-"
+        let ticks = screen.map { s in phase.session?.controller.store.records.values.filter { r in
+            if case .mark(let m) = r { return m.screen == s && m.kind == .tick } else { return false }
+        }.count ?? 0 } ?? 0
+        let plot: String = { if case .plot? = practice.current?.figure { return "yes" } else { return "no" } }()
         return "q \(practice.index + 1) tutor \(state) live \(live) passes \(passes) attempts \(attempts) calls \(quiet?.calls ?? -1) tag \(tag.satQuestionId ?? "-") "
             + "rung \(rung) words \(here.count) yourTurn \(here.contains { $0.kind == .yourTurn } ? "yes" : "no") walk \(walk.map { "\($0.shown)/\($0.count)" } ?? "-") "
-            + "tutorInk \(tutorInk) marks \(figureMarks ?? "-") page \(page) step \(lastStepSource) read \(tutor?.loop.readLines.count ?? 0) fig \(screen.map { kidStrokes(on: $0, figure: true).count } ?? -1)/\(screen.map { kidStrokes(on: $0).count } ?? -1)"
+            + "tutorInk \(tutorInk) marks \(figureMarks ?? "-") page \(page) step \(lastStepSource) read \(tutor?.loop.readLines.count ?? 0) fig \(screen.map { kidStrokes(on: $0, figure: true).count } ?? -1)/\(screen.map { kidStrokes(on: $0).count } ?? -1) ticks \(ticks) plot \(plot) scale \(scale)"
     }
     #endif
 }

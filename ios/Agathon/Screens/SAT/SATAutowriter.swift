@@ -33,8 +33,19 @@ enum SATAutowriter {
         guard let canvas = model.canvas, let controller = model.phase.session?.controller, let tutor = model.tutor else { return }
         let screen = controller.currentScreenID
         var strokes: [[Vec2]] = []
+        var line = line
+        // `step:k`: the question's own bank step k, its last link (a right step the tutor can tick:
+        // the end-to-end run, whatever question the server sent)
+        if line.hasPrefix("step:"), let k = Int(line.dropFirst("step:".count)), let q = model.practice.current,
+           q.solution.steps.indices.contains(k), let math = q.solution.steps[k].math {
+            line = SATSessionModel.handLines(math).last ?? math
+        }
         if line.hasPrefix("circle:") {
-            let n = line.dropFirst("circle:".count).split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            // `circle:auto`: round the plane's first labelled point
+            var n = line.dropFirst("circle:".count).split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            if line == "circle:auto", case .plot(let p)? = model.practice.current?.figure {
+                for item in p.items { if case .point(let at, _, _) = item { n = [at.x, at.y]; break } }
+            }
             guard n.count == 2, let plot = model.questionPlot(on: screen) else { return }
             let c = plot.page(n[0], n[1])
             strokes = [(0...28).map { k in

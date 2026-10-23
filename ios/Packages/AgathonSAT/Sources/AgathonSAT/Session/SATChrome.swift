@@ -309,17 +309,22 @@ enum SATChromeColor {
 /// undo, redo | three pens (ink, red, green). No page arrows: the top bar has them.
 public struct SATDock: View {
     @ObservedObject var controller: BoardController
+    /// a narrow window (upright): a little tighter, so the row fits beside Help me and Check
+    let compact: Bool
     let graph: () -> Void
 
-    public init(controller: BoardController, graph: @escaping () -> Void) {
+    public init(controller: BoardController, compact: Bool = false, graph: @escaping () -> Void) {
         self.controller = controller
+        self.compact = compact
         self.graph = graph
     }
+
+    private var tool: CGFloat { compact ? 46 : 52 }
 
     public static let pens: [InkColor] = [.black, .red, .green]
 
     public var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: compact ? 2 : 4) {
             tool(.select, "lasso", "Select", id: "sat.tool.select")
             tool(.pen, "pencil", "Pencil", id: "sat.tool.pen")
             tool(.highlighter, "highlighter", "Highlighter", id: "sat.tool.highlighter")
@@ -340,7 +345,7 @@ public struct SATDock: View {
                         Circle().fill(Color(cgColor: RenderGeometry.cgColor(pen))).frame(width: pen == .black ? 28 : 26, height: pen == .black ? 28 : 26)
                             .overlay(Circle().strokeBorder(pen == .black ? DS.Color.onInk : .clear, lineWidth: 2))
                     }
-                    .frame(width: 48, height: 48)
+                    .frame(width: compact ? 44 : 48, height: 48)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(SATPress())
@@ -349,13 +354,13 @@ public struct SATDock: View {
                 .accessibilityIdentifier("sat.pen.\(pen.rawValue)")
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, compact ? 8 : 12)
         .frame(height: SATChromeSize.dock)
         .background(Capsule().fill(DS.Color.ink))
     }
 
     private var separator: some View {
-        Rectangle().fill(DS.Color.onInkFaint).frame(width: 1.5, height: 32).padding(.horizontal, 6)
+        Rectangle().fill(DS.Color.onInkFaint).frame(width: 1.5, height: 32).padding(.horizontal, compact ? 3 : 6)
     }
 
     private func tool(_ t: BoardTool, _ symbol: String, _ label: String, id: String) -> some View {
@@ -364,7 +369,7 @@ public struct SATDock: View {
             Image(systemName: symbol)
                 .font(.system(size: 21, weight: .semibold))
                 .foregroundStyle(on ? DS.Color.ink : DS.Color.onInk)
-                .frame(width: 52, height: 52)
+                .frame(width: tool, height: tool)
                 .background(Circle().fill(on ? DS.Color.sunny : .clear))
                 .contentShape(Circle())
         }
@@ -379,7 +384,7 @@ public struct SATDock: View {
             Image(systemName: symbol)
                 .font(.system(size: 21, weight: .semibold))
                 .foregroundStyle(enabled ? DS.Color.onInk : DS.Color.onInkDisabled)
-                .frame(width: 52, height: 52)
+                .frame(width: tool, height: tool)
                 .contentShape(Circle())
         }
         .buttonStyle(SATPress())

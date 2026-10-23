@@ -27,6 +27,8 @@ public enum SATCopy {
     public static let restore = "Bring back"
     public static let gridInLabel = "Your answer"
     public static let gridInTap = "Tap to type your answer"
+    /// the grid-in's rule beside the box on the page (the design notes)
+    public static let gridInRulesShort = "Up to 5 characters. A fraction like 3/4 or a decimal."
     public static let gridInRules = "Fractions or decimals. Up to 5 characters, 6 with a minus. No mixed numbers."
     public static let solution = "Solution"
     public static let desmos = "On the graphing calculator"

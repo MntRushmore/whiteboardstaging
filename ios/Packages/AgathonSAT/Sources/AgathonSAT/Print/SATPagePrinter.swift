@@ -203,7 +203,7 @@ public struct SATPagePrinter {
             items.append(.fill(CGPath(rect: CGRect(x: caretX, y: box.midY - 22, width: 3, height: 44), transform: nil), S.focus))
         }
         if let rules = layout.gridInRules, rules.w > 80 {
-            let laid = text.lay(SATCopy.gridInRules, size: style.gridInRulesSize, maxWidth: rules.w, color: S.inkSecondary)
+            let laid = text.lay(SATCopy.gridInRulesShort, size: style.gridInRulesSize, maxWidth: rules.w, color: S.inkSecondary)
             items += laid.items(at: CGPoint(x: rules.x, y: rules.midY - laid.size.h / 2))
         }
         // the keypad: digits on chalk, the symbols and delete on guide grey

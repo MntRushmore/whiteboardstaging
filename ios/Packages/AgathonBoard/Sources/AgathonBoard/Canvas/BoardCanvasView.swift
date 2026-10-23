@@ -329,6 +329,12 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         updateDetail()
     }
 
+    /// The camera back to the fitted view (SAT v2: the window turned and the pages were laid out again).
+    public func refitCamera() {
+        refit()
+        tiles.rebase(px: basePx)
+    }
+
     private func refit() {
         guard bounds.width > 0 else { return }
         camera = constraintsInsets.fit(screenRect, in: bounds.size)

@@ -234,6 +234,8 @@ final class SATSessionUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         portrait = true
         sleep(2)
+        // turned: the same page fitted to the upright window's width, the row at its new bottom
+        probe("scale 0.640", timeout: 10)
         snap("portrait-13-question")
         // the plotted line question of the sample, in portrait
         for _ in 2...4 { tap("sat.next") }
@@ -269,6 +271,9 @@ final class SATSessionUITests: XCTestCase {
         portrait = true
         launch(stub: "cap=20,used=0")
         openSet()
+        // upright the page is the window's height (less the top bar's offset) in page units
+        probe("page 2107")
+        probe("scale 0.640")
         snap("portrait-01-question")
         tap("sat.choice.C")
         tap("sat.check")
