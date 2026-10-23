@@ -95,6 +95,28 @@ different, is the smallest thing on screen.
   which means "Desmos doesn't really help here". `choices[].why` is on wrong choices only.
 - The migration is LOCAL ONLY until the owner OKs production.
 
+## The tutor on an SAT page (contract, bank lane 2026-10-23; additive)
+
+- **The bank's question is the problem.** When a Live call carries `sat_question_id`
+  (`/api/live/recognize`, `/reread`, `/setup`, `/check` (Help me and hints included) and `/solve`),
+  the server reads that question from `sat_questions` and adds it to the model's system prompt:
+  its stem, its choices, its figure as a short text description (axes, functions, points, segments,
+  bars, table cells, shape items and labels) and its solution steps. It never uses text the client
+  sent as the SAT problem: the page's text lines are treated as the student's own writing. The steps
+  are marked as guidance only, so checks, hints and Help me's next step stay on the bank's path; the
+  model is told not to show them or the answer unless the student asks for the solution (Solve). In
+  `/recognize` only the vision read gets it (Mathpix takes no context).
+- **`sat_figure_marks`** (new, optional, top level of the same bodies, next to `sat_question_id`):
+  the student's marks on the question's figure as plain text, in the figure's coordinates, e.g.
+  `"circled near (2, 31); a line from about (0, 19) to (2, 19)"`. Trimmed; at most 300 characters,
+  one line. Longer, non-text, or with control characters: ignored (the call goes on without it), never
+  a 400. Ignored without `sat_question_id`. It is added to the context as the student's marks.
+- An id that is not a live bank question: no context, the call goes on as on an ordinary board (the
+  free-tutor gate still applies). A malformed id: `400 invalid_request`, as before. No id: the
+  requests to the models are exactly an ordinary board's.
+- The question is read as the student (RLS: live rows only) and kept five minutes per server
+  instance. `/ask`, `/chat` and `/proof` are unchanged this round.
+
 ## Not this round
 
 Pencil gestures, R&W, ACT, timed modules, teacher classes.

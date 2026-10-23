@@ -60,7 +60,6 @@ export function satFigureMarksOf(raw: unknown): string | null {
   const v = (raw as Record<string, unknown>).sat_figure_marks;
   if (typeof v !== "string") return null;
   const t = v.trim();
-  // eslint-disable-next-line no-control-regex
   if (!t || t.length > SAT_FIGURE_MARKS_MAX || /[\u0000-\u001f\u007f]/.test(t)) return null;
   return t;
 }
