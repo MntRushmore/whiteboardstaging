@@ -881,7 +881,7 @@ final class SATSessionModel: ObservableObject {
         words.removeAll { $0.screen == screen && $0.kind == .pointer }
         words.append(PageWords(id: "pointer:\(screen.rawValue)", screen: screen, kind: .pointer, text: text, at: origin))
         // "Your turn" after the words (about 11 page units a character at the pointer's size)
-        placeYourTurn(after: Box(x: origin.x, y: origin.y, w: Double(text.count) * 11, h: 28), on: screen)
+        placeYourTurn(after: Box(x: origin.x, y: origin.y, w: Double(text.count) * 9.7, h: 28), on: screen)
         layoutTick &+= 1
     }
 
