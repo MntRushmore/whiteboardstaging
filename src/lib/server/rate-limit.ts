@@ -23,6 +23,7 @@
  */
 
 import { LIVE_RATE_LIMITS } from "@/lib/live/contracts";
+import { BOARD_DRAW_PER_10_MIN, BOARD_DRAW_PER_DAY } from "@/lib/server/boardDraw/contracts";
 import { SPEAK_GLOBAL_BUDGET, SPEAK_RATE_LIMITS, TRANSCRIBE_GLOBAL_BUDGET, TRANSCRIBE_USER_DAY_BUDGET } from "@/lib/speech/contracts";
 import { getRateLimitBackend, type RateLimitBackend } from "@/lib/env";
 import { logger } from "@/lib/logger";
@@ -94,6 +95,13 @@ export const LIMITS = {
   // they cost us: the day's cap is what a runaway bench (a loop that never stops) can spend at most.
   liveTraining: { limit: 180, windowMs: MINUTE },
   liveTrainingDay: { limit: 4000, windowMs: 24 * 60 * MINUTE },
+  // The picture tutor (POST /api/board/draw; admins only for now): each call is two paid model calls
+  // (~$0.036), and nothing is charged while it is admin-only, so these bound what it costs: a burst
+  // budget per 10 minutes and a day's cap per user (src/lib/server/boardDraw/contracts.ts).
+  boardDraw: { limit: BOARD_DRAW_PER_10_MIN, windowMs: 10 * MINUTE },
+  boardDrawDay: { limit: BOARD_DRAW_PER_DAY, windowMs: 24 * 60 * MINUTE },
+  // The picture tutor's outcome reports (POST /api/board/draw/outcome): a few per run, uncharged.
+  boardDrawOutcome: { limit: 120, windowMs: MINUTE },
 } as const satisfies Record<string, RateLimitOptions>;
 
 export type RateLimitBucket = keyof typeof LIMITS;
