@@ -70,6 +70,12 @@ public enum TrainingBench {
                 r.pieces = 1
                 r.mark = .none
             }
+            if obs.lineIds.isEmpty && !ids[k].isEmpty && ids[k].allSatisfy({ loop.struckStrokeIds.contains($0.rawValue) }) {
+                // a row she struck out, set aside before lines formed (`struckRows.ts`): never read, never
+                // judged, no mark on it — as it should be
+                r.pieces = 1
+                r.mark = .none
+            }
             if besideQuiet.contains(k) && (obs.merged || obs.lineIds.isEmpty) {
                 // a kid's own tick taken in with the line it ticks: as it should be
                 r.pieces = 1

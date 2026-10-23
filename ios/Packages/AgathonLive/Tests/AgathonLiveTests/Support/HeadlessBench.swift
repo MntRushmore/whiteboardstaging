@@ -277,6 +277,24 @@ enum Oracle {
         zip(x, y).map { "\($0)|\($1)" }.sorted()
     }
 
+    /// Rows that are a stacked sum (numbers, an operator on a row after the first, the answer last) as a
+    /// perfect reader reads them — an array, the rule before the answer; a lone carry digit over the top
+    /// number, or beside it, is not read (Mathpix drops it).
+    static func stackedArray(_ rows: [String]) -> String? {
+        // a carry written beside a row's number (`6 27`) is not read either
+        var r = rows.map { spoken($0).replacingOccurrences(of: #"^\d\s+(?=\d)"#, with: "", options: .regularExpression).replacingOccurrences(of: " ", with: "") }
+        let number = #"^\d+(\.\d+)?$"#
+        let operand = #"^(\+|-|\\times|\\cdot)?\d+(\.\d+)?$"#
+        if r.count >= 4, r[0].range(of: #"^\d$"#, options: .regularExpression) != nil, r[1].range(of: number, options: .regularExpression) != nil { r.removeFirst() }
+        // the rule under the last number with an operator; the answer row(s) under it
+        guard r.count >= 3, r.allSatisfy({ $0.range(of: operand, options: .regularExpression) != nil }),
+              r[0].range(of: number, options: .regularExpression) != nil,
+              let lastOp = r.lastIndex(where: { $0.range(of: number, options: .regularExpression) == nil }) ?? (r.count == 3 ? 1 : nil),
+              lastOp > 0, lastOp < r.count - 1
+        else { return nil }
+        return "\\begin{array}{r} " + r[...lastOp].joined(separator: " \\\\ ") + " \\\\ \\hline " + r[(lastOp + 1)...].joined(separator: " \\\\ ") + " \\end{array}"
+    }
+
     /// What a perfect reader says for what was written: no layout spacing.
     static func spoken(_ latex: String) -> String {
         latex.replacingOccurrences(of: "\\qquad", with: " ").replacingOccurrences(of: "\\quad", with: " ")

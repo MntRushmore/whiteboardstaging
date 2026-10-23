@@ -227,6 +227,12 @@ struct RealInkBenchTests {
                 if request.strokes.x.count > held.count {
                     for id in order.reversed() where held.count < request.strokes.x.count && !held.contains(id) { held.insert(id) }
                 }
+                // a stacked sum (one line by design; its carries set aside, so its rows' lines are held in
+                // part): what a perfect reader reads it as — an array
+                if loop.lines[request.lineId] != nil, loop.trainingStacked(request.lineId),
+                   let array = Oracle.stackedArray(written.lines.filter { !$0.strokes.isEmpty && !$0.strokes.isDisjoint(with: held) }.map(\.latex)) {
+                    return array
+                }
                 var whole: [String] = []
                 var partial = false
                 for (k, line) in written.lines.enumerated() where !line.strokes.isEmpty && !line.strokes.isDisjoint(with: held) {

@@ -174,6 +174,9 @@ public struct StackedLine: Codable, Hashable, Sendable {
     public var analysis: LineAnalysis?
     public var tick: Rect?
     public var ring: Rect?
+    /// the analysis when she says she is done (Check), where it differs: an answer right so far but short
+    /// of the result (`26` for 18 × 7 = 126) is wrong then
+    public var done: LineAnalysis?
 }
 
 public struct LineAnalysis: Codable, Hashable, Sendable {

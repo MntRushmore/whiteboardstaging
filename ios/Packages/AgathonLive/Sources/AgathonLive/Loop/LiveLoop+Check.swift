@@ -114,6 +114,7 @@ extension LiveLoop {
         }
         // a check is the kid's own ask: with Auto off these lines are marked too
         for st in released { askedLines[st.id] = st.latex }
+        finishStacks(released, reason: reason)
         for st in released { render(st.id) }
         afterCheck(released.compactMap { lines[$0.id] }, reason: reason)
     }

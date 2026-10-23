@@ -229,6 +229,7 @@ extension LiveLoop {
         diagrams = result.diagrams
         stacks = result.stacks
         barStrokeIds = Set(result.bars.map(\.bar))
+        struckStrokeIds = Set(result.roles.filter { $0.value.role == "struck" }.keys)
         // the tutor's problems cut the columns: work beside or under one is judged against it
         refreshHeads()
         let next = anchorAtProblems(result.lines)
@@ -340,6 +341,7 @@ extension LiveLoop {
             self.diagrams = result.diagrams
             self.stacks = result.stacks
             self.barStrokeIds = Set(result.bars.map(\.bar))
+            self.struckStrokeIds = Set(result.roles.filter { $0.value.role == "struck" }.keys)
             self.refreshHeads()
             let anchored = self.anchorAtProblems(result.lines)
             self.rememberProblems(anchored)

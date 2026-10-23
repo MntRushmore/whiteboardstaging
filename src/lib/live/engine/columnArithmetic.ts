@@ -168,6 +168,14 @@ function arrayRows(latex: string): Array<string | "rule"> | null {
   return out;
 }
 
+/** The problem's operator when it is `a op b` with these two numbers (`18 \\times 7`), else null. */
+function problemOp(problem: readonly string[] | null | undefined, a: string, b: string): StackOp | null {
+  if (!problem || problem.length !== 1) return null;
+  const m = /^\s*(\d+(?:\.\d+)?)\s*(\+|-|−|\\times|\\cdot|×)\s*(\d+(?:\.\d+)?)\s*$/.exec(problem[0]);
+  if (!m || m[1] !== a || m[3] !== b) return null;
+  return m[2] === "+" ? "+" : m[2] === "-" || m[2] === "−" ? "-" : "×";
+}
+
 /** The one operator that makes `answer` of `a` and `b` (whole numbers), or null when none or more than one does. */
 function opMaking(a: string, b: string, answer: string): StackOp | null {
   if (!/^\d+$/.test(a) || !/^\d+$/.test(b) || !/^\d+$/.test(answer)) return null;
@@ -185,7 +193,7 @@ function opMaking(a: string, b: string, answer: string): StackOp | null {
  * script on a digit (`2^{1} 86`) is dropped. Two rules or two rows under the rule (long
  * multiplication, long division) are not.
  */
-export function parseStacked(latex: string): StackedRead | null {
+export function parseStacked(latex: string, problem?: readonly string[] | null): StackedRead | null {
   const rows = arrayRows(latex);
   if (!rows) return null;
   const rule = rows.indexOf("rule");
@@ -207,9 +215,12 @@ export function parseStacked(latex: string): StackedRead | null {
     // the operator not read (a `×` lost in the ink): the one that makes her answer, if exactly one
     // does — a right answer is ticked, never a ring on a guess
     const answer = after.length === 1 && after[0] !== "rule" ? numberOf(cleanRow(after[0])) : null;
-    const op = answer === null ? null : opMaking(items[0].number, items[1].number, answer);
+    if (after.length > 0 && answer === null) return null;
+    // the problem's, when the rows are its two numbers (`18 × 7` written as 18 over 7): first — her
+    // 25 for 18 × 7 is a slip (she added), not a right sum
+    const op = problemOp(problem, items[0].number, items[1].number) ?? (answer === null ? null : opMaking(items[0].number, items[1].number, answer));
     if (op === null) return null;
-    return { op, operands: items.map((p) => p.number), answer: answer! };
+    return { op, operands: items.map((p) => p.number), answer: answer ?? "" };
   }
   if (ops.size !== 1 || items[items.length - 1].op === null) return null;
   const op = [...ops][0];
@@ -316,6 +327,12 @@ export interface WorkOptions {
    * the point).
    */
   answerLast?: number;
+  /**
+   * She says she is done (Check): an answer right so far but short of the result — `26` for 18 × 7 =
+   * 126, the last carry never written — is a finished answer, wrong at its first missing place. While
+   * she writes (right to left) it is left alone.
+   */
+  done?: boolean;
 }
 
 /**
@@ -374,6 +391,10 @@ export function workStacked(read: StackedRead, opts: WorkOptions = {}): StackedW
       wrong = p;
       break;
     }
+  }
+  if (opts.done && answer && wrong === -1 && !read.rows) {
+    const missing = digits.findIndex((_, p) => !mine.has(p));
+    if (missing !== -1) wrong = missing;
   }
   const right = wrong === -1 && digits.every((d, p) => mine.get(p) === d);
   const work: StackedWork = { ...read, result: written(digits, decimals), decimals, digits, width, carries, written: mine, wrong, right, note: "" };
