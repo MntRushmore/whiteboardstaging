@@ -47,7 +47,7 @@ struct FakeMeasure: SATTextMeasuring {
     }
 }
 
-/// The printed page's layout (docs/SAT-V2.md, "The question is the page"): its numbers pinned, so a
+/// The printed page's layout (docs/SAT-V2.md; the design notes' rules): its numbers pinned, so a
 /// change to them is a decision, not an accident.
 struct PageLayoutTests {
     let m = FakeMeasure()
@@ -55,80 +55,111 @@ struct PageLayoutTests {
 
     private func q(_ id: String) throws -> SATQuestion { try #require(SATFixtures.question(id)) }
 
-    @Test func aShortQuestionWithNoFigureKeepsTheBoardsScreen() throws {
+    @Test func aShortQuestionFillsTheWindow() throws {
         let l = SATPageLayout.make(try q("algebra-linear-one-var-9001"), measure: m)
-        #expect(l.pageHeight == 900)
+        // landscape: 1366 × 1024 pt is 1600 × 1199 u, a dock lane of 129 u
+        #expect(SATViewport.landscape == SATViewport(height: 1199, dockLane: 129))
+        #expect(l.pageHeight == 1199)
+        #expect(l.number == SATRect(72, 106, 44, 44))
         #expect(l.figurePlace == .none)
-        #expect(l.stem == SATRect(88, 60, 1424, 42))
-        #expect(l.workTop == 134)
-        // short choices: all four in a row at the bottom
+        #expect(l.stem == SATRect(140, 104, 1388, 35))
+        // the number hangs lower than a one-line stem: the work starts under it
+        #expect(l.workTop == 198)
         #expect(l.arrangement == .row)
         #expect(l.cards.map(\.key) == ["A", "B", "C", "D"])
-        #expect(l.cards[0].frame == SATRect(88, 772, 342.5, 92))
-        #expect(l.cards[3].frame.maxX == 1512)
-        #expect(l.answers.maxY == 900 - s.bottom)
-        #expect(l.workBottom == 744)
-        #expect(l.workHeight >= s.workMin)
+        #expect(l.cards[0].frame == SATRect(72, 958, 346, 112))
+        #expect(l.cards[3].frame.maxX == 1528)
+        #expect(l.rowTop + l.rowHeight + 129 == l.pageHeight)
+        #expect(l.workBottom == 926)
+        #expect(l.keepOut == [SATRect(64, 80, 1488, 94)])
     }
 
-    @Test func aPlotSitsBesideTheStemAndMapsItsGrid() throws {
+    @Test func aPlotSitsBesideTheStemInItsBox() throws {
         let l = SATPageLayout.make(try q("algebra-linear-two-var-9004"), measure: m)
         #expect(l.figurePlace == .beside)
-        #expect(l.figure == SATRect(952, 60, 560, 468))
-        // square units: the grid is 482 across for 7 units, 8 units up would be 551: kept to 400
-        #expect(l.plotGrid == SATRect(996, 86, 482, 400))
-        #expect(l.stem.w == 1424 - 560 - s.figureGap)
-        #expect(l.stem.maxX <= l.figure!.x - s.figureGap + 0.01)
-        #expect(l.workTop == 560)
-        // the work area keeps its minimum: the page grows
-        #expect(l.pageHeight == 1056)
-        #expect(l.workHeight >= s.workMin)
-        #expect(l.cards.allSatisfy { $0.frame.y >= l.workBottom + s.answerGap - 0.01 })
+        #expect(l.stem.w == 680)
+        #expect(l.figure == SATRect(880, 108, 640, 470))
+        #expect(l.plotGrid == SATRect(972, 120, 534, 388))
+        // the L: under the stem 48 on, under the figure 24 on
+        #expect(l.workTop == 222)
+        #expect(l.workTopFigureSide == 602)
+        #expect(l.pageHeight == 1199)
+        #expect(l.keepOut[1] == SATRect(856, 84, 744, 522), "the figure's keep-out runs to the page's edge")
     }
 
-    @Test func aTableAndAShapeAreSizedToTheirContent() throws {
+    @Test func aTableAndAShapeAtTheirNaturalSize() throws {
         let table = SATPageLayout.make(try q("algebra-linear-functions-9002"), measure: m)
         #expect(table.figurePlace == .beside)
-        #expect(table.figure == SATRect(1272, 60, 240, 236))
+        #expect(table.figure == SATRect(880, 108, 176, 218))
+        // a fraction among the choices: the taller row (it shows in display style)
+        #expect(table.rowHeight == 132)
         let shape = SATPageLayout.make(try q("geometry_trig-right-triangles-trig-9005"), measure: m)
         #expect(shape.figurePlace == .beside)
-        // the triangle's own aspect (8 wide, 6 tall) within the figure's limits, its note under it
-        #expect(shape.figureArt == SATRect(992, 60, 520, 380))
+        #expect(shape.figureArt == SATRect(880, 108, 578, 449))
         #expect(shape.note != nil)
         #expect(shape.figure!.maxY == shape.note!.maxY)
         #expect(shape.plotGrid == nil)
     }
 
-    @Test func aStemTooWideToShareGoesAboveItsFigure() throws {
-        var style = SATPageStyle.standard
-        style.minStemBeside = 1000
-        let l = SATPageLayout.make(try q("algebra-linear-two-var-9004"), measure: m, style: style)
+    @Test func aLongStemTakesTheWidthAndItsFigureGoesUnder() throws {
+        var question = try q("algebra-linear-two-var-9004")
+        question.stem = String(repeating: "The line shown passes through the two labeled points in the plane. ", count: 9)
+        let l = SATPageLayout.make(question, measure: m)
         #expect(l.figurePlace == .below)
-        #expect(l.stem.w == 1424)
-        #expect(l.figure!.y == l.stem.maxY + style.stemFigureGap)
-        #expect(l.figure!.x == style.left)
+        #expect(l.stem.w == 1388)
+        #expect(l.figure!.y == l.stem.maxY + s.figureBelowGap)
+        #expect(l.figure!.x == 140)
+        // the page grows: a band of 200 under the whole question
+        #expect(l.pageHeight > 1199)
+        #expect(l.workBottom - l.questionBottom >= s.workMinBand + s.aboveRow - 0.01)
     }
 
     @Test func longChoicesGoTwoByTwoThenOneUnderAnother() throws {
         var question = try q("algebra-linear-one-var-9001")
-        question.choices = (question.choices ?? []).map { SATChoice(key: $0.key, text: "The value of x is " + $0.text + " because it is so") }
+        question.choices = (question.choices ?? []).map { SATChoice(key: $0.key, text: "The value is " + $0.text + " so") }
         let grid = SATPageLayout.make(question, measure: m)
         #expect(grid.arrangement == .grid)
+        #expect(grid.cards[0].frame.w == 716)
         #expect(grid.cards[0].frame.y == grid.cards[1].frame.y)
-        #expect(grid.cards[2].frame.y > grid.cards[0].frame.y)
+        #expect(grid.cards[2].frame.y == grid.cards[0].frame.maxY + 24)
         question.choices = (question.choices ?? []).map { SATChoice(key: $0.key, text: String(repeating: "a long sentence that goes on ", count: 5)) }
         let column = SATPageLayout.make(question, measure: m)
         #expect(column.arrangement == .column)
-        #expect(Set(column.cards.map(\.frame.x)) == [88])
-        #expect(column.pageHeight > 900)
-        #expect(column.workHeight >= s.workMin - 0.01)
+        #expect(Set(column.cards.map(\.frame.x)) == [72])
+        #expect(column.workHeight >= s.workMinUnderStem - 0.01)
     }
 
-    @Test func aGridInHasItsBoxAtTheBottom() throws {
+    @Test func aGridInHasItsFieldAndKeypadInTheRow() throws {
         let l = SATPageLayout.make(try q("psda-ratios-rates-9006"), measure: m)
         #expect(l.cards.isEmpty)
-        #expect(l.gridIn == SATRect(88, 760, 560, 104))
-        #expect(l.pageHeight == 900)
+        #expect(l.rowHeight == 132)
+        #expect(l.gridIn == SATRect(72, 962, 400, 84))
+        #expect(l.keys.count == 14)
+        // 7 × 2 keys of 96 × 60, right-aligned at 1528
+        #expect(l.keys[0].frame == SATRect(796, 938, 96, 60))
+        #expect(l.keys[13].frame.maxX == 1528)
+        #expect(l.keys[13].key == .delete)
+        #expect(l.key(at: 800, 940) == .digit(1))
+        #expect(l.gridInRules!.x == 496)
+        #expect(l.gridInRules!.maxX < l.keys[0].frame.x)
+    }
+
+    @Test func uprightTheSamePageIsTaller() throws {
+        let question = try q("algebra-linear-two-var-9004")
+        let wide = SATPageLayout.make(question, measure: m)
+        let tall = SATPageLayout.make(question, measure: m, viewport: .portrait)
+        #expect(SATViewport.portrait == SATViewport(height: 2134, dockLane: 172))
+        // the question block never moves; the page's height and the answer row do
+        #expect(tall.stem == wide.stem && tall.figure == wide.figure)
+        #expect(tall.pageHeight == 2134)
+        #expect(tall.rowTop == 2134 - 172 - 112)
+    }
+
+    @Test func inkLowOnThePageGrowsItRatherThanMoveTheRowOntoIt() throws {
+        let question = try q("algebra-linear-one-var-9001")
+        let l = SATPageLayout.make(question, measure: m, lowestInk: 1100)
+        #expect(l.rowTop >= 1100 + s.aboveRow)
+        #expect(l.pageHeight == 1100 + 32 + 112 + 129)
     }
 
     @Test func aCardsEliminatorIsItsRightEnd() throws {
@@ -141,13 +172,14 @@ struct PageLayoutTests {
 
     @Test func everyFixtureLaysOutWithItsWorkArea() throws {
         for question in SATFixtures.questions {
-            let l = SATPageLayout.make(question, measure: m)
-            #expect(l.workHeight >= s.workMin - 0.01, "\(question.id)")
-            #expect(l.questionBottom < l.workTop, "\(question.id)")
-            #expect(l.answers.maxY <= l.pageHeight - s.bottom + 0.01, "\(question.id)")
-            if let f = l.figure { #expect(f.maxX <= s.right + 0.01 && f.x >= s.left - 0.01, "\(question.id)") }
-            // the same question, the same page
-            #expect(SATPageLayout.make(question, measure: m) == l)
+            for vp in [SATViewport.landscape, .portrait] {
+                let l = SATPageLayout.make(question, measure: m, viewport: vp)
+                #expect(l.workHeight >= s.workMinUnderStem - 0.01, "\(question.id)")
+                #expect(l.workBottom - l.questionBottom >= s.workMinBand + s.aboveRow - 0.01, "\(question.id)")
+                #expect(l.stem.maxY < l.workTop && l.questionBottom < l.workTopFigureSide, "\(question.id)")
+                if let f = l.figure { #expect(f.maxX <= s.pageWidth && f.x >= s.left, "\(question.id)") }
+                #expect(SATPageLayout.make(question, measure: m, viewport: vp) == l)
+            }
         }
     }
 }
