@@ -66,7 +66,7 @@ public enum SATCopy {
     public static let graphDone = "Graphed on your board."
 
     // the end of a set
-    public static let setDone = "Set complete"
+    public static let setDone = "Set done"
     public static func score(_ right: Int, _ count: Int) -> String { "\(right)/\(count)" }
     public static let scoreLine = "right on the first try"
     public static func secondTries(_ n: Int) -> String { n == 1 ? "1 more right on the second try." : "\(n) more right on the second try." }

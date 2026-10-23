@@ -42,13 +42,13 @@ public struct SATHomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.l) {
                 topBar
-                if width >= 900 {
+                if width >= 1100 {
                     HStack(alignment: .top, spacing: DS.Space.l) {
                         VStack(spacing: DS.Space.l) {
                             todayCard
                             progressCard
                         }
-                        .frame(width: (width - DS.Space.l) * 0.58)
+                        .frame(width: (width - DS.Space.l) * 0.56)
                         skillsCard
                     }
                 } else {
@@ -143,7 +143,7 @@ public struct SATHomeView: View {
             }
             .padding(.top, DS.Space.m)
             Rectangle().fill(DS.Color.line).frame(height: 1.5).padding(.vertical, DS.Space.m)
-            HStack(alignment: .bottom, spacing: DS.Space.xl) {
+            HStack(alignment: .top, spacing: DS.Space.xl) {
                 stat(SATCopy.answeredTodayShort, "\(today?.answered ?? 0)", id: "sat.home.answered")
                 tutorStat(today)
             }
@@ -178,7 +178,7 @@ public struct SATHomeView: View {
             .accessibilityIdentifier("sat.home.tutorLeft")
         } else if let today {
             let cap = max(1, today.cap), left = max(0, cap - min(today.tutorUsed, cap))
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text(SATCopy.freeTutorLeft).dsFont(.callout, size: 17).foregroundStyle(DS.Color.inkSecondary)
                 HStack(spacing: DS.Space.m) {
                     GeometryReader { g in
@@ -321,10 +321,10 @@ public struct SATHomeView: View {
                 Text(skill.title).dsFont(weak ? .button : .callout, size: 18).foregroundStyle(DS.Color.ink).lineLimit(1)
                     .minimumScaleFactor(0.85)
                 if weak {
-                    Text(SATCopy.practiceTag).dsFont(.label, size: 13).foregroundStyle(DS.Color.tomato)
+                    Text(SATCopy.practiceTag).dsFont(.label, size: 13).foregroundStyle(DS.Color.tomato).fixedSize()
                 }
                 Spacer(minLength: DS.Space.s)
-                meter(c.share, answered: c.answered, weak: weak).frame(width: 120)
+                meter(c.share, answered: c.answered, weak: weak).frame(width: 104)
                 Text(c.answered > 0 ? "\(c.correct)/\(c.answered)" : "—").dsFont(.callout, size: 16).foregroundStyle(DS.Color.inkSecondary)
                     .monospacedDigit().frame(width: 48, alignment: .trailing)
             }

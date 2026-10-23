@@ -36,13 +36,13 @@ public struct SATSummaryView: View {
                 RoundButton(.close, fill: .paper, diameter: 48, label: SATCopy.backToSAT, action: home)
                     .accessibilityIdentifier("sat.summary.home")
                 if wide {
-                    HStack(alignment: .top, spacing: 60) {
+                    HStack(alignment: .top, spacing: 48) {
                         VStack(alignment: .leading, spacing: DS.Space.l) {
                             scoreBlock
                             list
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        deckCard.frame(width: min(520, width * 0.4))
+                        deckCard.frame(width: min(620, width * 0.45))
                             .padding(.top, 70)
                     }
                 } else {
@@ -183,31 +183,25 @@ public struct SATSummaryView: View {
 
     /// The deck's front card over the cards behind it (flat: `line`, `guide`, chalk; no shadow).
     private func frontCard(_ row: SATPractice.Summary.Row, behind: Int) -> some View {
-        ZStack(alignment: .topLeading) {
-            if behind >= 2 {
-                RoundedRectangle(cornerRadius: 26, style: .continuous).fill(DS.Color.line).padding(.trailing, 50).padding(.bottom, 50)
+        let step: CGFloat = 16
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("Q\(row.number) · \(SATTaxonomy.title(of: row.skill).uppercased())").dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
+                .lineLimit(1)
+            SATText(row.stem, size: 19).lineLimit(3)
+            HStack(spacing: 8) {
+                Image(systemName: "calendar.badge.clock").font(.system(size: 17, weight: .semibold))
+                Text(SATCopy.backInADay).dsFont(.button, size: 17)
             }
-            if behind >= 1 {
-                RoundedRectangle(cornerRadius: 26, style: .continuous).fill(SATChromeColor.guide)
-                    .padding(.leading, 26).padding(.top, 26).padding(.trailing, 26).padding(.bottom, 26)
-            }
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Q\(row.number) · \(SATTaxonomy.title(of: row.skill).uppercased())").dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
-                    .lineLimit(1)
-                SATText(row.stem, size: 19).lineLimit(3)
-                HStack(spacing: 8) {
-                    Image(systemName: "calendar.badge.clock").font(.system(size: 17, weight: .semibold))
-                    Text(SATCopy.backInADay).dsFont(.button, size: 17)
-                }
-                .foregroundStyle(DS.Color.ink)
-                .accessibilityIdentifier("sat.summary.backIn")
-            }
-            .padding(DS.Space.l)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(DS.Color.surfaceSunken))
-            .padding(.leading, CGFloat(behind) * 26)
-            .padding(.top, CGFloat(behind) * 26)
+            .foregroundStyle(DS.Color.ink)
+            .accessibilityIdentifier("sat.summary.backIn")
         }
+        .padding(DS.Space.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(DS.Color.surfaceSunken))
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(behind >= 1 ? SATChromeColor.guide : .clear).offset(x: -step, y: -step))
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(behind >= 2 ? DS.Color.line : .clear).offset(x: -2 * step, y: -2 * step))
+        .padding(.leading, CGFloat(behind) * step)
+        .padding(.top, CGFloat(behind) * step)
     }
 
     @ViewBuilder private func buttons(_ missed: Int) -> some View {

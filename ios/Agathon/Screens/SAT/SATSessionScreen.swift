@@ -253,6 +253,8 @@ private struct SATPageLayer: View {
         // over a flexible clear base: what is placed past the edge never sizes the layer (nor, with
         // it, the board's ZStack, the canvas and the camera's fit)
         Color.clear.allowsHitTesting(false).overlay(alignment: .topLeading) { ZStack(alignment: .topLeading) {
+            // the origin every placement is measured from: the layer's top-left
+            Color.clear.allowsHitTesting(false)
             if let layout = model.layoutHere, let q = practice.current {
                 ForEach(model.words.filter { $0.screen == screen }) { w in
                     let at = viewport.toView(w.at)
