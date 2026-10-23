@@ -76,6 +76,8 @@ final class SATSessionModel: ObservableObject {
         /// where the next step goes (page units)
         var cursor: Vec2
         var column: Int = 0
+        /// steps already on the page (the student's, or the tutor's at rung 2): not drawn again
+        var skip: Set<Int> = []
     }
 
     @Published private(set) var phase: Phase = .loading
@@ -886,10 +888,25 @@ final class SATSessionModel: ObservableObject {
         if practice.index != i { show(i) }
         practice.updateLadder(at: i) { $0.reach(.walkthrough) }
         let layout = printer(i).layout
+        let steps = practice.questions[i].solution.steps
+        // the steps on the page already are not drawn again (the student's, matched to the bank's,
+        // and the one given at rung 2); the walk picks up at the first one still to do
+        let read = tutorOnHere ? tutor?.loop.readLines.map(\.latex) ?? [] : []
+        let skip = SATHintLadder.stepsOnThePage(steps, studentLines: read, written: practice.items[i].ladder.written)
+        let first = steps.indices.first { !skip.contains($0) } ?? steps.count
+        guard first < steps.count else {
+            notice = SATCopy.noMoreSteps
+            return
+        }
         // from the top of the stem's column, or under what is written there already
-        let start = Vec2(style.stemX, columnBottom(on: screen).map { $0 + 40 } ?? layout.workTop + 16)
-        walk = Walk(screen: screen, question: i, shown: 0, count: practice.questions[i].solution.steps.count, cursor: start)
-        words.removeAll { $0.screen == screen && $0.id.hasPrefix("walk:") }
+        var start = Vec2(style.stemX, columnBottom(on: screen).map { $0 + 40 } ?? layout.workTop + 16)
+        // the walk's pill says what to do now: rung 2's "Your turn" goes
+        words.removeAll { $0.screen == screen && ($0.id.hasPrefix("walk:") || $0.kind == .yourTurn) }
+        if first > 0 {
+            words.append(PageWords(id: "walk:\(i):pickup", screen: screen, kind: .pickup, text: SATCopy.pickingUp, at: start))
+            start.y += 44
+        }
+        walk = Walk(screen: screen, question: i, shown: first, count: steps.count, cursor: start, skip: skip)
         goOnWalk()
     }
 
@@ -897,6 +914,12 @@ final class SATSessionModel: ObservableObject {
     func goOnWalk() {
         guard var w = walk else { return }
         let q = practice.questions[w.question]
+        guard w.shown < w.count else {
+            walk = nil
+            return
+        }
+        // past the steps on the page already
+        while w.shown < w.count && w.skip.contains(w.shown) { w.shown += 1 }
         guard w.shown < w.count else {
             walk = nil
             return
@@ -939,9 +962,10 @@ final class SATSessionModel: ObservableObject {
         w.cursor = next
         walk = w
         let q = practice.questions[i]
-        if w.shown < w.count {
-            words.append(PageWords(id: "walk:\(i):waiting", screen: w.screen, kind: .caption(number: w.shown + 1, waiting: true),
-                                   text: q.solution.steps[w.shown].text, at: next))
+        // the next step still to do (past the ones on the page)
+        if let n = (w.shown..<w.count).first(where: { !w.skip.contains($0) }) {
+            words.append(PageWords(id: "walk:\(i):waiting", screen: w.screen, kind: .caption(number: n + 1, waiting: true),
+                                   text: q.solution.steps[n].text, at: next))
         }
     }
 

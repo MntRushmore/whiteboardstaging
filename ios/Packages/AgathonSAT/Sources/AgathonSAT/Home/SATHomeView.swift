@@ -126,7 +126,8 @@ public struct SATHomeView: View {
                 }
                 if due > 0 && width >= 700 {
                     Spacer(minLength: 0)
-                    SATDeckCards(count: due).frame(width: 300, height: 200)
+                    SATDeckCards(count: due, skills: (progress?.reviewsDueSkills ?? []).map(SATTaxonomy.title(of:)))
+                        .frame(width: 300, height: 200)
                 }
             }
             HStack(alignment: .center, spacing: DS.Space.m) {
@@ -145,6 +146,8 @@ public struct SATHomeView: View {
             Rectangle().fill(DS.Color.line).frame(height: 1.5).padding(.vertical, DS.Space.m)
             HStack(alignment: .top, spacing: DS.Space.xl) {
                 stat(SATCopy.answeredTodayShort, "\(today?.answered ?? 0)", id: "sat.home.answered")
+                // (a server without `today.correct` shows no "Right today")
+                if let right = today?.correct { stat(SATCopy.rightToday, "\(right)", id: "sat.home.rightToday") }
                 tutorStat(today)
             }
             if failed {
@@ -353,6 +356,8 @@ public struct SATHomeView: View {
 /// "DUE TODAY" and how many.
 struct SATDeckCards: View {
     let count: Int
+    /// the due reviews' skills (`reviews_due_skills`), most missed first; empty: the count instead
+    var skills: [String] = []
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -360,14 +365,25 @@ struct SATDeckCards: View {
             RoundedRectangle(cornerRadius: 26, style: .continuous).fill(SATChromeColor.guide).frame(width: 260, height: 140).offset(x: 18, y: 26)
             VStack(alignment: .leading, spacing: 10) {
                 Text(SATCopy.dueToday).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
-                Text(SATCopy.dueCount(count)).dsFont(.button, size: 19).foregroundStyle(DS.Color.ink)
+                if skills.isEmpty {
+                    Text(SATCopy.dueCount(count)).dsFont(.button, size: 19).foregroundStyle(DS.Color.ink)
+                } else {
+                    // the front card names the most-missed skill; the others under it, quieter
+                    Text(skills[0]).dsFont(.button, size: 19).foregroundStyle(DS.Color.ink).lineLimit(2)
+                        .accessibilityIdentifier("sat.home.deckSkill")
+                    if skills.count > 1 {
+                        Text(skills.dropFirst().joined(separator: " · ")).dsFont(.callout, size: 15).foregroundStyle(DS.Color.inkSecondary)
+                            .lineLimit(2)
+                    }
+                }
             }
             .padding(24)
             .frame(width: 260, height: 140, alignment: .topLeading)
             .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(DS.Color.surfaceSunken))
             .offset(x: 36, y: 56)
         }
-        .accessibilityHidden(true)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sat.home.deck")
     }
 }
 #endif

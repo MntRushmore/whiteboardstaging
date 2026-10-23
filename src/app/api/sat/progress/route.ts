@@ -15,7 +15,9 @@ export const dynamic = "force-dynamic";
  * `{ answered, correct, by_domain, by_skill, streak_days, today: {answered, tutor_used, cap,
  * unlimited}, estimate: {low, high, note} | null, reviews_due, reviews_waiting }`
  * (src/lib/sat/progress.ts). `reviews_due` is the mistake deck's reviews due today (or overdue),
- * `reviews_waiting` those scheduled for a later day (docs/SAT-V2.md), live questions only.
+ * `reviews_waiting` those scheduled for a later day (docs/SAT-V2.md), live questions only;
+ * `reviews_due_skills` the skills of today's due reviews (at most 3, most-missed first), and
+ * `today.correct` the right answers on the student's date (SAT home).
  *
  * `estimate` is a rough 200–800 band from practice (src/lib/sat/estimate.ts), null below 15
  * answers, narrowing as more are answered; its `note` says it is not a score. Days ("today", the
@@ -59,7 +61,7 @@ export async function GET(req: Request) {
       tutorUsedToday,
       cap: satTutorCap(user),
       unlimited,
-      reviews: reviews.filter((r) => meta.has(r.question_id)),
+      reviews: reviews.filter((r) => meta.has(r.question_id)).map((r) => ({ ...r, skill: meta.get(r.question_id)!.skill })),
     });
     log.info({ answered: body.answered, streak: body.streak_days, estimate: body.estimate !== null, reviewsDue: body.reviews_due }, "sat progress");
     return Response.json(body, { headers });

@@ -47,6 +47,17 @@ public struct SATHintLadder: Hashable, Sendable {
         return n < count ? n : nil
     }
 
+    // MARK: - the walk-through picks up from the work
+
+    /// The steps the walk-through leaves out because they are on the page already: every step up to
+    /// the last one the student's lines match, and the ones the tutor wrote at rung 2.
+    public static func stepsOnThePage(_ steps: [SATSolution.Step], studentLines: [String], written: Set<Int>) -> Set<Int> {
+        let lines = Set(studentLines.map(key).filter { !$0.isEmpty })
+        var done = Set<Int>()
+        for (i, step) in steps.enumerated() where matches(step, lines) { done.formUnion(0...i) }
+        return done.union(written.filter { steps.indices.contains($0) })
+    }
+
     // MARK: - the bank's next step (rung 2 without the live tutor)
 
     /// The bank step to write next: the first after the last one the student's lines already match,

@@ -141,13 +141,19 @@ public final class SATStubService: SATService, @unchecked Sendable {
                 estimate = SATProgress.Estimate(low: max(200, r10(mid - half)), high: min(800, r10(mid + half)),
                                                 note: "From \(answered) practice questions. A rough estimate, not a score.")
             }
-            let today = SATProgress.Today(answered: _attempts.count, tutorUsed: usedBefore + passes.count, cap: cap, unlimited: unlimited)
+            let today = SATProgress.Today(answered: _attempts.count, tutorUsed: usedBefore + passes.count, cap: cap, unlimited: unlimited,
+                                          correct: _attempts.filter(\.correct).count)
+            // the due reviews' skills, distinct, at most 3 (the server's `reviews_due_skills`)
+            var dueSkills: [String] = []
+            for q in bank.prefix(reviewsDue) where !reviewed.contains(q.id) && !dueSkills.contains(q.skill) && dueSkills.count < 3 {
+                dueSkills.append(q.skill)
+            }
             return SATProgress(
                 answered: answered, correct: right,
                 byDomain: SATDomain.allCases.compactMap { d in domains[d].map { SATProgress.DomainCount(domain: d, answered: $0.answered, correct: $0.correct) } },
                 bySkill: SATTaxonomy.skills.compactMap { s in skills[s.name].map { SATProgress.SkillCount(domain: $0.0, skill: s.name, answered: $0.1.answered, correct: $0.1.correct) } },
                 streakDays: answered > 0 ? 1 : 0, today: today, estimate: estimate,
-                reviewsDue: max(0, reviewsDue - reviewed.count), reviewsWaiting: reviewsWaiting)
+                reviewsDue: max(0, reviewsDue - reviewed.count), reviewsWaiting: reviewsWaiting, reviewsDueSkills: dueSkills)
         }
     }
 }

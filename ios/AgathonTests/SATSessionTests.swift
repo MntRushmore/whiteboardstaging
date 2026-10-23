@@ -199,8 +199,11 @@ struct SATSessionTests {
         #expect(c.store.records.values.contains { if case .stroke(let s) = $0 { return s.author == .tutor } else { return false } } || true)
         #expect(model.quiet?.calls == 0, "no live call: the bank's step")
         model.helpMe()
-        #expect(model.walk?.shown == 1)
-        model.goOnWalk()
+        // the walk leaves out step 1 (rung 2 gave it), picks up at step 2, and "Your turn" goes
+        #expect(model.walk?.shown == 2)
+        #expect(model.words.contains { $0.kind == .pickup })
+        #expect(!model.words.contains { $0.kind == .yourTurn })
+        #expect(!model.words.contains { $0.id.hasSuffix(":0") && $0.id.hasPrefix("walk:") })
         model.goOnWalk()
         #expect(model.walk?.shown == 3)
         model.goOnWalk()

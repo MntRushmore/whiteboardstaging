@@ -148,6 +148,7 @@ public enum SATCopy {
     public static func seeMissed(_ n: Int) -> String { "See the \(n) missed" }
     public static let graphField = "Graph an equation"
     public static let noMoreSteps = "That's the whole solution."
+    public static let pickingUp = "Picking up from your work"
 
     // v2: the end of a set and SAT home (docs/sat2/DESIGN-NOTES.md frames 11 and 12)
     public static let mixedPractice = "Mixed practice"
@@ -167,6 +168,7 @@ public enum SATCopy {
     public static let dueToday = "DUE TODAY"
     public static func dueCount(_ n: Int) -> String { n == 1 ? "1 question" : "\(n) questions" }
     public static let answeredTodayShort = "Answered today"
+    public static let rightToday = "Right today"
     public static let freeTutorLeft = "Free tutor left today"
     public static func ofCap(_ left: Int, _ cap: Int) -> String { "\(left) of \(cap)" }
     public static let progressLabel = "PROGRESS"

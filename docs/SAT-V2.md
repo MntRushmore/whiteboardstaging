@@ -91,6 +91,12 @@ different, is the smallest thing on screen.
   oldest due first, at most `count` of them; a review of a question that is no longer live is
   skipped. The adaptive pick fills the rest from the other questions.
 - `reviews_due` / `reviews_waiting` count live questions only.
+- **SAT home (bank lane, 2026-10-23; additive contract change).** `GET /api/sat/progress` adds:
+  - `today.correct`: the right answers on the student's date (in `tz`), beside `today.answered`;
+  - `reviews_due_skills`: the skill names (exactly as in the skills table) of the reviews due today
+    (or overdue), distinct, at most 3, most-missed first: the most due reviews in the skill, then the
+    most wrong answers in it (of the answers progress reads), then the skills table's order. `[]` when
+    nothing is due.
 - The notes: a row without a note has no key for it (never `null`), except `desmos_steps: null`,
   which means "Desmos doesn't really help here". `choices[].why` is on wrong choices only.
 - The migration is LOCAL ONLY until the owner OKs production.
