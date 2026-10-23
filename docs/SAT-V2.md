@@ -138,9 +138,10 @@ In this order, on the production project:
    `JITI_ALIAS='{"@/":"'$PWD'/src/"}' npx jiti scripts/sat/upsert.ts --sql data/sat/sat-bank-v2.sql`
    (no database touched). Run it with psql against `$POSTGRES_URL_NON_POOLING` (or paste it in the
    SQL editor). One transaction, idempotent: every row whose content changed gets `version + 1`; the
-   ids and the live set are the same as v1's. Check:
-   `select count(*) filter (where status = 'live'), count(nudge) from public.sat_questions;`
-   (the live count as before, and the nudges in data/sat/notes-report.json's coverage).
+   ids are v1's, and one v1 question is retired (`advanced_math-equivalent-expressions-0161`, the same
+   question as -0156; its students' answers are kept). Check:
+   `select count(*) filter (where status = 'live'), count(*) filter (where status = 'live' and nudge is not null) from public.sat_questions;`
+   (351 live, and 346 nudges, as in data/sat/notes-report.json's coverage).
 3. **Deploy** the code (the routes and the iPad build that reads the notes and sends `tz`). An
    older iPad build keeps working: the new fields are optional and the routes default `tz` to UTC.
 4. Check: miss a question on the iPad, then

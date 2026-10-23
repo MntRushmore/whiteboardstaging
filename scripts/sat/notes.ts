@@ -425,7 +425,9 @@ async function main(): Promise<void> {
   const samples = JSON.parse(readFileSync(join(ROOT, "docs", "sat", "sample-20.json"), "utf8")) as SatQuestion[];
   const sampleById = new Map(samples.map((q) => [q.id, q]));
   const v1Review = JSON.parse(readFileSync(join(DATA_DIR, "review.json"), "utf8")) as Record<string, { distractors?: Record<string, string> | null }>;
-  const targets = bank.filter((q) => q.status === "live" && !sampleById.has(q.id) && (!only || only.has(q.id)));
+  // retired questions stay in the batches, so retiring one later never shifts the others (or their
+  // cached replies); a retired question's notes are never served
+  const targets = bank.filter((q) => (q.status === "live" || q.status === "retired") && !sampleById.has(q.id) && (!only || only.has(q.id)));
   const groups: SatQuestion[][] = [];
   for (let i = 0; i < targets.length; i += BATCH) groups.push(targets.slice(i, i + BATCH));
   const run = groups.slice(0, limit);
@@ -551,7 +553,7 @@ async function main(): Promise<void> {
     models: NOTES_MODELS,
     live: live.length,
     hand_written_samples: live.filter((q) => sampleById.has(q.id)).length,
-    generated_live: targets.length,
+    generated_live: targets.filter((q) => q.status === "live").length,
     batches: { total: groups.length, run: run.length },
     stopped: stop,
     coverage: {

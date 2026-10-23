@@ -106,6 +106,17 @@ describe("near duplicates", () => {
     expect(mathOf("Solve $5(x-3)=2x+9$.")).toEqual(new Set(["5(x-3)=2x+9"]));
     expect(jaccard(shingles(items[2].stem), shingles(items[3].stem))).toBeLessThan(0.8);
   });
+  it("the same expression, written bare or as one side of an equation, is a duplicate (the v1 pair the old check missed)", () => {
+    const tree = "A city's tree census models the number of trees in its parks as $N=5300(1.21)^{\\frac{x}{2}}$, where $x$ is the number of years since the census began. Which expression is equivalent to $N$?";
+    const bees = "A beekeeper models the number of bees in her hives $x$ months after spring begins with the expression $5300(1.21)^{\\frac{x}{2}}$. Which of the following expressions is equivalent to the beekeeper's model?";
+    expect(Object.fromEntries(nearDuplicates([{ id: "0156", skill: "s", stem: tree }, { id: "0161", skill: "s", stem: bees }]))).toEqual({ "0161": "0156" });
+    expect(mathOf(tree)).toEqual(new Set(["N=5300(1.21)^{\\frac{x}{2}}", "5300(1.21)^{\\frac{x}{2}}"]));
+    // short sides, and a plain number, are not substantial
+    expect(mathOf("If $3x - 7 = 11$ and $y = 1250$, find $x$.")).toEqual(new Set(["3x-7=11"]));
+  });
+  it("the checked-in bank's live questions have no near duplicates left", () => {
+    expect(Object.fromEntries(nearDuplicates(BANK.filter((q) => q.status === "live")))).toEqual({});
+  });
 });
 
 describe("reading the models", () => {

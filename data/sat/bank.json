@@ -3186,7 +3186,7 @@
    "desmos_tip": null,
    "desmos_steps": null
   },
-  "status": "live",
+  "status": "retired",
   "version": 1,
   "nudge": "Can you write $\\frac{x}{2}$ as $\\frac{1}{2}\\cdot x$ and pull the $\\frac{1}{2}$ power onto the base?"
  },
