@@ -141,6 +141,8 @@ enum LiveMeta {
     static let graphFor = "graphFor"
     /// on everything one write made (the loop finds a block's strokes by it)
     static let job = "liveJob"
+    /// on a kid's stroke over a question's printed figure (SAT v2): "plot" or "shape". Not read as a line.
+    static let onFigure = "figure"
     /// on a line record: the read the model called wrong
     static let aiWarnLatex = "aiWarnLatex"
     /// on a line record: its confidence and provider, and its ink hash
@@ -156,7 +158,9 @@ extension BoardStore {
     /// The kid's finished strokes on a screen, as the brain takes ink (page coordinates).
     func kidStrokes(on screen: RecordID) -> [BrainStroke] {
         drawables(on: screen).compactMap { record -> BrainStroke? in
-            guard case .stroke(let s) = record, s.author == .kid, s.meta["highlight"]?.boolValue != true, !s.points.isEmpty else { return nil }
+            // (ink on a question's figure is read in the figure's terms, never as a line: SAT v2)
+            guard case .stroke(let s) = record, s.author == .kid, s.meta["highlight"]?.boolValue != true, s.meta[LiveMeta.onFigure] == nil,
+                  !s.points.isEmpty else { return nil }
             var xs: [Double] = []
             var ys: [Double] = []
             xs.reserveCapacity(s.points.count)

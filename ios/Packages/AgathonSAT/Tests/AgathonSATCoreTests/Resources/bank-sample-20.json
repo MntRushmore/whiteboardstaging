@@ -10,7 +10,8 @@
   "choices": [
    {
     "key": "A",
-    "text": "$\\frac{4}{3}$"
+    "text": "$\\frac{4}{3}$",
+    "why": "Subtracted 7 instead of adding it: $3x = 4$, so $x = \\frac{4}{3}$."
    },
    {
     "key": "B",
@@ -18,11 +19,13 @@
    },
    {
     "key": "C",
-    "text": "$18$"
+    "text": "$18$",
+    "why": "Stopped at $3x = 18$ without dividing by 3."
    },
    {
     "key": "D",
-    "text": "$54$"
+    "text": "$54$",
+    "why": "Multiplied by 3 instead of dividing: $18 \\cdot 3 = 54$."
    }
   ],
   "answer": {
@@ -39,8 +42,10 @@
      "math": "x = 6"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "What could you do to both sides to get $3x$ by itself?",
   "status": "live",
   "version": 1
  },
@@ -73,8 +78,24 @@
      "math": "x = 14"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "What number could you multiply both sides by to clear both fractions?",
+  "common_wrong": [
+   {
+    "answer": "6",
+    "why": "Multiplied only $x$ by $\\frac{2}{3}$, not the 4: $\\frac{2}{3}x + 4 = \\frac{1}{2}x + 5$."
+   },
+   {
+    "answer": "-11",
+    "why": "Multiplied both sides by 6 but not the 5: $4x + 16 = 3x + 5$."
+   },
+   {
+    "answer": "26",
+    "why": "Multiplied only $x$ by the 4: $4x + 4 = 3x + 30$."
+   }
+  ],
   "status": "live",
   "version": 1
  },
@@ -89,7 +110,8 @@
   "choices": [
    {
     "key": "A",
-    "text": "$38$"
+    "text": "$38$",
+    "why": "Swapped the prices: $4m + 3 \\cdot 20 = 212$, so $m = 38$."
    },
    {
     "key": "B",
@@ -97,11 +119,13 @@
    },
    {
     "key": "C",
-    "text": "$64$"
+    "text": "$64$",
+    "why": "Subtracted 20 scones instead of their 80 dollars: $3m = 192$."
    },
    {
     "key": "D",
-    "text": "$192$"
+    "text": "$192$",
+    "why": "Subtracted the 20 scones, not their 80 dollars, and didn't divide by 3: $212 - 20$."
    }
   ],
   "answer": {
@@ -122,8 +146,10 @@
      "math": "m = 44"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "How much money did the 20 scones bring in, and how much is left for the muffins?",
   "status": "live",
   "version": 1
  },
@@ -175,7 +201,8 @@
   "choices": [
    {
     "key": "A",
-    "text": "$2$"
+    "text": "$2$",
+    "why": "Swapped rise and run: slope $\\frac{2}{3}$, so $f(6) = 4 - 2 = 2$."
    },
    {
     "key": "B",
@@ -183,11 +210,13 @@
    },
    {
     "key": "C",
-    "text": "$9$"
+    "text": "$9$",
+    "why": "Left off the $y$-intercept: $\\frac{3}{2} \\cdot 6 = 9$."
    },
    {
     "key": "D",
-    "text": "$11$"
+    "text": "$11$",
+    "why": "Added the intercept as $+2$: $9 + 2 = 11$."
    }
   ],
   "answer": {
@@ -208,8 +237,10 @@
      "math": "f(6) = 9 - 2 = 7"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "What's the slope between the two labeled points?",
   "status": "live",
   "version": 1
  },
@@ -246,8 +277,33 @@
      "math": "y = 4, x + y = 7"
     }
    ],
-   "desmos_tip": "Graph both lines and tap the point where they cross: (3, 4). Then add the coordinates."
+   "desmos_tip": "Graph both lines and tap the point where they cross: (3, 4). Then add the coordinates.",
+   "desmos_steps": [
+    {
+     "text": "Type the first equation.",
+     "math": "x+2y=11"
+    },
+    {
+     "text": "Type the second equation.",
+     "math": "3x-y=5"
+    },
+    {
+     "text": "Tap the point where the lines cross, then add its two coordinates.",
+     "math": null
+    }
+   ]
   },
+  "nudge": "Can you solve one equation for $y$ and put that into the other?",
+  "common_wrong": [
+   {
+    "answer": "3",
+    "why": "Found $x = 3$ and stopped: the question asks for $x + y$."
+   },
+   {
+    "answer": "4",
+    "why": "Gave $y = 4$ alone instead of $x + y$."
+   }
+  ],
   "status": "live",
   "version": 1
  },
@@ -284,8 +340,24 @@
      "math": null
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "Once the driver is in, how many kilograms are left for boxes?",
+  "common_wrong": [
+   {
+    "answer": "35",
+    "why": "Left out the driver: $\\frac{1250}{35}$ is about 35.7, rounded down."
+   },
+   {
+    "answer": "34",
+    "why": "Rounded $\\frac{1170}{35}$, about 33.4, up: 34 boxes would be over the limit."
+   },
+   {
+    "answer": "33.42",
+    "why": "Stopped at $\\frac{1170}{35}$, about 33.42: the number of boxes is a whole number."
+   }
+  ],
   "status": "live",
   "version": 1
  },
@@ -300,11 +372,13 @@
   "choices": [
    {
     "key": "A",
-    "text": "$2x^2 - 12$"
+    "text": "$2x^2 - 12$",
+    "why": "Multiplied only the first terms and the last terms, missing $-8x$ and $3x$."
    },
    {
     "key": "B",
-    "text": "$2x^2 - 11x - 12$"
+    "text": "$2x^2 - 11x - 12$",
+    "why": "Took $3 \\cdot x$ as $-3x$: $-8x - 3x = -11x$."
    },
    {
     "key": "C",
@@ -312,7 +386,8 @@
    },
    {
     "key": "D",
-    "text": "$2x^2 + 5x - 12$"
+    "text": "$2x^2 + 5x - 12$",
+    "why": "Swapped the signs of the 3 and the $-4$: $(2x - 3)(x + 4)$."
    }
   ],
   "answer": {
@@ -333,8 +408,10 @@
      "math": "2x^2 - 5x - 12"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "Multiply each term of the first factor by each term of the second. Which products give $x$ terms?",
   "status": "live",
   "version": 1
  },
@@ -349,15 +426,18 @@
   "choices": [
    {
     "key": "A",
-    "text": "$\\frac{x + 3}{x + 2}$"
+    "text": "$\\frac{x + 3}{x + 2}$",
+    "why": "Factored $x^2 - 9$ as $(x + 3)^2$, then canceled one $x + 3$."
    },
    {
     "key": "B",
-    "text": "$\\frac{-3}{5x + 2}$"
+    "text": "$\\frac{-3}{5x + 2}$",
+    "why": "Canceled the $x^2$ terms, then divided $-9$ and 6 by 3: $\\frac{-3}{5x + 2}$."
    },
    {
     "key": "C",
-    "text": "$\\frac{x - 3}{x + 3}$"
+    "text": "$\\frac{x - 3}{x + 3}$",
+    "why": "Factored the bottom as $(x + 3)^2$ instead of $(x + 2)(x + 3)$."
    },
    {
     "key": "D",
@@ -382,8 +462,10 @@
      "math": "\\frac{x - 3}{x + 2}"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "Can you factor the top and the bottom? Look for a factor they share.",
   "status": "live",
   "version": 1
  },
@@ -416,8 +498,29 @@
      "math": "x = 6"
     }
    ],
-   "desmos_tip": "Graph y = x^2 - 2x - 24 and read the x-intercept on the right: 6."
+   "desmos_tip": "Graph y = x^2 - 2x - 24 and read the x-intercept on the right: 6.",
+   "desmos_steps": [
+    {
+     "text": "Type the left side as a function.",
+     "math": "y=x^2-2x-24"
+    },
+    {
+     "text": "Tap the x-intercept to the right of the y-axis: its x-value is the answer.",
+     "math": null
+    }
+   ]
   },
+  "nudge": "Which two numbers multiply to $-24$ and add to $-2$?",
+  "common_wrong": [
+   {
+    "answer": "4",
+    "why": "Factored with the signs swapped: $(x + 6)(x - 4)$."
+   },
+   {
+    "answer": "-4",
+    "why": "Gave the other solution: the question asks for the positive one."
+   }
+  ],
   "status": "live",
   "version": 1
  },
@@ -432,7 +535,8 @@
   "choices": [
    {
     "key": "A",
-    "text": "Zero"
+    "text": "Zero",
+    "why": "Moved $2x - 2$ across with the wrong signs: $x^2 - 2x + 5 = 0$ has no real roots."
    },
    {
     "key": "B",
@@ -440,7 +544,8 @@
    },
    {
     "key": "C",
-    "text": "Exactly two"
+    "text": "Exactly two",
+    "why": "Assumed a quadratic has two roots, missing that $(x - 3)^2 = 0$ has one."
    },
    {
     "key": "D",
@@ -469,8 +574,23 @@
      "math": null
     }
    ],
-   "desmos_tip": "Graph both equations: the line just touches the parabola at (3, 4), so there is one intersection."
+   "desmos_tip": "Graph both equations: the line just touches the parabola at (3, 4), so there is one intersection.",
+   "desmos_steps": [
+    {
+     "text": "Type the parabola.",
+     "math": "y=x^2-4x+7"
+    },
+    {
+     "text": "Type the line.",
+     "math": "y=2x-2"
+    },
+    {
+     "text": "Count the points where the graphs meet: the line just touches the parabola once.",
+     "math": null
+    }
+   ]
   },
+  "nudge": "Set the two expressions for $y$ equal. What kind of equation do you get?",
   "status": "live",
   "version": 1
  },
@@ -513,15 +633,18 @@
    },
    {
     "key": "B",
-    "text": "$g(x) = 3 \\cdot 5^x$"
+    "text": "$g(x) = 3 \\cdot 5^x$",
+    "why": "Swapped the starting value and the growth factor: $3 \\cdot 5^x$."
    },
    {
     "key": "C",
-    "text": "$g(x) = 10x + 5$"
+    "text": "$g(x) = 10x + 5$",
+    "why": "Treated it as linear, using the first jump of 10: $10x + 5$."
    },
    {
     "key": "D",
-    "text": "$g(x) = 5x^3$"
+    "text": "$g(x) = 5x^3$",
+    "why": "Put the factor 3 in the exponent on $x$: $5x^3$ instead of $5 \\cdot 3^x$."
    }
   ],
   "answer": {
@@ -542,8 +665,10 @@
      "math": "g(x) = 5 \\cdot 3^x"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "What is $g(0)$, and what do you multiply by each time $x$ goes up by 1?",
   "status": "live",
   "version": 1
  },
@@ -613,8 +738,20 @@
      "math": "f(0) = -(0 - 1)^2 + 9 = 8"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "Write $f$ in vertex form. How can the point $(4, 0)$ tell you $a$?",
+  "common_wrong": [
+   {
+    "answer": "10",
+    "why": "Took $a = 1$ instead of $-1$: $(0 - 1)^2 + 9 = 10$."
+   },
+   {
+    "answer": "9",
+    "why": "Gave the vertex's $y$-value instead of $f(0)$."
+   }
+  ],
   "status": "live",
   "version": 1
  },
@@ -633,7 +770,8 @@
    },
    {
     "key": "B",
-    "text": "$72$"
+    "text": "$72$",
+    "why": "Treated 45 seconds as a whole minute: $18 \\cdot 4 = 72$."
    },
    {
     "key": "C",
@@ -641,7 +779,8 @@
    },
    {
     "key": "D",
-    "text": "$600$"
+    "text": "$600$",
+    "why": "Flipped the rate to seconds per page: $\\frac{45}{18} \\cdot 240 = 600$."
    }
   ],
   "answer": {
@@ -662,8 +801,10 @@
      "math": "0.4 \\cdot 240 = 96"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "How many seconds are in 4 minutes, and how many pages does the printer do each second?",
   "status": "live",
   "version": 1
  },
@@ -700,8 +841,20 @@
      "math": null
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "What do you multiply a price by for a 20% increase? And for a 25% decrease?",
+  "common_wrong": [
+   {
+    "answer": "95",
+    "why": "Added and subtracted the percents: $100 + 20 - 25 = 95$."
+   },
+   {
+    "answer": "10",
+    "why": "Gave the drop in percent instead of the final price's percent."
+   }
+  ],
   "status": "live",
   "version": 1
  },
@@ -763,7 +916,8 @@
   "choices": [
    {
     "key": "A",
-    "text": "$1$"
+    "text": "$1$",
+    "why": "Picked the most common value (the tallest bar) instead of the middle one."
    },
    {
     "key": "B",
@@ -771,11 +925,13 @@
    },
    {
     "key": "C",
-    "text": "$6$"
+    "text": "$6$",
+    "why": "Took the median of the bar heights 2, 5, 6, 7, 10 instead of the books."
    },
    {
     "key": "D",
-    "text": "$10$"
+    "text": "$10$",
+    "why": "Gave the tallest bar's height, 10 students, instead of a number of books."
    }
   ],
   "answer": {
@@ -796,8 +952,10 @@
      "math": null
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "With 30 students in order, which two positions are in the middle?",
   "status": "live",
   "version": 1
  },
@@ -840,15 +998,18 @@
   "choices": [
    {
     "key": "A",
-    "text": "$\\frac{4}{15}$"
+    "text": "$\\frac{4}{15}$",
+    "why": "Divided by all 60 students: $\\frac{16}{60} = \\frac{4}{15}$."
    },
    {
     "key": "B",
-    "text": "$\\frac{3}{7}$"
+    "text": "$\\frac{3}{7}$",
+    "why": "Used the 10th graders in Art: $\\frac{12}{28} = \\frac{3}{7}$."
    },
    {
     "key": "C",
-    "text": "$\\frac{8}{15}$"
+    "text": "$\\frac{8}{15}$",
+    "why": "Divided by the 30 eleventh graders: $\\frac{16}{30} = \\frac{8}{15}$."
    },
    {
     "key": "D",
@@ -873,8 +1034,10 @@
      "math": "\\frac{16}{28} = \\frac{4}{7}"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "Only the Art students count. How many chose Art, and how many of those are in 11th grade?",
   "status": "live",
   "version": 1
  },
@@ -984,15 +1147,18 @@
    },
    {
     "key": "B",
-    "text": "$9.2$"
+    "text": "$9.2$",
+    "why": "Divided the predicted score at 10 hours by 10: $\\frac{4 \\cdot 10 + 52}{10} = 9.2$."
    },
    {
     "key": "C",
-    "text": "$40$"
+    "text": "$40$",
+    "why": "Multiplied the slope by the 10 hours on the graph: $4 \\cdot 10 = 40$."
    },
    {
     "key": "D",
-    "text": "$52$"
+    "text": "$52$",
+    "why": "Gave the $y$-intercept, the predicted score at 0 hours."
    }
   ],
   "answer": {
@@ -1009,8 +1175,10 @@
      "math": null
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "What does the slope of a line of best fit mean in this context?",
   "status": "live",
   "version": 1
  },
@@ -1093,8 +1261,20 @@
      "math": "\\frac{1}{2} \\cdot 12 \\cdot 9 = 54"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "In a right triangle, which two sides can be the base and the height?",
+  "common_wrong": [
+   {
+    "answer": "108",
+    "why": "Forgot the $\\frac{1}{2}$: $12 \\cdot 9 = 108$."
+   },
+   {
+    "answer": "36",
+    "why": "Found the perimeter, $9 + 12 + 15 = 36$, instead of the area."
+   }
+  ],
   "status": "live",
   "version": 1
  },
@@ -1209,8 +1389,16 @@
      "math": "x = 52 + 71 = 123"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "How is an exterior angle related to the two interior angles that are not next to it?",
+  "common_wrong": [
+   {
+    "answer": "57",
+    "why": "Found the interior angle at $B$, $180 - 52 - 71 = 57$, not the exterior one."
+   }
+  ],
   "status": "live",
   "version": 1
  },
@@ -1301,7 +1489,8 @@
   "choices": [
    {
     "key": "A",
-    "text": "$2\\pi$"
+    "text": "$2\\pi$",
+    "why": "Used $\\pi r = 6\\pi$ as the circumference: $\\frac{1}{3} \\cdot 6\\pi = 2\\pi$."
    },
    {
     "key": "B",
@@ -1309,11 +1498,13 @@
    },
    {
     "key": "C",
-    "text": "$6\\pi$"
+    "text": "$6\\pi$",
+    "why": "Took half the circumference, as for a $180^\\circ$ arc: $\\frac{1}{2} \\cdot 12\\pi = 6\\pi$."
    },
    {
     "key": "D",
-    "text": "$12\\pi$"
+    "text": "$12\\pi$",
+    "why": "Gave the whole circumference, $2\\pi \\cdot 6 = 12\\pi$."
    }
   ],
   "answer": {
@@ -1334,8 +1525,10 @@
      "math": "\\frac{1}{3} \\cdot 12\\pi = 4\\pi"
     }
    ],
-   "desmos_tip": null
+   "desmos_tip": null,
+   "desmos_steps": null
   },
+  "nudge": "What fraction of the whole circle is a $120^\\circ$ arc?",
   "status": "live",
   "version": 1
  }

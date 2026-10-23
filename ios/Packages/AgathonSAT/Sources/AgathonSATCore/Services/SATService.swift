@@ -56,12 +56,27 @@ public final class SATClient: SATService {
     }
 
     public func next(_ request: SATNextRequest) async throws -> [SATQuestion] {
-        let reply: SATNextReply = try await api.get(Self.nextPath, query: request.query)
+        // the student's zone: the mistake deck's "due today" is their day (v2, additive)
+        let reply: SATNextReply = try await api.get(Self.nextPath, query: request.query + [URLQueryItem(name: "tz", value: timeZone().identifier)])
         return reply.questions
     }
 
     public func record(_ attempt: SATAttempt) async throws -> SATAttemptReply {
-        try await api.post(Self.attemptsPath, body: attempt, as: SATAttemptReply.self)
+        try await api.post(Self.attemptsPath, body: Zoned(attempt: attempt, tz: timeZone().identifier), as: SATAttemptReply.self)
+    }
+
+    /// An attempt with the student's zone beside its fields (the deck's "back in 1 day" is their day).
+    struct Zoned: Encodable {
+        let attempt: SATAttempt
+        let tz: String
+
+        enum K: String, CodingKey { case tz }
+
+        func encode(to encoder: Encoder) throws {
+            try attempt.encode(to: encoder)
+            var c = encoder.container(keyedBy: K.self)
+            try c.encode(tz, forKey: .tz)
+        }
     }
 
     public func tutorPass(questionId: String) async throws -> SATTutorPass {

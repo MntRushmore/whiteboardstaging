@@ -8,9 +8,20 @@ import Foundation
 public final class LiveRequestTag: @unchecked Sendable {
     private let lock = NSLock()
     private var _satQuestionId: String?
+    private var _satFigureMarks: String?
+
+    /// The longest `sat_figure_marks` the server takes.
+    public static let maxFigureMarks = 300
 
     public init(satQuestionId: String? = nil) {
         _satQuestionId = satQuestionId
+    }
+
+    /// What the student drew on the question's figure, in its terms ("circled near (2, 0)"), for the
+    /// tutor's context (SAT v2, `sat_figure_marks`, at most 300 characters); nil: no marks.
+    public var satFigureMarks: String? {
+        get { lock.withLock { _satFigureMarks } }
+        set { lock.withLock { _satFigureMarks = newValue.flatMap { $0.isEmpty ? nil : String($0.prefix(Self.maxFigureMarks)) } } }
     }
 
     /// The SAT question the board's live calls are about.
@@ -21,7 +32,10 @@ public final class LiveRequestTag: @unchecked Sendable {
 
     /// The fields to add, by their JSON keys.
     public var fields: [String: String] {
-        satQuestionId.map { ["sat_question_id": $0] } ?? [:]
+        guard let id = satQuestionId else { return [:] }
+        var out = ["sat_question_id": id]
+        if let marks = satFigureMarks { out["sat_figure_marks"] = marks }
+        return out
     }
 
     /// `body` with the tag's fields beside its own.

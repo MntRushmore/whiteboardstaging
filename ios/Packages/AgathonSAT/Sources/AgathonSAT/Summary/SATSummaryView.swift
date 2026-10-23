@@ -39,6 +39,8 @@ public struct SATSummaryView: View {
                 if summary.rightSecondTry > 0 {
                     Text(SATCopy.secondTries(summary.rightSecondTry)).dsFont(.callout).foregroundStyle(DS.Color.inkSecondary)
                 }
+                // the mistake deck (v2): what comes back tomorrow
+                if deckCount > 0 { deckCard }
                 // what to do next, before the list: it never sits below the fold
                 actionsRow
                     .padding(.vertical, DS.Space.xs)
@@ -59,6 +61,33 @@ public struct SATSummaryView: View {
         }
         .background(DS.Color.ground.ignoresSafeArea())
         .accessibilityIdentifier("sat.summary")
+    }
+
+    private var deckCount: Int { summary.rows.filter { $0.backInDays != nil }.count }
+
+    /// "3 come back tomorrow.", the 1-day / 3-day rule, and the front card "Back in 1 day".
+    private var deckCard: some View {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            Text(SATCopy.deckTitle).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
+            Text(SATCopy.comeBackTomorrow(deckCount)).dsFont(.title, size: 30).foregroundStyle(DS.Color.ink)
+                .accessibilityIdentifier("sat.summary.deck")
+            Text(SATCopy.deckRule).dsFont(.callout).foregroundStyle(DS.Color.inkSecondary).fixedSize(horizontal: false, vertical: true)
+            if let first = summary.rows.first(where: { $0.backInDays != nil }) {
+                HStack(spacing: DS.Space.xs) {
+                    Image(systemName: "calendar.badge.clock").font(.system(size: 16, weight: .semibold))
+                    Text("Q\(first.number) · \(SATTaxonomy.title(of: first.skill)) · \(SATCopy.backInADay)").dsFont(.button, size: 15)
+                }
+                .foregroundStyle(DS.Color.ink)
+                .padding(.horizontal, DS.Space.m)
+                .frame(minHeight: 52)
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(DS.Color.surfaceSunken))
+                .accessibilityIdentifier("sat.summary.backIn")
+            }
+        }
+        .padding(DS.Space.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: DS.Radius.tile, style: .continuous).fill(DS.Color.paper))
+        .accessibilityElement(children: .contain)
     }
 
     /// The set as a row of bars: right first time solid, right on the second try half, the rest empty.
@@ -97,6 +126,16 @@ public struct SATSummaryView: View {
             if row.marked {
                 Image(systemName: "bookmark.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.Color.ink)
                     .accessibilityLabel(SATCopy.marked)
+            }
+            if row.review {
+                Text(SATCopy.reviewChip).dsFont(.caption, size: 11).fontWeight(.semibold).foregroundStyle(DS.Color.ink)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .overlay(Capsule().strokeBorder(DS.Color.ink, lineWidth: 1.2))
+            }
+            if row.backInDays != nil {
+                // the mistake deck takes it: it comes back tomorrow (v2)
+                Text(SATCopy.intoTheDeck).dsFont(.caption, size: 13).fontWeight(.semibold).foregroundStyle(DS.Color.ink)
+                    .accessibilityIdentifier("sat.summary.deck.\(row.number)")
             }
             result(row.verdict)
             DSIcon(.forward, size: 13).foregroundStyle(DS.Color.inkSecondary)

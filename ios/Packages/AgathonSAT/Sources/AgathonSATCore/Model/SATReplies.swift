@@ -179,9 +179,16 @@ public struct SATProgress: Codable, Hashable, Sendable {
     public var today: Today
     /// nil until 15 questions are answered
     public var estimate: Estimate?
+    /// the mistake deck (v2, docs/SAT-V2.md): reviews due today, and waiting for a later day (nil:
+    /// a server without the deck)
+    public var reviewsDue: Int?
+    public var reviewsWaiting: Int?
 
     public init(answered: Int = 0, correct: Int = 0, byDomain: [DomainCount] = [], bySkill: [SkillCount] = [], streakDays: Int = 0,
-                today: Today = Today(answered: 0, tutorUsed: 0, cap: SATLimits.freeTutorPerDay, unlimited: false), estimate: Estimate? = nil) {
+                today: Today = Today(answered: 0, tutorUsed: 0, cap: SATLimits.freeTutorPerDay, unlimited: false), estimate: Estimate? = nil,
+                reviewsDue: Int? = nil, reviewsWaiting: Int? = nil) {
+        self.reviewsDue = reviewsDue
+        self.reviewsWaiting = reviewsWaiting
         self.answered = answered
         self.correct = correct
         self.byDomain = byDomain
@@ -197,6 +204,8 @@ public struct SATProgress: Codable, Hashable, Sendable {
         case bySkill = "by_skill"
         case streakDays = "streak_days"
         case today, estimate
+        case reviewsDue = "reviews_due"
+        case reviewsWaiting = "reviews_waiting"
     }
 
     public init(from decoder: Decoder) throws {
@@ -208,6 +217,8 @@ public struct SATProgress: Codable, Hashable, Sendable {
         streakDays = try c.decodeIfPresent(Int.self, forKey: .streakDays) ?? 0
         today = try c.decodeIfPresent(Today.self, forKey: .today) ?? Today(answered: 0, tutorUsed: 0, cap: SATLimits.freeTutorPerDay, unlimited: false)
         estimate = try? c.decodeIfPresent(Estimate.self, forKey: .estimate)
+        reviewsDue = (try? c.decodeIfPresent(Int.self, forKey: .reviewsDue)) ?? nil
+        reviewsWaiting = (try? c.decodeIfPresent(Int.self, forKey: .reviewsWaiting)) ?? nil
     }
 
     /// A domain's count (zero when none answered).

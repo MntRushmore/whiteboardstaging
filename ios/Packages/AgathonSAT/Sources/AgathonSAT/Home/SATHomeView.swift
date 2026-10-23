@@ -96,6 +96,18 @@ public struct SATHomeView: View {
         let today = progress?.today
         return Card(.paper, radius: DS.Radius.cardLarge, padding: DS.Space.xl) {
             Text(SATCopy.today).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
+            // the mistake deck (v2): the reviews due today come first in a set
+            if let due = progress?.reviewsDue, due > 0 {
+                HStack(alignment: .center, spacing: DS.Space.m) {
+                    SATDeckStack().frame(width: 64, height: 52)
+                    Text(SATCopy.toReviewToday(due))
+                        .dsFont(.display, size: 46)
+                        .foregroundStyle(DS.Color.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("sat.home.reviews")
+            }
             Text(SATCopy.answeredToday(today?.answered ?? 0))
                 .dsFont(.headline, size: 30)
                 .foregroundStyle(DS.Color.ink)
@@ -110,7 +122,8 @@ public struct SATHomeView: View {
                 .disabled(starting != nil)
                 .fixedSize()
                 .accessibilityIdentifier("sat.home.practice10")
-                Text(SATCopy.practice10Line)
+                Text((progress?.reviewsDue ?? 0) > 0 ? SATCopy.reviewsThenNew(min(progress?.reviewsDue ?? 0, SATLimits.setSize), SATLimits.setSize)
+                     : SATCopy.practice10Line)
                     .dsFont(.callout, size: 15)
                     .foregroundStyle(DS.Color.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -315,6 +328,19 @@ public struct SATHomeView: View {
             }
         }
         .frame(height: 8)
+    }
+}
+/// The mistake deck drawn as three flat stacked cards (no shadow: the design notes' `line`, `guide`, chalk).
+struct SATDeckStack: View {
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(DS.Color.line).offset(x: 0, y: 0).frame(width: 52, height: 40)
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(SATChromeColor.guide).offset(x: 6, y: 6).frame(width: 52, height: 40)
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(DS.Color.surfaceSunken)
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(DS.Color.line, lineWidth: 1))
+                .offset(x: 12, y: 12).frame(width: 52, height: 40)
+        }
+        .accessibilityHidden(true)
     }
 }
 #endif

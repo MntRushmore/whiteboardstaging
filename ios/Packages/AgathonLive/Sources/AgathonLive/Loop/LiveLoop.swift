@@ -201,6 +201,10 @@ public final class LiveLoop: ObservableObject {
     /// Writes a ringed step's hint on the iPad (Apple Intelligence) instead of asking the server's
     /// check; nil (the default) asks the server. `start()` sets it when the owner's debug switch is on.
     public var hintWriter: HintWriter?
+    /// SAT v2 (docs/SAT-V2.md, "Write on the figure"): the question's printed coordinate plane on a
+    /// page, when it has one. Graph it and the typed "Graph an equation" draw onto it, in its own
+    /// coordinates, instead of putting a graph object beside the line.
+    public var questionPlot: ((RecordID) -> QuestionPlot?)?
 
     // MARK: network
 

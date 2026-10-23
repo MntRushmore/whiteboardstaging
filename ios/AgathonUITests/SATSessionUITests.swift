@@ -1,24 +1,28 @@
 import XCTest
 
-/// SAT practice end to end with the SAT routes stubbed on the iPad (Debug `-satStub`: the lane's
-/// fixture questions, a free tutor that runs out after its cap, an in-memory board and a quiet tutor),
-/// so it needs no server (docs/SAT-MODE.md):
+/// SAT practice v2 end to end with every service stubbed on the iPad (Debug `-satStub`: the fixture
+/// questions, or the bank lane's sample-20 with `bank=sample`; a free tutor that runs out after its
+/// cap; an in-memory board; a quiet tutor whose reads are `-satStubRead`'s, so no model is ever
+/// called), so it needs no server (docs/SAT-V2.md):
 ///
-///  - open SAT from Home, Practice 10; browse six questions and choose and check: no tutor pass
-///    (the owner: the pass is taken on the first ink); write on one page: one pass, the tutor on;
-///  - an mcq with Bluebook's eliminator: look again, then right, then the solution;
-///  - a grid-in through the keypad; a figure; the end of the set and Practice 10 more;
-///  - the cap: a free account's 20 of 20 ("Unlimited lifts it"), no account's 5 of 5 ("Make a free
-///    account for 20 a day", its button opening the account's age question); no live call is made;
-///  - the first run's "I'm studying for the SAT": SAT home with no account, then the account's age
-///    question (13+: the form; under 13: the grown-up's first run).
+///  - the question is the page: "Q1 of 10" in the top bar, the cards printed at the bottom; browsing
+///    takes no pass; the first ink takes one;
+///  - choose, the eliminator, a wrong check (its "why" note), Try again, the right check, the
+///    solution's two ways;
+///  - Help me's three rungs with the live tutor on (the nudge, the live step and "Your turn", the
+///    walk-through a tap a step), and capped (the bank's step in the tutor's ink, no live call);
+///  - the figure's marks in graph terms, Graph an equation onto the question's plane;
+///  - the grid-in's keypad, a common wrong answer's note;
+///  - the mistake deck: SAT home's "to review today", a review's chip, the summary's "Into the deck".
 ///
 /// Screenshots (landscape and portrait) go to `TEST_RUNNER_AGATHON_SAT_SHOTS` when it is set
-/// (docs/sat/screens/). Run alone:
+/// (docs/sat2/screens/). Run alone:
 ///
 ///     xcodebuild test-without-building … -only-testing:AgathonUITests/SATSessionUITests -parallel-testing-enabled NO
 final class SATSessionUITests: XCTestCase {
     private var app: XCUIApplication!
+    /// the test turned the iPad upright (the captures come in the device's own orientation)
+    private var portrait = false
     private let env = ProcessInfo.processInfo.environment
 
     override func setUpWithError() throws {
@@ -37,182 +41,261 @@ final class SATSessionUITests: XCTestCase {
         app.launch()
     }
 
-    // MARK: - the session
+    // MARK: - the question is the page
 
-    func test1ASetFromHomeToTheSummary() throws {
+    func test1ChooseEliminateCheckAndTheTwoWays() throws {
         launch()
         tap("home.sat", wait: 40)
         XCTAssertTrue(element("sat.home").waitForExistence(timeout: 20))
-        waitFor("sat.home.tutorLeft", label: "20 of 20 free tutor questions left", timeout: 15)
-        snap("landscape-1-home")
         tap("sat.home.practice10")
-        XCTAssertTrue(element("sat.panel").waitForExistence(timeout: 30))
         XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 30))
-        waitFor("sat.position", label: "Question 1 of 10", timeout: 10)
+        waitFor("sat.position", label: "Q1 of 10", timeout: 15)
         probe("q 1 tutor ready live off passes 0")
-        XCTAssertTrue(element("sat.tutor.ready").exists, "the tutor is ready, not on, before any ink")
+        // the cards are on the page, the pens at the bottom right, Help me and Check at the left
+        XCTAssertTrue(element("sat.choice.A").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("sat.tool.pen").exists && element("sat.helpMe").exists && element("sat.check").exists)
+        XCTAssertLessThan(element("sat.helpMe").frame.minX, element("sat.check").frame.minX)
+        XCTAssertLessThan(element("sat.check").frame.maxX, element("sat.tool.select").frame.minX)
+        XCTAssertFalse(element("sat.check").isEnabled, "Check waits for an answer")
+        snap("landscape-01-question")
 
-        // browsing six questions takes no pass
-        for n in 2...6 {
+        // browsing takes no pass; the board follows
+        for n in 2...5 {
             tap("sat.next")
-            waitFor("sat.position", label: "Question \(n) of 10", timeout: 10)
+            waitFor("sat.position", label: "Q\(n) of 10", timeout: 10)
         }
-        probe("q 6 tutor ready live off passes 0")
-        // (the board followed the panel: question 6's page)
-        waitFor("board.title", label: "Question 6 of 10", timeout: 10)
-        for _ in 2...6 { tap("sat.previous") }
-        waitFor("sat.position", label: "Question 1 of 10", timeout: 10)
+        probe("q 5 tutor ready live off passes 0")
+        for _ in 2...5 { tap("sat.previous") }
+        waitFor("sat.position", label: "Q1 of 10", timeout: 10)
 
-        // the eliminator, then a wrong answer (look again), then the right one, then the solution
-        tap("sat.strike.A")
-        waitFor("sat.choice.A", value: "Crossed out", timeout: 5)
-        tap("sat.choice.B")
-        snap("landscape-2-session-mcq")
+        // the eliminator, then a wrong choice: its why, Try again
+        tap("sat.strike.B")
+        waitFor("sat.choice.B", value: "Crossed out", timeout: 5)
+        tap("sat.choice.A")
+        waitFor("sat.choice.A", value: "Chosen", timeout: 5)
         tap("sat.check")
-        XCTAssertTrue(element("sat.verdict.lookAgain").waitForExistence(timeout: 5))
-        waitFor("sat.choice.B", value: "Not this one", timeout: 5)
+        XCTAssertTrue(element("sat.wrong").waitForExistence(timeout: 5))
+        waitFor("sat.wrong.why", label: "subtracted 5 from 9", timeout: 5)
+        waitFor("sat.choice.A", value: "Not this one", timeout: 5)
+        snap("landscape-06-wrong-answer")
+        tap("sat.wrong.tryAgain")
+        XCTAssertFalse(element("sat.wrong").exists)
         tap("sat.choice.C")
         tap("sat.check")
-        XCTAssertTrue(element("sat.verdict.right").waitForExistence(timeout: 5))
-        tap("sat.seeSolution")
+        // right: the solution, the paper way and the Desmos way side by side
         XCTAssertTrue(element("sat.solution").waitForExistence(timeout: 5))
-        XCTAssertTrue(element("sat.solution.desmos").waitForExistence(timeout: 5))
-        snap("landscape-3-solution")
-        // choosing and checking took no pass either; two attempts were sent
+        XCTAssertTrue(element("sat.verdict.right").exists)
+        XCTAssertTrue(element("sat.solution.paper").exists)
+        XCTAssertTrue(element("sat.solution.desmosWay").exists, "question 1 has a Desmos way")
+        snap("landscape-07-solution-two-ways")
         probe("passes 0 attempts 2")
+        tap("sat.solution.back")
+        XCTAssertFalse(element("sat.solution").exists)
+        waitFor("sat.choice.C", value: "Right", timeout: 5)
 
-        // the first ink on question 1's page claims its pass: the tutor goes on, with the question's id
+        // the first ink on the page claims its pass, the tutor on, the question's id on every call
         drawOnBoard()
         probe("q 1 tutor on live on passes 1")
         probe("tag algebra-linear-one-var-9001")
-        XCTAssertTrue(element("sat.tutor.on").waitForExistence(timeout: 5))
-        drawOnBoard()
-        probe("passes 1")
-
-        // question 2: a table; question 3: a grid-in through the keypad
         tap("sat.nextQuestion")
-        waitFor("sat.position", label: "Question 2 of 10", timeout: 10)
-        XCTAssertTrue(element("sat.figure.table").waitForExistence(timeout: 5))
-        snap("landscape-4-session-table")
-        tap("sat.next")
-        XCTAssertTrue(element("sat.gridin").waitForExistence(timeout: 5))
-        tap("sat.key.slash")
-        waitFor("sat.gridin", value: "Empty", timeout: 5)
-        tap("sat.key.4")
-        waitFor("sat.gridin", value: "4", timeout: 5)
-        snap("landscape-5-session-gridin")
-        tap("sat.check")
-        XCTAssertTrue(element("sat.verdict.right").waitForExistence(timeout: 5))
-        // question 4: a plotted line
-        tap("sat.nextQuestion")
-        XCTAssertTrue(element("sat.figure.plot").waitForExistence(timeout: 5))
-        snap("landscape-6-session-plot")
-        tap("sat.next")
-        XCTAssertTrue(element("sat.figure.shape").waitForExistence(timeout: 5))
-        snap("landscape-7-session-shape")
-
-        // the last question: a grid-in, right; then the set's results
-        for _ in 6...10 { tap("sat.next") }
-        waitFor("sat.position", label: "Question 10 of 10", timeout: 10)
-        tap("sat.key.5")
-        tap("sat.check")
-        tap("sat.results")
-        XCTAssertTrue(element("sat.summary").waitForExistence(timeout: 10))
-        // right first time on 3 and 10; 1 was right on the second try
-        waitFor("sat.summary.score", label: "2/10", timeout: 5)
-        XCTAssertTrue(element("sat.summary.review").exists)
-        snap("landscape-8-summary")
-        tap("sat.summary.review")
-        waitFor("sat.position", label: "Reviewing 1 of", timeout: 10)
-        tap("sat.endReview")
-        XCTAssertTrue(element("sat.summary").waitForExistence(timeout: 10))
-        tap("sat.summary.more")
-        waitFor("sat.position", label: "Question 1 of 10", timeout: 20)
-        XCTAssertFalse(element("sat.summary").exists)
+        waitFor("sat.position", label: "Q2 of 10", timeout: 10)
     }
 
-    /// A free account's cap (20 a day, all used): the cap line, the board plain ink, no live call.
-    func test2TheCapWithAFreeAccount() throws {
+    // MARK: - Help me's ladder
+
+    /// With the day's pass: the nudge, ONE step through the live Help me (the engine's step from the
+    /// stubbed read: no model), "Your turn", then the walk-through a tap a step.
+    func test2TheLadderWithTheTutorOn() throws {
+        launch(stub: "cap=20,used=0", extra: ["-satStubRead", "4x - 12 + 7 = 2x + 9", "-satAutowrite", "4x - 12 + 7 = 2x + 9"])
+        openSet()
+        // the student's first line, in a student's hand through the canvas's touch path
+        tap("sat.debug.write")
+        probe("tutor on live on passes 1", timeout: 20)
+        probe("read 1", timeout: 20)
+        tap("sat.helpMe")
+        XCTAssertTrue(element("sat.nudge").waitForExistence(timeout: 5))
+        waitFor("sat.nudge.text", label: "distribute the 4", timeout: 5)
+        waitFor("sat.helpMe", value: "1 of 3", timeout: 5)
+        snap("landscape-03-rung1-nudge")
+        tap("sat.helpMe")
+        // rung 2: one step written by the tutor, "Your turn" beside it
+        probe("rung 2", timeout: 10)
+        probe("yourTurn yes", timeout: 20)
+        // the live Help me wrote it (the engine's next step from the read line: no model called)
+        probe("step live", timeout: 5)
+        XCTAssertTrue(element("sat.yourTurn").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("sat.nudge").exists)
+        snap("landscape-04-rung2-one-step")
+        tap("sat.helpMe")
+        // rung 3: the walk-through, the Check replaced by its pill
+        XCTAssertTrue(element("sat.walk.next").waitForExistence(timeout: 5))
+        probe("rung 3", timeout: 5)
+        probe("walk 1/3", timeout: 10)
+        snap("landscape-05-rung3-walk")
+        tap("sat.walk.next")
+        probe("walk 2/3", timeout: 10)
+        tap("sat.walk.next")
+        probe("walk 3/3", timeout: 10)
+        tap("sat.walk.next")
+        XCTAssertTrue(element("sat.check").waitForExistence(timeout: 10), "the last step turns the pill back into Check")
+        XCTAssertTrue(element("sat.walk.caption.3").exists)
+    }
+
+    /// Capped: the top bar's line and the ladder laid out once; Help me still climbs, rung 2 is the
+    /// bank's next step in the tutor's ink, and nothing is called.
+    func test3TheLadderCapped() throws {
         launch(stub: "cap=20,used=20", account: "free")
         openSet()
         drawOnBoard()
         probe("tutor capped live off passes 0")
-        waitFor("sat.tutor.words", label: "Free tutor used up for today: 20 of 20. Unlimited lifts it.", timeout: 10)
-        XCTAssertTrue(element("sat.tutor.capAction").exists)
+        waitFor("sat.tutor.capped", label: "Tutor checks used up today: 20 of 20. Help me still works.", timeout: 10)
+        XCTAssertTrue(element("sat.ladderCard").waitForExistence(timeout: 5))
+        snap("landscape-10-capped")
+        tap("sat.helpMe")
+        XCTAssertFalse(element("sat.ladderCard").exists, "the card goes on the next tap")
+        XCTAssertTrue(element("sat.nudge").waitForExistence(timeout: 5))
+        tap("sat.helpMe")
+        probe("yourTurn yes", timeout: 15)
         probe("calls 0")
-        // the board keeps working: more ink, still nothing called
-        drawOnBoard()
-        probe("calls 0")
-        snap("landscape-9-cap-free")
-        // Graph an equation works with the tutor off
+        XCTAssertTrue(element("sat.yourTurn").exists)
+        snap("landscape-10b-capped-bank-step")
+        // the capped line's button: the plan (a free account)
+        tap("sat.tutor.capped")
+    }
+
+    // MARK: - the figure
+
+    /// Ink on the plane is read in its terms (for the tutor's context); Graph an equation draws onto it.
+    func test4WriteOnTheFigure() throws {
+        launch()
+        openSet()
+        for _ in 2...4 { tap("sat.next") }
+        waitFor("sat.position", label: "Q4 of 10", timeout: 10)
+        tap("sat.debug.circle")
+        probe("marks On the question's graph the student drew: circled near (0, 4).", timeout: 10)
+        tap("sat.tool.graph")
         let field = element("sat.graph.field")
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap()
-        field.typeText("y = 2x + 1\n")
+        field.typeText("y = -2x + 4\n")
         waitFor("sat.graph.note", label: "Graphed on your board.", timeout: 20)
+        probe("tutorInk", timeout: 5)
+        snap("landscape-02-figure-marks-graph")
     }
 
-    /// No account: 5 a day; the cap line offers a free account (20 a day), its button the age question.
-    func test3TheCapWithNoAccount() throws {
-        launch(stub: "cap=5,used=5", account: "none")
+    // MARK: - the grid-in
+
+    func test5TheGridInsKeypadAndACommonWrongAnswer() throws {
+        launch()
         openSet()
-        drawOnBoard()
-        waitFor("sat.tutor.words", label: "Free tutor used up for today: 5 of 5. Make a free account for 20 a day.", timeout: 10)
-        snap("landscape-10-cap-no-account")
-        tap("sat.tutor.capAction")
-        waitFor("sat.account.title", label: "How old are you?", timeout: 10)
+        tap("sat.next")
+        tap("sat.next")
+        waitFor("sat.position", label: "Q3 of 10", timeout: 10)
+        XCTAssertTrue(element("sat.gridin").waitForExistence(timeout: 5))
+        tap("sat.key.2")
+        waitFor("sat.gridin", value: "2", timeout: 5)
+        snap("landscape-08-gridin")
+        tap("sat.check")
+        // "2" is y: the bank's common wrong answer says so
+        waitFor("sat.wrong.why", label: "That's y", timeout: 5)
+        tap("sat.wrong.tryAgain")
+        tap("sat.key.4")
+        tap("sat.check")
+        XCTAssertTrue(element("sat.verdict.right").waitForExistence(timeout: 5))
     }
 
-    /// Portrait: the panel on top, the board below; SAT home, a figure, a grid-in, the cap line, the summary.
-    func test4PortraitShots() throws {
-        XCUIDevice.shared.orientation = .portrait
-        launch(stub: "cap=20,used=20,answered=32", account: "free")
+    // MARK: - the deck, the summary, portrait
+
+    /// The bank lane's sample with two reviews due: SAT home's line, the review chip, the end of the
+    /// set's deck; then portrait: the page scaled to the width, the solution's ways as tabs.
+    func test6TheDeckAndPortrait() throws {
+        launch(stub: "cap=20,used=0,bank=sample,reviews=2")
         tap("home.sat", wait: 40)
-        XCTAssertTrue(element("sat.home.estimate").waitForExistence(timeout: 20), "32 answers: the rough estimate shows")
-        snap("portrait-1-home")
+        waitFor("sat.home.reviews", label: "2 to review today", timeout: 20)
+        snap("landscape-12-home")
         tap("sat.home.practice10")
-        XCTAssertTrue(element("sat.panel").waitForExistence(timeout: 30))
-        tap("sat.next")
-        XCTAssertTrue(element("sat.figure.table").waitForExistence(timeout: 5))
-        snap("portrait-2-session-table")
-        tap("sat.next")
-        tap("sat.key.4")
-        drawOnBoard()
-        probe("tutor capped")
-        snap("portrait-3-gridin-cap")
+        waitFor("sat.position", label: "Q1 of 10", timeout: 30)
+        XCTAssertTrue(element("sat.review").waitForExistence(timeout: 5), "a review carries its chip")
+        // miss question 1 twice: into the deck
+        let wrong = ["A", "B", "C", "D"].first { key in
+            element("sat.choice.\(key)").waitForExistence(timeout: 5)
+            tap("sat.choice.\(key)")
+            tap("sat.check")
+            return element("sat.wrong").waitForExistence(timeout: 2)
+        }
+        XCTAssertNotNil(wrong)
+        // (the second miss: another wrong choice)
+        for key in ["A", "B", "C", "D"] where key != wrong {
+            tap("sat.choice.\(key)")
+            tap("sat.check")
+            if element("sat.solution").waitForExistence(timeout: 2) { break }
+            tap("sat.wrong.tryAgain")
+        }
+        if element("sat.solution.back").exists { tap("sat.solution.back") }
+        XCUIDevice.shared.orientation = .portrait
+        portrait = true
+        sleep(2)
+        // turned: the same page fitted to the upright window's width, the row at its new bottom
+        probe("scale 0.640", timeout: 10)
+        snap("portrait-13-question")
+        // the plotted line question of the sample, in portrait
+        for _ in 2...4 { tap("sat.next") }
+        snap("portrait-13b-plot")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        portrait = false
+        sleep(1)
+        // the rest unanswered: the results
+        for _ in 5...10 { tap("sat.next") }
+        if element("sat.key.5").exists {
+            tap("sat.key.5")
+        } else {
+            tap("sat.choice.A")
+        }
         tap("sat.check")
-        tap("sat.seeSolution")
-        snap("portrait-4-solution")
-        tap("sat.collapse")
-        XCTAssertTrue(element("sat.expand").waitForExistence(timeout: 5))
-        snap("portrait-5-collapsed")
-        tap("sat.expand")
-        for _ in 3...10 { tap("sat.next") }
-        tap("sat.key.5")
-        tap("sat.check")
-        tap("sat.results")
+        if element("sat.solution").waitForExistence(timeout: 3) {
+            tap("sat.solution.next")
+        } else {
+            tap("sat.wrong.tryAgain")
+            tap(element("sat.key.1").exists ? "sat.key.1" : "sat.choice.B")
+            tap("sat.check")
+            tap("sat.solution.next")
+        }
         XCTAssertTrue(element("sat.summary").waitForExistence(timeout: 10))
-        snap("portrait-6-summary")
+        XCTAssertTrue(element("sat.summary.deck").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("sat.summary.deck.1").exists, "question 1 went into the deck")
+        snap("landscape-11-summary")
+    }
+
+    /// Portrait: the solution's two ways as tabs.
+    func test7PortraitSolutionTabs() throws {
+        XCUIDevice.shared.orientation = .portrait
+        portrait = true
+        launch(stub: "cap=20,used=0")
+        openSet()
+        // upright the page is the window's height (less the top bar's offset) in page units
+        probe("page 2107")
+        probe("scale 0.640")
+        snap("portrait-01-question")
+        tap("sat.choice.C")
+        tap("sat.check")
+        XCTAssertTrue(element("sat.solution").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("sat.solution.ways").waitForExistence(timeout: 5), "upright: the ways are tabs")
+        snap("portrait-07-solution-tabs")
     }
 
     /// The first run's "I'm studying for the SAT": straight into SAT home with no account; the account
     /// asks the age first (13+ the form, under 13 the grown-up's first run).
-    func test5TheFirstRunsSATPath() throws {
+    func test8TheFirstRunsSATPath() throws {
         launch(stub: "cap=5,used=0", account: "none", extra: ["-onboardingFresh"])
         tap("onboarding.who.sat", wait: 40)
         XCTAssertTrue(element("sat.home").waitForExistence(timeout: 20))
         waitFor("sat.home.tutorLeft", label: "5 of 5 free tutor questions left", timeout: 15)
-        snap("landscape-11-first-run-sat-home")
         tap("sat.home.signUp")
         waitFor("sat.account.title", label: "How old are you?", timeout: 10)
-        snap("landscape-12-account-age")
         tap("sat.account.13plus")
         XCTAssertTrue(element("sat.account.email").waitForExistence(timeout: 10))
-        XCTAssertTrue(element("sat.account.password").exists)
         tap("sat.account.back")
         tap("sat.account.under13")
         tap("sat.account.grownUp")
-        // the grown-up's first run, from its start
         XCTAssertTrue(element("onboarding.who.parent").waitForExistence(timeout: 20))
     }
 
@@ -221,17 +304,17 @@ final class SATSessionUITests: XCTestCase {
     private func openSet() {
         tap("home.sat", wait: 40)
         tap("sat.home.practice10", wait: 20)
-        XCTAssertTrue(element("sat.panel").waitForExistence(timeout: 30))
         XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 30))
+        waitFor("sat.position", label: "Q1 of 10", timeout: 15)
         probe("tutor ready live off passes 0")
     }
 
-    /// A stroke on the board with a finger (the simulator has no Pencil: a finger draws).
+    /// A stroke in the work area with a finger (the simulator has no Pencil: a finger draws).
     private func drawOnBoard() {
         let canvas = element("board.canvas")
         XCTAssertTrue(canvas.waitForExistence(timeout: 20))
-        let start = canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.45))
-        let end = canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.47))
+        let start = canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.42))
+        let end = canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.44))
         start.press(forDuration: 0.05, thenDragTo: end)
         sleep(1)
     }
@@ -264,6 +347,22 @@ final class SATSessionUITests: XCTestCase {
                        file: file, line: line)
     }
 
+    /// The screen as it reads: a landscape capture comes in the device's own (portrait) orientation.
+    static func upright(_ image: UIImage, portrait: Bool) -> UIImage {
+        // drawn once, so the capture's orientation is applied to its pixels
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        let drawn = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in image.draw(at: .zero) }
+        guard !portrait, drawn.size.height > drawn.size.width else { return drawn }
+        let size = CGSize(width: drawn.size.height, height: drawn.size.width)
+        return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            let c = ctx.cgContext
+            c.translateBy(x: size.width / 2, y: size.height / 2)
+            c.rotate(by: -.pi / 2)
+            drawn.draw(in: CGRect(x: -drawn.size.width / 2, y: -drawn.size.height / 2, width: drawn.size.width, height: drawn.size.height))
+        }
+    }
+
     private func snap(_ name: String) {
         sleep(1)
         let shot = XCUIScreen.main.screenshot()
@@ -272,7 +371,7 @@ final class SATSessionUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         if let dir = env["AGATHON_SAT_SHOTS"], !dir.isEmpty {
-            try? shot.pngRepresentation.write(to: URL(fileURLWithPath: dir).appendingPathComponent("sat-\(name).png"))
+            try? Self.upright(shot.image, portrait: portrait).pngData()?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("sat2-\(name).png"))
         }
     }
 }

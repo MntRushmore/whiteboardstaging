@@ -100,6 +100,9 @@ public final class BoardController: ObservableObject {
         didSet { if !InkColor.kidPalette.contains(color) { color = .black } } // never the tutor's
     }
     @Published public var penSize: InkStyle.PenSize = .regular
+    /// A pen width that overrides `penSize` (SAT v2: a grown-up's 2.9-unit pencil, 0.65 × the 4.5
+    /// default, the owner twice: the ink was too thick; docs/SAT-V2.md)
+    public var penWidth: Double?
     @Published public private(set) var canUndo = false
     @Published public private(set) var canRedo = false
     /// The running numbers. Not published per change: SwiftUI re-laying out whatever shows them
@@ -407,8 +410,15 @@ public final class BoardController: ObservableObject {
 
     /// A kid's stroke, finished: in the store as one undoable step.
     public func commitStroke(_ stroke: StrokeRecord) {
+        var stroke = stroke
+        // (SAT v2: ink over a question's figure says so, `strokeTagger`)
+        if let tags = strokeTagger?(stroke), !tags.isEmpty { stroke.meta.merge(tags) { _, new in new } }
         store.put(.stroke(stroke), origin: .kid)
     }
+
+    /// Meta to put on a kid's stroke as it is committed (SAT v2: ink written over a question's figure
+    /// is tagged as on the figure, docs/SAT-V2.md). Nil: none.
+    public var strokeTagger: ((StrokeRecord) -> Meta)?
 
     /// A new stroke's record, before its points: on the current screen, on top, in the pen's colour
     /// (the highlighter's is a marker the size of the kid's handwriting).
@@ -416,7 +426,7 @@ public final class BoardController: ObservableObject {
         let highlight = tool == .highlighter
         return StrokeRecord(
             screen: currentScreenID, order: store.nextOrder(on: currentScreenID), author: .kid, color: color,
-            width: highlight ? InkStyle.highlighterWidth : penSize.width, pressure: pressure, x: origin.x, y: origin.y,
+            width: highlight ? InkStyle.highlighterWidth : penWidth ?? penSize.width, pressure: pressure, x: origin.x, y: origin.y,
             points: [], start: start, meta: highlight ? ["highlight": true] : [:])
     }
 
@@ -663,7 +673,7 @@ public final class BoardController: ObservableObject {
     /// (a problem page's `page`), shown when `go`. One change of `origin`: the tutor's pages (a
     /// practice set) are no step the kid undoes; the kid's own are. Nil at the cap (50).
     @discardableResult
-    public func insertScreen(after: RecordID? = nil, meta: Meta = [:], origin: ChangeOrigin = .kid, go: Bool = true) -> RecordID? {
+    public func insertScreen(after: RecordID? = nil, meta: Meta = [:], rect: Box = .screen, origin: ChangeOrigin = .kid, go: Bool = true) -> RecordID? {
         let screens = store.screens
         guard screens.count < ScreenRecord.maxScreens else {
             notice = BoardNotice(kind: .boardFull)
@@ -671,10 +681,19 @@ public final class BoardController: ObservableObject {
         }
         let anchor = after ?? store.lastPageOfProblem(currentScreenID)
         let order = store.screenOrder(after: anchor)
-        let s = ScreenRecord(order: order, name: "Screen \(screens.count + 1)", meta: meta)
+        let s = ScreenRecord(order: order, rect: rect, name: "Screen \(screens.count + 1)", meta: meta)
         store.put(.screen(s), origin: origin)
         if go { goToScreen(s.id) } else { refreshCounts() }
         return s.id
+    }
+
+    /// A screen's rect changes (SAT v2: a page made taller for a long question, docs/SAT-V2.md): the
+    /// tutor's, never a kid's undo step. The board on show is laid out again.
+    public func setScreenRect(_ rect: Box, on id: RecordID, origin: ChangeOrigin = .tutor) {
+        guard case .screen(var s)? = store[id], s.rect != rect else { return }
+        s.rect = rect
+        store.put(.screen(s), origin: origin)
+        if id == currentScreenID { resetScene() }
     }
 
     /// The kid's "New page for this one" (docs/PROBLEM-PAGES.md): `ids` (strokes and shapes of the

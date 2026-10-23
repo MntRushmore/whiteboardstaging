@@ -39,7 +39,7 @@ struct ClientTests {
         let c = client(t)
         _ = try await c.next(SATNextRequest())
         _ = try await c.next(SATNextRequest(count: 10, domain: .psda, skill: "ratios, rates, proportions, units", difficulty: 2))
-        #expect(t.requests[0].url?.absoluteString == "https://example.test/api/sat/next?count=10")
+        #expect(t.requests[0].url?.absoluteString == "https://example.test/api/sat/next?count=10&tz=America/New_York")
         let q = URLComponents(url: t.requests[1].url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
         #expect(q.first { $0.name == "domain" }?.value == "psda")
         #expect(q.first { $0.name == "skill" }?.value == "ratios, rates, proportions, units")
@@ -56,6 +56,9 @@ struct ClientTests {
         #expect(t.requests[0].url?.path == "/api/sat/attempts")
         #expect(t.requests[0].httpMethod == "POST")
         #expect(json(t.requests[0])?["used_tutor"] as? Bool == false)
+        // v2: the deck's days are the student's
+        #expect(json(t.requests[0])?["tz"] as? String == "America/New_York")
+        #expect(json(t.requests[0])?["question_id"] as? String == "psda-percentages-0001")
         #expect(t.requests[1].url?.path == "/api/sat/tutor")
         #expect(json(t.requests[1])?["question_id"] as? String == "psda-percentages-0001")
         #expect(json(t.requests[1])?["tz"] as? String == "America/New_York")

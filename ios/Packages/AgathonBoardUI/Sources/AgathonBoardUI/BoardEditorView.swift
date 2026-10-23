@@ -40,6 +40,11 @@ public struct BoardEditorView<TopTrailing: View, Help: View, Overlay: View>: Vie
     let topTrailing: TopTrailing
     let helpButton: Help
     let overlay: (BoardViewport) -> Overlay
+    /// the top bar and the dock (false: the screen around draws its own chrome over the page, SAT v2)
+    let chrome: Bool
+    /// the camera's insets when there is no chrome (the page edge to edge, fitted to its width)
+    let bareInsets: CameraConstraints
+    let appearance: CanvasAppearance
 
     @State private var panel: DockPanel?
     @State private var showPages = false
@@ -61,11 +66,16 @@ public struct BoardEditorView<TopTrailing: View, Help: View, Overlay: View>: Vie
     /// `initialPanel`: a dock panel open from the start (screenshots, previews).
     public init(
         controller: BoardController, title: String, onBack: (() -> Void)? = nil, onCanvas: ((BoardCanvasView) -> Void)? = nil,
-        initialPanel: DockPanel? = nil,
+        initialPanel: DockPanel? = nil, chrome: Bool = true,
+        bareInsets: CameraConstraints = CameraConstraints(top: 0, left: 0, bottom: 0, right: 0, fitsWidth: true),
+        appearance: CanvasAppearance = .blocks,
         @ViewBuilder topTrailing: () -> TopTrailing, @ViewBuilder helpButton: () -> Help,
         @ViewBuilder overlay: @escaping (BoardViewport) -> Overlay
     ) {
         BoardEditorSetup.install()
+        self.chrome = chrome
+        self.bareInsets = bareInsets
+        self.appearance = appearance
         _panel = State(initialValue: initialPanel)
         self.controller = controller
         self.title = title
@@ -84,9 +94,9 @@ public struct BoardEditorView<TopTrailing: View, Help: View, Overlay: View>: Vie
             let top = geo.safeAreaInsets.top + DS.Space.m + DS.Size.round + DS.Space.m
             let bottom = geo.safeAreaInsets.bottom + DS.Space.m + DockLayout.Size.height + DS.Space.m + (layout.helpAbove ? helpSize.height + DS.Space.s : 0)
             ZStack(alignment: .top) {
-                DS.Color.ground.ignoresSafeArea()
-                BoardCanvas(controller: controller, insets: CameraConstraints(top: top, left: margin, bottom: bottom, right: margin),
-                            appearance: .blocks, onCanvas: onCanvas)
+                (chrome ? DS.Color.ground : DS.Color.paper).ignoresSafeArea()
+                BoardCanvas(controller: controller, insets: chrome ? CameraConstraints(top: top, left: margin, bottom: bottom, right: margin) : bareInsets,
+                            appearance: appearance, onCanvas: onCanvas)
                     .ignoresSafeArea()
                 overlay(controller.viewport)
                     .ignoresSafeArea()
@@ -96,7 +106,7 @@ public struct BoardEditorView<TopTrailing: View, Help: View, Overlay: View>: Vie
                     // a tap off the panel closes it
                     Color.clear.contentShape(Rectangle()).ignoresSafeArea().onTapGesture { panel = nil }
                 }
-                chrome(layout: layout, margin: margin)
+                if chrome { chromeView(layout: layout, margin: margin) }
             }
         }
         .sheet(isPresented: $showPages) {
@@ -139,7 +149,7 @@ public struct BoardEditorView<TopTrailing: View, Help: View, Overlay: View>: Vie
         .onChange(of: controller.tool) { _, _ in if panel == .shapes || panel == .colors { panel = nil } }
     }
 
-    private func chrome(layout: DockLayout, margin: CGFloat) -> some View {
+    private func chromeView(layout: DockLayout, margin: CGFloat) -> some View {
         VStack(spacing: 0) {
             BoardTopBar(controller: controller, title: title, onBack: onBack, showPages: $showPages, trailing: topTrailing)
                 .padding(.top, DS.Space.m)
