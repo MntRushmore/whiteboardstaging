@@ -5,7 +5,7 @@ import { json, requireUser } from "@/lib/server/auth";
 import { withRequestId } from "@/lib/server/live-route";
 import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { satHeaders, satLogger, satTutorCap } from "@/lib/server/sat/http";
-import { countPasses, readAttempts, readBankMeta, readUnlimited, satStoreDeps } from "@/lib/server/sat/store";
+import { countPasses, readAttempts, readBankMeta, readOpenReviews, readUnlimited, satStoreDeps } from "@/lib/server/sat/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +13,9 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/sat/progress?tz= — the student's SAT practice so far (docs/SAT-MODE.md):
  * `{ answered, correct, by_domain, by_skill, streak_days, today: {answered, tutor_used, cap,
- * unlimited}, estimate: {low, high, note} | null }` (src/lib/sat/progress.ts).
+ * unlimited}, estimate: {low, high, note} | null, reviews_due, reviews_waiting }`
+ * (src/lib/sat/progress.ts). `reviews_due` is the mistake deck's reviews due today (or overdue),
+ * `reviews_waiting` those scheduled for a later day (docs/SAT-V2.md), live questions only.
  *
  * `estimate` is a rough 200–800 band from practice (src/lib/sat/estimate.ts), null below 15
  * answers, narrowing as more are answered; its `note` says it is not a score. Days ("today", the
@@ -39,11 +41,12 @@ export async function GET(req: Request) {
 
   const now = satStoreDeps.now();
   try {
-    const [bank, attempts, tutorUsedToday, unlimited] = await Promise.all([
+    const [bank, attempts, tutorUsedToday, unlimited, reviews] = await Promise.all([
       readBankMeta(token),
       readAttempts(token, user.id, SAT_LIMITS.progressWindow),
       countPasses(token, user.id, localDay(tz, now)),
       readUnlimited(token),
+      readOpenReviews(token, user.id),
     ]);
     const meta = new Map(bank.map((q) => [q.id, q]));
     const body = buildProgress({
@@ -56,8 +59,9 @@ export async function GET(req: Request) {
       tutorUsedToday,
       cap: satTutorCap(user),
       unlimited,
+      reviews: reviews.filter((r) => meta.has(r.question_id)),
     });
-    log.info({ answered: body.answered, streak: body.streak_days, estimate: body.estimate !== null }, "sat progress");
+    log.info({ answered: body.answered, streak: body.streak_days, estimate: body.estimate !== null, reviewsDue: body.reviews_due }, "sat progress");
     return Response.json(body, { headers });
   } catch (err) {
     log.error({ error: err instanceof Error ? err.message : String(err) }, "sat progress failed");

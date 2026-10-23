@@ -1,6 +1,7 @@
 import { SAT_DOMAINS, SAT_SKILLS, type SatDomain, type SatProgressResponse } from "@/lib/sat/contracts";
 import { localDay, previousDay } from "@/lib/sat/day";
 import { estimateBand } from "@/lib/sat/estimate";
+import { countReviews, type ReviewRow } from "@/lib/sat/reviews";
 
 /**
  * GET /api/sat/progress's answer from the student's answers (pure; the route reads the rows).
@@ -13,6 +14,8 @@ import { estimateBand } from "@/lib/sat/estimate";
  *    today, or yesterday when nothing is answered yet today (a streak is not lost before the day ends).
  *  - today: answers and free tutor passes on the student's date.
  *  - estimate: estimateBand (src/lib/sat/estimate.ts) over the answers with a known difficulty.
+ *  - reviews_due / reviews_waiting (v2): the mistake deck's open reviews of live questions, due on
+ *    the student's date (or overdue) / scheduled for a later day (src/lib/sat/reviews.ts).
  */
 
 export type ProgressAttempt = {
@@ -31,6 +34,8 @@ export type ProgressInput = {
   tutorUsedToday: number;
   cap: number;
   unlimited: boolean;
+  /** the student's open reviews of live questions (none when absent) */
+  reviews?: ReadonlyArray<Pick<ReviewRow, "due_on" | "cleared_at">>;
 };
 
 export function buildProgress(input: ProgressInput): SatProgressResponse {
@@ -73,5 +78,6 @@ export function buildProgress(input: ProgressInput): SatProgressResponse {
     streak_days: streak,
     today: { answered: todayAnswered, tutor_used: input.tutorUsedToday, cap: input.cap, unlimited: input.unlimited },
     estimate: estimateBand(input.attempts.filter((a) => a.meta).map((a) => ({ difficulty: a.meta!.difficulty, correct: a.correct }))),
+    ...countReviews(input.reviews ?? [], today),
   };
 }

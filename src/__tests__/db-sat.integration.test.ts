@@ -1,6 +1,6 @@
 /**
- * SAT mode's database half against the LOCAL Supabase stack (20261022000000_sat_mode.sql and
- * 20261022010000_sat_anonymous.sql). Opt-in, local only (it inserts into auth.users with psql and
+ * SAT mode's database half against the LOCAL Supabase stack (20261022000000_sat_mode.sql,
+ * 20261022010000_sat_anonymous.sql and v2's 20261023000000_sat_reviews.sql). Opt-in, local only (it inserts into auth.users with psql and
  * signs its own JWTs with the stack's secret):
  *
  *   RUN_DB_TESTS=1 npx vitest run src/__tests__/db-sat.integration.test.ts
@@ -17,6 +17,10 @@
  *  5. Becoming permanent: refused without terms_version; with it, the same id gets its profile (the
  *     acceptance stamped), its starter ink, and keeps its SAT attempts, passes and boards; its token
  *     then passes the guard.
+ *  6. v2, the mistake deck: an anonymous token may insert, update and delete its own sat_reviews
+ *     through the guard; RLS keeps each student to their own rows; the owner and question of a row
+ *     cannot be changed; the step is 1 or 2. The bank's new columns: a nudge of at most 120
+ *     characters, common_wrong on a grid-in only.
  */
 import { createHmac, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -163,6 +167,51 @@ suite(title, () => {
     expect(sql(`select count(*) from public.sat_tutor_passes where profile_id = '${id}'`)).toBe("1");
     // now a real account: the guard lets it through
     expect((await rest(jwt(id, false), "/rpc/ink_summary", { method: "POST", body: {} })).status).toBe(200);
+  });
+
+  it("v2: the mistake deck through PostgREST: an anonymous token writes its own reviews, only its own", async () => {
+    const a = makeUser(true);
+    const b = makeUser(true);
+    const ta = jwt(a, true);
+    const tb = jwt(b, true);
+    const made = await rest(ta, "/sat_reviews", { method: "POST", body: { user_id: a, question_id: questionId, due_on: "2026-10-24", step: 1 } });
+    expect(made.status, await made.clone().text()).toBe(201);
+    const moved = await rest(ta, `/sat_reviews?user_id=eq.${a}&question_id=eq.${questionId}`, { method: "PATCH", body: { due_on: "2026-10-27", step: 2 } });
+    expect(moved.status, await moved.clone().text()).toBe(200);
+    expect(await moved.json()).toEqual([expect.objectContaining({ due_on: "2026-10-27", step: 2, cleared_at: null })]);
+    expect(sql(`select updated_at >= created_at from public.sat_reviews where user_id = '${a}'`)).toBe("t");
+    // the other student sees none of it and cannot write it
+    expect(await (await rest(tb, "/sat_reviews?select=question_id")).json()).toEqual([]);
+    const theirs = await rest(tb, `/sat_reviews?user_id=eq.${a}`, { method: "PATCH", body: { step: 1 } });
+    expect(await theirs.json()).toEqual([]);
+    expect(sql(`select step from public.sat_reviews where user_id = '${a}'`)).toBe("2");
+    const forged = await rest(tb, "/sat_reviews", { method: "POST", body: { user_id: a, question_id: questionId, due_on: "2026-10-24", step: 1 } });
+    expect(forged.status).toBe(403);
+    // a row's owner and question never change; the step is 1 or 2
+    const owner = await rest(ta, `/sat_reviews?user_id=eq.${a}`, { method: "PATCH", body: { user_id: b } });
+    expect(owner.status).toBe(403); // no update grant on user_id
+    const step3 = await rest(ta, `/sat_reviews?user_id=eq.${a}`, { method: "PATCH", body: { step: 3 } });
+    expect(step3.status).toBe(400);
+    // one row per question
+    const twice = await rest(ta, "/sat_reviews", { method: "POST", body: { user_id: a, question_id: questionId, due_on: "2026-10-24", step: 1 } });
+    expect(twice.status).toBe(409);
+    const gone = await rest(ta, `/sat_reviews?user_id=eq.${a}`, { method: "DELETE" });
+    expect(gone.status).toBe(200);
+    expect(sql(`select count(*) from public.sat_reviews where user_id = '${a}'`)).toBe("0");
+    // a real account's token too
+    const real = makeUser(false);
+    expect((await rest(jwt(real, false), "/sat_reviews", { method: "POST", body: { user_id: real, question_id: questionId, due_on: "2026-10-24", step: 1 } })).status).toBe(201);
+    // the reviews go with the user
+    sql(`delete from auth.users where id = '${real}'`);
+    expect(sql(`select count(*) from public.sat_reviews where user_id = '${real}'`)).toBe("0");
+  });
+
+  it("v2: the bank's notes columns: a nudge of at most 120 characters; common_wrong on a grid-in only, at most 3", () => {
+    sql(`update public.sat_questions set nudge = '${"x".repeat(120)}', common_wrong = '[{"answer":"2","why":"Added instead of subtracting."}]' where id = '${questionId}'`);
+    expect(() => sql(`update public.sat_questions set nudge = '${"x".repeat(121)}' where id = '${questionId}'`)).toThrow(/sat_questions_nudge_len/);
+    expect(() => sql(`update public.sat_questions set common_wrong = '[1,2,3,4]' where id = '${questionId}'`)).toThrow(/sat_questions_common_wrong_shape/);
+    expect(() => sql(`update public.sat_questions set format = 'mcq', choices = '[{"key":"A","text":"1"},{"key":"B","text":"2"},{"key":"C","text":"3"},{"key":"D","text":"4"}]', answer = '{"key":"A"}' where id = '${questionId}'`)).toThrow(/sat_questions_common_wrong_shape/);
+    sql(`update public.sat_questions set nudge = null, common_wrong = null where id = '${questionId}'`);
   });
 
   it("the free tutor's pass works for an anonymous user, at the cap the server passes", () => {

@@ -168,6 +168,24 @@ describe("the upsert", () => {
     const bad = { ...SAMPLE[0], stem: "Costs $5 a day" };
     expect(planUpsert([bad], []).demoted).toEqual([bad.id]);
   });
+  it("v2 notes: written as columns (null when absent, so a removed note is cleared), a failing note left out with the question kept live, a note change is a new version", () => {
+    const a = SAMPLE[0];
+    const withNudge = { ...a, nudge: "What could you do to both sides first?" };
+    const plan = planUpsert([withNudge], [row(a, 2)]);
+    expect(plan.upsert).toEqual([expect.objectContaining({ id: a.id, nudge: withNudge.nudge, common_wrong: null, version: 3, status: "live" })]);
+    // an old row (no note columns yet) and the same question without notes: unchanged
+    expect(planUpsert([a], [row(a, 2)]).unchanged).toBe(1);
+    expect(planUpsert([a], [{ ...row(a, 2), nudge: null, common_wrong: null }]).unchanged).toBe(1);
+    // a leaking nudge is left out; the question stays live
+    const leaky = planUpsert([{ ...a, nudge: "Choice B." }], []);
+    expect(leaky.upsert[0]).toMatchObject({ status: "live", nudge: null });
+    expect(leaky.droppedNotes).toEqual({ [a.id]: ["nudge"] });
+    expect(leaky.demoted).toEqual([]);
+    const sql = bankSql([withNudge, SAMPLE[1]]);
+    expect(sql).toContain("'What could you do to both sides first?'");
+    expect(sql).toContain("nudge = excluded.nudge, common_wrong = excluded.common_wrong");
+    expect(sql).toContain("null, null::jsonb, 'live'");
+  });
   it("writes the bank as one idempotent SQL transaction, quotes escaped", () => {
     const sql = bankSql([{ ...SAMPLE[0], stem: "Dana's $x$" }]);
     expect(sql.startsWith("begin;\n")).toBe(true);

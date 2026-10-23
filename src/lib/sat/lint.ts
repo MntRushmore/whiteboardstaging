@@ -17,6 +17,12 @@ import { SatQuestionSchema, type SatFigure, type SatQuestion } from "@/lib/sat/c
  *    plotted function that should pass through it; a shape's numeric side labels share one scale
  *    unless the figure says it is not drawn to scale;
  *  - the solution has 2–6 steps.
+ *
+ * The v2 notes (docs/SAT-V2.md) are checked apart (noteIssues), because a bad note is DROPPED and
+ * the question stays live (dropFailingNotes): SwiftMath-safe LaTeX in each; a `nudge` that does not
+ * give the answer away (noteLeaks); a `common_wrong` that is a valid grid-in, really wrong, and
+ * listed once. Whether a `why` is the mistake that really gives its choice needs a solver:
+ * scripts/sat/notes.ts checks that with a second model.
  */
 
 export const SAFE_COMMANDS = new Set(["frac", "sqrt", "cdot", "le", "ge", "ne", "pi", "theta", "sin", "cos", "tan", "circ", "overline", "angle", "triangle"]);
@@ -142,6 +148,98 @@ export function figureIssues(fig: SatFigure): string[] {
   return out;
 }
 
+/** The numbers written in a piece of text ("12", "-3.5", "\\frac{3}{4}" as 0.75, "3/4"), in order. */
+export function numbersIn(text: string): number[] {
+  const t = text.replace(/\\frac\{(-?[\d.]+)\}\{(-?[\d.]+)\}/g, " $1/$2 ");
+  const out: number[] = [];
+  for (const m of t.matchAll(/(?<![\w.])-?\d+(?:\.\d+)?(?:\/\d+(?:\.\d+)?)?(?![\w])|(?<![\w\d])\.\d+/g)) {
+    const raw = m[0];
+    const v = raw.includes("/") ? Number(raw.split("/")[0]) / Number(raw.split("/")[1]) : Number(raw);
+    if (Number.isFinite(v)) out.push(v);
+  }
+  return out;
+}
+
+const sameValue = (a: number, b: number) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
+
+/**
+ * Does a hint give the answer away? (The mechanical half of "a nudge never contains the answer";
+ * the notes stage's verifier model checks the meaning.) It leaks when it:
+ *  - names the right choice ("choice C", "(C)", "answer is C"), or says "the answer is";
+ *  - writes the correct choice's text (when that is more than a bare short token);
+ *  - writes the answer's value (a grid-in's, or a numeric correct choice's) where the stem does not
+ *    already give that number (a fraction counts as its value: "3/4" is 0.75).
+ */
+export function noteLeaks(q: Pick<SatQuestion, "format" | "stem" | "choices" | "answer">, note: string): string | null {
+  const plain = note.replace(/\s+/g, " ");
+  if (/\bthe (correct |right )?answer is\b/i.test(plain)) return "says what the answer is";
+  let values: number[] = [];
+  if (q.format === "mcq" && "key" in q.answer) {
+    const key = q.answer.key;
+    if (new RegExp(`\\b(choice|option|answer)\\s*\\(?${key}\\)?(?![\\w])|\\(${key}\\)`, "i").test(plain)) return `names choice ${key}`;
+    const right = q.choices?.find((c) => c.key === key);
+    if (right) {
+      const norm = (x: string) => x.replace(/\s+/g, "").toLowerCase();
+      const body = right.text.replace(/^\$+|\$+$/g, "");
+      if (norm(body).length >= 4 && norm(plain).includes(norm(body))) return "writes the correct choice";
+      const v = numericValue(right.text);
+      if (v !== null) values = [v];
+    }
+  } else if ("accepted" in q.answer) {
+    values = q.answer.accepted.map(sprValue).filter((v): v is number => v !== null);
+  }
+  if (!values.length) return null;
+  const given = numbersIn(q.stem);
+  for (const n of numbersIn(note)) {
+    if (values.some((v) => sameValue(v, n)) && !given.some((g) => sameValue(g, n))) return `writes the answer's value ${n}`;
+  }
+  return null;
+}
+
+/** Problems with a `nudge`: LaTeX, and giving the answer away. */
+export function nudgeIssues(q: Pick<SatQuestion, "format" | "stem" | "choices" | "answer">, nudge: string): string[] {
+  const out = latexIssues(nudge).map((i) => `nudge: ${i}`);
+  const leak = noteLeaks(q, nudge);
+  if (leak) out.push(`nudge gives the answer away (${leak})`);
+  return out;
+}
+
+/** Problems with one `common_wrong` grid-in, given the ones listed before it. */
+export function commonWrongIssues(accepted: readonly string[], w: { answer: string; why: string }, earlier: ReadonlyArray<{ answer: string }> = []): string[] {
+  const out = latexIssues(w.why).map((i) => `common_wrong ${w.answer}: ${i}`);
+  if (!sprFormatOk(w.answer)) out.push(`common_wrong "${w.answer}" is not a valid grid-in`);
+  else if (isSprCorrect(w.answer, accepted)) out.push(`common_wrong "${w.answer}" is a right answer`);
+  const v = sprValue(w.answer);
+  if (v !== null && earlier.some((e) => sprValue(e.answer) !== null && sameValue(sprValue(e.answer)!, v))) out.push(`common_wrong "${w.answer}" is listed twice`);
+  return out;
+}
+
+/** Problems with `solution.desmos_steps`. */
+export function desmosStepIssues(steps: ReadonlyArray<{ text: string; math: string | null }>): string[] {
+  const out: string[] = [];
+  for (const st of steps) {
+    out.push(...latexIssues(st.text).map((i) => `desmos step: ${i}`));
+    if (st.math) {
+      if (st.math.includes("$")) out.push("a desmos step's `math` is bare LaTeX, without $");
+      else out.push(...latexIssues(`$${st.math}$`).map((i) => `desmos step: ${i}`));
+    }
+  }
+  return out;
+}
+
+/** Problems with a question's v2 notes (empty when there are none, or they are fine). */
+export function noteIssues(s: SatQuestion): string[] {
+  const out: string[] = [];
+  if (s.nudge !== undefined) out.push(...nudgeIssues(s, s.nudge));
+  for (const c of s.choices ?? []) if (c.why !== undefined) out.push(...latexIssues(c.why).map((i) => `why ${c.key}: ${i}`));
+  if (s.common_wrong && "accepted" in s.answer) {
+    const accepted = s.answer.accepted;
+    s.common_wrong.forEach((w, i) => out.push(...commonWrongIssues(accepted, w, s.common_wrong!.slice(0, i))));
+  }
+  if (s.solution.desmos_steps) out.push(...desmosStepIssues(s.solution.desmos_steps));
+  return out;
+}
+
 /** Every mechanical problem with a question (empty: it may go live, once solved independently). */
 export function questionIssues(q: unknown): string[] {
   const parsed = SatQuestionSchema.safeParse(q);
@@ -179,4 +277,38 @@ export function questionIssues(q: unknown): string[] {
   }
   if (s.figure) out.push(...figureIssues(s.figure).map((i) => `figure: ${i}`));
   return [...new Set(out)];
+}
+
+/**
+ * The question with every v2 note that fails noteIssues left out (a note is dropped, never the
+ * question: docs/SAT-V2.md), and what was dropped. The bank load runs it on every row.
+ */
+export function dropFailingNotes(q: SatQuestion): { q: SatQuestion; dropped: string[] } {
+  const dropped: string[] = [];
+  const out: SatQuestion = { ...q, choices: q.choices ? q.choices.map((c) => ({ ...c })) : null, solution: { ...q.solution } };
+  if (out.nudge !== undefined && nudgeIssues(out, out.nudge).length) {
+    delete out.nudge;
+    dropped.push("nudge");
+  }
+  for (const c of out.choices ?? []) {
+    if (c.why !== undefined && latexIssues(c.why).length) {
+      delete c.why;
+      dropped.push(`why ${c.key}`);
+    }
+  }
+  if (out.common_wrong) {
+    const accepted = "accepted" in out.answer ? out.answer.accepted : [];
+    const kept: NonNullable<SatQuestion["common_wrong"]> = [];
+    for (const w of out.common_wrong) {
+      if (commonWrongIssues(accepted, w, kept).length) dropped.push(`common_wrong ${w.answer}`);
+      else kept.push(w);
+    }
+    if (kept.length) out.common_wrong = kept;
+    else delete out.common_wrong;
+  }
+  if (out.solution.desmos_steps && desmosStepIssues(out.solution.desmos_steps).length) {
+    delete out.solution.desmos_steps;
+    dropped.push("desmos_steps");
+  }
+  return { q: out, dropped };
 }

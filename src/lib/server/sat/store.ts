@@ -1,7 +1,7 @@
 /**
- * SAT mode's reads and writes (docs/SAT-MODE.md, 20261022000000_sat_mode.sql), for the
- * /api/sat/* routes. Everything runs AS THE STUDENT (their own token, RLS: live questions, their
- * own answers and passes) except taking a free tutor pass, which is the service role's
+ * SAT mode's reads and writes (docs/SAT-MODE.md, docs/SAT-V2.md, 20261022000000_sat_mode.sql,
+ * 20261023000000_sat_reviews.sql), for the /api/sat/* routes. Everything runs AS THE STUDENT (their
+ * own token, RLS: live questions, their own answers, passes and reviews) except taking a free tutor pass, which is the service role's
  * (`sat_take_tutor_pass`: the cap is a server setting, so no user may call it).
  *
  * `satStoreDeps` is the seam the tests replace (like `askStoreDeps`).
@@ -10,6 +10,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { SAT_DOMAINS, SAT_LIMITS, SAT_QUESTION_COLUMNS, SatQuestionSchema, type SatDomain, type SatQuestion, type SatTutorResponse } from "@/lib/sat/contracts";
 import type { BankEntry } from "@/lib/sat/pick";
+import type { ReviewRow, ReviewSchedule } from "@/lib/sat/reviews";
 import { serviceClient, userClient } from "@/lib/server/billing";
 
 const log = logger.child({ module: "sat" });
@@ -78,6 +79,14 @@ export async function readBankMeta(token: string): Promise<BankEntry[]> {
 
 // ------------------------------------------------------------------ questions
 
+/** The v2 notes a row has no value for are left out of the answer (the contract's "optional"), never sent as null. */
+function withoutEmptyNotes(row: unknown): unknown {
+  if (!row || typeof row !== "object") return row;
+  const out = { ...(row as Record<string, unknown>) };
+  for (const k of ["nudge", "common_wrong"]) if (out[k] === null || out[k] === undefined) delete out[k];
+  return out;
+}
+
 /** Full live rows for `ids`, in the order asked; a row that does not fit the contract is left out (logged). */
 export async function readQuestions(token: string, ids: readonly string[]): Promise<SatQuestion[]> {
   if (!ids.length) return [];
@@ -85,7 +94,7 @@ export async function readQuestions(token: string, ids: readonly string[]): Prom
   if (error) fail("read questions", error);
   const byId = new Map<string, SatQuestion>();
   for (const row of (data ?? []) as unknown[]) {
-    const parsed = SatQuestionSchema.safeParse(row);
+    const parsed = SatQuestionSchema.safeParse(withoutEmptyNotes(row));
     if (parsed.success) byId.set(parsed.data.id, parsed.data);
     else log.error({ id: (row as { id?: string })?.id, issue: parsed.error.issues[0]?.message }, "a live SAT question does not fit the contract");
   }
@@ -120,6 +129,63 @@ export async function insertAttempt(token: string, userId: string, row: NewAttem
   if (!error) return "ok";
   if (error.code === "23514" && /sat_attempts_cap|too many/i.test(`${error.message} ${(error as { hint?: string }).hint ?? ""}`)) return "cap";
   fail("save an answer", error);
+}
+
+// ------------------------------------------------------------------ the mistake deck
+
+/** At most this many open reviews are read (one per question at most, so the bank's size bounds it). */
+const REVIEWS_WINDOW = 5000;
+
+const asReview = (r: Record<string, unknown>): ReviewRow => ({
+  question_id: String(r.question_id),
+  due_on: String(r.due_on).slice(0, 10),
+  step: Number(r.step) === 2 ? 2 : 1,
+  cleared_at: r.cleared_at === null || r.cleared_at === undefined ? null : String(r.cleared_at),
+});
+
+/** The student's review of one question, or null. */
+export async function readReview(token: string, userId: string, questionId: string): Promise<ReviewRow | null> {
+  const { data, error } = await satStoreDeps
+    .user(token)
+    .from("sat_reviews")
+    .select("question_id,due_on,step,cleared_at")
+    .eq("user_id", userId)
+    .eq("question_id", questionId)
+    .limit(1);
+  if (error) fail("read a review", error);
+  const row = ((data ?? []) as Array<Record<string, unknown>>)[0];
+  return row ? asReview(row) : null;
+}
+
+/** The student's open (not cleared) reviews, due soonest first. */
+export async function readOpenReviews(token: string, userId: string): Promise<ReviewRow[]> {
+  const { data, error } = await satStoreDeps
+    .user(token)
+    .from("sat_reviews")
+    .select("question_id,due_on,step,cleared_at")
+    .eq("user_id", userId)
+    .is("cleared_at", null)
+    .order("due_on", { ascending: true })
+    .limit(REVIEWS_WINDOW);
+  if (error) fail("read reviews", error);
+  return ((data ?? []) as Array<Record<string, unknown>>).map(asReview);
+}
+
+/**
+ * Write one question's new schedule as the student: an update when they already have a row, an
+ * insert otherwise (a parallel insert that lost the race, 23505, is retried as the update).
+ */
+export async function writeReview(token: string, userId: string, questionId: string, schedule: ReviewSchedule, exists: boolean): Promise<void> {
+  const db = satStoreDeps.user(token);
+  const update = async () => {
+    const { error } = await db.from("sat_reviews").update(schedule).eq("user_id", userId).eq("question_id", questionId);
+    if (error) fail("update a review", error);
+  };
+  if (exists) return update();
+  const { error } = await db.from("sat_reviews").insert({ user_id: userId, question_id: questionId, ...schedule });
+  if (!error) return;
+  if (error.code === "23505") return update();
+  fail("save a review", error);
 }
 
 // ------------------------------------------------------------------ the free tutor

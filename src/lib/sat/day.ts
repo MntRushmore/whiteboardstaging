@@ -38,3 +38,10 @@ export function previousDay(day: string): string {
   d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
 }
+
+/** The day `n` days after `day` (YYYY-MM-DD), by the calendar (negative `n` goes back). */
+export function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
