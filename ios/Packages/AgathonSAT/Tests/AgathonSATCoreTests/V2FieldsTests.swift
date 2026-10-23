@@ -105,3 +105,66 @@ struct V2FieldsTests {
         #expect(SATFixtures.questions.contains { $0.solution.hasDesmosWay })
     }
 }
+
+/// The wrong-answer note and the deck's "Back in 1 day" in the session (docs/SAT-V2.md).
+@MainActor
+struct WrongNoteTests {
+    private func practice() async throws -> (SATPractice, SATStubService) {
+        let stub = SATStubService()
+        let p = SATPractice(service: stub, sessionId: "s1")
+        p.addSet(try await stub.next(SATNextRequest()))
+        return (p, stub)
+    }
+
+    @Test func aWrongChoiceGetsItsWhyThenTryAgain() async throws {
+        let (p, _) = try await practice()
+        // question 1: A is "subtracted 5 instead of adding it"
+        p.choose("A")
+        #expect(p.check() == .lookAgain)
+        #expect(p.item.wrongNote == SATPractice.WrongNote(answer: "A", why: "Subtracted 5 from 9 instead of adding it: 2x = 4.", isChoice: true))
+        p.tryAgain()
+        #expect(p.item.wrongNote == nil)
+        #expect(p.item.chosen == nil)
+        #expect(p.item.tries == ["A"])
+        p.choose("C")
+        #expect(p.check() == .right)
+        #expect(p.item.wrongNote == nil)
+    }
+
+    @Test func aWrongChoiceWithNoWhyIsV1sLookAgain() async throws {
+        let (p, _) = try await practice()
+        // question 1's B has no why (the bank dropped it rather than guess)
+        p.choose("B")
+        #expect(p.check() == .lookAgain)
+        #expect(p.item.wrongNote == nil)
+        #expect(p.item.verdict == .lookAgain)
+    }
+
+    @Test func aCommonWrongGridIn() async throws {
+        let (p, _) = try await practice()
+        p.show(5)
+        #expect(p.current?.id == "psda-ratios-rates-9006")
+        for k: SATGridIn.Key in [.digit(4), .slash, .digit(3)] { p.press(k) }
+        #expect(p.check() == .lookAgain)
+        #expect(p.item.wrongNote?.why == "That's milk for each cup of flour, the ratio upside down.")
+        #expect(p.item.wrongNote?.isChoice == false)
+        // typing again closes it
+        p.press(.delete)
+        #expect(p.item.wrongNote == nil)
+    }
+
+    @Test func aMissComesBackInADay() async throws {
+        let (p, _) = try await practice()
+        p.choose("A")
+        p.check()
+        p.choose("C")
+        p.check()
+        p.show(1)
+        p.choose("A")
+        p.check()
+        let rows = p.summary().rows
+        #expect(rows[0].backInDays == 1, "right on the second try: a wrong answer was sent")
+        #expect(rows[1].backInDays == nil)
+        #expect(rows[2].backInDays == nil, "not answered")
+    }
+}
