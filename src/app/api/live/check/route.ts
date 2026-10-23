@@ -6,6 +6,7 @@ import { jsonlToEvents, sseResponse, type SseEmit } from "@/lib/server/sse";
 import { buildCheckMessages } from "@/lib/server/prompts/check";
 import { livePreamble, runChargedStream, sseErrorPayload, withRequestId } from "@/lib/server/live-route";
 import { filterAnnotation } from "@/lib/server/live-rules";
+import { satPromptBlock, withSatContext } from "@/lib/server/sat/context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +46,8 @@ export async function POST(req: Request) {
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   // the request as parsed, `learner` (the student's recurring mistakes) included
-  const messages = buildCheckMessages(data);
+  // an SAT page: the bank's question is the problem (its steps keep Help me on the bank's path)
+  const messages = withSatContext(buildCheckMessages(data), await satPromptBlock(ctx));
 
   const res = sseResponse(
     req,

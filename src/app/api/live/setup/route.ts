@@ -7,6 +7,7 @@ import { errorResponse } from "@/lib/server/request";
 import { buildSetupMessages, cleanSetupReply, SetupReplySchema, type SetupReply } from "@/lib/server/prompts/setup";
 import { buildFigureMessages, figureReasoning, figureSetup } from "@/lib/server/prompts/figure";
 import { livePreamble, withRequestId } from "@/lib/server/live-route";
+import { satPromptBlock, withSatContext } from "@/lib/server/sat/context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,13 +39,15 @@ export async function POST(req: Request) {
   const [primary, fallback] = figure ? [models.figure, models.figureFallback] : [models.setup, models.setupFallback];
   const billing = await enforceInk({ token, route: "live/setup", requestId, model: primary, satQuestionId: ctx.satQuestionId, training: ctx.training }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
+  // an SAT page: the bank's question is the problem
+  const satBlock = await satPromptBlock(ctx);
 
   return runCharged(
     { userId: user.id, requestId, training: ctx.training },
     log,
     async () => {
       const { data: reply, model } = await chatJsonWithFallback(primary, fallback, {
-        messages: figure ? buildFigureMessages(data) : buildSetupMessages(data),
+        messages: withSatContext(figure ? buildFigureMessages(data) : buildSetupMessages(data), satBlock),
         schema: figure ? FigureReplySchema : SetupReplySchema,
         signal: req.signal,
         requestId,

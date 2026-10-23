@@ -19,6 +19,7 @@ import { buildVisionMessages, VisionTranscriptionSchema } from "@/lib/server/pro
 import { liveDebugEnabled, liveLogger, livePreamble, withRequestId } from "@/lib/server/live-route";
 import { classifyKind } from "@/lib/server/live-rules";
 import { sameRead } from "@/lib/live/sameRead";
+import { satPromptBlock, withSatContext } from "@/lib/server/sat/context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -185,13 +186,15 @@ export async function POST(req: Request) {
     if (!result && data.crop) {
       stage = "vision";
       const models = getLiveModels();
+      // an SAT page: the bank's question tells the vision reader what the ink is likely to say
+      const satBlock = await satPromptBlock(ctx);
       const visionMs = Math.max(VISION_MIN_MS, VISION_DEADLINE_MS - (Date.now() - startedAt));
       const deadline = AbortSignal.timeout(visionMs);
       let vision;
       try {
         vision = await chatJson({
           model: models.vision,
-          messages: buildVisionMessages(data.crop, data.hint),
+          messages: withSatContext(buildVisionMessages(data.crop, data.hint), satBlock),
           schema: VisionTranscriptionSchema,
           signal: AbortSignal.any([req.signal, deadline]),
           requestId,

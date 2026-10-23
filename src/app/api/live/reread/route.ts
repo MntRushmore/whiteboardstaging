@@ -5,6 +5,7 @@ import { chatJsonWithFallback } from "@/lib/server/openrouter";
 import { errorResponse } from "@/lib/server/request";
 import { buildRereadMessages, cleanRereadLatex, rereadReasoning, RereadReplySchema } from "@/lib/server/prompts/reread";
 import { livePreamble, withRequestId } from "@/lib/server/live-route";
+import { satPromptBlock, withSatContext } from "@/lib/server/sat/context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,13 +34,15 @@ export async function POST(req: Request) {
   const models = getLiveModels();
   const billing = await enforceInk({ token, route: "live/reread", requestId, model: models.reread, satQuestionId: ctx.satQuestionId, training: ctx.training }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
+  // an SAT page: the bank's question tells the reader what the ink is likely to say
+  const satBlock = await satPromptBlock(ctx);
 
   return runCharged(
     { userId: user.id, requestId, training: ctx.training },
     log,
     async () => {
       const { data: reply, model } = await chatJsonWithFallback(models.reread, models.rereadFallback, {
-        messages: buildRereadMessages(data),
+        messages: withSatContext(buildRereadMessages(data), satBlock),
         schema: RereadReplySchema,
         signal: req.signal,
         requestId,
