@@ -8,7 +8,7 @@ import SwiftUI
 /// kids: the web's rules). A sidebar on a full iPad; a row of tabs in a narrow window.
 struct AccountArea: View {
     enum Page: String, CaseIterable, Identifiable {
-        case progress, account, family, report, bugs, training
+        case progress, account, family, report, bugs, training, pictureTutor
         var id: String { rawValue }
 
         var title: String {
@@ -19,6 +19,7 @@ struct AccountArea: View {
             case .report: return "Weekly report"
             case .bugs: return "Bug reports"
             case .training: return "Training Center"
+            case .pictureTutor: return "Picture tutor (test)"
             }
         }
 
@@ -30,6 +31,7 @@ struct AccountArea: View {
             case .report: return .report
             case .bugs: return .bug
             case .training: return .check
+            case .pictureTutor: return .pen
             }
         }
     }
@@ -47,7 +49,7 @@ struct AccountArea: View {
     /// before the family answered): the kid's pages until the family is read here.
     @State private var who: SignedInAs
     @State private var family: FamilyState?
-    /// An admin sees the Training Center (`is_admin()`; never a kid profile)
+    /// An admin sees the Training Center and the picture tutor's switch (`is_admin()`; never a kid profile)
     @State private var isAdmin = false
 
     init(start: Page, who: SignedInAs, family: FamilyState?, practice: @escaping (String) -> Void) {
@@ -63,7 +65,7 @@ struct AccountArea: View {
     static let kidPages: [Page] = [.progress, .account, .bugs]
 
     private var pages: [Page] {
-        isKid ? Self.kidPages : [.progress, .account, .family, .report, .bugs] + (isAdmin ? [.training] : [])
+        isKid ? Self.kidPages : [.progress, .account, .family, .report, .bugs] + (isAdmin ? [.training, .pictureTutor] : [])
     }
 
     /// Tabs on top instead of the sidebar: a narrow window, or the largest text sizes (the sidebar's
@@ -206,6 +208,8 @@ struct AccountArea: View {
             BugReportsPage()
         case .training:
             TrainingCenterPage()
+        case .pictureTutor:
+            PictureTutorPage()
         }
     }
 
