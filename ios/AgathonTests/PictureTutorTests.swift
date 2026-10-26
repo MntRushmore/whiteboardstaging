@@ -1,5 +1,6 @@
 import AgathonAsk
 import AgathonBoard
+import AgathonBrain
 import AgathonKit
 import AgathonLive
 import CoreGraphics
@@ -558,6 +559,51 @@ struct PictureTutorTests {
             #expect(abs(canvas.zoom - 4) < 0.01, "the same zoom-in limit")
             let extent = BoardCanvasView.extent(of: .screen, infinite: infinite)
             #expect(infinite ? extent.w == Box.screen.w * BoardCanvasView.infiniteSpan : extent == .screen)
+        }
+    }
+
+    /// Solve's plain sums are written in the tutor's hand after the kid's line (2026-10-26: the owner's
+    /// "36+24=" got a write event and nothing appeared).
+    @Test func aPlainSumsAnswerIsWrittenAfterTheLine() async throws {
+        _ = try await Brain.shared.load()
+        let controller = BoardController()
+        let canvas = BoardCanvasView(controller: controller)
+        canvas.frame = CGRect(x: 0, y: 0, width: 1194, height: 834)
+        canvas.layoutIfNeeded()
+        let screen = controller.currentScreenID
+        controller.store.put(.stroke(StrokeRecord(screen: screen, order: controller.store.nextOrder(on: screen), author: .kid, color: .black, width: 6,
+                                                  pressure: .simulated, x: 240, y: 200, points: [InkPoint(x: 0, y: 0), InkPoint(x: 400, y: 55)], start: 1)), origin: .kid)
+        await PictureTutorBoard.writeAnswer("60", on: controller, canvas: canvas, screen: screen, region: .screen)
+        try await Task.sleep(for: .seconds(3))
+        let tutor = controller.store.records.values.filter { $0.author == .tutor && $0.type == .stroke }
+        #expect(!tutor.isEmpty, "the answer's strokes are on the page")
+    }
+
+    /// A look at the ink, normal and infinite, when SMUDGE_DIR is set (the owner, 2026-10-26: "why is
+    /// the ink smuging?"). Writes normal.png and infinite.png of the same stroke at zoom 1 and 3.
+    @Test func inkSnapshotsNormalAndInfinite() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["SMUDGE_DIR"], !dir.isEmpty else { return }
+        for infinite in [false, true] {
+            let controller = BoardController()
+            controller.infinite = infinite
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1194, height: 834))
+            let canvas = BoardCanvasView(controller: controller)
+            canvas.frame = window.bounds
+            window.addSubview(canvas)
+            window.isHidden = false
+            canvas.layoutIfNeeded()
+            let screen = controller.currentScreenID
+            var pts: [AgathonBoard.InkPoint] = []
+            for i in 0...60 { let t = Double(i) / 60; pts.append(AgathonBoard.InkPoint(x: Float(t * 300), y: Float(sin(t * 6) * 40), pressure: 0.5)) }
+            controller.store.put(.stroke(StrokeRecord(screen: screen, order: controller.store.nextOrder(on: screen), author: .kid, color: .black, width: 6,
+                                                      pressure: .simulated, x: 300, y: 300, points: pts, start: 1)), origin: .kid)
+            for zoom in [1.0, 3.0] {
+                canvas.setZoom(zoom, around: CGPoint(x: 400, y: 300))
+                try await Task.sleep(for: .seconds(2))
+                let r = UIGraphicsImageRenderer(bounds: canvas.bounds)
+                let img = r.image { _ in canvas.drawHierarchy(in: canvas.bounds, afterScreenUpdates: true) }
+                try img.pngData()?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(infinite ? "infinite" : "normal")-z\(Int(zoom)).png"))
+            }
         }
     }
 

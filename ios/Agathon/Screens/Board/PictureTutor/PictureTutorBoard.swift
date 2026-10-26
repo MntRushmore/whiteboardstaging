@@ -151,8 +151,14 @@ final class PictureTutorBoard {
         guard controller.currentScreenID == screen, let box = latestLine(on: controller, screen: screen, region: region) else { return }
         let request = HandwritingRequest(steps: [latex], lineHeight: box.h, inline: true, seedKey: "picture:\(latex)",
                                          baseline: HandwritingRequest.Baseline(x: box.x + box.w + LivePlacement.inlineAnswerGap(box.h), baselineY: box.y + box.h))
+        // the brain is loaded by the Live tutor, which doesn't start beside this one (2026-10-26: the
+        // owner's "36+24=" got its answer from the server and nothing appeared)
+        _ = try? await Brain.shared.load()
         guard let result = try? await Brain.shared.layoutHandwriting(request), result.unsupported.isEmpty, let plan = result.plan,
-              controller.currentScreenID == screen else { return }
+              controller.currentScreenID == screen else {
+            PictureTutorLog.os.error("picture tutor: the answer \(latex, privacy: .public) couldn't be laid out in the tutor's hand")
+            return
+        }
         var meta = PictureTutorCapture.meta(runId: nil, mode: .answer)
         meta["answer"] = .string(latex)
         // the pen is held until its writing is on the page (a pen let go stops writing)

@@ -141,6 +141,30 @@ final class TileLayers {
     var detailBoost = 0
     /// The detail level's pixels per page unit, when there is one.
     var detailPx: CGFloat? { detail?.px }
+    /// Hides the base wherever the detail level has drawn the whole view (an infinite board: its base
+    /// is so coarse that its ink showed as a grey halo round the sharp detail strokes, 2026-10-26).
+    var hidesBaseUnderDetail = false {
+        didSet { if !hidesBaseUnderDetail { showBase() } }
+    }
+
+    /// The base on show again (a pan or pinch is exposing what the detail hasn't drawn yet).
+    func showBase() {
+        guard let base, base.root.isHidden else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        base.root.isHidden = false
+        CATransaction.commit()
+    }
+
+    /// The base hidden once every detail tile in view is drawn.
+    private func coverBase() {
+        guard hidesBaseUnderDetail, let base, let detail, !detail.tiles.isEmpty,
+              detail.tiles.values.allSatisfy({ $0.bitmap != nil && !$0.pending && !$0.stale }) else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        base.root.isHidden = true
+        CATransaction.commit()
+    }
     /// Items left out of the tiles: a selection lifted off the page while it is moved or resized.
     var hidden: Set<RecordID> = []
     /// Areas to redraw, gathered over one run-loop turn and redrawn together just before Core
@@ -429,6 +453,8 @@ final class TileLayers {
     /// otherwise the visible tiles at the next power of two, rendered off the main thread.
     func updateDetail(visible: Box, effectivePx: CGFloat, done: (() -> Void)? = nil) {
         guard let base else { return }
+        // the base shows while the detail for this view is drawn
+        showBase()
         let ratio = effectivePx / base.px
         if ratio <= 1.2 {
             if let detail {
@@ -482,7 +508,15 @@ final class TileLayers {
             t.layer.removeFromSuperlayer()
             level.tiles[k] = nil
         }
-        if !fresh.isEmpty { render(fresh, level: level, done: done) } else { done?() }
+        if !fresh.isEmpty {
+            render(fresh, level: level) { [weak self] in
+                self?.coverBase()
+                done?()
+            }
+        } else {
+            coverBase()
+            done?()
+        }
     }
 
     var detailTileCount: Int { detail?.tiles.count ?? 0 }

@@ -436,6 +436,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         switch g.state {
         case .began:
             cancelFingerStroke()
+            tiles.showBase()
             gestureStart = (camera, .zero)
         case .changed:
             guard let start = gestureStart, pinch.state != .changed && pinch.state != .began else { return }
@@ -456,6 +457,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         switch g.state {
         case .began:
             cancelFingerStroke()
+            tiles.showBase()
             let c = g.location(in: self)
             pinchStart = (camera, camera.toPage(c), c)
         case .changed:
@@ -1134,6 +1136,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         showPending(controller.pendingPictures)
         let signpost = BoardSignposts.signposter.beginInterval("BoardLoad", "\(index.count) items")
         tiles.detailBoost = controller.infinite ? Int(ceil(log2(Self.infiniteSpan))) : 0
+        tiles.hidesBaseUnderDetail = controller.infinite
         tiles.reset(screen: screenRect, px: bounds.width > 0 ? basePx : 2) { [weak self] in
             BoardSignposts.signposter.endInterval("BoardLoad", signpost)
             self?.updateDetail()
