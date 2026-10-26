@@ -135,6 +135,12 @@ final class TileLayers {
 
     let root = CALayer()
     private(set) var screenRect = Box.screen
+    /// More detail levels past the usual 8×: an infinite board's base is drawn over a far wider span
+    /// (so far coarser), and its ink smudged at the page's own zoom with only 8× (2026-10-26). Only
+    /// the visible tiles are ever drawn at the detail level, so this costs no more than a normal board.
+    var detailBoost = 0
+    /// The detail level's pixels per page unit, when there is one.
+    var detailPx: CGFloat? { detail?.px }
     /// Items left out of the tiles: a selection lifted off the page while it is moved or resized.
     var hidden: Set<RecordID> = []
     /// Areas to redraw, gathered over one run-loop turn and redrawn together just before Core
@@ -433,7 +439,7 @@ final class TileLayers {
             done?()
             return
         }
-        let k = min(3, Int(ceil(log2(Double(ratio)))))
+        let k = min(3 + detailBoost, Int(ceil(log2(Double(ratio)))))
         let px = base.px * CGFloat(1 << k)
         if detail == nil || detail!.px != px {
             detail?.generation += 1

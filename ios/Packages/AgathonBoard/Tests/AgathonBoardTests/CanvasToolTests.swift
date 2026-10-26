@@ -106,3 +106,25 @@ struct CanvasToolTests {
     }
 }
 #endif
+
+/// The infinite board's ink smudged (2026-10-26): its base spans 9 × 9 screens, so its detail level
+/// capped at 8× was coarser than the screen. With the boost, the detail is at least the screen's.
+@MainActor
+@Suite struct InfiniteBoardDetailTests {
+    @Test func theDetailIsAtLeastTheScreensOnAnInfiniteBoard() {
+        let page = Box.screen
+        let extent = BoardCanvasView.extent(of: page, infinite: true)
+        let pagePx: CGFloat = 1.5 // the page fitted, in device pixels per page unit
+        let basePx = pagePx / CGFloat(BoardCanvasView.infiniteSpan)
+        for (boost, sharp) in [(0, false), (Int(ceil(log2(BoardCanvasView.infiniteSpan))), true)] {
+            let tiles = TileLayers()
+            tiles.detailBoost = boost
+            tiles.reset(screen: extent, px: basePx) {}
+            for zoom in [1.0, 4.0] {
+                tiles.updateDetail(visible: Box(x: page.x, y: page.y, w: page.w / zoom, h: page.h / zoom), effectivePx: pagePx * zoom)
+                let detail = tiles.detailPx ?? basePx
+                #expect((detail >= pagePx * zoom * 0.999) == sharp, "boost \(boost), zoom \(zoom): detail \(detail) for \(pagePx * zoom)")
+            }
+        }
+    }
+}

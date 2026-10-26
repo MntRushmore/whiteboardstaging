@@ -1133,6 +1133,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         }
         showPending(controller.pendingPictures)
         let signpost = BoardSignposts.signposter.beginInterval("BoardLoad", "\(index.count) items")
+        tiles.detailBoost = controller.infinite ? Int(ceil(log2(Self.infiniteSpan))) : 0
         tiles.reset(screen: screenRect, px: bounds.width > 0 ? basePx : 2) { [weak self] in
             BoardSignposts.signposter.endInterval("BoardLoad", signpost)
             self?.updateDetail()
