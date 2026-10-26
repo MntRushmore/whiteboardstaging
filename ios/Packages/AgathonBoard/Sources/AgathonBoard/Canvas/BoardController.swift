@@ -125,6 +125,10 @@ public final class BoardController: ObservableObject {
     /// the selection is being moved or resized (its buttons step aside)
     @Published public internal(set) var isTransforming = false
 
+    /// An infinite board (a test flag): the canvas pans and zooms out far past the screen's edges,
+    /// and ink can go anywhere. Set before the board loads; nothing about it is saved.
+    public var infinite = false
+
     /// The camera, for overlays in screen space.
     public let viewport = BoardViewport()
 

@@ -8,6 +8,7 @@ import SwiftUI
 struct PictureTutorPage: View {
     @AppStorage(PictureTutorSettings.enabledKey) private var enabled = false
     @AppStorage(PictureTutorSettings.modeKey) private var mode: PictureTutorMode = .suggest
+    @AppStorage(BoardFlags.infiniteKey) private var infinite = false
     @ObservedObject var log: PictureTutorLog
 
     init(log: PictureTutorLog? = nil) {
@@ -42,6 +43,21 @@ struct PictureTutorPage: View {
                 }
                 .opacity(enabled ? 1 : 0.5)
                 .disabled(!enabled)
+            }
+            AreaCard("Board (test)") {
+                Toggle(isOn: $infinite) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Infinite board").dsFont(.callout).foregroundStyle(DS.Color.ink)
+                        Text(infinite ? "On: pan and zoom out far past the page's edges and write anywhere. Opens on the page as usual; reopen a board to see it."
+                                      : "Off: each page is its own fixed screen, as today.")
+                            .dsFont(.caption)
+                            .foregroundStyle(DS.Color.inkSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .tint(DS.Color.tutorInk)
+                .frame(minHeight: DS.Size.minTarget)
+                .accessibilityIdentifier("board.infinite")
             }
             AreaCard("Last runs") {
                 if log.runs.isEmpty {

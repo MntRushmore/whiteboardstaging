@@ -154,3 +154,11 @@ final class PictureTutorLog: ObservableObject {
         if let data = try? JSONEncoder().encode(runs) { defaults.set(data, forKey: Self.key) }
     }
 }
+
+/// Board test flags on this iPad (Account → Picture tutor (test), admins only).
+enum BoardFlags {
+    /// `board.infinite`: boards open as an infinite canvas (BoardController.infinite), from the next open.
+    static let infiniteKey = "board.infinite"
+
+    static var infinite: Bool { UserDefaults.standard.bool(forKey: infiniteKey) }
+}

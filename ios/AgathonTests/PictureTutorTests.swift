@@ -542,6 +542,25 @@ struct PictureTutorTests {
         #expect(t.y > 270 && t.y < 340, "level with the latest line, not the first")
     }
 
+    /// The infinite board test flag (2026-10-26): it opens on the page, zooms out far past it, keeps the
+    /// page's zoom-in limit, and the picture tutor sees past the page. Off, the page holds as before.
+    @Test func anInfiniteBoardGoesPastThePage() {
+        for infinite in [false, true] {
+            let controller = BoardController()
+            controller.infinite = infinite
+            let canvas = BoardCanvasView(controller: controller)
+            canvas.frame = CGRect(x: 0, y: 0, width: 1194, height: 834)
+            canvas.layoutIfNeeded()
+            #expect(abs(canvas.zoom - 1) < 0.01, "it opens on the page")
+            canvas.setZoom(0.2)
+            #expect(infinite ? canvas.zoom < 0.25 : abs(canvas.zoom - 1) < 0.01)
+            canvas.setZoom(4)
+            #expect(abs(canvas.zoom - 4) < 0.01, "the same zoom-in limit")
+            let extent = BoardCanvasView.extent(of: .screen, infinite: infinite)
+            #expect(infinite ? extent.w == Box.screen.w * BoardCanvasView.infiniteSpan : extent == .screen)
+        }
+    }
+
     // MARK: the board
 
     @Test func onlyTheKidsChangesCount() {

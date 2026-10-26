@@ -92,6 +92,8 @@ final class BoardScreenModel: ObservableObject {
             phase = .failed(.init(icon: .lock, title: "Sign in again to open this board.", message: "You were signed out on this iPad.", retry: false))
             return
         }
+        // the infinite board test flag: the canvas spans far past the page (nothing about it is saved)
+        session.controller.infinite = BoardFlags.infinite
         if let seed = request.seed { await Self.saveSeedIfEmpty(seed, boardId: request.board.id, backend: backend) }
         await session.open()
         guard !closed else {

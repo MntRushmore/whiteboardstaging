@@ -106,7 +106,8 @@ enum PictureTutorCapture {
         let screenID = controller.currentScreenID
         guard let screen = controller.currentScreen,
               let region = PictureTutorGeometry.region(camera: controller.viewport.camera, viewSize: controller.viewport.viewSize,
-                                                       screen: screen.rect, insets: insets, margin: margin) else { return nil }
+                                                       screen: BoardCanvasView.extent(of: screen.rect, infinite: controller.infinite),
+                                                       insets: insets, margin: margin) else { return nil }
         let items = content(controller.store.drawables(on: screenID))
             .compactMap { RenderGeometry.item(for: $0, images: controller.images) }
             .filter { $0.bounds.intersects(region) }

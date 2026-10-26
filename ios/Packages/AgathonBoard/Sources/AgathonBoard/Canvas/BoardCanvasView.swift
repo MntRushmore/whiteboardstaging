@@ -72,7 +72,29 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
     }
 
     public private(set) var camera = Camera()
+    /// What the camera and the tiles span: the screen's own rect, or on an infinite board
+    /// (`controller.infinite`) that rect widened `infiniteSpan` times about it.
     private var screenRect = Box.screen
+    /// The screen's own rect: the view the board opens on and "zoom 1" (the same as `screenRect`
+    /// unless the board is infinite).
+    private var pageRect = Box.screen
+    /// An infinite board spans this many screens across and down (in memory only: the saved screen
+    /// keeps its own rect).
+    public static let infiniteSpan = 9.0
+
+    /// The camera's rules: on an infinite board the zoom-in limit is the page's, not the wide extent's.
+    private var limits: CameraConstraints {
+        var c = constraintsInsets
+        if controller.infinite { c.maxZoom *= Self.infiniteSpan }
+        return c
+    }
+
+    /// The span of `screen` for the camera and tiles.
+    public static func extent(of screen: Box, infinite: Bool) -> Box {
+        guard infinite else { return screen }
+        let k = (infiniteSpan - 1) / 2
+        return Box(x: screen.x - screen.w * k, y: screen.y - screen.h * k, w: screen.w * infiniteSpan, h: screen.h * infiniteSpan)
+    }
     private var lastSize = CGSize.zero
 
     private let content = CALayer()
@@ -316,12 +338,12 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
     public override func layoutSubviews() {
         super.layoutSubviews()
         guard bounds.size != lastSize, bounds.width > 0, bounds.height > 0 else { return }
-        let wasFit = lastSize == .zero || abs(constraintsInsets.zoom(of: camera, screen: screenRect, in: lastSize) - 1) < 0.01
+        let wasFit = lastSize == .zero || abs(constraintsInsets.zoom(of: camera, screen: pageRect, in: lastSize) - 1) < 0.01
         lastSize = bounds.size
         if wasFit {
-            camera = constraintsInsets.fit(screenRect, in: bounds.size)
+            camera = constraintsInsets.fit(pageRect, in: bounds.size)
         } else {
-            camera = constraintsInsets.clamp(camera, screen: screenRect, in: bounds.size)
+            camera = limits.clamp(camera, screen: screenRect, in: bounds.size)
         }
         controller.viewport.viewSize = bounds.size
         applyCamera()
@@ -345,7 +367,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         } else {
             return
         }
-        camera = constraintsInsets.clamp(c, screen: screenRect, in: bounds.size)
+        camera = limits.clamp(c, screen: screenRect, in: bounds.size)
         applyCamera()
         updateDetail()
     }
@@ -358,7 +380,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
 
     private func refit() {
         guard bounds.width > 0 else { return }
-        camera = constraintsInsets.fit(screenRect, in: bounds.size)
+        camera = constraintsInsets.fit(pageRect, in: bounds.size)
         applyCamera()
         updateDetail()
     }
@@ -393,17 +415,17 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
     }
 
     /// Zoom: 1 = the whole screen fits.
-    public var zoom: Double { constraintsInsets.zoom(of: camera, screen: screenRect, in: bounds.size) }
+    public var zoom: Double { constraintsInsets.zoom(of: camera, screen: pageRect, in: bounds.size) }
 
     /// Sets the zoom about a view point (the Lab's buttons; pinch does the same).
     public func setZoom(_ z: Double, around p: CGPoint? = nil, refreshDetail: Bool = true) {
-        let fit = constraintsInsets.fit(screenRect, in: bounds.size)
+        let fit = constraintsInsets.fit(pageRect, in: bounds.size)
         let anchor = p ?? CGPoint(x: bounds.midX, y: bounds.midY)
         let page = camera.toPage(anchor)
         var c = camera
         c.scale = fit.scale * z
         c.offset = Vec2(anchor.x - page.x * c.scale, anchor.y - page.y * c.scale)
-        camera = constraintsInsets.clamp(c, screen: screenRect, in: bounds.size)
+        camera = limits.clamp(c, screen: screenRect, in: bounds.size)
         applyCamera()
         if refreshDetail { updateDetail() }
     }
@@ -420,7 +442,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
             let t = g.translation(in: self)
             var c = start.camera
             c.offset = Vec2(c.offset.x + t.x, c.offset.y + t.y)
-            camera = constraintsInsets.clamp(c, screen: screenRect, in: bounds.size)
+            camera = limits.clamp(c, screen: screenRect, in: bounds.size)
             applyCamera()
         default:
             gestureStart = nil
@@ -443,7 +465,7 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
             c.scale = start.camera.scale * Double(g.scale)
             // the page point under the fingers stays under them (and follows a two-finger pan)
             c.offset = Vec2(centroid.x - start.page.x * c.scale, centroid.y - start.page.y * c.scale)
-            camera = constraintsInsets.clamp(c, screen: screenRect, in: bounds.size)
+            camera = limits.clamp(c, screen: screenRect, in: bounds.size)
             applyCamera()
         default:
             pinchStart = nil
@@ -1093,24 +1115,25 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
 
     public func sceneReset(_ index: SceneIndex, screen: ScreenRecord, done: @escaping () -> Void) {
         cancelLive()
-        screenRect = screen.rect
+        pageRect = screen.rect
+        screenRect = Self.extent(of: screen.rect, infinite: controller.infinite)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        paper.frame = screen.rect.cgRect
+        paper.frame = screenRect.cgRect
         updateTemplate(screen)
         // the prints of the screen now shown, drawn by the reset below (nothing to invalidate)
         prints = []
         reloadPrint()
-        inkRoot.position = screen.rect.cgRect.origin
-        inkRoot.bounds = screen.rect.cgRect
+        inkRoot.position = screenRect.cgRect.origin
+        inkRoot.bounds = screenRect.cgRect
         CATransaction.commit()
         if bounds.width > 0 {
-            camera = constraintsInsets.fit(screenRect, in: bounds.size)
+            camera = constraintsInsets.fit(pageRect, in: bounds.size)
             applyCamera()
         }
         showPending(controller.pendingPictures)
         let signpost = BoardSignposts.signposter.beginInterval("BoardLoad", "\(index.count) items")
-        tiles.reset(screen: screen.rect, px: bounds.width > 0 ? basePx : 2) { [weak self] in
+        tiles.reset(screen: screenRect, px: bounds.width > 0 ? basePx : 2) { [weak self] in
             BoardSignposts.signposter.endInterval("BoardLoad", signpost)
             self?.updateDetail()
             done()
