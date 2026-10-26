@@ -213,6 +213,8 @@ struct PictureTutorPen: View {
         case .scribble(let area, let seed):
             let t = now.timeIntervalSince(track.scribbleStart ?? now)
             let writing = Scribble.shared.path(seed: seed, area: area)
+            // no usable space to scribble in (see Scribble.path): no pen this frame rather than one at 0,0
+            guard writing.points.count > 1 else { track.last = nil; return }
             // the loose writing fades behind the pen
             for seg in writing.trail(at: t) {
                 var path = Path()
@@ -310,6 +312,8 @@ struct PictureTutorPen: View {
         guard let blank = info.blank else { return regionView.insetBy(dx: regionView.width * 0.3, dy: regionView.height * 0.35) }
         let page = PictureTutorGeometry.pageRect(blank, imageSize: info.pixelSize, region: info.region)
         let r = PictureTutorGeometry.viewRect(page, camera: camera).insetBy(dx: 14, dy: 14)
+        // a blank too small to inset is CGRect.null (its origin infinite): write in the middle instead
+        if r.isNull || r.isEmpty { return regionView.insetBy(dx: regionView.width * 0.3, dy: regionView.height * 0.35) }
         // a wide space is written in its upper-left part, like a note beside the work
         let w = min(r.width, 420), h = min(r.height, 170)
         return CGRect(x: r.minX + min(24, (r.width - w) / 2), y: r.minY + min(30, (r.height - h) / 2), width: max(60, w), height: max(40, h))
@@ -439,6 +443,11 @@ final class Scribble {
     }
 
     func path(seed: UInt64, area: CGRect) -> Writing {
+        // a null, infinite or NaN rect (no blank space mapped into view) trapped in `Int(...)` below
+        // (crash 2026-10-25, build 1501): nothing to write in, no writing
+        guard [area.minX, area.minY, area.width, area.height].allSatisfy(\.isFinite), area.width >= 8, area.height >= 8 else {
+            return Writing(points: [], duration: 0.5)
+        }
         let key = "\(seed):\(Int(area.minX)):\(Int(area.minY)):\(Int(area.width)):\(Int(area.height))"
         if let w = cache[key] { return w }
         let w = Self.make(seed: seed, area: area)
