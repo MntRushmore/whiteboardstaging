@@ -29,7 +29,7 @@ import {
 import { dataUrlBytes, dataUrlPng, decodeRgb, encodeRgbaPng, encodeRgbPng, overlayOf, pictureAt, type Rgb } from "./overlay";
 import { parseTutorReply, tutorMessages, type TutorDecision } from "./prompts";
 import { pictureUrlOf, reedChatBody, reedPrompt } from "./reed";
-import { falseEquations, recheckNote } from "./arithmetic";
+import { evaluate, falseEquations, numberText, recheckNote } from "./arithmetic";
 import { readbackNote as EXACT_NUMBERS_NOTE, strayNumbersOf } from "./readback";
 import { revealStrokes, type RevealResult } from "./strokes";
 
@@ -48,7 +48,7 @@ export type RunInput = {
 
 /** How a run ended, for the app event. */
 export type RunSummary = {
-  result: "done" | "none" | "error" | "aborted";
+  result: "done" | "none" | "write" | "error" | "aborted";
   /** null when the tutor was skipped (the client sent instructions) or never answered */
   needsHelp: boolean | null;
   tutorSkipped: boolean;
@@ -60,6 +60,8 @@ export type RunSummary = {
   overlayPx?: number;
   /** the tutor found the work finished and right (a checkmark) */
   correct?: boolean;
+  /** Solve on plain arithmetic: the expression the server worked out (no picture painted) */
+  simple?: string;
   /** sums in the tutor's instructions that were wrong (then it was asked again) */
   tutorWrongSums?: string[];
   /** true when the re-asked tutor's answer replaced the wrong one */
@@ -214,6 +216,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
   // 1. the tutor: needs help? and what to draw
   let instructions = input.instructions?.trim().slice(0, MAX_INSTRUCTIONS) ?? "";
   let correct = false;
+  let simple: { expression: string; latex: string } | null = null;
   if (input.instructions !== undefined && instructions) {
     summary.tutorSkipped = true;
   } else {
@@ -222,7 +225,9 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
       let decision = await askTutors(input, summary);
       // its sums, checked before anything is painted: a wrong one goes back to the better tutor once,
       // told which (the fast tutor's column sum of 1,385 + 2,749 was wrong, 2026-10-26)
-      const wrong = decision.needsHelp ? falseEquations(decision.instructions) : [];
+      // (Solve's own working only: Feedback and Suggest quote the student's wrong sum on purpose —
+      // "6 + 4 = 11" sent a feedback note back to be redone, 2026-10-26)
+      const wrong = decision.needsHelp && input.mode === "answer" ? falseEquations(decision.instructions) : [];
       if (wrong.length > 0) {
         summary.tutorWrongSums = wrong.slice(0, 4);
         try {
@@ -239,6 +244,14 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
       summary.needsHelp = decision.needsHelp;
       instructions = decision.instructions;
       correct = decision.correct === true;
+      // Solve on plain arithmetic: worked out here, never by a model, and written by the iPad's hand
+      if (input.mode === "answer" && decision.simple) {
+        const value = evaluate(decision.simple);
+        if (value !== null) {
+          const n = numberText(value);
+          simple = { expression: decision.simple, latex: decision.wroteEquals ? n : `= ${n}` };
+        }
+      }
     } catch (err) {
       timings.tutorMs = Math.round(now() - t);
       return fail(err, "tutor");
@@ -253,6 +266,12 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
       emit({ type: "none", reason: correct ? "The work is right." : "The tutor saw nothing that needs help.", ...(correct ? { correct: true } : {}) });
       return finish(summary);
     }
+  }
+  if (simple) {
+    summary.result = "write";
+    summary.simple = simple.expression;
+    emit({ type: "write", latex: simple.latex, expression: simple.expression });
+    return finish(summary);
   }
   summary.instructionsChars = instructions.length;
   emit({ type: "status", stage: "drawing", instructions });

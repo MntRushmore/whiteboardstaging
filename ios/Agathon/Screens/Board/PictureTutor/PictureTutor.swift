@@ -92,6 +92,8 @@ final class PictureTutor: ObservableObject {
         var accept: @MainActor (Shown) async -> Bool
         /// A checkmark beside the kid's latest line on the page (the tutor found the work right).
         var tick: @MainActor (_ screen: RecordID, _ region: Box) -> Void = { _, _ in }
+        /// The tutor's hand writes `latex` after the kid's latest line on the page (Solve's plain sums).
+        var write: @MainActor (_ screen: RecordID, _ region: Box, _ latex: String) -> Void = { _, _, _ in }
         var schedule: (Double, @escaping @MainActor () -> Void) -> PictureTimer
         var now: () -> Date = { Date() }
         var reduceMotion: () -> Bool = { false }
@@ -275,6 +277,13 @@ final class PictureTutor: ObservableObject {
             if shown?.mode == .feedback { dropShown(outcome: nil) }
             // right work gets its checkmark (the owner: "even if its 1 checkmark")
             if correct { deps.tick(capture.screen, capture.region) }
+            finishRun()
+        case .write(let latex, let expression):
+            // Solve on plain arithmetic: the regular tutor's answer, in its hand (no picture)
+            let ms = elapsed(started)
+            log.update(logId) { $0.endMs = ms; $0.outcome = .none; $0.note = "\(expression) \(latex)" }
+            if shown?.mode == .feedback { dropShown(outcome: nil) }
+            deps.write(capture.screen, capture.region, latex)
             finishRun()
         case .done(let result):
             let ms = elapsed(started)

@@ -19,6 +19,10 @@ export const MODE_RULE: Record<ReedMode, string> = {
   answer: "Mode answer (Solve): write the complete worked solution, every step, ending with the final answer.",
 };
 
+/** Solve's plain-arithmetic way out (answer mode only). */
+export const SIMPLE_RULE =
+  'If the student\'s work is one plain arithmetic expression of numbers only (like 1+1, 47 + 38 or 12 × 4), not yet answered, set "simple" to that expression exactly as written without any "=", "wroteEquals" to whether they wrote "=" after it, needsHelp to true and instructions to ""; otherwise leave "simple" out.';
+
 /** The tutor's text, after the board image (lines joined with "\n"). */
 export function tutorText(mode: ReedMode): string {
   return [
@@ -32,6 +36,9 @@ export function tutorText(mode: ReedMode): string {
     // with this line, 3 of 4 pointed at the kid's own writing and copied nothing (2026-10-23).
     "Never ask to circle, ring, box or rewrite any of the student's writing; point at it with an arrow from your note instead.",
     MODE_RULE[mode],
+    // Solve on plain arithmetic is the regular tutor's (the owner, 2026-10-26: "for simple math like
+    // 1+1 ... can we have the rgeular tutor"): the server works the answer out and the iPad writes it
+    ...(mode === "answer" ? [SIMPLE_RULE] : []),
     // the owner, 2026-10-26: "i just want checkmarks for correct, even if its 1 checkmark"
     '"correct" is true only when the board has finished maths work and every step of it is right (then needsHelp is false); false for doodles, words, unfinished or wrong work.',
     'Reply with only this JSON, nothing before or after it: {"needsHelp": true or false, "correct": true or false, "instructions": "..."}',
@@ -52,8 +59,9 @@ export function tutorMessages(mode: ReedMode, imageDataUrl: string): ChatMessage
   ];
 }
 
-/** `correct`: finished maths, all of it right (a checkmark on the board). */
-export type TutorDecision = { needsHelp: boolean; instructions: string; correct?: boolean };
+/** `correct`: finished maths, all of it right (a checkmark on the board). `simple`: Solve on one plain
+ * arithmetic expression (the server works it out), and whether the student wrote "=" after it. */
+export type TutorDecision = { needsHelp: boolean; instructions: string; correct?: boolean; simple?: string; wroteEquals?: boolean };
 
 /**
  * The tutor's reply, read from the first "{" to the last "}". Null when that is not JSON with a
@@ -70,9 +78,15 @@ export function parseTutorReply(text: string, maxInstructions: number): TutorDec
     return null;
   }
   if (!parsed || typeof parsed !== "object") return null;
-  const d = parsed as { needsHelp?: unknown; instructions?: unknown; correct?: unknown };
+  const d = parsed as { needsHelp?: unknown; instructions?: unknown; correct?: unknown; simple?: unknown; wroteEquals?: unknown };
   if (typeof d.needsHelp !== "boolean") return null;
   const instructions = typeof d.instructions === "string" ? d.instructions.trim().slice(0, maxInstructions) : "";
   // right work needs no help: a reply that says both is not believed
-  return { needsHelp: d.needsHelp, instructions, ...(d.correct === true && !d.needsHelp ? { correct: true } : {}) };
+  const simple = typeof d.simple === "string" && d.simple.trim() ? d.simple.trim().slice(0, 80) : undefined;
+  return {
+    needsHelp: d.needsHelp,
+    instructions,
+    ...(d.correct === true && !d.needsHelp ? { correct: true } : {}),
+    ...(simple ? { simple, wroteEquals: d.wroteEquals === true } : {}),
+  };
 }

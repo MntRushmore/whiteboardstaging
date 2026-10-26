@@ -68,6 +68,7 @@ export function recordBoardDraw(ctx: {
       ...(s.strokesDropped ? { strokesDropped: s.strokesDropped } : {}),
       ...(s.paints ? { paints: s.paints } : {}),
       ...(s.correct ? { correct: true } : {}),
+      ...(s.simple ? { simple: s.simple } : {}),
       ...(s.readbackStrays?.length ? { readbackStrays: s.readbackStrays } : {}),
       ...(s.tutorWrongSums?.length ? { tutorWrongSums: s.tutorWrongSums, tutorRechecked: s.tutorRechecked ?? false } : {}),
       ...(s.errorCode ? { errorCode: s.errorCode, retryable: s.retryable ?? false } : {}),

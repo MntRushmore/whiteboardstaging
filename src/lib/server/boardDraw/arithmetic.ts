@@ -98,3 +98,9 @@ export function falseEquations(text: string): string[] {
 export function recheckNote(wrong: string[]): string {
   return `Your instructions contain arithmetic that is wrong: ${wrong.join("; ")}. Work every number out again carefully, digit by digit with carrying, and answer again in the same JSON form.`;
 }
+
+/** A worked-out value as the tutor writes it: a whole number plainly, else at most 4 decimal places. */
+export function numberText(v: number): string {
+  if (Number.isInteger(v)) return String(v);
+  return String(Math.round(v * 10_000) / 10_000);
+}

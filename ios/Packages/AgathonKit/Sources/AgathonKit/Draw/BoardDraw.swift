@@ -124,6 +124,9 @@ public enum BoardDrawEvent: Sendable, Equatable {
     case status(BoardDrawStage, runId: String?, instructions: String?)
     /// `correct`: the tutor found the work finished and right (a checkmark beside it)
     case none(reason: String?, correct: Bool = false)
+    /// Solve on plain arithmetic: the server worked it out; the app writes `latex` ("= 2", or "2" after
+    /// the kid's own "=") in the tutor's hand after the kid's line
+    case write(latex: String, expression: String)
     case done(BoardDrawResult)
     case error(message: String, retryable: Bool)
 
@@ -131,7 +134,7 @@ public enum BoardDrawEvent: Sendable, Equatable {
     public var isTerminal: Bool {
         switch self {
         case .status: return false
-        case .none, .done, .error: return true
+        case .none, .write, .done, .error: return true
         }
     }
 }
@@ -178,6 +181,8 @@ public enum BoardDrawDecoding {
         var instructions: String?
         var reason: String?
         var correct: Bool?
+        var latex: String?
+        var expression: String?
         var overlay: String?
         var picture: String?
         var width: Double?
@@ -198,6 +203,9 @@ public enum BoardDrawDecoding {
             return .status(stage, runId: l.runId, instructions: l.instructions)
         case "none":
             return .none(reason: l.reason, correct: l.correct ?? false)
+        case "write":
+            guard let latex = l.latex, !latex.isEmpty else { return nil }
+            return .write(latex: latex, expression: l.expression ?? "")
         case "done":
             guard let overlay = l.overlay.flatMap(dataURLBytes) else {
                 return .error(message: "The picture didn't come through.", retryable: true)

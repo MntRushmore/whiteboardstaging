@@ -97,6 +97,9 @@ export type BoardDrawEvent =
   | { type: "status"; stage: "drawing"; instructions: string }
   /** `correct`: the work is finished and right (the iPad puts a checkmark beside it) */
   | { type: "none"; reason: string; correct?: boolean }
+  /** Solve on plain arithmetic: the answer, worked out here, for the iPad to write in the tutor's hand
+   * after the student's line (`latex` is "= 2", or "2" when they wrote the "=") */
+  | { type: "write"; latex: string; expression: string }
   | {
       type: "done";
       overlay: string;

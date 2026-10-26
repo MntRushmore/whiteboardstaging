@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluate, falseEquations } from "../arithmetic";
+import { evaluate, falseEquations, numberText } from "../arithmetic";
 
 describe("evaluate", () => {
   it("does + − × ÷ with brackets, precedence and thousands commas", () => {
@@ -28,5 +28,14 @@ describe("falseEquations", () => {
   it("accepts a rounded answer to the places it shows", () => {
     expect(falseEquations("10 ÷ 3 = 3.33")).toEqual([]);
     expect(falseEquations("10 ÷ 3 = 3.5")).toEqual(["10 ÷ 3 = 3.5"]);
+  });
+});
+
+describe("numberText", () => {
+  it("writes whole numbers plainly and the rest to at most 4 places", () => {
+    expect(numberText(2)).toBe("2");
+    expect(numberText(-1195)).toBe("-1195");
+    expect(numberText(10 / 3)).toBe("3.3333");
+    expect(numberText(0.25)).toBe("0.25");
   });
 });

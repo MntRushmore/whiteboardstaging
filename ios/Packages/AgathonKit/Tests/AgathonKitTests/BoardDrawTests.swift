@@ -65,6 +65,8 @@ struct BoardDrawTests {
         #expect(e(#"{"type":"status","stage":"drawing","instructions":"x"}"#) == .status(.drawing, runId: nil, instructions: "x"))
         #expect(e(#"{"type":"none","reason":"fine"}"#) == .none(reason: "fine"))
         #expect(e(#"{"type":"none","reason":"right","correct":true}"#) == .none(reason: "right", correct: true))
+        #expect(e(#"{"type":"write","latex":"= 2","expression":"1+1"}"#) == .write(latex: "= 2", expression: "1+1"))
+        #expect(e(#"{"type":"write","latex":""}"#) == nil, "nothing to write is no event")
         #expect(e(#"{"type":"error","message":"m","retryable":true}"#) == .error(message: "m", retryable: true))
         // a newer server's event, a stage this app doesn't know, junk: skipped
         #expect(e(#"{"type":"progress","pct":40}"#) == nil)

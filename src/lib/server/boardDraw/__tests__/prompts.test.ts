@@ -4,7 +4,7 @@
  * the reply's image fields, never from a URL in its text).
  */
 import { describe, expect, it } from "vitest";
-import { MODE_RULE, parseTutorReply, tutorMessages, tutorText } from "../prompts";
+import { MODE_RULE, parseTutorReply, SIMPLE_RULE, tutorMessages, tutorText } from "../prompts";
 import { getModePrompt, pictureUrlOf, REED_VOICE_INSTRUCTIONS, reedChatBody, reedPrompt } from "../reed";
 
 describe("the tutor prompt", () => {
@@ -36,6 +36,13 @@ describe("the tutor prompt", () => {
     expect(parseTutorReply('{"needsHelp": false, "correct": true, "instructions": ""}', 1000)).toEqual({ needsHelp: false, instructions: "", correct: true });
     expect(parseTutorReply('{"needsHelp": true, "correct": true, "instructions": "Look at 7"}', 1000)).toEqual({ needsHelp: true, instructions: "Look at 7" });
     expect(parseTutorReply('{"needsHelp": false, "correct": false, "instructions": ""}', 1000)).toEqual({ needsHelp: false, instructions: "" });
+  });
+
+  it("asks Solve, and only Solve, for plain arithmetic as \"simple\" (the regular tutor writes it)", () => {
+    expect(tutorText("answer")).toContain(SIMPLE_RULE);
+    expect(tutorText("feedback")).not.toContain(SIMPLE_RULE);
+    expect(parseTutorReply('{"needsHelp": true, "simple": "1+1", "wroteEquals": true, "instructions": ""}', 1000)).toEqual({ needsHelp: true, instructions: "", simple: "1+1", wroteEquals: true });
+    expect(parseTutorReply('{"needsHelp": true, "simple": "  ", "instructions": "x"}', 1000)).toEqual({ needsHelp: true, instructions: "x" });
   });
 
   it("reads the reply from the first { to the last }", () => {

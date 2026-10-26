@@ -1,5 +1,8 @@
+import AgathonAsk
 import AgathonBoard
+import AgathonBrain
 import AgathonKit
+import AgathonLive
 import Combine
 import CoreGraphics
 import Foundation
@@ -75,6 +78,10 @@ final class PictureTutorBoard {
                 guard let controller else { return }
                 tick(on: controller, screen: screen, region: region)
             },
+            write: { [weak controller] screen, region, latex in
+                guard let controller, let canvas = canvas() else { return }
+                Task { await writeAnswer(latex, on: controller, canvas: canvas, screen: screen, region: region) }
+            },
             schedule: { TaskTimer.schedule($0, $1) },
             reduceMotion: { UIAccessibility.isReduceMotionEnabled })
     }
@@ -106,15 +113,7 @@ final class PictureTutorBoard {
     /// The tutor's checkmark for right work, just right of the kid's latest line in R (the strokes
     /// level with the one written last), sized to it, in the tutor's blue. Not twice in one place.
     static func tick(on controller: BoardController, screen: RecordID, region: Box) {
-        guard controller.currentScreenID == screen else { return }
-        let kid: [(stroke: StrokeRecord, box: Box)] = controller.store.drawables(on: screen).compactMap {
-            guard case .stroke(let s) = $0, s.author == .kid, let box = bounds(s), box.intersects(region) else { return nil }
-            return (s, box)
-        }
-        guard let last = kid.max(by: { ($0.stroke.start ?? 0, $0.box.y) < ($1.stroke.start ?? 0, $1.box.y) }) else { return }
-        let line = kid.map(\.box).filter { $0.y < last.box.y + last.box.h && last.box.y < $0.y + $0.h }
-        guard var box = line.first else { return }
-        for b in line.dropFirst() { box = box.union(b) }
+        guard controller.currentScreenID == screen, let box = latestLine(on: controller, screen: screen, region: region) else { return }
         let h = min(60, max(24, box.h * 0.8)), w = h * 1.1
         let origin = Vec2(box.x + box.w + 24, box.y + box.h / 2 - h / 2)
         // a checkmark already beside this line (an earlier run): leave it
@@ -132,6 +131,41 @@ final class PictureTutorBoard {
                                   points: shape.map { InkPoint(x: Float($0.x), y: Float($0.y), pressure: 0.5, t: 0) }, meta: meta)
         controller.store.put(.stroke(stroke), origin: .tutor)
     }
+
+    /// The box of the kid's latest line in R: the strokes level with the one written last.
+    static func latestLine(on controller: BoardController, screen: RecordID, region: Box) -> Box? {
+        let kid: [(stroke: StrokeRecord, box: Box)] = controller.store.drawables(on: screen).compactMap {
+            guard case .stroke(let s) = $0, s.author == .kid, let box = bounds(s), box.intersects(region) else { return nil }
+            return (s, box)
+        }
+        guard let last = kid.max(by: { ($0.stroke.start ?? 0, $0.box.y) < ($1.stroke.start ?? 0, $1.box.y) }) else { return nil }
+        let line = kid.map(\.box).filter { $0.y < last.box.y + last.box.h && last.box.y < $0.y + $0.h }
+        guard var box = line.first else { return nil }
+        for b in line.dropFirst() { box = box.union(b) }
+        return box
+    }
+
+    /// Solve's answer to plain arithmetic in the tutor's own hand, as the Live tutor writes one after a
+    /// kid's "=": at the line's height, on its baseline, a gap after it, the pen drawing it in.
+    static func writeAnswer(_ latex: String, on controller: BoardController, canvas: BoardCanvasView, screen: RecordID, region: Box) async {
+        guard controller.currentScreenID == screen, let box = latestLine(on: controller, screen: screen, region: region) else { return }
+        let request = HandwritingRequest(steps: [latex], lineHeight: box.h, inline: true, seedKey: "picture:\(latex)",
+                                         baseline: HandwritingRequest.Baseline(x: box.x + box.w + LivePlacement.inlineAnswerGap(box.h), baselineY: box.y + box.h))
+        guard let result = try? await Brain.shared.layoutHandwriting(request), result.unsupported.isEmpty, let plan = result.plan,
+              controller.currentScreenID == screen else { return }
+        var meta = PictureTutorCapture.meta(runId: nil, mode: .answer)
+        meta["answer"] = .string(latex)
+        // the pen is held until its writing is on the page (a pen let go stops writing)
+        var held: TutorPen?
+        held = CanvasLiveBoard(controller: controller, canvas: canvas).write(AskBoardDriver.tutorLines(plan), meta: meta) {
+            if let pen = held { writing.removeAll { $0 === pen } }
+            held = nil
+        }
+        if let pen = held, pen.isWriting { writing.append(pen) }
+    }
+
+    /// The tutor's pens still writing an answer.
+    private static var writing: [TutorPen] = []
 
     /// A stroke's box on the page (unrotated: the kid's ink is never rotated).
     static func bounds(_ s: StrokeRecord) -> Box? {
