@@ -31,6 +31,7 @@ import { parseTutorReply, tutorMessages, type TutorDecision } from "./prompts";
 import { pictureUrlOf, reedChatBody, reedPrompt } from "./reed";
 import { evaluate, falseEquations, numberText, recheckNote } from "./arithmetic";
 import { readbackNote as EXACT_NUMBERS_NOTE, strayNumbersOf } from "./readback";
+import { roomLine } from "./room";
 import { revealStrokes, type RevealResult } from "./strokes";
 
 export type RunInput = {
@@ -139,7 +140,9 @@ async function askTutor(model: string, input: RunInput, summary: RunSummary, sto
   const data = await openrouterChat(
     {
       model,
-      messages: note ? [...tutorMessages(input.mode, input.imageDataUrl), { role: "user", content: note }] : tutorMessages(input.mode, input.imageDataUrl),
+      messages: note
+        ? [...tutorMessages(input.mode, input.imageDataUrl, roomLine(input.board)), { role: "user", content: note }]
+        : tutorMessages(input.mode, input.imageDataUrl, roomLine(input.board)),
       temperature: 0,
       max_tokens: 1500, // 500 cut off 4 of 9 Solve (cone) replies in the fast-chain check: the kid saw nothing
       reasoning: { effort: "minimal" },
@@ -185,6 +188,17 @@ async function askTutors(input: RunInput, summary: RunSummary): Promise<TutorDec
   }
   summary.tutorModel = answer.model;
   return answer.decision;
+}
+
+/**
+ * Whether a plain-arithmetic answer can be written as a number: exact (no rounding), and not a
+ * fraction problem with a fractional answer. 3/4 + 2/3 was written "= 1.4167" (the picture bench,
+ * 2026-10-26): a kid adding fractions wants 17/12, so the tutor works those out on the page instead.
+ */
+export function simpleWritable(expression: string, value: number): boolean {
+  if (Number.isInteger(value)) return true;
+  if (/\/|\\frac/.test(expression)) return false;
+  return Math.abs(Math.round(value * 10_000) / 10_000 - value) < 1e-9;
 }
 
 export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
@@ -247,7 +261,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
       // Solve on plain arithmetic: worked out here, never by a model, and written by the iPad's hand
       if (input.mode === "answer" && decision.simple) {
         const value = evaluate(decision.simple);
-        if (value !== null) {
+        if (value !== null && simpleWritable(decision.simple, value)) {
           const n = numberText(value);
           simple = { expression: decision.simple, latex: decision.wroteEquals ? n : `= ${n}` };
         }

@@ -14,7 +14,8 @@ import { REED_DRAW_TOOL_DESCRIPTION, REED_VOICE_INSTRUCTIONS, type ReedMode } fr
 
 /** What each mode lets the drawing say. */
 export const MODE_RULE: Record<ReedMode, string> = {
-  feedback: "Mode feedback: point out the mistake and where it is; do not write the corrected answer.",
+  // a 21-word note came out tiny and typed (the picture bench, 2026-10-26)
+  feedback: "Mode feedback: point out the mistake and where it is in a note of at most 10 words; do not write the corrected answer.",
   suggest: "Mode suggest: give a hint for the next step only; never write the answer.",
   answer: "Mode answer (Solve): write the complete worked solution, every step, ending with the final answer.",
 };
@@ -24,7 +25,8 @@ export const SIMPLE_RULE =
   'If the student\'s work is one plain arithmetic expression of numbers only (like 1+1, 47 + 38 or 12 × 4), not yet answered, set "simple" to that expression exactly as written without any "=", "wroteEquals" to whether they wrote "=" after it, needsHelp to true and instructions to ""; otherwise leave "simple" out.';
 
 /** The tutor's text, after the board image (lines joined with "\n"). */
-export function tutorText(mode: ReedMode): string {
+/** `room`: where the board has space (./room.ts roomLine), when it is not mostly empty. */
+export function tutorText(mode: ReedMode, room?: string | null): string {
   return [
     `The picture is the student's whiteboard. The board's assistance mode is "${mode}".`,
     "First decide whether the student needs help: a mistake, unfinished work, a question, or being stuck. Finished correct work, doodles and a word still being written do not need help.",
@@ -35,6 +37,8 @@ export function tutorText(mode: ReedMode): string {
     // Told to circle the kid's 25, Lite wrote a second 25 and circled that (4 of 4 feedback boards);
     // with this line, 3 of 4 pointed at the kid's own writing and copied nothing (2026-10-23).
     "Never ask to circle, ring, box or rewrite any of the student's writing; point at it with an arrow from your note instead.",
+    // the picture bench, 2026-10-26: "below 204" on a zoomed-in page with nothing below it
+    ...(room ? [room] : []),
     MODE_RULE[mode],
     // Solve on plain arithmetic is the regular tutor's (the owner, 2026-10-26: "for simple math like
     // 1+1 ... can we have the rgeular tutor"): the server works the answer out and the iPad writes it
@@ -46,14 +50,14 @@ export function tutorText(mode: ReedMode): string {
 }
 
 /** The tutor call's messages: Reed's voice-tutor instructions as the system, then the board, then the text. */
-export function tutorMessages(mode: ReedMode, imageDataUrl: string): ChatMessage[] {
+export function tutorMessages(mode: ReedMode, imageDataUrl: string, room?: string | null): ChatMessage[] {
   return [
     { role: "system", content: REED_VOICE_INSTRUCTIONS },
     {
       role: "user",
       content: [
         { type: "image_url", image_url: { url: imageDataUrl } },
-        { type: "text", text: tutorText(mode) },
+        { type: "text", text: tutorText(mode, room) },
       ],
     },
   ];
