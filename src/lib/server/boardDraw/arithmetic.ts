@@ -5,13 +5,28 @@
  * Equations with letters (2x = 8) are left alone: those are the engine's job, not this check's.
  */
 
-/** Numbers, operators and brackets, then "=", then a number: one candidate equation. */
-const EQUATION = /((?:[-−]?\(?\s*[-−]?\d[\d,]*(?:\.\d+)?\s*\)?\s*[-−+×x*÷/]\s*)+\(?\s*[-−]?\d[\d,]*(?:\.\d+)?\s*\)?)\s*=\s*([-−]?\d[\d,]*(?:\.\d+)?)(?![\d.]*\s*[a-zA-Z(])/g;
+/**
+ * Numbers, operators and brackets, then "=", then a number: one candidate equation. Bounded on both
+ * sides so it is a whole statement (the picture bench, 2026-10-26, caught each of these as "false"):
+ *  - it doesn't start inside a term (`x - 3 + 2 = 11` is algebra: no lone letter, digit, bracket,
+ *    exponent or sign just before its first number; a word like "then" is fine);
+ *  - its answer doesn't run on (`= -4 - (-5) = 1` and `= 17/12` and `= 2^7` are not "= -4", "= 17"
+ *    or "= 2");
+ *  - an x is a times sign only between spaces (`3 x 4`), never in `3x-7`.
+ */
+const NUM = String.raw`\(?\s*[-−]?\d[\d,]*(?:\.\d+)?\s*\)?`;
+const OP = String.raw`(?:[-−+×*÷/]|(?<=\s)x(?=\s))`;
+const EQUATION = new RegExp(
+  // not after a digit, bracket, exponent or sign (mid-term), nor a lone letter (a variable: "x - 3");
+  // after a word ("then -4 …") is fine
+  String.raw`(?<![0-9.)}\]^\\−-]\s*)(?<!(?:^|[^a-zA-Z])[a-zA-Z]\s*)((?:[-−]?${NUM}\s*${OP}\s*)+${NUM})\s*=\s*([-−]?\d[\d,]*(?:\.\d+)?)(?![\d.]*\s*(?:[a-zA-Z(^/×*÷+]|[-−]\s*[\d(]))`,
+  "g",
+);
 
 type Tok = { n: number } | { op: string };
 
 function tokens(expr: string): Tok[] | null {
-  const s = expr.replace(/−/g, "-").replace(/[×x*]/g, "*").replace(/÷/g, "/").replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
+  const s = expr.replace(/−/g, "-").replace(/[×*]|(?<=\s)x(?=\s)/g, "*").replace(/÷/g, "/").replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
   const out: Tok[] = [];
   const re = /\s*(\d+(?:\.\d+)?|[-+*/()])/y;
   let m: RegExpExecArray | null;

@@ -38,10 +38,14 @@ export function strayNumbers(written: string, asked: string): string[] {
   const want = new Set(numbersIn(asked));
   if (want.size === 0) return [];
   const graph = GRAPHISH.test(asked);
+  const carrying = /\bcarr(y|ies|ied)\b/i.test(asked);
   const out = new Set<string>();
   for (const n of numbersIn(written)) {
     if (want.has(n)) continue;
     if (graph && /^\d$/.test(n)) continue;
+    // carry digits the tutor asked for, read side by side ("1 1" read as 11): not new. Only where it
+    // spoke of carrying: elsewhere "11" for an asked "1" is the garble this check is for (2x + 11)
+    if (carrying && /^\d{2,}$/.test(n) && [...n].every((d) => want.has(d))) continue;
     out.add(n);
   }
   return [...out];

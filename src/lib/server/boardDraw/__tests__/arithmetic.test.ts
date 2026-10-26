@@ -25,6 +25,22 @@ describe("falseEquations", () => {
     expect(falseEquations("Column sums: 3, 12, 14")).toEqual([]);
   });
 
+  it("reads whole statements only (the picture bench, 2026-10-26)", () => {
+    // a chain: "= -4 - (-5) = 1" is not "= -4" (a 70 s recheck on right working)
+    expect(falseEquations("-7 + 3 - (-5) = -4 - (-5) = 1")).toEqual([]);
+    expect(falseEquations("-7 + 3 = -4, then -4 - (-5) = 1")).toEqual([]);
+    // a fraction or a power after "=" is not its first number
+    expect(falseEquations("9/12 + 8/12 = 17/12")).toEqual([]);
+    expect(falseEquations("2^3 × 2^4 = 2^7 = 128")).toEqual([]);
+    // an x next to a number is a letter; between spaces it is a times sign
+    expect(falseEquations("3x-7 = 8, so 3x = 15")).toEqual([]);
+    expect(falseEquations("x - 3 + 2 = 11")).toEqual([]);
+    expect(falseEquations("3 x 4 = 12")).toEqual([]);
+    expect(falseEquations("3 x 4 = 13")).toEqual(["3 x 4 = 13"]);
+    // and a real slip in a chain is still caught
+    expect(falseEquations("-7 + 3 = -5")).toEqual(["-7 + 3 = -5"]);
+  });
+
   it("accepts a rounded answer to the places it shows", () => {
     expect(falseEquations("10 ÷ 3 = 3.33")).toEqual([]);
     expect(falseEquations("10 ÷ 3 = 3.5")).toEqual(["10 ÷ 3 = 3.5"]);

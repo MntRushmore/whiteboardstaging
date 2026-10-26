@@ -21,6 +21,13 @@ describe("strayNumbers", () => {
     expect(strayNumbers("\\begin{array}{l}(100-1296)+1 \\\\ =-1195\\end{array}", asked)).toEqual([]);
   });
 
+  it("doesn't count asked single digits read side by side (two carry 1s read as 11, the bench 2026-10-26)", () => {
+    const carries = "Write a carry 1 above the 6 and a carry 1 above the 2, then 725 under the line";
+    expect(strayNumbers("11 \\ 725", carries)).toEqual([]);
+    // but a garbled number made of digits that were not asked one by one still is
+    expect(strayNumbers("(10-1296)+1=-1195", "Below the work, write: (100 - 1296) + 1 = -1195")).toEqual(["10"]);
+  });
+
   it("has nothing to say when the tutor asked for no numbers", () => {
     expect(strayNumbers("1 2 3", "Circle the mistake and draw an arrow to it")).toEqual([]);
   });
