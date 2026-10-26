@@ -293,8 +293,11 @@ final class PictureTutor: ObservableObject {
             let runId = self.runId
             let duration = PictureReveal.duration(result.strokes, reduceMotion: deps.reduceMotion())
             let now = deps.now()
+            // the tutor's ink is blue: the painter's picture recoloured once, for the ghost and for Accept
+            let blue = PictureTutorCapture.tutorBlue(overlay)
+            let bluePng = blue.flatMap { PictureTutorCapture.png($0) }
             shown = Shown(id: logId, runId: runId, logId: logId, mode: mode, screen: capture.screen, region: capture.region,
-                          overlay: overlay, png: result.overlay, strokes: result.strokes, state: duration > 0 ? .revealing : (mode.isGhost ? .ghost : .shown),
+                          overlay: blue ?? overlay, png: bluePng ?? result.overlay, strokes: result.strokes, state: duration > 0 ? .revealing : (mode.isGhost ? .ghost : .shown),
                           revealStarted: now, revealDuration: duration)
             finishRun(leaving: false)
             if duration > 0 {

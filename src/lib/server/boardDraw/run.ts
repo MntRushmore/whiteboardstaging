@@ -29,8 +29,9 @@ import {
 import { dataUrlBytes, dataUrlPng, decodeRgb, encodeRgbaPng, encodeRgbPng, overlayOf, pictureAt, type Rgb } from "./overlay";
 import { parseTutorReply, tutorMessages, type TutorDecision } from "./prompts";
 import { pictureUrlOf, reedChatBody, reedPrompt } from "./reed";
+import { falseEquations, recheckNote } from "./arithmetic";
 import { readbackNote as EXACT_NUMBERS_NOTE, strayNumbersOf } from "./readback";
-import { revealStrokesFine, type RevealResult } from "./strokes";
+import { revealStrokes, type RevealResult } from "./strokes";
 
 export type RunInput = {
   runId: string;
@@ -57,6 +58,10 @@ export type RunSummary = {
   costUsd: number;
   instructionsChars: number;
   overlayPx?: number;
+  /** sums in the tutor's instructions that were wrong (then it was asked again) */
+  tutorWrongSums?: string[];
+  /** true when the re-asked tutor's answer replaced the wrong one */
+  tutorRechecked?: boolean;
   /** numbers the read-back found that the tutor never asked for (then the picture was painted again) */
   readbackStrays?: string[];
   /** 2 when the picture was painted again */
@@ -126,11 +131,11 @@ function classify(err: unknown, stage: "tutor" | "painter" | "after"): RunError 
 type TutorAnswer = { model: string; decision: TutorDecision };
 
 /** One tutor call: the decision, or a throw (upstream error, timeout, unreadable reply). */
-async function askTutor(model: string, input: RunInput, summary: RunSummary, stop: AbortSignal): Promise<TutorAnswer> {
+async function askTutor(model: string, input: RunInput, summary: RunSummary, stop: AbortSignal, note?: string): Promise<TutorAnswer> {
   const data = await openrouterChat(
     {
       model,
-      messages: tutorMessages(input.mode, input.imageDataUrl),
+      messages: note ? [...tutorMessages(input.mode, input.imageDataUrl), { role: "user", content: note }] : tutorMessages(input.mode, input.imageDataUrl),
       temperature: 0,
       max_tokens: 1500, // 500 cut off 4 of 9 Solve (cone) replies in the fast-chain check: the kid saw nothing
       reasoning: { effort: "minimal" },
@@ -211,7 +216,23 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
   } else {
     const t = now();
     try {
-      const decision = await askTutors(input, summary);
+      let decision = await askTutors(input, summary);
+      // its sums, checked before anything is painted: a wrong one goes back to the better tutor once,
+      // told which (the fast tutor's column sum of 1,385 + 2,749 was wrong, 2026-10-26)
+      const wrong = decision.needsHelp ? falseEquations(decision.instructions) : [];
+      if (wrong.length > 0) {
+        summary.tutorWrongSums = wrong.slice(0, 4);
+        try {
+          const again = await askTutor(BOARD_DRAW_MODELS.tutor, input, summary, signal, recheckNote(wrong));
+          if (!again.decision.needsHelp || falseEquations(again.decision.instructions).length === 0) {
+            decision = again.decision;
+            summary.tutorModel = again.model;
+            summary.tutorRechecked = true;
+          }
+        } catch {
+          // the first answer stands
+        }
+      }
       summary.needsHelp = decision.needsHelp;
       instructions = decision.instructions;
     } catch (err) {
@@ -220,8 +241,9 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
     }
     timings.tutorMs = Math.round(now() - t);
     if (signal.aborted) return fail(null, "tutor");
-    // a pen-lift may hear "no help"; a request (voice) always draws, with Reed's prompt alone if need be
-    if (summary.needsHelp === false && input.source === "auto") {
+    // a pen-lift may hear "no help"; so may a request (Draw now) with nothing to add: forced to paint
+    // with no instructions, the painter invented a whole new drawing over a solved page (2026-10-26)
+    if (summary.needsHelp === false && (input.source === "auto" || !instructions)) {
       summary.result = "none";
       emit({ type: "none", reason: "The tutor saw nothing that needs help." });
       return finish(summary);
@@ -286,7 +308,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
     if (signal.aborted) return bail(null, "after");
 
     // 4. the reveal's strokes (never fails the run: `[]` and the client fades in)
-    const reveal = await revealStrokesFine(mask, board.width, board.height);
+    const reveal = revealStrokes(mask, board.width, board.height);
     timings.traceMs = reveal.ms;
     summary.strokes = reveal.strokes.length;
     if (reveal.dropped) summary.strokesDropped = reveal.dropped;

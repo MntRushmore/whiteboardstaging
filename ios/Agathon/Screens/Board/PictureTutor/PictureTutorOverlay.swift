@@ -77,18 +77,11 @@ struct PictureTutorImage: View {
         .accessibilityIdentifier("picture.overlay")
     }
 
-    /// The tutor's picture as its traced strokes in the tutor's blue (sharp at any zoom, and just as
-    /// Accept puts them on the page), or the picture itself, blue, when the trace came back empty.
-    @ViewBuilder private var picture: some View {
-        if shown.strokes.isEmpty {
-            Image(decorative: shown.overlay, scale: 1)
-                .resizable()
-                .renderingMode(.template)
-                .interpolation(.high)
-                .foregroundStyle(DS.Color.tutorInk)
-        } else {
-            InkStrokes(strokes: shown.strokes, pixelSize: shown.pixelSize)
-        }
+    /// The tutor's picture (already its blue: PictureTutorCapture.tutorBlue).
+    private var picture: some View {
+        Image(decorative: shown.overlay, scale: 1)
+            .resizable()
+            .interpolation(.high)
     }
 
     static func stateWord(_ s: PictureTutor.Shown.State) -> String {
@@ -102,30 +95,6 @@ struct PictureTutorImage: View {
 }
 
 /// The strokes drawn so far, wide enough to uncover their ink, in the picture's frame.
-/// Traced strokes drawn as ink: the tutor's blue, each its own thickness (overlay px scaled to view).
-private struct InkStrokes: View {
-    let strokes: [BoardDrawStroke]
-    let pixelSize: CGSize
-
-    var body: some View {
-        Canvas { ctx, size in
-            let sx = size.width / max(1, pixelSize.width), sy = size.height / max(1, pixelSize.height)
-            for s in strokes {
-                let p = s.points
-                guard p.count >= 2 else { continue }
-                var path = Path()
-                path.move(to: CGPoint(x: p[0] * sx, y: p[1] * sy))
-                if p.count == 2 {
-                    path.addLine(to: CGPoint(x: p[0] * sx + 0.1, y: p[1] * sy))
-                } else {
-                    for i in stride(from: 2, to: p.count - 1, by: 2) { path.addLine(to: CGPoint(x: p[i] * sx, y: p[i + 1] * sy)) }
-                }
-                ctx.stroke(path, with: .color(DS.Color.tutorInk), style: StrokeStyle(lineWidth: max(1, s.width * sx), lineCap: .round, lineJoin: .round))
-            }
-        }
-    }
-}
-
 private struct RevealMask: View {
     let strokes: [BoardDrawStroke]
     let pixelSize: CGSize

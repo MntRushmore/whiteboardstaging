@@ -6,7 +6,7 @@
  */
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { FINE_TRACE_SCALE, readingOrder, revealStrokes, revealStrokesFine } from "../strokes";
+import { readingOrder, revealStrokes } from "../strokes";
 
 const W = 640;
 const H = 400;
@@ -93,29 +93,6 @@ describe("revealStrokes", () => {
 
   it("an empty overlay has no strokes", () => {
     expect(revealStrokes(new Uint8Array(W * H), W, H).strokes).toEqual([]);
-  });
-});
-
-describe("revealStrokesFine", () => {
-  it("traces at FINE_TRACE_SCALE and gives the strokes back in the overlay's own pixels and widths", async () => {
-    const mask = await maskOf(pen("M100 100 L300 100", 6) + pen("M200 150 L200 300", 6));
-    const plain = revealStrokes(mask, W, H);
-    const fine = await revealStrokesFine(mask, W, H);
-    expect(FINE_TRACE_SCALE).toBe(3);
-    expect(fine.strokes.length).toBe(plain.strokes.length);
-    for (const s of fine.strokes) {
-      const b = info(s);
-      expect(b.x0).toBeGreaterThanOrEqual(90);
-      expect(b.x1).toBeLessThanOrEqual(310);
-      expect(b.y0).toBeGreaterThanOrEqual(90);
-      expect(b.y1).toBeLessThanOrEqual(310);
-      expect(s.width).toBeGreaterThan(3);
-      expect(s.width).toBeLessThan(10);
-    }
-  });
-
-  it("an empty mask is no strokes", async () => {
-    expect((await revealStrokesFine(new Uint8Array(W * H), W, H)).strokes).toEqual([]);
   });
 });
 

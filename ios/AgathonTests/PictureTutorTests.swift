@@ -500,27 +500,23 @@ struct PictureTutorTests {
         #expect(Scribble.shared.path(seed: 7, area: CGRect(x: 100, y: 100, width: 400, height: 160)).points.count > 1)
     }
 
-    /// Accept keeps the traced strokes as the tutor's blue ink (2026-10-25: "traced over so it would be
-    /// editable, also make it blue"): page units, the tutor's colour, the solid look, never locked.
-    @Test func acceptedStrokesAreTheTutorsEditableBlueInk() {
-        let overlay = Self.image(1440, 810)
-        let shown = PictureTutor.Shown(id: "s", runId: "r", logId: "s", mode: .answer, screen: "screen:1", region: .screen,
-                                       overlay: overlay, png: Data(), strokes: [BoardDrawStroke(points: [144, 81, 288, 81, 288, 162], width: 4.5)],
-                                       state: .ghost, revealStarted: Date(), revealDuration: 0)
-        let ink = PictureTutorBoard.inkStrokes(shown)
-        #expect(ink.count == 1)
-        let s = ink[0]
-        let k = Box.screen.w / 1440
-        #expect(s.color == .tutor && s.author == .tutor)
-        #expect(abs(s.x - (Box.screen.x + 144 * k)) < 0.01 && abs(s.y - (Box.screen.y + 81 * k)) < 0.01)
-        #expect(abs(s.width - 4.5 * k) < 0.01)
-        #expect(s.meta["dash"]?.stringValue == "solid")
-        #expect(s.meta["locked"] == nil && s.meta["protected"] == nil)
-        #expect(PictureTutorCapture.isPictureTutor(.stroke(s)))
-        // densified: no gap over 1.5 page units, and the corner (288, 81) is still a point
-        let pts = s.points.map { Vec2(s.x + Double($0.x), s.y + Double($0.y)) }
-        for i in 1..<pts.count { #expect(hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y) <= 1.5 + 1e-6) }
-        #expect(pts.contains { abs($0.x - (Box.screen.x + 288 * k)) < 0.01 && abs($0.y - (Box.screen.y + 81 * k)) < 0.01 })
+    /// The tutor's picture is recoloured to its blue (2026-10-26, no tracing: "just do blue ink
+    /// handwriting"): black ink is solid tutor blue, paper is clear.
+    @Test func thePicturesInkIsTheTutorsBlue() throws {
+        let black = try #require(PictureTutorCapture.tutorBlue(Self.image(2, 2, color: CGColor(gray: 0, alpha: 1))))
+        let white = try #require(PictureTutorCapture.tutorBlue(Self.image(2, 2, color: CGColor(gray: 1, alpha: 1))))
+        func pixel(_ img: CGImage) -> [UInt8] {
+            var p = [UInt8](repeating: 0, count: 4)
+            let ctx = CGContext(data: &p, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            ctx.draw(img, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return p
+        }
+        let ink = InkColor.tutor.rgb
+        let b = pixel(black)
+        #expect(b[3] == 255)
+        #expect(abs(Double(b[0]) - ink.r * 255) <= 2 && abs(Double(b[1]) - ink.g * 255) <= 2 && abs(Double(b[2]) - ink.b * 255) <= 2)
+        #expect(pixel(white)[3] == 0, "paper stays clear")
     }
 
     // MARK: the board

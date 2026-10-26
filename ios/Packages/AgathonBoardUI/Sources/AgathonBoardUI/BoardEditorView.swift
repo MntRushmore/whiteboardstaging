@@ -47,6 +47,7 @@ public struct BoardEditorView<TopTrailing: View, Help: View, Overlay: View>: Vie
     let appearance: CanvasAppearance
 
     @State private var panel: DockPanel?
+    @StateObject private var roomWatch = PageRoomWatch()
     @State private var showPages = false
     @State private var helpSize: CGSize = .zero
     @State private var shownNotice: BoardNotice?
@@ -176,6 +177,22 @@ public struct BoardEditorView<TopTrailing: View, Help: View, Overlay: View>: Vie
             HStack(alignment: .center, spacing: DockLayout.Size.helpGap) {
                 BoardDock(controller: controller, layout: layout, panel: $panel, canTakePhoto: CameraPicker.isAvailable, onPicture: pick)
                     .fixedSize()
+                    // the writing reached the bottom of the page: point at New page
+                    .overlay(alignment: .topTrailing) {
+                        if roomWatch.show && !layout.newPageInMore && controller.strip.canAdd {
+                            PageRoomTip(add: {
+                                roomWatch.dismiss()
+                                panel = nil
+                                controller.addScreen()
+                            }, dismiss: { roomWatch.dismiss() })
+                            .fixedSize()
+                            .alignmentGuide(.top) { $0[.bottom] + 2 }
+                            .padding(.trailing, DockLayout.Size.padding)
+                            .transition(.opacity)
+                        }
+                    }
+                    .onAppear { roomWatch.attach(controller) }
+                    .onChange(of: controller.screenCount) { roomWatch.dismiss() }
                 Spacer(minLength: 0)
                 if !layout.helpAbove { measuredHelp }
             }

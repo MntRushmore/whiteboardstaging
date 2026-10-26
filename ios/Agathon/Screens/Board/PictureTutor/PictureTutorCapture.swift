@@ -132,6 +132,34 @@ enum PictureTutorCapture {
         return ctx.makeImage()
     }
 
+    /// The painter's picture in the tutor's blue (the owner, 2026-10-26: no tracing, "just do blue ink
+    /// handwriting"): each pixel's darkness becomes the blue's opacity, so black ink is solid blue, its
+    /// soft edges stay soft, and paper stays clear. Nil when the image can't be redrawn.
+    static func tutorBlue(_ image: CGImage) -> CGImage? {
+        let w = image.width, h = image.height
+        guard w > 0, h > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let data = ctx.data else { return nil }
+        let px = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        let ink = InkColor.tutor.rgb
+        for i in 0..<(w * h) {
+            let o = i * 4
+            let a = Double(px[o + 3]) / 255
+            guard a > 0 else { continue }
+            // un-premultiply, then darkness × coverage is how much blue
+            let r = Double(px[o]) / 255 / a, g = Double(px[o + 1]) / 255 / a, b = Double(px[o + 2]) / 255 / a
+            let darkness = max(0, min(1, 1 - (0.299 * r + 0.587 * g + 0.114 * b)))
+            let alpha = a * darkness
+            px[o] = UInt8((ink.r * alpha * 255).rounded())
+            px[o + 1] = UInt8((ink.g * alpha * 255).rounded())
+            px[o + 2] = UInt8((ink.b * alpha * 255).rounded())
+            px[o + 3] = UInt8((alpha * 255).rounded())
+        }
+        return ctx.makeImage()
+    }
+
     static func png(_ image: CGImage) -> Data? {
         let out = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(out, UTType.png.identifier as CFString, 1, nil) else { return nil }

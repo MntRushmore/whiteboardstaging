@@ -1,0 +1,32 @@
+import { describe, expect, it } from "vitest";
+import { evaluate, falseEquations } from "../arithmetic";
+
+describe("evaluate", () => {
+  it("does + − × ÷ with brackets, precedence and thousands commas", () => {
+    expect(evaluate("600 + 125")).toBe(725);
+    expect(evaluate("(100 − 1296) + 1")).toBe(-1195);
+    expect(evaluate("1,385 + 2,749")).toBe(4134);
+    expect(evaluate("2 + 3 × 4")).toBe(14);
+    expect(evaluate("864 ÷ 6")).toBe(144);
+    expect(evaluate("2 +")).toBeNull();
+  });
+});
+
+describe("falseEquations", () => {
+  it("finds a wrong sum and passes right ones (the owner's board, 2026-10-26)", () => {
+    expect(falseEquations("Write 68 + 57 = 125, then 600 + 125 = 725.")).toEqual([]);
+    expect(falseEquations("68 + 57 = 120")).toEqual(["68 + 57 = 120"]);
+    expect(falseEquations("1,385 + 2,749 = 4,134")).toEqual([]);
+    expect(falseEquations("1,385 + 2,749 = 4,034")).toEqual(["1,385 + 2,749 = 4,034"]);
+  });
+
+  it("leaves equations with letters alone, and lists that aren't sums", () => {
+    expect(falseEquations("2x + 3 = 11, so 2x = 8 and x = 4")).toEqual([]);
+    expect(falseEquations("Column sums: 3, 12, 14")).toEqual([]);
+  });
+
+  it("accepts a rounded answer to the places it shows", () => {
+    expect(falseEquations("10 ÷ 3 = 3.33")).toEqual([]);
+    expect(falseEquations("10 ÷ 3 = 3.5")).toEqual(["10 ÷ 3 = 3.5"]);
+  });
+});

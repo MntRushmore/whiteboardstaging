@@ -34,8 +34,11 @@ export const BOARD_DRAW_MODELS = {
 
 /** Each upstream call gives up after this long (the caller's abort stops it sooner). */
 export const TUTOR_TIMEOUT_MS = 15_000;
-/** How long the run waits for `tutor` before it takes `tutorFast`'s answer instead. */
-export const TUTOR_PREFER_MS = 4_000;
+/**
+ * How long the run waits for `tutor` before it takes `tutorFast`'s answer instead. 4 s handed a
+ * quarter of runs to the fast tutor (its p90 is 3.8 s), whose arithmetic is weaker (2026-10-26).
+ */
+export const TUTOR_PREFER_MS = 7_000;
 export const PAINTER_TIMEOUT_MS = 30_000;
 
 /** The board picture's long side, at most (px); bigger is a 413. */

@@ -202,13 +202,10 @@ struct BoardDock: View {
             pageArrow(.forward, DockCopy.nextPage, enabled: controller.screenIndex < controller.screenCount) { controller.nextScreen() }
         }
         if !layout.newPageInMore {
-            DockButton(title: DockCopy.newPage, action: {
+            NewPageButton {
                 panel = nil
                 controller.addScreen()
-            }) {
-                BoardIconView(icon: .newPage)
             }
-            .frame(minWidth: DockLayout.Size.newPage)
             .disabled(!controller.strip.canAdd)
             .accessibilityHint(controller.strip.canAdd ? "" : DockCopy.full)
         }

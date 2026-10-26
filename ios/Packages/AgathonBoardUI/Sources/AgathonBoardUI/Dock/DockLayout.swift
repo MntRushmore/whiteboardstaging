@@ -36,6 +36,8 @@ public enum DockCopy {
     public static let copy = "Copy"
     public static let delete = "Delete"
     public static let full = "This board is full"
+    /// the tip over New page when the writing reaches the bottom of the page
+    public static let outOfRoom = "Out of room? Start a new page"
 
     public static func pageOf(_ n: Int, _ count: Int) -> String { "Page \(n) of \(count)" }
     /// a problem page in a set (docs/PROBLEM-PAGES.md)
