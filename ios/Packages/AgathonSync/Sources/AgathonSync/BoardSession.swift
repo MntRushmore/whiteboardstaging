@@ -79,6 +79,11 @@ public final class BoardSession: ObservableObject {
         self.backup = backup
         self.scheduler = scheduler ?? LiveScheduler()
         self.controller = controller ?? BoardController()
+        // the board's pictures: added photos and PDF pages, the picture tutor's accepted picture, and
+        // loading the ones already on it all go through these (only the labs set them before, so a
+        // real board could neither save nor show a picture)
+        self.controller.boardId = boardId
+        self.controller.assetStore = assets
     }
 
     // MARK: - opening
