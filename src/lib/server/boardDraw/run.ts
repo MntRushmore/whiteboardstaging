@@ -29,7 +29,8 @@ import {
 import { dataUrlBytes, dataUrlPng, decodeRgb, encodeRgbaPng, encodeRgbPng, overlayOf, pictureAt, type Rgb } from "./overlay";
 import { parseTutorReply, tutorMessages, type TutorDecision } from "./prompts";
 import { pictureUrlOf, reedChatBody, reedPrompt } from "./reed";
-import { revealStrokesFine } from "./strokes";
+import { readbackNote as EXACT_NUMBERS_NOTE, strayNumbersOf } from "./readback";
+import { revealStrokesFine, type RevealResult } from "./strokes";
 
 export type RunInput = {
   runId: string;
@@ -56,6 +57,10 @@ export type RunSummary = {
   costUsd: number;
   instructionsChars: number;
   overlayPx?: number;
+  /** numbers the read-back found that the tutor never asked for (then the picture was painted again) */
+  readbackStrays?: string[];
+  /** 2 when the picture was painted again */
+  paints?: number;
   strokes?: number;
   strokesDropped?: string;
   alignScore?: number;
@@ -225,64 +230,85 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
   summary.instructionsChars = instructions.length;
   emit({ type: "status", stage: "drawing", instructions });
 
-  // 2. the painter: Reed's prompt (voice form: always an image) plus the instructions
-  let pictureBytes: Buffer;
-  {
-    const t = now();
-    try {
-      const body = {
-        ...reedChatBody(BOARD_DRAW_MODELS.painter, input.imageDataUrl, reedPrompt(input.mode, "voice", instructions || null)),
-        provider: { sort: "latency" },
-        usage: { include: true },
-      };
-      const data = await openrouterChat(body, { signal: withTimeout(signal, PAINTER_TIMEOUT_MS), requestId: input.requestId, title: "Agathon Board Draw - painter" });
-      checkReply(data);
-      summary.costUsd += costOf(data);
-      const url = pictureUrlOf(data.choices?.[0]?.message);
-      if (!url) throw new RunError("no_picture", "no picture", true);
-      pictureBytes = dataUrlBytes(url);
-    } catch (err) {
-      timings.paintMs = Math.round(now() - t);
-      return fail(err, "painter");
-    }
-    timings.paintMs = Math.round(now() - t);
-  }
-  if (signal.aborted) return fail(null, "painter");
-
-  // 3. the picture at the board's size, and what the model added
-  let overlayPng: Buffer;
-  let picturePng: Buffer;
-  let mask: Uint8Array;
-  {
-    const t = now();
-    try {
-      let pic: Rgb;
+  // 2–4. paint, diff and trace; once more when the read-back finds a number the tutor never asked for
+  type Painted = { overlayPng: Buffer; picturePng: Buffer; reveal: RevealResult };
+  const paintOnce = async (prompt: string, bail: (err: unknown, stage: "painter" | "after") => RunSummary | null): Promise<Painted | RunSummary | null> => {
+    // 2. the painter: Reed's prompt (voice form: always an image) plus the instructions
+    let pictureBytes: Buffer;
+    {
+      const t = now();
       try {
-        pic = await decodeRgb(pictureBytes);
-      } catch {
-        throw new RunError("bad_picture", "no picture", true);
+        const body = {
+          ...reedChatBody(BOARD_DRAW_MODELS.painter, input.imageDataUrl, prompt),
+          provider: { sort: "latency" },
+          usage: { include: true },
+        };
+        const data = await openrouterChat(body, { signal: withTimeout(signal, PAINTER_TIMEOUT_MS), requestId: input.requestId, title: "Agathon Board Draw - painter" });
+        checkReply(data);
+        summary.costUsd += costOf(data);
+        const url = pictureUrlOf(data.choices?.[0]?.message);
+        if (!url) throw new RunError("no_picture", "no picture", true);
+        pictureBytes = dataUrlBytes(url);
+      } catch (err) {
+        timings.paintMs = Math.round(now() - t);
+        return bail(err, "painter");
       }
-      const atSize = await pictureAt(pictureBytes, board.width, board.height);
-      picturePng = await encodeRgbPng(atSize);
-      const overlay = overlayOf(board, pic);
-      overlayPng = await encodeRgbaPng(board.width, board.height, overlay.rgba);
-      mask = overlay.mask;
-      summary.overlayPx = overlay.addedPx;
-      summary.alignScore = Math.round(overlay.alignment.score * 1000) / 1000;
-    } catch (err) {
-      timings.diffMs = Math.round(now() - t);
-      return fail(err, "after");
+      timings.paintMs = Math.round(now() - t);
     }
-    timings.diffMs = Math.round(now() - t);
-  }
-  if (signal.aborted) return fail(null, "after");
+    if (signal.aborted) return bail(null, "painter");
 
-  // 4. the reveal's strokes (never fails the run: `[]` and the client fades in)
-  const reveal = await revealStrokesFine(mask, board.width, board.height);
-  timings.traceMs = reveal.ms;
-  summary.strokes = reveal.strokes.length;
-  if (reveal.dropped) summary.strokesDropped = reveal.dropped;
-  if (signal.aborted) return fail(null, "after");
+    // 3. the picture at the board's size, and what the model added
+    let overlayPng: Buffer;
+    let picturePng: Buffer;
+    let mask: Uint8Array;
+    {
+      const t = now();
+      try {
+        let pic: Rgb;
+        try {
+          pic = await decodeRgb(pictureBytes);
+        } catch {
+          throw new RunError("bad_picture", "no picture", true);
+        }
+        const atSize = await pictureAt(pictureBytes, board.width, board.height);
+        picturePng = await encodeRgbPng(atSize);
+        const overlay = overlayOf(board, pic);
+        overlayPng = await encodeRgbaPng(board.width, board.height, overlay.rgba);
+        mask = overlay.mask;
+        summary.overlayPx = overlay.addedPx;
+        summary.alignScore = Math.round(overlay.alignment.score * 1000) / 1000;
+      } catch (err) {
+        timings.diffMs = Math.round(now() - t);
+        return bail(err, "after");
+      }
+      timings.diffMs = Math.round(now() - t);
+    }
+    if (signal.aborted) return bail(null, "after");
+
+    // 4. the reveal's strokes (never fails the run: `[]` and the client fades in)
+    const reveal = await revealStrokesFine(mask, board.width, board.height);
+    timings.traceMs = reveal.ms;
+    summary.strokes = reveal.strokes.length;
+    if (reveal.dropped) summary.strokesDropped = reveal.dropped;
+    if (signal.aborted) return bail(null, "after");
+    return { overlayPng, picturePng, reveal };
+  };
+  const firstPrompt = reedPrompt(input.mode, "voice", instructions || null);
+  const first = await paintOnce(firstPrompt, fail);
+  if (!first || !("overlayPng" in first)) return first ?? fail(null, "after");
+  let painted: Painted = first;
+  if (input.mode !== "feedback") {
+    const strays = await strayNumbersOf(painted.overlayPng, board.width, board.height, instructions, signal, input.requestId);
+    if (strays.length > 0 && !signal.aborted) {
+      summary.readbackStrays = strays.slice(0, 8);
+      summary.paints = 2;
+      // a second painting that fails keeps the first (only an abort still ends the run)
+      const again = await paintOnce(`${firstPrompt}\n\n${EXACT_NUMBERS_NOTE}`, (err, stage) => (signal.aborted ? fail(err, stage) : null));
+      if (again && !("overlayPng" in again)) return again;
+      if (again) painted = again;
+    }
+  }
+  const { overlayPng, picturePng, reveal } = painted;
 
   summary.result = "done";
   finish(summary);
