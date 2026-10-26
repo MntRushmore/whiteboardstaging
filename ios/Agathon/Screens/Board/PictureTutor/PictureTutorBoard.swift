@@ -76,7 +76,7 @@ final class PictureTutorBoard {
             },
             tick: { [weak controller] screen, region in
                 guard let controller else { return }
-                tick(on: controller, screen: screen, region: region)
+                tick(on: controller, screen: screen, region: region, canvas: canvas())
             },
             write: { [weak controller] screen, region, latex in
                 guard let controller, let canvas = canvas() else { return }
@@ -112,7 +112,7 @@ final class PictureTutorBoard {
 
     /// The tutor's checkmark for right work, just right of the kid's latest line in R (the strokes
     /// level with the one written last), sized to it, in the tutor's blue. Not twice in one place.
-    static func tick(on controller: BoardController, screen: RecordID, region: Box) {
+    static func tick(on controller: BoardController, screen: RecordID, region: Box, canvas: BoardCanvasView? = nil) {
         guard controller.currentScreenID == screen, let box = latestLine(on: controller, screen: screen, region: region) else { return }
         let h = min(60, max(24, box.h * 0.8)), w = h * 1.1
         let origin = Vec2(box.x + box.w + 24, box.y + box.h / 2 - h / 2)
@@ -126,6 +126,20 @@ final class PictureTutorBoard {
         let shape = densified([Vec2(0, h * 0.55), Vec2(w * 0.38, h), Vec2(w, 0)], step: 1.5)
         var meta = PictureTutorCapture.meta(runId: nil, mode: .feedback)
         meta["tick"] = true
+        // on the board: the tutor's pen draws it in, then a success in the hand (the owner: "a hit of
+        // dopamine"); without a canvas (tests) it is simply put down
+        if let canvas {
+            let line = TutorLine(strokes: [TutorStroke(points: shape.map { FreehandInput(Vec2(origin.x + $0.x, origin.y + $0.y), 0.55) }, weight: max(1.3, h / 30))],
+                                 latex: "\\checkmark")
+            var held: TutorPen?
+            held = CanvasLiveBoard(controller: controller, canvas: canvas).write([line], meta: meta) {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                if let pen = held { writing.removeAll { $0 === pen } }
+                held = nil
+            }
+            if let pen = held, pen.isWriting { writing.append(pen) }
+            return
+        }
         let stroke = StrokeRecord(screen: screen, order: controller.store.nextOrder(on: screen), author: .tutor, color: .tutor,
                                   width: max(4, h / 9), pressure: .simulated, x: origin.x, y: origin.y,
                                   points: shape.map { InkPoint(x: Float($0.x), y: Float($0.y), pressure: 0.5, t: 0) }, meta: meta)

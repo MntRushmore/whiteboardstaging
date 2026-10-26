@@ -433,6 +433,8 @@ struct PictureCaptureInfo: Equatable {
     var pixelSize: CGSize
     var blank: CGRect?
     var ink: CGRect?
+    /// the kid's lines (page units), top to bottom
+    var lines: [Box] = []
 
     init(_ c: PictureCapture) {
         region = c.region
@@ -440,6 +442,7 @@ struct PictureCaptureInfo: Equatable {
         pixelSize = c.pixelSize
         blank = c.blank
         ink = c.ink
+        lines = c.lines
     }
 
     init(region: Box, screen: RecordID, pixelSize: CGSize, blank: CGRect?, ink: CGRect?) {

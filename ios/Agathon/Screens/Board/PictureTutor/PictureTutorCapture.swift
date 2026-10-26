@@ -19,6 +19,9 @@ struct PictureCapture: Sendable {
     var blank: CGRect?
     /// Where the ink is (its pixels): where the pen looks while it reads.
     var ink: CGRect?
+    /// The kid's lines of writing in R (page units), top to bottom: what the pen reads along while the
+    /// tutor thinks.
+    var lines: [Box] = []
 
     var pixelSize: CGSize { CGSize(width: image.width, height: image.height) }
 
@@ -112,7 +115,29 @@ enum PictureTutorCapture {
             .compactMap { RenderGeometry.item(for: $0, images: controller.images) }
             .filter { $0.bounds.intersects(region) }
         guard !items.isEmpty else { return nil }
-        return await Task.detached(priority: .userInitiated) { make(items, region: region, screen: screenID) }.value
+        let lines = kidLines(controller.store.drawables(on: screenID), in: region)
+        var capture = await Task.detached(priority: .userInitiated) { make(items, region: region, screen: screenID) }.value
+        capture?.lines = lines
+        return capture
+    }
+
+    /// The kid's strokes in R grouped into lines (level with each other), top to bottom, at most 8.
+    @MainActor static func kidLines(_ records: [BoardRecord], in region: Box) -> [Box] {
+        var boxes: [Box] = records.compactMap {
+            guard case .stroke(let s) = $0, s.author == .kid, let b = PictureTutorBoard.bounds(s), b.intersects(region) else { return nil }
+            return b
+        }
+        boxes.sort { $0.y < $1.y }
+        var lines: [Box] = []
+        for b in boxes {
+            // joins a line its middle sits within
+            if let i = lines.lastIndex(where: { b.y + b.h / 2 > $0.y && b.y + b.h / 2 < $0.y + $0.h }) {
+                lines[i] = lines[i].union(b)
+            } else {
+                lines.append(b)
+            }
+        }
+        return Array(lines.sorted { $0.y < $1.y }.prefix(8))
     }
 
     static func make(_ items: [RenderItem], region: Box, screen: RecordID) -> PictureCapture? {

@@ -2,6 +2,7 @@ import AgathonBoard
 import AgathonDesign
 import AgathonKit
 import SwiftUI
+import UIKit
 
 /// What the picture tutor puts over the board, in the canvas's own coordinates (the editor's
 /// `overlay` slot, which follows the camera):
@@ -50,6 +51,8 @@ struct PictureTutorImage: View {
     let shown: PictureTutor.Shown
     let camera: Camera
     let reduceMotion: Bool
+    /// the landing bounce when the drawing is done (the owner: "it has to look cool ... a hit of dopamine")
+    @State private var pop: CGFloat = 1
 
     var body: some View {
         let frame = PictureTutorGeometry.viewRect(shown.region, camera: camera)
@@ -70,7 +73,12 @@ struct PictureTutorImage: View {
             }
         }
         .frame(width: frame.width, height: frame.height)
+        .scaleEffect(pop, anchor: contentAnchor)
         .position(x: frame.midX, y: frame.midY)
+        .onAppear { if shown.state != .revealing { landed() } }
+        .onChange(of: shown.state) { old, new in
+            if old == .revealing && new != .revealing && new != .accepting { landed() }
+        }
         .accessibilityElement()
         .accessibilityLabel(shown.mode.isGhost ? "The tutor's \(shown.mode.title.lowercased()), not kept yet" : "The tutor's feedback")
         .accessibilityValue(Self.stateWord(shown.state))
@@ -82,6 +90,26 @@ struct PictureTutorImage: View {
         Image(decorative: shown.overlay, scale: 1)
             .resizable()
             .interpolation(.high)
+    }
+
+    /// Where the drawing is in the picture (its strokes' middle): the bounce is about it, so the ink
+    /// lands where it is instead of the whole picture moving.
+    private var contentAnchor: UnitPoint {
+        let p = shown.strokes.flatMap(\.points)
+        guard p.count >= 2, shown.pixelSize.width > 0, shown.pixelSize.height > 0 else { return .center }
+        let xs = stride(from: 0, to: p.count - 1, by: 2).map { p[$0] }, ys = stride(from: 1, to: p.count, by: 2).map { p[$0] }
+        guard let x0 = xs.min(), let x1 = xs.max(), let y0 = ys.min(), let y1 = ys.max() else { return .center }
+        return UnitPoint(x: (x0 + x1) / 2 / shown.pixelSize.width, y: (y0 + y1) / 2 / shown.pixelSize.height)
+    }
+
+    /// The drawing is in: a success in the hand and a quick springy bounce.
+    private func landed() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        guard !reduceMotion else { return }
+        withAnimation(.spring(response: 0.16, dampingFraction: 0.55)) { pop = 1.05 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.5)) { pop = 1 }
+        }
     }
 
     static func stateWord(_ s: PictureTutor.Shown.State) -> String {
@@ -201,7 +229,7 @@ struct PictureTutorPen: View {
             track.glideFrom = track.last
             track.glideStart = now
             track.act = act.key
-            if act.key == "scribble" { track.scribbleStart = now }
+            if act.key == "readAlong" { track.scribbleStart = now }
         }
         switch act {
         case .none:
@@ -211,20 +239,16 @@ struct PictureTutorPen: View {
             let t = now.timeIntervalSince(track.glideStart ?? now)
             let pose = PenMotion.hover(over: ink, t: t, seed: seed)
             place(&ctx, pose, now: now)
-        case .scribble(let area, let seed):
+        case .readAlong(let lines):
             let t = now.timeIntervalSince(track.scribbleStart ?? now)
-            let writing = Scribble.shared.path(seed: seed, area: area)
-            // no usable space to scribble in (see Scribble.path): no pen this frame rather than one at 0,0
-            guard writing.points.count > 1 else { track.last = nil; return }
-            // the loose writing fades behind the pen
-            for seg in writing.trail(at: t) {
-                var path = Path()
-                path.move(to: seg.a)
-                path.addLine(to: seg.b)
-                ctx.stroke(path, with: .color(DS.Color.tutorInk.opacity(0.7 * seg.alpha)),
-                           style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
+            let beat = ReadAlong.beat(at: t, lines: lines)
+            ReadAlong.drawUnderlines(&ctx, lines: lines, beat: beat)
+            // a soft tick in the hand at each tap: the reading's rhythm
+            if beat.stage == .tap, track.lastTap != beat.tapKey {
+                track.lastTap = beat.tapKey
+                track.haptics.impactOccurred(intensity: 0.45)
             }
-            place(&ctx, writing.pose(at: t), now: now)
+            place(&ctx, beat.pose, now: now)
         case .reveal(let tip):
             place(&ctx, PenPose(tip: tip, lift: 0, tilt: 0), now: now)
         case .exit(let started):
@@ -265,7 +289,7 @@ struct PictureTutorPen: View {
     private enum Act {
         case none
         case reading(ink: CGRect, seed: UInt64)
-        case scribble(area: CGRect, seed: UInt64)
+        case readAlong(lines: [CGRect])
         case reveal(tip: CGPoint)
         case exit(started: Date)
 
@@ -273,7 +297,7 @@ struct PictureTutorPen: View {
             switch self {
             case .none: return "none"
             case .reading: return "reading"
-            case .scribble: return "scribble"
+            case .readAlong: return "readAlong"
             case .reveal: return "reveal"
             case .exit: return "exit"
             }
@@ -296,7 +320,10 @@ struct PictureTutorPen: View {
             let info = work.capture
             switch tutor.phase {
             case .working(.drawing):
-                return .scribble(area: scribbleArea(info), seed: seed)
+                // the pen reads along the kid's lines (the owner, 2026-10-26: "I like the hovering but
+                // dont like the scribble"); with no lines known, it keeps hovering
+                let lines = info.lines.map { PictureTutorGeometry.viewRect($0, camera: camera) }.filter { $0.width > 4 }
+                return lines.isEmpty ? .reading(ink: inkArea(info), seed: seed) : .readAlong(lines: lines)
             default:
                 return .reading(ink: inkArea(info), seed: seed)
             }
@@ -337,6 +364,120 @@ private final class PenTrack {
     var glideFrom: PenPose?
     var glideStart: Date?
     var scribbleStart: Date?
+    /// the read-along tap the hand last felt
+    var lastTap = -1
+    let haptics = UIImpactFeedbackGenerator(style: .soft)
+}
+
+/// The pen reading along the kid's lines while the tutor thinks: for each line, top to bottom, it
+/// glides to the line's start, sweeps under it leaving a soft cobalt underline that fills as it
+/// goes, and taps at its end (a ring spreads from the tap); the underlines fade one after another;
+/// then round again. Everything is a function of the clock, like the hover.
+enum ReadAlong {
+    static let glide = 0.38
+    static let tap = 0.34
+    static let pause = 0.4
+    /// how long an underline stays after its line is read
+    static let fade = 1.6
+
+    enum Stage { case glide, sweep, tap }
+
+    struct Beat {
+        var line: Int
+        var stage: Stage
+        /// progress through the stage, 0…1
+        var k: Double
+        /// seconds since each line of this round finished its sweep (nil: not yet)
+        var finishedAgo: [Double?]
+        var pose: PenPose
+        /// which tap this is (a new number each tap of each round)
+        var tapKey: Int
+    }
+
+    static func sweep(_ r: CGRect) -> Double { min(1.3, max(0.55, Double(r.width) / 560)) }
+
+    static func underlineY(_ r: CGRect) -> CGFloat { r.maxY + max(5, r.height * 0.12) }
+
+    static func beat(at time: Double, lines: [CGRect]) -> Beat {
+        let lengths = lines.map { glide + sweep($0) + tap }
+        let round = lengths.reduce(0, +) + pause
+        let roundIndex = Int(time / round)
+        var t = time.truncatingRemainder(dividingBy: round)
+        var finished: [Double?] = Array(repeating: nil, count: lines.count)
+        for (i, r) in lines.enumerated() {
+            let y = underlineY(r)
+            if t < glide {
+                // lifted, arcing in from the last line's end (or from above the first line)
+                let from = i > 0 ? CGPoint(x: lines[i - 1].maxX + 6, y: underlineY(lines[i - 1])) : CGPoint(x: r.minX - 30, y: r.minY - 40)
+                let k = t / glide, e = PictureTutorPen.ease(k)
+                let tip = CGPoint(x: from.x + (r.minX - from.x) * e, y: from.y + (y - from.y) * e - sin(k * .pi) * 22)
+                return Beat(line: i, stage: .glide, k: k, finishedAgo: finished, pose: PenPose(tip: tip, lift: 0.35 + 0.5 * sin(k * .pi), tilt: 0),
+                            tapKey: -1)
+            }
+            t -= glide
+            let d = sweep(r)
+            if t < d {
+                let k = t / d, e = PictureTutorPen.ease(k)
+                let tip = CGPoint(x: r.minX + (r.maxX + 6 - r.minX) * e, y: y + 1.2 * sin(t * 18))
+                return Beat(line: i, stage: .sweep, k: k, finishedAgo: finished, pose: PenPose(tip: tip, lift: 0.08, tilt: 3 * sin(t * 5)),
+                            tapKey: -1)
+            }
+            t -= d
+            if t < tap {
+                let k = t / tap
+                // down onto the paper and up again
+                let tip = CGPoint(x: r.maxX + 6, y: y)
+                finished[i] = t
+                return Beat(line: i, stage: .tap, k: k, finishedAgo: finished, pose: PenPose(tip: tip, lift: 0.18 * abs(cos(k * .pi)), tilt: 0),
+                            tapKey: roundIndex * 64 + i)
+            }
+            t -= tap
+            // this line is read: how long ago its sweep ended, for the fade
+            finished[i] = 0
+            for j in 0..<i { finished[j] = (finished[j] ?? 0) }
+        }
+        // the pause at the end of a round: the pen rests at the last tap
+        let last = lines[lines.count - 1]
+        return Beat(line: lines.count - 1, stage: .tap, k: 1, finishedAgo: finished,
+                    pose: PenPose(tip: CGPoint(x: last.maxX + 6, y: underlineY(last)), lift: 0.25, tilt: 0), tapKey: -1)
+    }
+
+    static func drawUnderlines(_ ctx: inout GraphicsContext, lines: [CGRect], beat: Beat) {
+        let ink = DS.Color.tutorInk
+        let style = StrokeStyle(lineWidth: 3, lineCap: .round)
+        for (i, r) in lines.enumerated() {
+            let y = underlineY(r)
+            var path = Path()
+            if i < beat.line {
+                // read already this round: fading out, oldest first
+                let ago = Double(beat.line - i) * 0.55
+                let alpha = max(0, 0.55 * (1 - ago / fade))
+                guard alpha > 0 else { continue }
+                path.move(to: CGPoint(x: r.minX, y: y))
+                path.addLine(to: CGPoint(x: r.maxX, y: y))
+                ctx.stroke(path, with: .color(ink.opacity(alpha)), style: style)
+            } else if i == beat.line {
+                switch beat.stage {
+                case .glide:
+                    continue
+                case .sweep:
+                    let x = r.minX + (r.maxX - r.minX) * PictureTutorPen.ease(beat.k)
+                    path.move(to: CGPoint(x: r.minX, y: y))
+                    path.addLine(to: CGPoint(x: x, y: y))
+                    ctx.stroke(path, with: .color(ink.opacity(0.6)), style: style)
+                case .tap:
+                    path.move(to: CGPoint(x: r.minX, y: y))
+                    path.addLine(to: CGPoint(x: r.maxX, y: y))
+                    ctx.stroke(path, with: .color(ink.opacity(0.6)), style: style)
+                    // the ring from the tap
+                    let k = beat.k
+                    let radius = 4 + 18 * k
+                    let ring = Path(ellipseIn: CGRect(x: r.maxX + 6 - radius, y: y - radius, width: radius * 2, height: radius * 2))
+                    ctx.stroke(ring, with: .color(ink.opacity(0.55 * (1 - k))), style: StrokeStyle(lineWidth: 2))
+                }
+            }
+        }
+    }
 }
 
 /// The pen's tip on screen, how high it is lifted (0 on the paper … 1 well up) and an extra tilt (degrees).
