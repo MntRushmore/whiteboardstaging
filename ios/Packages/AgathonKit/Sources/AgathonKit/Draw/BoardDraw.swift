@@ -8,7 +8,7 @@ import Foundation
 //       200 application/x-ndjson, one object per line:
 //         {"type":"status","stage":"reading","runId":"…"}
 //         {"type":"status","stage":"drawing","instructions":"…"}
-//         {"type":"none","reason":"…"}                 (the end: nothing to show)
+//         {"type":"none","reason":"…","correct":true?}  (the end: nothing to show; right work)
 //         {"type":"done","overlay":"data:image/png;base64,…","picture":"…","width":W,"height":H,
 //          "instructions":"…","strokes":[{"points":[x0,y0,x1,y1,…],"width":w}],
 //          "timings":{"tutorMs":n,"paintMs":n,"diffMs":n,"traceMs":n,"totalMs":n},"costUsd":n}
@@ -122,7 +122,8 @@ public struct BoardDrawResult: Sendable, Equatable {
 
 public enum BoardDrawEvent: Sendable, Equatable {
     case status(BoardDrawStage, runId: String?, instructions: String?)
-    case none(reason: String?)
+    /// `correct`: the tutor found the work finished and right (a checkmark beside it)
+    case none(reason: String?, correct: Bool = false)
     case done(BoardDrawResult)
     case error(message: String, retryable: Bool)
 
@@ -176,6 +177,7 @@ public enum BoardDrawDecoding {
         var runId: String?
         var instructions: String?
         var reason: String?
+        var correct: Bool?
         var overlay: String?
         var picture: String?
         var width: Double?
@@ -195,7 +197,7 @@ public enum BoardDrawDecoding {
             guard let stage = l.stage.flatMap(BoardDrawStage.init(rawValue:)) else { return nil }
             return .status(stage, runId: l.runId, instructions: l.instructions)
         case "none":
-            return .none(reason: l.reason)
+            return .none(reason: l.reason, correct: l.correct ?? false)
         case "done":
             guard let overlay = l.overlay.flatMap(dataURLBytes) else {
                 return .error(message: "The picture didn't come through.", retryable: true)

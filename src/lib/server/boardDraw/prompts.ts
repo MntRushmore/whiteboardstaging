@@ -32,7 +32,9 @@ export function tutorText(mode: ReedMode): string {
     // with this line, 3 of 4 pointed at the kid's own writing and copied nothing (2026-10-23).
     "Never ask to circle, ring, box or rewrite any of the student's writing; point at it with an arrow from your note instead.",
     MODE_RULE[mode],
-    'Reply with only this JSON, nothing before or after it: {"needsHelp": true or false, "instructions": "..."}',
+    // the owner, 2026-10-26: "i just want checkmarks for correct, even if its 1 checkmark"
+    '"correct" is true only when the board has finished maths work and every step of it is right (then needsHelp is false); false for doodles, words, unfinished or wrong work.',
+    'Reply with only this JSON, nothing before or after it: {"needsHelp": true or false, "correct": true or false, "instructions": "..."}',
   ].join("\n");
 }
 
@@ -50,7 +52,8 @@ export function tutorMessages(mode: ReedMode, imageDataUrl: string): ChatMessage
   ];
 }
 
-export type TutorDecision = { needsHelp: boolean; instructions: string };
+/** `correct`: finished maths, all of it right (a checkmark on the board). */
+export type TutorDecision = { needsHelp: boolean; instructions: string; correct?: boolean };
 
 /**
  * The tutor's reply, read from the first "{" to the last "}". Null when that is not JSON with a
@@ -67,8 +70,9 @@ export function parseTutorReply(text: string, maxInstructions: number): TutorDec
     return null;
   }
   if (!parsed || typeof parsed !== "object") return null;
-  const d = parsed as { needsHelp?: unknown; instructions?: unknown };
+  const d = parsed as { needsHelp?: unknown; instructions?: unknown; correct?: unknown };
   if (typeof d.needsHelp !== "boolean") return null;
   const instructions = typeof d.instructions === "string" ? d.instructions.trim().slice(0, maxInstructions) : "";
-  return { needsHelp: d.needsHelp, instructions };
+  // right work needs no help: a reply that says both is not believed
+  return { needsHelp: d.needsHelp, instructions, ...(d.correct === true && !d.needsHelp ? { correct: true } : {}) };
 }

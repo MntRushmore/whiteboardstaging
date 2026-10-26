@@ -71,6 +71,10 @@ final class PictureTutorBoard {
                 guard let controller else { return false }
                 return await place(shown, on: controller)
             },
+            tick: { [weak controller] screen, region in
+                guard let controller else { return }
+                tick(on: controller, screen: screen, region: region)
+            },
             schedule: { TaskTimer.schedule($0, $1) },
             reduceMotion: { UIAccessibility.isReduceMotionEnabled })
     }
@@ -97,5 +101,59 @@ final class PictureTutorBoard {
                                  meta: PictureTutorCapture.meta(runId: shown.runId, mode: shown.mode))
         controller.store.put(.image(record), origin: .kid)
         return true
+    }
+
+    /// The tutor's checkmark for right work, just right of the kid's latest line in R (the strokes
+    /// level with the one written last), sized to it, in the tutor's blue. Not twice in one place.
+    static func tick(on controller: BoardController, screen: RecordID, region: Box) {
+        guard controller.currentScreenID == screen else { return }
+        let kid: [(stroke: StrokeRecord, box: Box)] = controller.store.drawables(on: screen).compactMap {
+            guard case .stroke(let s) = $0, s.author == .kid, let box = bounds(s), box.intersects(region) else { return nil }
+            return (s, box)
+        }
+        guard let last = kid.max(by: { ($0.stroke.start ?? 0, $0.box.y) < ($1.stroke.start ?? 0, $1.box.y) }) else { return }
+        let line = kid.map(\.box).filter { $0.y < last.box.y + last.box.h && last.box.y < $0.y + $0.h }
+        guard var box = line.first else { return }
+        for b in line.dropFirst() { box = box.union(b) }
+        let h = min(60, max(24, box.h * 0.8)), w = h * 1.1
+        let origin = Vec2(box.x + box.w + 24, box.y + box.h / 2 - h / 2)
+        // a checkmark already beside this line (an earlier run): leave it
+        let spot = Box(x: origin.x - w, y: origin.y - h, w: w * 3, h: h * 3)
+        let ticked = controller.store.drawables(on: screen).contains {
+            guard case .stroke(let s) = $0, s.meta["tick"]?.boolValue == true, let b = bounds(s) else { return false }
+            return b.intersects(spot)
+        }
+        guard !ticked else { return }
+        let shape = densified([Vec2(0, h * 0.55), Vec2(w * 0.38, h), Vec2(w, 0)], step: 1.5)
+        var meta = PictureTutorCapture.meta(runId: nil, mode: .feedback)
+        meta["tick"] = true
+        let stroke = StrokeRecord(screen: screen, order: controller.store.nextOrder(on: screen), author: .tutor, color: .tutor,
+                                  width: max(4, h / 9), pressure: .simulated, x: origin.x, y: origin.y,
+                                  points: shape.map { InkPoint(x: Float($0.x), y: Float($0.y), pressure: 0.5, t: 0) }, meta: meta)
+        controller.store.put(.stroke(stroke), origin: .tutor)
+    }
+
+    /// A stroke's box on the page (unrotated: the kid's ink is never rotated).
+    static func bounds(_ s: StrokeRecord) -> Box? {
+        guard let first = s.points.first else { return nil }
+        var x0 = first.x, x1 = first.x, y0 = first.y, y1 = first.y
+        for p in s.points {
+            x0 = min(x0, p.x); x1 = max(x1, p.x); y0 = min(y0, p.y); y1 = max(y1, p.y)
+        }
+        return Box(x: s.x + Double(x0), y: s.y + Double(y0), w: Double(x1 - x0), h: Double(y1 - y0))
+    }
+
+    /// Points every `step` page units along a polyline, its corners kept (the board smooths a line
+    /// by trailing each point, which rounds a corner made of far-apart points).
+    static func densified(_ pts: [Vec2], step: Double) -> [Vec2] {
+        guard pts.count > 1, step > 0 else { return pts }
+        var out = [pts[0]]
+        for i in 1..<pts.count {
+            let a = pts[i - 1], b = pts[i]
+            let n = Int((hypot(b.x - a.x, b.y - a.y) / step).rounded(.up))
+            if n > 1 { for k in 1..<n { let t = Double(k) / Double(n); out.append(Vec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) } }
+            out.append(b)
+        }
+        return out
     }
 }

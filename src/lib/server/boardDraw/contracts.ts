@@ -95,7 +95,8 @@ export type RevealStroke = { points: number[]; width: number };
 export type BoardDrawEvent =
   | { type: "status"; stage: "reading"; runId: string }
   | { type: "status"; stage: "drawing"; instructions: string }
-  | { type: "none"; reason: string }
+  /** `correct`: the work is finished and right (the iPad puts a checkmark beside it) */
+  | { type: "none"; reason: string; correct?: boolean }
   | {
       type: "done";
       overlay: string;

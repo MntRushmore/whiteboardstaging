@@ -16,7 +16,8 @@ describe("the tutor prompt", () => {
       "Put additions in the empty space beside the work, at the same size as the student's writing; if there is not room for everything, write less.",
       "Never ask to circle, ring, box or rewrite any of the student's writing; point at it with an arrow from your note instead.",
       "Mode feedback: point out the mistake and where it is; do not write the corrected answer.",
-      'Reply with only this JSON, nothing before or after it: {"needsHelp": true or false, "instructions": "..."}',
+      '"correct" is true only when the board has finished maths work and every step of it is right (then needsHelp is false); false for doodles, words, unfinished or wrong work.',
+      'Reply with only this JSON, nothing before or after it: {"needsHelp": true or false, "correct": true or false, "instructions": "..."}',
     ]);
     expect(MODE_RULE.suggest).toBe("Mode suggest: give a hint for the next step only; never write the answer.");
     expect(MODE_RULE.answer).toBe("Mode answer (Solve): write the complete worked solution, every step, ending with the final answer.");
@@ -29,6 +30,12 @@ describe("the tutor prompt", () => {
       { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
       { type: "text", text: tutorText("suggest") },
     ]);
+  });
+
+  it("reads \"correct\" only when the work needs no help (2026-10-26: a checkmark for right work)", () => {
+    expect(parseTutorReply('{"needsHelp": false, "correct": true, "instructions": ""}', 1000)).toEqual({ needsHelp: false, instructions: "", correct: true });
+    expect(parseTutorReply('{"needsHelp": true, "correct": true, "instructions": "Look at 7"}', 1000)).toEqual({ needsHelp: true, instructions: "Look at 7" });
+    expect(parseTutorReply('{"needsHelp": false, "correct": false, "instructions": ""}', 1000)).toEqual({ needsHelp: false, instructions: "" });
   });
 
   it("reads the reply from the first { to the last }", () => {

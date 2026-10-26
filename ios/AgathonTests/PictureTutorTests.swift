@@ -519,6 +519,29 @@ struct PictureTutorTests {
         #expect(pixel(white)[3] == 0, "paper stays clear")
     }
 
+    /// Right work gets the tutor's checkmark beside its latest line, once (the owner, 2026-10-26: "i
+    /// just want checkmarks for correct, even if its 1 checkmark").
+    @Test func rightWorkGetsOneCheckmarkBesideItsLatestLine() {
+        let controller = BoardController()
+        let screen = controller.currentScreenID
+        func line(_ x: Double, _ y: Double, start: Double) {
+            controller.store.put(.stroke(StrokeRecord(screen: screen, order: controller.store.nextOrder(on: screen), author: .kid, color: .black, width: 6,
+                                                      pressure: .simulated, x: x, y: y, points: [InkPoint(x: 0, y: 0), InkPoint(x: 200, y: 40)], start: start)), origin: .kid)
+        }
+        line(100, 100, start: 1)
+        line(100, 300, start: 2) // the latest line
+        PictureTutorBoard.tick(on: controller, screen: screen, region: .screen)
+        PictureTutorBoard.tick(on: controller, screen: screen, region: .screen)
+        let ticks = controller.store.records.values.compactMap { r -> StrokeRecord? in
+            if case .stroke(let s) = r, s.meta["tick"]?.boolValue == true { return s } else { return nil }
+        }
+        #expect(ticks.count == 1, "one checkmark, not two")
+        let t = ticks[0]
+        #expect(t.color == .tutor && t.author == .tutor)
+        #expect(t.x > 300 && t.x < 360, "just right of the line")
+        #expect(t.y > 270 && t.y < 340, "level with the latest line, not the first")
+    }
+
     // MARK: the board
 
     @Test func onlyTheKidsChangesCount() {

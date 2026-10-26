@@ -58,6 +58,8 @@ export type RunSummary = {
   costUsd: number;
   instructionsChars: number;
   overlayPx?: number;
+  /** the tutor found the work finished and right (a checkmark) */
+  correct?: boolean;
   /** sums in the tutor's instructions that were wrong (then it was asked again) */
   tutorWrongSums?: string[];
   /** true when the re-asked tutor's answer replaced the wrong one */
@@ -211,6 +213,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
 
   // 1. the tutor: needs help? and what to draw
   let instructions = input.instructions?.trim().slice(0, MAX_INSTRUCTIONS) ?? "";
+  let correct = false;
   if (input.instructions !== undefined && instructions) {
     summary.tutorSkipped = true;
   } else {
@@ -235,6 +238,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
       }
       summary.needsHelp = decision.needsHelp;
       instructions = decision.instructions;
+      correct = decision.correct === true;
     } catch (err) {
       timings.tutorMs = Math.round(now() - t);
       return fail(err, "tutor");
@@ -245,7 +249,8 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
     // with no instructions, the painter invented a whole new drawing over a solved page (2026-10-26)
     if (summary.needsHelp === false && (input.source === "auto" || !instructions)) {
       summary.result = "none";
-      emit({ type: "none", reason: "The tutor saw nothing that needs help." });
+      if (correct) summary.correct = true;
+      emit({ type: "none", reason: correct ? "The work is right." : "The tutor saw nothing that needs help.", ...(correct ? { correct: true } : {}) });
       return finish(summary);
     }
   }
