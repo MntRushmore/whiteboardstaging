@@ -491,6 +491,38 @@ struct PictureTutorTests {
         #expect(b.hash != a.hash)
     }
 
+    /// Crash 2026-10-25 (build 1501): a blank too small to inset became CGRect.null, and the scribble
+    /// trapped turning its infinite origin into an Int.
+    @Test func theWorkingScribbleSurvivesARectWithNoRoom() {
+        for area in [CGRect.null, CGRect.infinite, CGRect(x: CGFloat.nan, y: 0, width: 100, height: 100), CGRect(x: 10, y: 10, width: 4, height: 4)] {
+            #expect(Scribble.shared.path(seed: 7, area: area).points.isEmpty)
+        }
+        #expect(Scribble.shared.path(seed: 7, area: CGRect(x: 100, y: 100, width: 400, height: 160)).points.count > 1)
+    }
+
+    /// Accept keeps the traced strokes as the tutor's blue ink (2026-10-25: "traced over so it would be
+    /// editable, also make it blue"): page units, the tutor's colour, the solid look, never locked.
+    @Test func acceptedStrokesAreTheTutorsEditableBlueInk() {
+        let overlay = Self.image(1440, 810)
+        let shown = PictureTutor.Shown(id: "s", runId: "r", logId: "s", mode: .answer, screen: "screen:1", region: .screen,
+                                       overlay: overlay, png: Data(), strokes: [BoardDrawStroke(points: [144, 81, 288, 81, 288, 162], width: 4.5)],
+                                       state: .ghost, revealStarted: Date(), revealDuration: 0)
+        let ink = PictureTutorBoard.inkStrokes(shown)
+        #expect(ink.count == 1)
+        let s = ink[0]
+        let k = Box.screen.w / 1440
+        #expect(s.color == .tutor && s.author == .tutor)
+        #expect(abs(s.x - (Box.screen.x + 144 * k)) < 0.01 && abs(s.y - (Box.screen.y + 81 * k)) < 0.01)
+        #expect(abs(s.width - 4.5 * k) < 0.01)
+        #expect(s.meta["dash"]?.stringValue == "solid")
+        #expect(s.meta["locked"] == nil && s.meta["protected"] == nil)
+        #expect(PictureTutorCapture.isPictureTutor(.stroke(s)))
+        // densified: no gap over 1.5 page units, and the corner (288, 81) is still a point
+        let pts = s.points.map { Vec2(s.x + Double($0.x), s.y + Double($0.y)) }
+        for i in 1..<pts.count { #expect(hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y) <= 1.5 + 1e-6) }
+        #expect(pts.contains { abs($0.x - (Box.screen.x + 288 * k)) < 0.01 && abs($0.y - (Box.screen.y + 81 * k)) < 0.01 })
+    }
+
     // MARK: the board
 
     @Test func onlyTheKidsChangesCount() {
