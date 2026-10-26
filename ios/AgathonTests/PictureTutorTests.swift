@@ -462,7 +462,7 @@ struct PictureTutorTests {
         #expect(frame.minX >= -1e-6 || region.x == 0)
     }
 
-    @Test func captureRendersTheKidsWorkOnWhiteWithoutTheTutorsPictures() async throws {
+    @Test func captureRendersTheBoardOnWhiteWithTheTutorsAcceptedPictures() async throws {
         let controller = BoardController()
         let canvas = BoardCanvasView(controller: controller)
         canvas.frame = CGRect(x: 0, y: 0, width: 1194, height: 834)
@@ -479,12 +479,16 @@ struct PictureTutorTests {
         let blank = try #require(a.blank)
         #expect(!blank.intersects(try #require(a.ink)), "the blank space is clear of the ink")
         #expect(blank.width * blank.height > 1440 * 810 * 0.3)
-        // an accepted picture on the page changes nothing in the capture
-        controller.store.put(.image(ImageRecord(screen: screen, order: controller.store.nextOrder(on: screen), author: .tutor, x: 0, y: 0, w: 1600, h: 900,
-                                                asset: AssetRef(src: "data:image/png;base64,\(PictureTutorCapture.png(Self.image(4, 4, color: CGColor(gray: 0, alpha: 1)))!.base64EncodedString())"),
+        // an accepted picture on the page is in the capture: the tutor sees what it already wrote
+        // (2026-10-25: left out, the tutor wrote its accepted "61" a second time)
+        let tutorInk = Self.image(4, 4, color: CGColor(gray: 0, alpha: 1))
+        let src = "data:image/png;base64,\(PictureTutorCapture.png(tutorInk)!.base64EncodedString())"
+        controller.images.put(tutorInk, for: src)
+        controller.store.put(.image(ImageRecord(screen: screen, order: controller.store.nextOrder(on: screen), author: .tutor, x: 900, y: 500, w: 200, h: 100,
+                                                asset: AssetRef(src: src),
                                                 meta: PictureTutorCapture.meta(runId: "r", mode: .suggest))), origin: .kid)
         let b = try #require(await PictureTutorCapture.capture(controller: controller))
-        #expect(b.hash == a.hash)
+        #expect(b.hash != a.hash)
     }
 
     // MARK: the board

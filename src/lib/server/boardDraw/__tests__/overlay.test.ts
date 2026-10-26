@@ -107,6 +107,28 @@ describe("overlayOf", () => {
     expect(covered / count(added)).toBeGreaterThan(0.9);
   });
 
+  it("a grey, textured blob the painter left along the frame's bottom edge goes; dark ink at the edge stays", async () => {
+    // 2026-10-25: an accepted picture carried a grey blob (luminance ~150) along its bottom edge
+    let blob = "";
+    for (let x = 250; x < W; x += 6)
+      for (let y = H - 60; y < H; y += 6) {
+        if ((x * 7 + y * 13) % 5 === 0) continue; // ragged, textured
+        blob += `<rect x="${x}" y="${y + (x % 3)}" width="7" height="7" fill="#969696"/>`;
+      }
+    const answer = `<g fill="none" stroke="#111" stroke-width="4" stroke-linecap="round"><path d="M320 140 L342 165 M342 140 L320 165"/><path d="M355 146 L380 146 M355 158 L380 158"/></g>`;
+    const edgeInk = `<path d="M60 ${H - 2} L200 ${H - 30}" stroke="#111" stroke-width="5" fill="none"/>`;
+    const board = await rgb(svg(W, H, KID));
+    const out = overlayOf(board, await rgb(svg(W, H, KID + answer + edgeInk + blob)));
+    const grey = inkMask(await rgb(svg(W, H, blob)));
+    let leftOfBlob = 0;
+    for (let i = 0; i < W * H; i++) if (grey[i] && out.mask[i]) leftOfBlob++;
+    expect(leftOfBlob, "the grey blob is not part of the picture").toBe(0);
+    const kept = inkMask(await rgb(svg(W, H, answer + edgeInk)));
+    let covered = 0;
+    for (let i = 0; i < W * H; i++) if (kept[i] && out.mask[i]) covered++;
+    expect(covered / count(kept), "dark ink, even touching the edge, is kept").toBeGreaterThan(0.85);
+  });
+
   it("a whole-board grey wash is background, not an addition", async () => {
     const board = await rgb(svg(W, H, KID));
     const washed = await rgb(svg(W, H, KID, "#dcdcdc"));

@@ -6,8 +6,8 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// The board as the picture tutor sends it: the region R of the page the kid can see (page units),
-/// rendered on white, the kid's content only (never the tutor's pictures, pending or accepted, and no
-/// UI), its longest side `maxLongSide` px. Everything after uses R, so the picture that comes back
+/// rendered on white, everything on it (the tutor's accepted pictures too; a ghost on show is not a record), no
+/// UI; its longest side `maxLongSide` px. Everything after uses R, so the picture that comes back
 /// lands exactly where it was taken from.
 struct PictureCapture: Sendable {
     var region: Box
@@ -91,9 +91,11 @@ enum PictureTutorCapture {
         r.meta[metaKey]?.boolValue == true
     }
 
-    /// What goes in the picture: what is drawn on the screen, the picture tutor's own pictures left out.
+    /// What goes in the picture: everything drawn on the screen, the tutor's accepted pictures too, so
+    /// the tutor sees what it already wrote and never writes it again (a ghost on show is an overlay,
+    /// not a record, so it is never in here).
     static func content(_ records: [BoardRecord]) -> [BoardRecord] {
-        records.filter { $0.isDrawable && !isPictureTutor($0) }
+        records.filter { $0.isDrawable }
     }
 
     /// The current screen's region R as a picture; nil when there's nothing of the kid's in it (an

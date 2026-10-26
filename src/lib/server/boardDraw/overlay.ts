@@ -225,6 +225,50 @@ export function dropSpecks(mask: Uint8Array, w: number, h: number, min: number):
   return dropped;
 }
 
+/** Below this mean darkness a neutral piece is a grey wash, not ink (the painter's ink core is ~170+). */
+export const WASH_DARK_MAX = 135;
+/** A wash smaller than this is left to the speck and kid rules. */
+export const WASH_MIN_PX = 1500;
+
+/**
+ * Takes out a grey, neutral wash that runs into the frame's edge: the painter's shadow or paper
+ * texture (2026-10-25, a grey blob along the bottom of an accepted picture), never writing or a
+ * diagram, which are dark (or coloured) and sit inside the frame. A wash comes back textured, in many
+ * pieces, so the pieces are grouped first (dilated) and judged together. Returns the pixels dropped.
+ */
+export function dropGreyWash(
+  core: Uint8Array,
+  a: { dark: ArrayLike<number>; colour: ArrayLike<number> },
+  w: number,
+  h: number,
+  border: number,
+  colourMin: number,
+): number {
+  const edge = border + 2;
+  let dropped = 0;
+  for (const group of pieces(dilate(core, w, h, 3), w, h, WASH_MIN_PX)) {
+    let n = 0;
+    let dark = 0;
+    let colour = 0;
+    let touchesEdge = false;
+    for (const p of group) {
+      if (!core[p]) continue;
+      n++;
+      dark += a.dark[p];
+      colour += a.colour[p];
+      const x = p % w;
+      const y = (p - x) / w;
+      if (x < edge || y < edge || x >= w - edge || y >= h - edge) touchesEdge = true;
+    }
+    if (n < WASH_MIN_PX || !touchesEdge || colour / n >= colourMin || dark / n >= WASH_DARK_MAX) continue;
+    for (const p of group) if (core[p]) {
+      core[p] = 0;
+      dropped++;
+    }
+  }
+  return dropped;
+}
+
 /** 8-connected pieces of a mask: each piece's pixels' indices. */
 export function pieces(mask: Uint8Array, w: number, h: number, min = 1): number[][] {
   const seen = new Uint8Array(w * h);
@@ -524,6 +568,7 @@ export function overlayOf(board: Rgb, pic: Rgb, opts: OverlayOptions = {}): Over
     }
     if (touches && colourSum / piece.length < colourMin && longSide(piece, W) <= smallPart) for (const p of piece) core[p] = 0;
   }
+  dropGreyWash(core, a, W, H, border, colourMin);
   const grown = dilate(core, W, H, GROW);
 
   const rgba = new Uint8Array(n * 4);
