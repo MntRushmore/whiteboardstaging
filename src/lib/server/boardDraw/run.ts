@@ -29,7 +29,7 @@ import {
 import { dataUrlBytes, dataUrlPng, decodeRgb, encodeRgbaPng, encodeRgbPng, overlayOf, pictureAt, type Rgb } from "./overlay";
 import { parseTutorReply, tutorMessages, type TutorDecision } from "./prompts";
 import { pictureUrlOf, reedChatBody, reedPrompt } from "./reed";
-import { revealStrokes } from "./strokes";
+import { revealStrokesFine } from "./strokes";
 
 export type RunInput = {
   runId: string;
@@ -278,7 +278,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
   if (signal.aborted) return fail(null, "after");
 
   // 4. the reveal's strokes (never fails the run: `[]` and the client fades in)
-  const reveal = revealStrokes(mask, board.width, board.height);
+  const reveal = await revealStrokesFine(mask, board.width, board.height);
   timings.traceMs = reveal.ms;
   summary.strokes = reveal.strokes.length;
   if (reveal.dropped) summary.strokesDropped = reveal.dropped;

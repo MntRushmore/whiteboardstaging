@@ -18,6 +18,7 @@
  * Within MAX_REVEAL_STROKES / MAX_REVEAL_POINTS, simplifying harder when over; past them still, or
  * when the tracer fails, `[]`: the client fades the overlay in instead.
  */
+import sharp from "sharp";
 import { traceLineArt } from "@/lib/server/trace";
 import { frameFor } from "@/lib/server/trace/drawing";
 import { MAX_REVEAL_POINTS, MAX_REVEAL_STROKES, type RevealStroke } from "./contracts";
@@ -225,5 +226,38 @@ export function revealStrokes(mask: Uint8Array, width: number, height: number): 
     return done([], "over_budget");
   } catch {
     return done([], "trace_failed");
+  }
+}
+
+/** How much finer the mask is traced: a small label's "8" came back a "B" at 1x (2026-10-25). */
+export const FINE_TRACE_SCALE = 3;
+
+/**
+ * `revealStrokes` on the mask scaled up FINE_TRACE_SCALE times (smoothed, then thresholded), the
+ * strokes scaled back to the overlay's pixels. The iPad now keeps these strokes as the tutor's ink
+ * when a picture is accepted, so small writing has to trace true, not just well enough to reveal
+ * under the picture. About 0.3 s more on a full board. Falls back to the plain trace on any failure.
+ */
+export async function revealStrokesFine(mask: Uint8Array, width: number, height: number, scale = FINE_TRACE_SCALE): Promise<RevealResult> {
+  const t0 = now();
+  try {
+    const grey = Buffer.alloc(width * height);
+    for (let i = 0; i < grey.length; i++) grey[i] = mask[i] ? 255 : 0;
+    const W = width * scale;
+    const H = height * scale;
+    const { data: big, info } = await sharp(grey, { raw: { width, height, channels: 1 } })
+      .resize(W, H, { kernel: "lanczos3" })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    // sharp may hand back more than the one channel it was given: read the first of each pixel
+    const c = info.channels;
+    const fine = new Uint8Array(W * H);
+    for (let i = 0; i < fine.length; i++) fine[i] = big[i * c] > 110 ? 1 : 0;
+    const r = revealStrokes(fine, W, H);
+    if (r.dropped) return revealStrokes(mask, width, height);
+    const strokes = r.strokes.map((st) => ({ points: st.points.map((v) => round1(v / scale)), width: round1(st.width / scale) }));
+    return { strokes, ms: Math.round(now() - t0) };
+  } catch {
+    return revealStrokes(mask, width, height);
   }
 }
