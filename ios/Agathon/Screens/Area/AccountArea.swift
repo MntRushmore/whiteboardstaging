@@ -100,6 +100,7 @@ struct AccountArea: View {
                     }
                     SegmentedPicker(selection: $page, options: pages.map { ($0, $0.title) })
                     detail
+                    versionLine
                 }
                 .padding(.horizontal, DS.Space.l)
                 .padding(.top, DS.Space.s)
@@ -164,10 +165,21 @@ struct AccountArea: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("area.signOut")
+            versionLine
+                .padding(.horizontal, DS.Space.m)
         }
         .padding(.leading, DS.Space.xxl)
         .padding(.trailing, DS.Space.m)
         .padding(.vertical, DS.Space.m)
+    }
+
+    /// Which build this is, for testers and bug reports.
+    private var versionLine: some View {
+        Text(AppConfig.versionLine)
+            .dsFont(.caption)
+            .foregroundStyle(DS.Color.inkSecondary)
+            .textSelection(.enabled)
+            .accessibilityIdentifier("area.version")
     }
 
     private func sidebarRow(_ item: Page) -> some View {

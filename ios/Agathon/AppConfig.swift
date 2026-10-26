@@ -19,6 +19,14 @@ enum AppConfig {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
     }
 
+    /// The commit this build came from (`AgathonCommit`; "dev" when built without it).
+    static var commit: String {
+        Bundle.main.object(forInfoDictionaryKey: "AgathonCommit") as? String ?? "dev"
+    }
+
+    /// What the Account page shows, so a tester can say which build they have: "Version 1.0 (2412) · 784f1c9".
+    static var versionLine: String { "Version \(version) (\(build)) · \(commit)" }
+
     /// What error reports carry as `release`: `ios-<version>-<build>`.
     static var release: AppRelease { AppRelease(version: version, build: build) }
 }

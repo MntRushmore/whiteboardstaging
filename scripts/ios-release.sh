@@ -85,7 +85,7 @@ grep -q 'NSPrivacyAccessedAPITypes' "$IOS/Agathon/Resources/PrivacyInfo.xcprivac
 say "archive"
 xcodebuild archive -project "$IOS/Agathon.xcodeproj" -scheme Agathon -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" -derivedDataPath "$DD" \
-  -allowProvisioningUpdates ${ASC_AUTH[@]+"${ASC_AUTH[@]}"} DEVELOPMENT_TEAM=$TEAM \
+  -allowProvisioningUpdates ${ASC_AUTH[@]+"${ASC_AUTH[@]}"} DEVELOPMENT_TEAM=$TEAM AGATHON_COMMIT="$(git -C "$IOS/.." rev-parse --short HEAD)" \
   > "$OUT/archive.log" 2>&1 || { tail -40 "$OUT/archive.log"; fail "the archive failed (log: $OUT/archive.log)"; }
 
 APP="$ARCHIVE/Products/Applications/Agathon.app"

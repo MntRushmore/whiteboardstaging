@@ -56,6 +56,8 @@ settings:
   base:
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
+    # the commit a build came from (shown on Account; scripts pass AGATHON_COMMIT=<sha>)
+    AGATHON_COMMIT: dev
     SWIFT_VERSION: "5.0"
     # The owner's Apple Developer team (individual, "Rushil Chopra"); signs device builds.
     DEVELOPMENT_TEAM: SG4YJW2K5Z
@@ -106,6 +108,7 @@ targets:
         CFBundleDisplayName: Agathon
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        AgathonCommit: $(AGATHON_COMMIT)
         LSRequiresIPhoneOS: true
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen:
