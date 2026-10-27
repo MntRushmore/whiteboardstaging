@@ -45,7 +45,7 @@ private struct LabsButton: ViewModifier {
 }
 
 private enum Lab: String, CaseIterable, Identifiable {
-    case board, editor, brain, design, live, ask, billing, debugScreens, onboarding, training, picture, pictureSettings, macScreen
+    case board, editor, brain, design, live, ask, billing, debugScreens, onboarding, training, picture, pictureSettings, macScreen, admin
 
     var id: String { rawValue }
 
@@ -71,6 +71,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .macScreen: return "Mac screen panel (stub frame)"
         case .picture: return "Picture tutor (stub server)"
         case .pictureSettings: return "Picture tutor's admin page"
+        case .admin: return "Admin console (fixtures)"
         }
     }
 
@@ -89,6 +90,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .macScreen: return "laptopcomputer"
         case .picture: return "pencil.and.scribble"
         case .pictureSettings: return "slider.horizontal.3"
+        case .admin: return "gauge.with.dots.needle.33percent"
         }
     }
 }
@@ -113,9 +115,10 @@ private struct LabScreen: View {
             case .macScreen: MacScreenLab()
             case .picture: PictureTutorLabView(close: close)
             case .pictureSettings: PictureTutorSettingsLab()
+            case .admin: AdminConsole(data: AdminFixtures(), close: close)
             }
             // (the picture lab's board has its own back button; Close sat over Draw now)
-            if lab != .onboarding && lab != .training && lab != .picture { Button(action: close) {
+            if lab != .onboarding && lab != .training && lab != .picture && lab != .admin { Button(action: close) {
                 Label("Close", systemImage: "xmark")
                     .font(.footnote.weight(.semibold))
                     .padding(.horizontal, 12)

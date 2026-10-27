@@ -8,7 +8,7 @@ import SwiftUI
 /// kids: the web's rules). A sidebar on a full iPad; a row of tabs in a narrow window.
 struct AccountArea: View {
     enum Page: String, CaseIterable, Identifiable {
-        case progress, account, family, report, bugs, training, pictureTutor
+        case progress, account, family, report, bugs, training, pictureTutor, admin
         var id: String { rawValue }
 
         var title: String {
@@ -20,6 +20,7 @@ struct AccountArea: View {
             case .bugs: return "Bug reports"
             case .training: return "Training Center"
             case .pictureTutor: return "Picture tutor (test)"
+            case .admin: return "Admin console"
             }
         }
 
@@ -32,6 +33,7 @@ struct AccountArea: View {
             case .bugs: return .bug
             case .training: return .check
             case .pictureTutor: return .pen
+            case .admin: return .chart
             }
         }
     }
@@ -65,7 +67,7 @@ struct AccountArea: View {
     static let kidPages: [Page] = [.progress, .account, .bugs]
 
     private var pages: [Page] {
-        isKid ? Self.kidPages : [.progress, .account, .family, .report, .bugs] + (isAdmin ? [.training, .pictureTutor] : [])
+        isKid ? Self.kidPages : [.progress, .account, .family, .report, .bugs] + (isAdmin ? [.training, .pictureTutor, .admin] : [])
     }
 
     /// Tabs on top instead of the sidebar: a narrow window, or the largest text sizes (the sidebar's
@@ -222,6 +224,8 @@ struct AccountArea: View {
             TrainingCenterPage()
         case .pictureTutor:
             PictureTutorPage()
+        case .admin:
+            AdminConsoleLauncher()
         }
     }
 
