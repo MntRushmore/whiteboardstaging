@@ -63,7 +63,7 @@ export interface TutorWritingProps {
 export function TutorWriting({ solved, open, subMark, help, onBoxKey, onBoxInput }: TutorWritingProps) {
   if (!solved.length && !open && help?.kind !== "nudge") return null;
   return (
-    <div className={`${styles.help} ${styles.workFull}`}>
+    <div className={styles.help}>
       {solved.map((s, i) => (
         <p key={i} className={styles.solvedStep}>
           <span>{KEYS_COPY.lead[s.step.lead]}</span>

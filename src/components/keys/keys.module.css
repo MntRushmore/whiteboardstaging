@@ -222,50 +222,84 @@
   cursor: default;
 }
 
-/* ------------------------------------------------------------------ the page */
+/* ------------------------------------------------------------------ the page (Focus) */
 
+/* One big problem in the middle of the page. The problem is printed in ink, the kid types straight
+   into its boxes, and the tutor's marks and writing are the only cobalt. */
 .page {
   position: relative;
   flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   margin-top: 16px;
-  padding: 20px 48px;
-  border-radius: 18px;
+  padding: 28px 40px;
+  border-radius: 28px;
   background: var(--paper);
+}
+.surface {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.eyebrow {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink2);
 }
 .problem {
   margin: 0;
-  font-family: var(--hand);
-  font-weight: 700;
-  font-size: clamp(2rem, 3.6vw, 2.75rem);
-  line-height: 1.15;
-  color: var(--cobalt);
-  letter-spacing: 0.02em;
+  font-weight: 600;
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
-.workLabel {
-  margin: 6px 0 4px;
-  font-size: 1.125rem;
-  color: var(--ink2);
-}
-.work {
+.stage {
+  flex: 1 0 auto;
   display: grid;
-  grid-template-columns: auto minmax(240px, 1fr);
-  column-gap: 56px;
-  row-gap: 12px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
 }
-.workFull {
-  grid-column: 1 / -1;
+/* when the tutor writes under it, the problem steps back to make room, so it all fits on one screen */
+.surface:has(.help) .stage {
+  flex: 0 0 auto;
 }
-
-.surface {
-  display: contents;
+.surface:has(.help) .column {
+  --slot: 4rem;
+  --cell-h: 4rem;
+  --digit: 2.875rem;
+  --op-w: 2.5rem;
+  --mark-w: 3.5rem;
+  --slot-gap: 0.5rem;
+}
+.surface:has(.help) .helpZone {
+  flex: 1 0 auto;
+}
+/* steps stay a key away (↓ from the column) while the tutor is writing */
+.surface:has(.help) .stepsToggle {
+  display: none;
+}
+.side {
+  justify-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 /* ------------------------------------------------------------------ the column */
 
 .column {
+  --slot: 6.5rem;
+  --cell-h: 6.5rem;
+  --digit: 4.75rem;
+  --op-w: 4rem;
+  --mark-w: 5.25rem;
+  --slot-gap: 0.625rem;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -274,26 +308,26 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--slot-gap);
 }
 .opSlot {
-  width: 36px;
+  width: var(--op-w);
   flex: none;
   text-align: center;
-  font-family: var(--hand);
-  font-weight: 700;
-  font-size: 2.25rem;
-  color: var(--cobalt);
+  font-weight: 600;
+  font-size: calc(var(--digit) * 0.8);
+  line-height: 1;
+  color: var(--ink);
 }
 .slot {
   position: relative;
   display: grid;
   place-items: center;
-  width: 56px;
+  width: var(--slot);
   flex: none;
 }
 .markSlot {
-  width: 56px;
+  width: var(--mark-w);
   height: 48px;
   flex: none;
   display: grid;
@@ -302,73 +336,91 @@
 .placeHead {
   font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink2);
 }
 .given {
   display: grid;
   place-items: center;
-  height: 48px;
-  font-family: var(--hand);
-  font-weight: 700;
-  font-size: 2.5rem;
+  height: var(--cell-h);
+  font-weight: 600;
+  font-size: var(--digit);
   line-height: 1;
-  color: var(--cobalt);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
 }
 .rule {
-  height: 3px;
-  margin-left: 44px;
-  border-radius: 2px;
-  background: var(--cobalt);
+  /* the mark's bar, in ink */
+  width: calc(var(--places) * (var(--slot) + var(--slot-gap)) + var(--op-w));
+  height: 6px;
+  margin: 6px 0;
+  border-radius: 3px;
+  background: var(--ink);
 }
 .cell {
-  width: 56px;
-  height: 52px;
+  width: var(--slot);
+  height: var(--cell-h);
   padding: 0;
   border: 0;
-  border-radius: 14px;
+  border-radius: 22px;
   background: var(--sunken);
   color: var(--ink);
   font-family: var(--body);
   font-weight: 600;
-  font-size: 2rem;
+  font-size: var(--digit);
   font-variant-numeric: tabular-nums;
   text-align: center;
   caret-color: transparent;
   cursor: text;
+  transition: background-color 120ms;
 }
 .cell:focus-visible,
 .cell:focus {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
+  outline: 4px solid var(--focus);
+  outline-offset: 0;
 }
 .cell[readonly] {
   cursor: default;
 }
-.spare {
-  background: var(--paper);
-  outline: 2px dashed var(--line);
-  outline-offset: -2px;
+/* the spare box left of the answer and an empty carry box stay out of the way until the kid goes there */
+.spare:placeholder-shown:not(:focus),
+.carryCell:placeholder-shown:not(:focus) {
+  background: transparent;
 }
 .carryCell {
-  width: 40px;
-  height: 36px;
-  border-radius: 12px;
-  font-size: 1.375rem;
+  width: calc(var(--slot) * 0.6);
+  height: calc(var(--cell-h) * 0.5);
+  border-radius: 14px;
+  font-size: calc(var(--digit) * 0.5);
   color: var(--tomato);
 }
-.carryCell:placeholder-shown:not(:focus) {
-  background: var(--paper);
-  outline: 2px dashed var(--line);
-  outline-offset: -2px;
+.carryCell:focus {
+  background: var(--sunken);
+}
+/* The platform's touch rule sets every input to 16px (no zoom on focus); the page's boxes are far
+   bigger than that, so they keep their own size. */
+.root .cell.cell {
+  font-size: var(--digit);
+}
+.root .carryCell.carryCell {
+  font-size: calc(var(--digit) * 0.5);
+}
+.root .equation .cell.cell {
+  font-size: 2.75rem;
+}
+.root .stepInput.stepInput {
+  font-size: 1.625rem;
+}
+.root .answerInput.answerInput {
+  font-size: 1.875rem;
 }
 .arrived {
-  animation: arrive 520ms cubic-bezier(0.3, 1.4, 0.5, 1);
+  animation: arrive 620ms cubic-bezier(0.3, 1.4, 0.5, 1);
 }
 @keyframes arrive {
   0% {
-    transform: translateY(80px) scale(0.6);
+    transform: translateY(120px) scale(0.5);
     background: var(--sunny);
   }
   70% {
@@ -394,14 +446,14 @@
   height: calc(100% + 16px);
 }
 .tick {
-  width: 44px;
-  height: 40px;
+  width: 56px;
+  height: 52px;
   overflow: visible;
 }
 .draw {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: draw 360ms ease-out forwards;
+  animation: draw 420ms ease-out forwards;
 }
 @keyframes draw {
   to {
@@ -409,12 +461,254 @@
   }
 }
 
-/* ------------------------------------------------------------------ typed steps */
+/* ------------------------------------------------------------------ the tutor's feedback, beside the column */
 
-.steps {
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 22px 8px 8px;
+  border-radius: 999px;
+  background: var(--sunken);
+  font-weight: 600;
+  font-size: 1.1875rem;
+  line-height: 1.2;
+  animation: statusIn 320ms cubic-bezier(0.3, 1.4, 0.5, 1) both;
+}
+.status i {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  flex: none;
+}
+.status small {
+  display: block;
+  font-weight: 400;
+  font-size: 0.875rem;
+  color: var(--ink2);
+}
+.statusLook i {
+  background: var(--sunny);
+}
+.statusRight i {
+  background: var(--success);
+}
+.cheer {
+  display: inline-block;
+  padding: 14px 28px;
+  border-radius: 999px;
+  background: var(--sunny);
+  color: var(--ink);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 1.75rem;
+  letter-spacing: -0.03em;
+  animation: cheer 520ms cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+@keyframes statusIn {
+  from {
+    transform: translateX(-12px);
+    opacity: 0;
+  }
+}
+@keyframes cheer {
+  from {
+    transform: scale(0.4) rotate(-6deg);
+    opacity: 0;
+  }
+}
+.notice {
+  font-size: 1rem;
+  color: var(--ink2);
+}
+
+/* ------------------------------------------------------------------ the tutor's help, under the column */
+
+.helpZone {
   display: flex;
   flex-direction: column;
-  padding-top: 18px;
+  align-items: center;
+  gap: 16px;
+  min-height: 3rem;
+}
+.help {
+  width: min(100%, 52rem);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  animation: write 420ms ease-out both;
+}
+@keyframes write {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+.leadRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px 24px;
+  flex-wrap: wrap;
+}
+.handLine {
+  margin: 0;
+  font-family: var(--hand);
+  font-weight: 700;
+  font-size: 2rem;
+  line-height: 1.2;
+  color: var(--cobalt);
+}
+.subRow {
+  display: flex;
+  align-items: center;
+  gap: 20px 40px;
+  flex-wrap: wrap;
+}
+.equation {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.equation .cell {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 18px;
+  font-size: 2.75rem;
+}
+.eqPart {
+  font-family: var(--hand);
+  font-weight: 700;
+  font-size: 2.75rem;
+  line-height: 1;
+  color: var(--cobalt);
+}
+.solvedStep {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  font-family: var(--hand);
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: var(--cobalt);
+}
+.solvedStep .tick {
+  width: 40px;
+  height: 36px;
+}
+.solvedStep .eqPart {
+  font-size: inherit;
+}
+.solvedStep .kidNum {
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 1.25rem;
+  color: var(--ink);
+}
+.blocksHint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink2);
+}
+
+/* base-ten blocks: flat rods; tomato the carried ten, cobalt the tutor's, ink the kid's */
+.tray {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  min-height: 84px;
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.rods {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  min-height: 60px;
+}
+.boxGroup {
+  padding: 6px 8px;
+  border-radius: 16px;
+  background: var(--sunken);
+}
+.rod {
+  display: block;
+  width: 16px;
+  height: 60px;
+  border-radius: 8px;
+}
+.rod_carried {
+  background: var(--tomato);
+}
+.rod_tutor {
+  background: var(--cobalt);
+}
+.rod_kid {
+  background: var(--ink);
+}
+.rod_empty {
+  background: var(--paper);
+}
+.rodIn {
+  animation: rodIn 300ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+@keyframes rodIn {
+  from {
+    transform: translateY(-28px) scaleY(0.6);
+    opacity: 0;
+  }
+}
+.groupLabel {
+  font-size: 0.8125rem;
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.trayOp {
+  font-family: var(--hand);
+  font-weight: 700;
+  font-size: 2rem;
+  color: var(--cobalt);
+  align-self: center;
+}
+.trayTotal {
+  align-self: center;
+  font-family: var(--hand);
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: var(--cobalt);
+}
+
+/* ------------------------------------------------------------------ typed steps, on request */
+
+.stepsToggle {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink2);
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+.stepsToggle:hover {
+  background: var(--sunken);
+}
+.steps {
+  width: min(100%, 52rem);
+  display: flex;
+  flex-direction: column;
 }
 .stepsHead {
   font-size: 0.875rem;
@@ -467,121 +761,16 @@
   outline: none;
   background: var(--sunken);
 }
-
-/* ------------------------------------------------------------------ the tutor's help */
-
-.help {
-  margin-top: 2px;
-  padding-left: 44px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.leadRow {
-  display: flex;
-  align-items: baseline;
-  gap: 8px 24px;
-  flex-wrap: wrap;
-}
-.handLine {
-  margin: 0;
-  font-family: var(--hand);
-  font-weight: 700;
-  font-size: 1.75rem;
-  line-height: 1.2;
-  color: var(--cobalt);
-}
-.subRow {
-  display: flex;
-  align-items: center;
-  gap: 32px;
-  flex-wrap: wrap;
-}
-.equation {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.eqPart {
-  font-family: var(--hand);
-  font-weight: 700;
-  font-size: 2.25rem;
-  line-height: 1;
-  color: var(--cobalt);
-}
-.solvedStep {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-family: var(--hand);
-  font-weight: 700;
-  font-size: 1.375rem;
-  color: var(--cobalt);
-}
-.solvedStep .kidNum {
-  font-family: var(--body);
-  font-weight: 600;
-  color: var(--ink);
-}
-.blocksHint {
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--ink2);
+.steps .markSlot {
+  width: 56px;
 }
 
-/* base-ten blocks */
-.tray {
-  display: flex;
-  align-items: flex-end;
-  gap: 14px;
-  min-height: 84px;
-}
-.group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.rods {
-  display: flex;
-  gap: 4px;
-  align-items: flex-end;
-  min-height: 64px;
-}
-.boxGroup {
-  min-width: 64px;
-  padding: 6px 8px;
-  border-radius: 14px;
-  background: var(--sunken);
-}
-.groupLabel {
-  font-size: 0.75rem;
-  color: var(--ink2);
-  font-variant-numeric: tabular-nums;
-}
-.trayOp {
-  font-family: var(--hand);
-  font-weight: 700;
-  font-size: 1.75rem;
-  color: var(--cobalt);
-  align-self: center;
-}
+/* ------------------------------------------------------------------ the answer row (layouts that are not a column) */
 
-/* ------------------------------------------------------------------ the answer row */
-
-.answerRow {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  margin-top: auto;
-  padding-top: 10px;
-  flex-wrap: wrap;
-}
 .answerSpot {
   position: relative;
-  flex: 1 1 420px;
-  max-width: 680px;
+  align-self: center;
+  width: min(100%, 680px);
   min-height: 76px;
   display: flex;
   align-items: center;
@@ -618,38 +807,36 @@
   outline-offset: 0;
   background: var(--paper);
 }
-.actions {
+
+/* ------------------------------------------------------------------ the foot: the keys, and one button */
+
+.foot {
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: space-between;
+  gap: 16px;
   flex-wrap: wrap;
-  min-height: 64px;
 }
-.banner {
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink2);
+}
+.legend > span {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-height: 48px;
-  padding: 0 20px;
-  border-radius: 999px;
-  font-weight: 600;
-  font-size: 1.25rem;
+  gap: 6px;
 }
-.lookAgain {
-  background: var(--sunny);
+.legend .kbd {
+  background: var(--sunken);
   color: var(--ink);
 }
-.gotIt {
-  background: var(--success);
-  color: var(--on-ink);
-}
-.cheer {
-  background: var(--sunny);
-  color: var(--ink);
-}
-.notice {
-  font-size: 1rem;
-  color: var(--ink2);
+.foot .large {
+  margin-left: auto;
 }
 
 /* ------------------------------------------------------------------ celebration */
@@ -715,6 +902,47 @@
 .keysCard dd {
   margin: 0;
   color: var(--on-ink2);
+}
+.soundSwitch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--on-ink);
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.switchTrack {
+  position: relative;
+  width: 52px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--on-ink-faint);
+  transition: background-color 160ms;
+}
+.switchKnob {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--on-ink);
+  transition: transform 220ms cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.soundSwitch[aria-checked="true"] .switchTrack {
+  background: var(--sunny);
+}
+.soundSwitch[aria-checked="true"] .switchKnob {
+  transform: translateX(20px);
+  background: var(--ink);
 }
 .barAnchor {
   position: relative;
@@ -802,18 +1030,57 @@
   .page {
     padding: 22px 20px;
   }
-  .work {
+  .stage {
     grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
   }
-  .help {
-    padding-left: 0;
+  .stage > span:first-child {
+    display: none;
+  }
+  .side {
+    justify-self: center;
+    align-items: center;
+  }
+  .column {
+    --slot: 5rem;
+    --cell-h: 5rem;
+    --digit: 3.625rem;
+    --op-w: 3rem;
+    --mark-w: 4rem;
   }
 }
 
 @media (max-width: 560px) {
   .helpMe .label,
-  .askBtn {
+  .askBtn,
+  .legend {
     display: none;
+  }
+  .column {
+    --slot: 4rem;
+    --cell-h: 4rem;
+    --digit: 2.875rem;
+    --op-w: 2.25rem;
+    --mark-w: 3rem;
+    --slot-gap: 0.375rem;
+  }
+  .handLine {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-height: 760px) and (min-width: 961px) {
+  /* a 1280 × 720 Chromebook: the column, the smaller problem and its blocks fit with no scrolling */
+  .column {
+    --slot: 5.25rem;
+    --cell-h: 5.25rem;
+    --digit: 3.875rem;
+  }
+  .page {
+    padding: 20px 36px;
+  }
+  .surface {
+    gap: 14px;
   }
 }
 

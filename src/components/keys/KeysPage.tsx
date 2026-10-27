@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { ChevronLeft, MoreHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useReducer, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { useFeatureLabs } from "@/lib/featureLabs";
 import { KEYS_COPY } from "@/lib/keys/copy";
 import { generateSet, itemsFromList } from "@/lib/keys/generate";
 import { setReducer, starsOf, startSet, type ProblemAction } from "@/lib/keys/session";
 import { AllDone } from "./AllDone";
+import { bump, flyStar, play, setSoundsOn, soundsOn } from "./feel";
 import { KEYS_FONT_VARS } from "./fonts";
 import styles from "./keys.module.css";
 import { HelpMark, StarIcon } from "./TutorMarks";
@@ -69,6 +70,30 @@ export function KeysPage({ seed, list }: KeysPageProps) {
   const problemDispatch = useCallback((a: ProblemAction) => dispatch(a), []);
   const onNext = useCallback(() => dispatch({ type: "next" }), []);
 
+  // read on the first render: the More card that shows it only opens after the page has mounted
+  const [sounds, setSounds] = useState(() => typeof window === "undefined" || soundsOn());
+  const toggleSounds = () => {
+    setSoundsOn(!sounds);
+    setSounds(!sounds);
+  };
+
+  // The pill counts a star when it lands: a solved problem's star flies up from the cheer.
+  const stars = starsOf(state);
+  const [landed, setLanded] = useState({ round: 0, n: 0 });
+  const shown = landed.round === round ? Math.min(landed.n, stars) : 0;
+  const pill = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (stars <= shown) return;
+    const t = window.setTimeout(() => {
+      flyStar(document.querySelector("[data-cheer]"), pill.current, () => {
+        setLanded({ round, n: stars });
+        bump(pill.current);
+        play("star");
+      });
+    }, 320);
+    return () => window.clearTimeout(t);
+  }, [stars, shown, round]);
+
   const rootClass = `${styles.root} ${KEYS_FONT_VARS}`;
 
   if (!mounted || (!features.keys && loading)) {
@@ -97,7 +122,6 @@ export function KeysPage({ seed, list }: KeysPageProps) {
   }
 
   const count = state.items.length;
-  const stars = starsOf(state);
 
   return (
     <main className={rootClass}>
@@ -110,9 +134,9 @@ export function KeysPage({ seed, list }: KeysPageProps) {
           <p className={styles.subtitle}>{state.finished ? KEYS_COPY.allDone : KEYS_COPY.problemOf(state.index + 1, count)}</p>
         </div>
         <div className={`${styles.barRight} ${styles.barAnchor}`}>
-          <span className={styles.starsPill} aria-label={`Stars: ${KEYS_COPY.starsOf(stars, count)}`}>
+          <span ref={pill} className={styles.starsPill} aria-label={`Stars: ${KEYS_COPY.starsOf(stars, count)}`}>
             <StarIcon />
-            <span aria-hidden="true">{KEYS_COPY.starsOf(stars, count)}</span>
+            <span aria-hidden="true">{KEYS_COPY.starsOf(shown, count)}</span>
           </span>
           {!state.finished && (
             <button type="button" className={`${styles.btn} ${styles.sunny} ${styles.helpMe}`} onClick={() => dispatch({ type: "help" })} aria-keyshortcuts="?">
@@ -142,6 +166,12 @@ export function KeysPage({ seed, list }: KeysPageProps) {
                   </div>
                 ))}
               </dl>
+              <button type="button" className={styles.soundSwitch} role="switch" aria-checked={sounds} onClick={toggleSounds}>
+                <span>{KEYS_COPY.sounds}</span>
+                <span className={styles.switchTrack} aria-hidden="true">
+                  <span className={styles.switchKnob} />
+                </span>
+              </button>
             </div>
           )}
         </div>

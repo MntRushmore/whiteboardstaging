@@ -31,9 +31,9 @@ function cellLabel(c: Cell, ringed: boolean): string {
 }
 
 /**
- * A sum set out in columns (docs/KEYS.md): place headers, the carry row (tomato), the tutor's digits
- * in cobalt, the kid's cells in ink, filled right to left. Keys are the work surface's
- * (`TypedLines`); this draws.
+ * A sum set out in columns (docs/KEYS.md, "Focus"): place headers, the carry row (tomato), the
+ * problem's digits printed in ink, the kid's boxes filled right to left. The tutor's marks (ticks,
+ * rings) are the only cobalt. Keys are the work surface's (`TypedLines`); this draws.
  */
 export function ColumnCells({ item, values, marks, ringed, readOnly, carried, onKey, onInput }: ColumnCellsProps) {
   const layout = item.layout as ColumnsLayout;
@@ -95,7 +95,7 @@ export function ColumnCells({ item, values, marks, ringed, readOnly, carried, on
             ))}
             <span className={styles.markSlot}>{marks[line.id] === "tick" && <Tick label={`${line.id === "result" ? "The answer" : "This line"} is right`} />}</span>
           </div>
-          {line.op && <div className={styles.rule} style={{ width: layout.places * 64 - 8 }} aria-hidden="true" />}
+          {line.op && <div className={styles.rule} style={{ ["--places" as string]: layout.places }} aria-hidden="true" />}
         </div>
       ))}
     </div>
