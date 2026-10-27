@@ -51,6 +51,10 @@ export interface TutorWritingProps {
   open: { step: SubStep; values: Values } | null;
   subMark: Mark | null;
   help: Help | null;
+  /** the tutor's line for the help on the page now, as said (null while it is being worded) */
+  line: string | null;
+  /** the tutor's words are on their way: its "…" */
+  pending: boolean;
   onBoxKey: (cellId: string, e: KeyboardEvent<HTMLInputElement>) => void;
   onBoxInput: (cellId: string, value: string) => void;
 }
@@ -60,8 +64,16 @@ export interface TutorWritingProps {
  * with its blocks, and the smaller problems already solved, each with its tick. All in the tutor's
  * cobalt hand; only the kid's numbers are ink.
  */
-export function TutorWriting({ solved, open, subMark, help, onBoxKey, onBoxInput }: TutorWritingProps) {
-  if (!solved.length && !open && help?.kind !== "nudge") return null;
+export function TutorWriting({ solved, open, subMark, help, line, pending, onBoxKey, onBoxInput }: TutorWritingProps) {
+  if (!solved.length && !open && help?.kind !== "nudge" && help?.kind !== "worked") return null;
+  const thinking = (
+    <p className={`${styles.handLine} ${styles.thinking}`} aria-hidden="true">
+      {KEYS_COPY.thinking}
+    </p>
+  );
+  // the smaller problem's lead is the tutor's line while it is the help on the page; under a worked
+  // step it stays as written
+  const lead = open ? (help?.kind === "smaller" ? line : KEYS_COPY.lead[open.step.lead]) : null;
   return (
     <div className={`${styles.help} ${styles.workFull}`}>
       {solved.map((s, i) => (
@@ -72,11 +84,11 @@ export function TutorWriting({ solved, open, subMark, help, onBoxKey, onBoxInput
           <span>{KEYS_COPY.carriedBack(s.value)}</span>
         </p>
       ))}
-      {help?.kind === "nudge" && <p className={styles.handLine}>{help.text}</p>}
+      {help?.kind === "nudge" && (line ? <p className={styles.handLine}>{line}</p> : pending ? thinking : <p className={styles.handLine}>{help.text}</p>)}
       {open && (
         <>
           <div className={styles.leadRow}>
-            <p className={styles.handLine}>{KEYS_COPY.lead[open.step.lead]}</p>
+            {lead ? <p className={styles.handLine}>{lead}</p> : thinking}
             <p className={styles.blocksHint}>{KEYS_COPY.blocksHint}</p>
           </div>
           <div className={styles.subRow}>
@@ -114,6 +126,7 @@ export function TutorWriting({ solved, open, subMark, help, onBoxKey, onBoxInput
           </div>
         </>
       )}
+      {help?.kind === "worked" && (line ? <p className={`${styles.handLine} ${styles.worked}`}>{line}</p> : thinking)}
     </div>
   );
 }

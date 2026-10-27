@@ -3,6 +3,7 @@
 import type { KeyboardEvent } from "react";
 import type { Mark } from "@/lib/keys/check";
 import { placeName, type Cell, type ColumnsLayout, type MathItem, type Values } from "@/lib/keys/item";
+import type { Pointer } from "@/lib/keys/session";
 import styles from "./keys.module.css";
 import { Ring, Tick } from "./TutorMarks";
 
@@ -14,6 +15,8 @@ export interface ColumnCellsProps {
   readOnly: boolean;
   /** a cell the tutor just carried a value back into */
   carried: string | null;
+  /** Help me's nudge points here: the tutor's cobalt marker under that column */
+  point: Pointer | null;
   onKey: (cellId: string, e: KeyboardEvent<HTMLInputElement>) => void;
   onInput: (cellId: string, value: string) => void;
 }
@@ -35,7 +38,7 @@ function cellLabel(c: Cell, ringed: boolean): string {
  * in cobalt, the kid's cells in ink, filled right to left. Keys are the work surface's
  * (`TypedLines`); this draws.
  */
-export function ColumnCells({ item, values, marks, ringed, readOnly, carried, onKey, onInput }: ColumnCellsProps) {
+export function ColumnCells({ item, values, marks, ringed, readOnly, carried, point, onKey, onInput }: ColumnCellsProps) {
   const layout = item.layout as ColumnsLayout;
   const places = Array.from({ length: layout.places }, (_, i) => layout.places - 1 - i);
   const spare = new Set(layout.lines.flatMap((l) => l.cells.filter((c) => c?.spare).map((c) => c!.place)));
@@ -45,7 +48,7 @@ export function ColumnCells({ item, values, marks, ringed, readOnly, carried, on
       <div className={styles.colRow} aria-hidden="true">
         <span className={styles.opSlot} />
         {places.map((p) => (
-          <span key={p} className={`${styles.slot} ${styles.placeHead}`}>
+          <span key={p} className={`${styles.slot} ${styles.placeHead}`} data-pointed={point?.place === p ? "" : undefined}>
             {spare.has(p) ? "" : placeName(p)}
           </span>
         ))}
@@ -98,6 +101,26 @@ export function ColumnCells({ item, values, marks, ringed, readOnly, carried, on
           {line.op && <div className={styles.rule} style={{ width: layout.places * 64 - 8 }} aria-hidden="true" />}
         </div>
       ))}
+      {point?.place !== null && point?.place !== undefined && (
+        <div className={styles.colRow} aria-hidden="true">
+          <span className={styles.opSlot} />
+          {places.map((p) => (
+            <span key={p} className={styles.slot}>
+              {p === point.place && <PointerArrow />}
+            </span>
+          ))}
+          <span className={styles.markSlot} />
+        </div>
+      )}
     </div>
+  );
+}
+
+/** The tutor's pointer under a column (Help me's nudge): a short cobalt arrow, drawn in one stroke. */
+function PointerArrow() {
+  return (
+    <svg className={styles.pointer} viewBox="0 0 40 32" aria-hidden="true">
+      <path className={styles.draw} pathLength={1} d="M20 30 L20 6 M10 15 L20 4 L30 15" fill="none" stroke="#2D5BFF" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }

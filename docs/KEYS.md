@@ -211,11 +211,93 @@ Also: `keys-00-gate.png` (the Feature Labs gate), `keys-10-sum-carried-back.png`
 on its own, patched by the carry back), `keys-12-keys-card.png` (More: the keys),
 `keys-13-narrow-760.png` (760 px wide).
 
-## Open (Phase 2)
+## Status
 
-- Tutor wording through `src/lib/brain`, with this copy as the fallback (`/api/keys/say`).
-- The help ladder: nudge, then smaller, then a worked step.
-- The learning record: an `AttemptRecord` per problem, origin `keys` (a new `ATTEMPT_ORIGINS` value, so
-  a migration for the check constraint), bugs mapped to `MistakeKind`s, outcome from the session.
-- Now you try after a problem done with help; stickers and the streak saved.
-- The Ask button.
+| phase | status |
+|---|---|
+| 1. A slice | done (`feat/keys-page`) |
+| 2. The tutor and the record | done (`feat/keys-full`) |
+| 3. Breadth | see below |
+| 4. The habit | see below |
+
+## Phase 2: the tutor's voice and the record
+
+### The help ladder (`session.ts`)
+
+Help me (the button or `?`) climbs one rung for the slip on the page. A different slip (another bug
+or another line) starts the ladder again; a slip fixed and checked keeps its rung.
+
+1. **A nudge**: one line in the tutor's hand under the work (`nudgeFor`), and a cobalt arrow under
+   the column that broke (the place head turns cobalt too). For a slip no bug rule names, the page
+   asks the board's check endpoint for its words (below).
+2. **A smaller problem** (`shrink`): written under the line, with its blocks; solved, its answer
+   goes back up. A bug with no smaller problem goes straight to rung 3.
+3. **A worked step** (`workedFor`): the column worked out in the tutor's hand ("1 + 7 + 8 = 16.
+   Write the 6 in the ones. Carry the 1 to the tens."). The kid still types it. A smaller problem
+   that is open stays open under it.
+
+At the top, Help me does nothing more. Help me before any check checks first, as on the iPad.
+
+### The tutor's words (`/api/keys/say`, `src/lib/keys/say.ts`)
+
+The page always knows what to say: the fixed line from `copy.ts`, worked out from the item, the bug
+and the rung. `POST /api/keys/say` only says it another way, in a coach's voice for the kid's grade
+(`src/lib/server/prompts/keysSay.ts`), on the small fast model that names boards (`LIVE_MODEL_TITLE`),
+one attempt, 1.4 s. **The judgement never comes from the model.** A reply is kept only when it is
+`sayable`: the same numbers (none added, none lost), short, plain (no LaTeX, no emoji, at most one
+exclamation mark) and none of the words the tutor never says ("wrong", "mistake", "easy", "oops"…).
+Otherwise, and on any failure, the route answers the fixed line (200, `source: "copy"`). The page
+waits at most 1.5 s (`SAY_WAIT_MS`, the tutor's "…" meanwhile) and then shows the fixed line. Lines
+said once are kept (on the server and on the page), so the same help says the same words.
+
+The route: `livePreamble` (the signed-in kid, the `keysSay` bucket, 30 a minute, zod), uncharged. It
+uses the server's model plumbing like the other Live routes; `src/lib/brain` is the iPad's bundle of
+the board's logic, and `src/lib/keys` stays pure so it can join it later.
+
+**A slip no bug rule names** (`src/lib/keys/hint.ts`): the nudge's fixed words show at once, and the
+page asks `POST /api/live/check` (the tutor that checks handwritten work; charged like any check, it
+is a Help me) for a hint about the line that broke. The request is the problem and the kid's typed
+lines, each with the page's own verdict, focused on the line that broke. Its first warning replaces
+the nudge's words, unless it would give the answer away; nothing within 6 s: the fixed words stay.
+
+### The learning record (`src/lib/keys/record.ts`, `useKeysRecord`)
+
+One `AttemptRecord` per problem, origin **`keys`** (a new `ATTEMPT_ORIGINS` value; the check
+constraint is replaced by `supabase/migrations/20261027030000_keys_origin.sql`), `boardId` null,
+saved with `store.saveAttempts` as it goes (a moment after a change, at once when solved, as
+`unfinished` when the kid moves on or leaves). A problem is recorded once it was checked or helped.
+
+- **Outcome:** the learning system's own `outcomeOf` over the counts: no help and no ring is
+  `first_try`, a ring fixed alone is `self_corrected`, any rung of help is `with_help`. The stars on
+  the page say the same thing.
+- **Counts:** lines written (column lines, typed steps, the answer row, smaller problems answered),
+  lines right (ticks), lines ever ringed, hints (nudges), tutor steps (smaller problems and worked
+  steps), asks (Help me's that gave help).
+- **Mistakes:** each named bug's kind (`BugRule.mistake`) once per problem; a slip no rule names is
+  `arithmetic` (a number slip).
+- **Problem:** the item as LaTeX (`26 + \square 6 = 92`), skill the item's.
+
+Progress, the parents' view, mastery and the tutor's learner hint read these rows with the rest.
+
+### Now you try, stars, stickers
+
+- **Now you try** (the iPad's rule, `nowYouTry.ts`): after a problem done with help, "Now you try
+  one" (focused; Next is beside it) puts one more like it right after it: the same kind, new numbers,
+  a different answer, the same one for the same attempt (`variantItem`, seeded with `seedOf(attempt
+  id)`). Its record's `parentId` is that attempt. It is not one of the set's five: the top bar says
+  "Now you try", and the stars and stickers count the set's own problems.
+- **Stars** fill the pill as problems are solved (a small pop; Reduce Motion: none).
+- **Stickers** on All done: a star for each problem done on your own, a ring for one done with help,
+  and **5 for 5** when every one was on your own. The celebration is the shapes and the burst.
+
+### Read aloud
+
+Off by default. More (⋯) has the switch "Read the tutor's words aloud" (this device). When it is on,
+each new tutor line, "Look again." and "You got it." are said through `/api/live/speak` (the
+browser's own voice when the route cannot), with Keys' own speaker (`src/components/keys/tutorVoice.ts`,
+not the board's read-aloud module, which listens to the tldraw board). The words are always on the
+page: the captions are the tutor's lines themselves.
+
+### Not yet
+
+- The Ask button (inert, "Ask is coming soon.").

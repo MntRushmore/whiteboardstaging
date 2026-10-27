@@ -5,8 +5,11 @@ import { ANSWER_LINE, stepLine } from "@/lib/keys/check";
 import { KEYS_COPY } from "@/lib/keys/copy";
 import { cellById, lineOfCell, placeName } from "@/lib/keys/item";
 import { afterDigit, carryFor, firstCell, gridMove, intentFor } from "@/lib/keys/keymap";
+import { sayInputFor } from "@/lib/keys/say";
 import { openStep, outcomeOf, rootValues, type ProblemAction, type ProblemState } from "@/lib/keys/session";
 import { ColumnCells } from "./ColumnCells";
+import { askHint, speakLine } from "./tutorVoice";
+import { useSaid } from "./useKeysTutor";
 import styles from "./keys.module.css";
 import { Burst, Eye, Ring, Tick } from "./TutorMarks";
 import { TutorWriting } from "./TutorWriting";
@@ -17,6 +20,10 @@ export interface TypedLinesProps {
   /** the last problem of the set: Next says "All done" */
   last: boolean;
   onNext: () => void;
+  /** offered after a problem done with help: one more like it (null: not offered) */
+  onNowYouTry: (() => void) | null;
+  /** the kid's grade, for the tutor's words (null: unknown) */
+  grade: number | null;
 }
 
 /** The problem as the tutor writes it, a `?` drawn as an empty box. */
@@ -33,16 +40,17 @@ function ProblemText({ text, words }: { text: string; words: string }) {
   );
 }
 
-/** What the screen reader hears after a check or a help. */
-function announce(p: ProblemState): string {
+/** What the screen reader hears after a check or a help (`said`: the tutor's line as shown). */
+function announce(p: ProblemState, said: string | null): string {
   if (p.notice === "write_first") return KEYS_COPY.writeFirst;
   if (p.phase === "done") return outcomeOf(p) === "first_try" ? `${KEYS_COPY.gotIt} ${KEYS_COPY.nailedIt}` : KEYS_COPY.gotIt;
+  if (p.help?.kind === "worked") return said ?? "";
   const open = openStep(p);
   if (open) {
     const ring = p.subMark === "ring" ? `${KEYS_COPY.lookAgain} ` : "";
-    return `${ring}${KEYS_COPY.lead[open.step.lead]} ${open.step.item.words}.`;
+    return said === null ? "" : `${ring}${said} ${open.step.item.words}.`;
   }
-  if (p.help?.kind === "nudge") return p.help.text;
+  if (p.help?.kind === "nudge") return said ?? p.help.text;
   if (p.phase === "look_again") {
     const cell = p.ringed.length ? cellById(p.item, p.ringed[0]) : undefined;
     return cell ? `${KEYS_COPY.lookAgain} The ${placeName(cell.place)}.` : KEYS_COPY.lookAgain;
@@ -55,11 +63,33 @@ function announce(p: ProblemState): string {
  * writing and the answer row, and the keyboard map that runs them all. Intents come from
  * `src/lib/keys/keymap.ts`; this carries them out and moves focus.
  */
-export function TypedLines({ problem, dispatch, last, onNext }: TypedLinesProps) {
+export function TypedLines({ problem, dispatch, last, onNext, onNowYouTry, grade }: TypedLinesProps) {
   const { item, phase } = problem;
   const values = rootValues(problem);
   const open = openStep(problem);
   const done = phase === "done";
+
+  // The tutor's words for what it says now: its own within 1.5 s, else the fixed line.
+  const said = useSaid(sayInputFor(problem, grade));
+  const tutorLine = said.line ?? (problem.help?.kind === "nudge" && !said.pending ? problem.help.text : null);
+
+  // A nudge about a slip no bug rule names: the check endpoint's words, when they come.
+  const helps = problem.counts.helps;
+  const askFor = problem.help?.kind === "nudge" && !problem.bug && problem.helpLevel === 1 ? helps : null;
+  const latest = useRef(problem);
+  useEffect(() => {
+    latest.current = problem;
+  });
+  useEffect(() => {
+    if (askFor === null) return;
+    let live = true;
+    void askHint(latest.current).then((text) => {
+      if (live && text && latest.current.counts.helps === askFor) dispatch({ type: "hint_text", text });
+    });
+    return () => {
+      live = false;
+    };
+  }, [askFor, dispatch]);
 
   // Every focusable slot carries `data-slot` (`cell:r0`, `step:1`, `answer`, `box`, `next`).
   const surface = useRef<HTMLDivElement>(null);
@@ -231,6 +261,8 @@ export function TypedLines({ problem, dispatch, last, onNext }: TypedLinesProps)
       case "enter":
       case "check":
         return dispatch({ type: "sub_check" });
+      case "help":
+        return help();
       default:
         return;
     }
@@ -240,7 +272,13 @@ export function TypedLines({ problem, dispatch, last, onNext }: TypedLinesProps)
   // "Look again." stays while a ring is on the page, through the tutor's help
   const ringOnPage = problem.ringed.length > 0 || Object.values(problem.marks).includes("ring");
   const lookAgain = phase === "look_again" || (phase === "helping" && ringOnPage) || problem.subMark === "ring";
-  const message = announce(problem);
+  const message = announce(problem, tutorLine);
+
+  // Read aloud (off by default; More): each new thing the tutor says, as it appears.
+  const spoken = lookAgain && !tutorLine ? KEYS_COPY.lookAgain : done ? KEYS_COPY.gotIt : tutorLine;
+  useEffect(() => {
+    if (spoken) speakLine(spoken);
+  }, [spoken]);
 
   return (
     <div ref={surface} className={styles.surface}>
@@ -256,6 +294,7 @@ export function TypedLines({ problem, dispatch, last, onNext }: TypedLinesProps)
             ringed={problem.ringed}
             readOnly={done}
             carried={problem.carried?.cellId ?? null}
+            point={problem.help?.kind === "nudge" ? problem.help.point : null}
             onKey={onCellKey}
             onInput={(id, v) => setCell(id, v)}
           />
@@ -292,6 +331,8 @@ export function TypedLines({ problem, dispatch, last, onNext }: TypedLinesProps)
           open={open}
           subMark={problem.subMark}
           help={problem.help}
+          line={tutorLine}
+          pending={said.pending}
           onBoxKey={onBoxKey}
           onBoxInput={(id, v) => dispatch({ type: "sub_cell", id, value: v })}
         />
@@ -328,7 +369,12 @@ export function TypedLines({ problem, dispatch, last, onNext }: TypedLinesProps)
             <>
               <span className={`${styles.banner} ${styles.gotIt}`}>{KEYS_COPY.gotIt}</span>
               {outcome === "first_try" && <span className={`${styles.banner} ${styles.cheer}`}>{KEYS_COPY.nailedIt}</span>}
-              <button data-slot="next" type="button" className={`${styles.btn} ${styles.ink} ${styles.large}`} onClick={onNext}>
+              {onNowYouTry && (
+                <button data-slot="next" type="button" className={`${styles.btn} ${styles.ink} ${styles.large}`} onClick={onNowYouTry} aria-label={KEYS_COPY.nowYouTryLabel}>
+                  {KEYS_COPY.nowYouTryGo}
+                </button>
+              )}
+              <button data-slot={onNowYouTry ? "skip" : "next"} type="button" className={`${styles.btn} ${onNowYouTry ? styles.chalk : styles.ink} ${styles.large}`} onClick={onNext}>
                 <span className={styles.badge} aria-hidden="true">
                   ›
                 </span>

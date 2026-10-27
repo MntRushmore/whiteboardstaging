@@ -3,15 +3,18 @@
 import Link from "next/link";
 import { ChevronLeft, MoreHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useState, useSyncExternalStore } from "react";
+import { useAuth } from "@/components/AuthProvider";
 import { useFeatureLabs } from "@/lib/featureLabs";
 import { KEYS_COPY } from "@/lib/keys/copy";
-import { generateSet, itemsFromList } from "@/lib/keys/generate";
-import { setReducer, starsOf, startSet, type ProblemAction } from "@/lib/keys/session";
+import { generateSet, itemsFromList, variantItem } from "@/lib/keys/generate";
+import { isBonus, offersNowYouTry, perfectOf, setPosition, setReducer, starsOf, startSet, type ProblemAction } from "@/lib/keys/session";
 import { AllDone } from "./AllDone";
 import { KEYS_FONT_VARS } from "./fonts";
 import styles from "./keys.module.css";
 import { HelpMark, StarIcon } from "./TutorMarks";
+import { useReadAloud } from "./tutorVoice";
 import { TypedLines } from "./TypedLines";
+import { nowYouTrySeed, useKeysRecord, useLearner } from "./useKeysTutor";
 
 const KEY_LIST: [string, string][] = [
   ["0–9", "Fill a box. A column fills right to left."],
@@ -19,7 +22,7 @@ const KEY_LIST: [string, string][] = [
   ["← → ↑ ↓", "Move between boxes and lines."],
   ["Enter", "Go to the answer. In the answer, check it."],
   ["Ctrl + Enter", "Check, from anywhere."],
-  ["?", "Help me."],
+  ["?", "Help me. Again for more help."],
   ["Space", "Add a ten to the blocks."],
   ["Backspace", "Clear a box, or take a ten away."],
 ];
@@ -50,6 +53,19 @@ export function KeysPage({ seed, list }: KeysPageProps) {
   }, [list, seed, round]);
   const [state, dispatch] = useReducer(setReducer, items, startSet);
   const [moreOpen, setMoreOpen] = useState(false);
+  const { user } = useAuth();
+  const learner = useLearner(user?.id ?? null);
+  const attemptId = useKeysRecord(state, learner, Boolean(user));
+  const [readAloud, setReadAloud] = useReadAloud();
+
+  // Now you try: one more like it, after a problem done with help (the same attempt, the same problem)
+  const nowYouTry = useMemo(() => {
+    if (!offersNowYouTry(state)) return null;
+    return variantItem(state.problem.item, nowYouTrySeed(attemptId(state.index)));
+  }, [state, attemptId]);
+  const onNowYouTry = useCallback(() => {
+    if (nowYouTry) dispatch({ type: "now_you_try", item: nowYouTry });
+  }, [nowYouTry]);
 
   const onMore = useCallback(() => {
     const next = round + 1;
@@ -96,8 +112,10 @@ export function KeysPage({ seed, list }: KeysPageProps) {
     );
   }
 
-  const count = state.items.length;
+  const { n, count } = setPosition(state);
   const stars = starsOf(state);
+  const bonus = !state.finished && isBonus(state);
+  const subtitle = state.finished ? KEYS_COPY.allDone : bonus ? KEYS_COPY.nowYouTry : KEYS_COPY.problemOf(n, count);
 
   return (
     <main className={rootClass}>
@@ -107,10 +125,10 @@ export function KeysPage({ seed, list }: KeysPageProps) {
         </Link>
         <div className={styles.titleBlock}>
           <h1 className={styles.title}>{KEYS_COPY.title}</h1>
-          <p className={styles.subtitle}>{state.finished ? KEYS_COPY.allDone : KEYS_COPY.problemOf(state.index + 1, count)}</p>
+          <p className={styles.subtitle}>{subtitle}</p>
         </div>
         <div className={`${styles.barRight} ${styles.barAnchor}`}>
-          <span className={styles.starsPill} aria-label={`Stars: ${KEYS_COPY.starsOf(stars, count)}`}>
+          <span key={stars} className={styles.starsPill} data-filled={stars > 0 ? "" : undefined} role="status" aria-label={`Stars: ${KEYS_COPY.starsOf(stars, count)}`}>
             <StarIcon />
             <span aria-hidden="true">{KEYS_COPY.starsOf(stars, count)}</span>
           </span>
@@ -142,16 +160,29 @@ export function KeysPage({ seed, list }: KeysPageProps) {
                   </div>
                 ))}
               </dl>
+              <label className={styles.switchRow}>
+                <input type="checkbox" role="switch" checked={readAloud} onChange={(e) => setReadAloud(e.target.checked)} />
+                <span>{KEYS_COPY.readAloud}</span>
+              </label>
+              <p className={styles.switchNote}>{KEYS_COPY.readAloudNote}</p>
             </div>
           )}
         </div>
       </header>
 
-      <section className={styles.page} aria-label={state.finished ? KEYS_COPY.allDone : KEYS_COPY.problemOf(state.index + 1, count)}>
+      <section className={styles.page} aria-label={subtitle}>
         {state.finished ? (
-          <AllDone outcomes={state.outcomes} onMore={onMore} />
+          <AllDone outcomes={state.outcomes.filter((_, i) => !isBonus(state, i))} perfect={perfectOf(state)} onMore={onMore} />
         ) : (
-          <TypedLines key={`${round}:${state.index}`} problem={state.problem} dispatch={problemDispatch} last={state.index === count - 1} onNext={onNext} />
+          <TypedLines
+            key={`${round}:${state.index}:${state.items.length}`}
+            problem={state.problem}
+            dispatch={problemDispatch}
+            last={state.index === state.items.length - 1}
+            onNext={onNext}
+            onNowYouTry={nowYouTry ? onNowYouTry : null}
+            grade={learner.grade}
+          />
         )}
       </section>
     </main>

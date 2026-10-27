@@ -63,3 +63,18 @@ export function itemsFromList(list: string): MathItem[] {
     .map((t) => itemFromText(t.replace(/ (?=\d|\?)/g, "+").replace(/\+{2,}/g, "+")))
     .filter((i): i is MathItem => i !== null);
 }
+
+/**
+ * "Now you try" (`src/lib/learning/nowYouTry.ts`'s rule, on Keys): after a problem done with help, one
+ * more like it: the same kind of problem, new numbers, a different answer. The same attempt always
+ * gets the same one (`seed` is `seedOf(attemptId)`). Null when none can be drawn.
+ */
+export function variantItem(item: MathItem, seed: number): MathItem | null {
+  const r = makeRng(seedFrom(seed, `keys:variant:${item.id}`));
+  for (let i = 0; i < 40; i++) {
+    const next = item.kind === "fact" ? null : generateItem(r, item.kind);
+    if (!next) return null;
+    if (next.answer !== item.answer && next.addends.join("+") !== item.addends.join("+")) return next;
+  }
+  return null;
+}

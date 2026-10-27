@@ -49,9 +49,15 @@ describe("the journey: 26 + ?6 = 92", () => {
     expect(s.marks[ANSWER_LINE]).toBeUndefined();
     expect(banner(s)).toBe("Look again.");
 
-    // Help me: the smaller problem, under the line that broke, in the tutor's hand.
+    // Help me, the first rung: a nudge, pointing at the tens column.
+    s = run(s, { type: "help" });
+    expect(s.help).toEqual({ kind: "nudge", text: "Did you add the 1 you carried?", under: "b", point: { line: "b", place: 1 } });
+    expect(s.helpLevel).toBe(1);
+
+    // Help me again: the smaller problem, under the line that broke, in the tutor's hand.
     s = run(s, { type: "help" });
     expect(s.phase).toBe("helping");
+    expect(s.helpLevel).toBe(2);
     const open = openStep(s)!;
     expect(open.step.item.text).toBe("1 + 2 + ? = 9");
     expect(KEYS_COPY.lead[open.step.lead]).toBe("The 1 you carried is a ten.");
@@ -130,7 +136,7 @@ describe("a problem", () => {
     expect(s.bug).toBe("add_whole_column_sum");
     expect(s.marks).toEqual({ [ANSWER_LINE]: "ring" });
     s = run(s, { type: "help" });
-    expect(s.help).toEqual({ kind: "nudge", text: "15 ones is 1 ten and 5 ones. Write the 5. Carry the 1.", under: ANSWER_LINE });
+    expect(s.help).toEqual({ kind: "nudge", text: "15 ones is 1 ten and 5 ones. Write the 5. Carry the 1.", under: ANSWER_LINE, point: { line: ANSWER_LINE, place: null } });
     s = run(s, { type: "answer", value: "85" }, { type: "check" });
     expect(s.phase).toBe("done");
     expect(s.help).toBeNull();
@@ -142,11 +148,11 @@ describe("a problem", () => {
     expect(right.phase).toBe("done");
     expect(outcomeOf(right)).toBe("first_try");
     const empty = run(startProblem(item), { type: "help" });
-    expect(empty.help).toEqual({ kind: "nudge", text: "Start with the ones. What is 7 + 8?", under: "result" });
+    expect(empty.help).toEqual({ kind: "nudge", text: "Start with the ones. What is 7 + 8?", under: "result", point: { line: "result", place: 0 } });
   });
 
   it("patches an answer typed on its own when the carry comes back", () => {
-    let s = run(startProblem(item), { type: "answer", value: "75" }, { type: "check" }, { type: "help" });
+    let s = run(startProblem(item), { type: "answer", value: "75" }, { type: "check" }, { type: "help" }, { type: "help" });
     expect(openStep(s)?.step.item.text).toBe("1 + 4 + 3 = ?");
     s = run(s, { type: "sub_cell", id: "x", value: "8" }, { type: "sub_check" });
     expect(rootValues(s).r1).toBe("8");
@@ -155,7 +161,7 @@ describe("a problem", () => {
   });
 
   it("closes an open smaller problem when the kid fixes the cell by hand", () => {
-    let s = run(startProblem(item), { type: "cell", id: "r0", value: "5" }, { type: "cell", id: "r1", value: "7" }, { type: "check" }, { type: "help" });
+    let s = run(startProblem(item), { type: "cell", id: "r0", value: "5" }, { type: "cell", id: "r1", value: "7" }, { type: "check" }, { type: "help" }, { type: "help" });
     expect(openStep(s)).not.toBeNull();
     s = run(s, { type: "cell", id: "r1", value: "8" }, { type: "answer", value: "" }, { type: "check" });
     expect(s.phase).toBe("done");
@@ -194,7 +200,7 @@ describe("the set", () => {
     expect(s.index).toBe(1);
     expect(s.problem.item.text).toBe("26 + ?6 = 92");
 
-    act({ type: "cell", id: "b1", value: "7" }, { type: "check" }, { type: "help" }, { type: "sub_cell", id: "x", value: "6" }, { type: "sub_check" });
+    act({ type: "cell", id: "b1", value: "7" }, { type: "check" }, { type: "help" }, { type: "help" }, { type: "sub_cell", id: "x", value: "6" }, { type: "sub_check" });
     expect(s.outcomes.slice(0, 2)).toEqual(["first_try", "with_help"]);
     act({ type: "next" }, { type: "answer", value: "52" }, { type: "check" }, { type: "answer", value: "42" }, { type: "check" });
     expect(s.outcomes).toEqual(["first_try", "with_help", "self_corrected"]);

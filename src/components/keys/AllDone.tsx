@@ -9,9 +9,10 @@ import { Burst, ShapesCelebrate, Sticker } from "./TutorMarks";
 
 /**
  * The end of a set (docs/PROBLEM-PAGES.md, "All done"): the shapes celebrating, the set's stickers (a
- * star: done on your own; a ring: done with help), Back to my boards and More like these.
+ * star: done on your own; a ring: done with help; and "5 for 5" when every one was on your own), Back
+ * to my boards and More like these.
  */
-export function AllDone({ outcomes, onMore }: { outcomes: readonly (KeysOutcome | null)[]; onMore: () => void }) {
+export function AllDone({ outcomes, perfect, onMore }: { outcomes: readonly (KeysOutcome | null)[]; perfect: boolean; onMore: () => void }) {
   const own = outcomes.filter((o) => o === "first_try" || o === "self_corrected").length;
   const more = useRef<HTMLButtonElement>(null);
   useEffect(() => more.current?.focus(), []);
@@ -30,6 +31,12 @@ export function AllDone({ outcomes, onMore }: { outcomes: readonly (KeysOutcome 
             </li>
           );
         })}
+        {perfect && (
+          <li aria-label={`${KEYS_COPY.perfect(outcomes.length)}: every problem on your own`} className={styles.perfectSticker}>
+            <Sticker kind="perfect" />
+            <span aria-hidden="true">{KEYS_COPY.perfect(outcomes.length)}</span>
+          </li>
+        )}
       </ul>
       <div className={styles.doneButtons}>
         <Link href="/" className={`${styles.btn} ${styles.chalk}`}>
