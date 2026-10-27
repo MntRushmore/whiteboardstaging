@@ -40,8 +40,8 @@ export function setValue(stack: Stack, cellId: string, value: string, depth = st
 
 export interface CarriedBack {
   stack: Stack;
-  /** the parent's cell that took the answer */
-  cellId: string;
+  /** the parent's cell that took the answer (its lowest place when it took several digits); null: the answer row took it */
+  cellId: string | null;
   place: number;
   value: string;
   /** the smaller problem as solved, for the page to keep showing (`1 + 2 + 6 = 9`) */
@@ -59,11 +59,21 @@ export function carryBack(stack: Stack): CarriedBack | null {
   const result = check(t.item, { values: t.values, answer: "" });
   if (!result.ok) return null;
   const value = result.answer;
-  const { cellId, place } = t.step.target;
+  const { cellId, place, spill, also, answer } = t.step.target;
   const rest = stack.slice(0, -1);
+  let next: Stack = rest;
+  if (!answer) {
+    if (spill && value.length > 1) {
+      // `24` into the tens and hundreds: one digit a cell, lowest place first
+      [...value].reverse().forEach((d, k) => {
+        if (spill[k]) next = setValue(next, spill[k], d, next.length - 1);
+      });
+    } else next = setValue(next, cellId, value, next.length - 1);
+  }
+  for (const [id, v] of Object.entries(also ?? {})) next = setValue(next, id, v, next.length - 1);
   return {
-    stack: setValue(rest, cellId, value, rest.length - 1),
-    cellId,
+    stack: next,
+    cellId: answer ? null : cellId,
     place,
     value,
     solved: { step: t.step, values: t.values },

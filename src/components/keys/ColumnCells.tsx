@@ -2,7 +2,8 @@
 
 import type { KeyboardEvent } from "react";
 import type { Mark } from "@/lib/keys/check";
-import { placeName, type Cell, type ColumnsLayout, type MathItem, type Values } from "@/lib/keys/item";
+import { cellLabel } from "@/lib/keys/a11y";
+import { placeName, type ColumnsLayout, type MathItem, type Values } from "@/lib/keys/item";
 import type { Pointer } from "@/lib/keys/session";
 import styles from "./keys.module.css";
 import { Ring, Tick } from "./TutorMarks";
@@ -21,21 +22,10 @@ export interface ColumnCellsProps {
   onInput: (cellId: string, value: string) => void;
 }
 
-function cellLabel(c: Cell, ringed: boolean): string {
-  const where =
-    c.role === "carry"
-      ? `Carry into the ${placeName(c.place)}`
-      : c.role === "blank"
-        ? `Missing ${placeName(c.place)} digit`
-        : c.spare
-          ? "Spare box, left of the answer"
-          : `Answer, ${placeName(c.place)} digit`;
-  return ringed ? `${where}. Look again.` : where;
-}
-
 /**
- * A sum set out in columns (docs/KEYS.md): place headers, the carry row (tomato), the tutor's digits
- * in cobalt, the kid's cells in ink, filled right to left. Keys are the work surface's
+ * A sum, a difference or a product set out in columns (docs/KEYS.md): place headers, the carry or
+ * regroup row (tomato), the tutor's digits in cobalt, a product's partial rows, the kid's cells in
+ * ink, filled right to left. Keys are the work surface's
  * (`TypedLines`); this draws.
  */
 export function ColumnCells({ item, values, marks, ringed, readOnly, carried, point, onKey, onInput }: ColumnCellsProps) {
@@ -49,7 +39,7 @@ export function ColumnCells({ item, values, marks, ringed, readOnly, carried, po
         <span className={styles.opSlot} />
         {places.map((p) => (
           <span key={p} className={`${styles.slot} ${styles.placeHead}`} data-pointed={point?.place === p ? "" : undefined}>
-            {spare.has(p) ? "" : placeName(p)}
+            {spare.has(p) ? "" : layout.places - spare.size >= 3 ? placeInitial(p) : placeName(p)}
           </span>
         ))}
         <span className={styles.markSlot} />
@@ -83,7 +73,7 @@ export function ColumnCells({ item, values, marks, ringed, readOnly, carried, po
                       spellCheck={false}
                       maxLength={1}
                       readOnly={readOnly}
-                      aria-label={cellLabel(c, ringed.includes(c.id))}
+                      aria-label={cellLabel(item, c, values[c.id] ?? "", ringed.includes(c.id))}
                       onKeyDown={(e) => onKey(c.id, e)}
                       onChange={(e) => {
                         // typing is handled on keydown; this catches paste, IME and on-screen keyboards
@@ -96,7 +86,7 @@ export function ColumnCells({ item, values, marks, ringed, readOnly, carried, po
                 )}
               </span>
             ))}
-            <span className={styles.markSlot}>{marks[line.id] === "tick" && <Tick label={`${line.id === "result" ? "The answer" : "This line"} is right`} />}</span>
+            <span className={styles.markSlot}>{marks[line.id] === "tick" && <Tick label={`${line.id === "result" ? "The answer" : line.role === "partial" ? "This row" : "This line"} is right`} />}</span>
           </div>
           {line.op && <div className={styles.rule} style={{ width: layout.places * 64 - 8 }} aria-hidden="true" />}
         </div>
@@ -114,6 +104,11 @@ export function ColumnCells({ item, values, marks, ringed, readOnly, carried, po
       )}
     </div>
   );
+}
+
+/** Three columns or more: the headers a worksheet uses (H T O), so they never run into each other. */
+function placeInitial(place: number): string {
+  return ["O", "T", "H", "Th"][place] ?? placeName(place);
 }
 
 /** The tutor's pointer under a column (Help me's nudge): a short cobalt arrow, drawn in one stroke. */

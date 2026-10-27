@@ -217,7 +217,7 @@ on its own, patched by the carry back), `keys-12-keys-card.png` (More: the keys)
 |---|---|
 | 1. A slice | done (`feat/keys-page`) |
 | 2. The tutor and the record | done (`feat/keys-full`) |
-| 3. Breadth | see below |
+| 3. Breadth | done (`feat/keys-full`) |
 | 4. The habit | see below |
 
 ## Phase 2: the tutor's voice and the record
@@ -297,6 +297,100 @@ each new tutor line, "Look again." and "You got it." are said through `/api/live
 browser's own voice when the route cannot), with Keys' own speaker (`src/components/keys/tutorVoice.ts`,
 not the board's read-aloud module, which listens to the tldraw board). The words are always on the
 page: the captions are the tutor's lines themselves.
+
+## Phase 3: breadth
+
+Every family is pure TypeScript in `src/lib/keys/families/` (the item, its generator, its words and
+its smaller problems) with its bug rules in `src/lib/keys/bugs/`. An item that is not adding keeps its
+own numbers in `item.math`; the page, the check, the ladder and the record work the same for all.
+
+### The problems (`generate.ts`, `KEYS_SKILLS`)
+
+| skill | layout | problems |
+|---|---|---|
+| `add_within_100` | columns | `47 + 38`, `26 + ?6 = 92` (Phase 1) |
+| `subtract_within_100` | columns + regroup row | `53 − 27` |
+| `add_subtract_within_1000` | columns + regroup row | `642 − 285`, `403 − 128` (across a zero) |
+| `times_tables` | columns | `6 × 7` |
+| `multiply_by_tens` | columns | `40 × 6`, `300 × 4` |
+| `multiply_multi_digit` | columns, partial rows | `46 × 7`, `34 × 26` (`204`, `680` with its placeholder 0, `884`) |
+| `equivalent_fractions` | fraction | `3/4 = ?/12` |
+| `add_fractions_like` | fraction | `2/7 + 3/7` |
+| `add_fractions_unlike` | fraction | `3/4 + 1/6` |
+| `one_step_equations` | lines | `x + 7 = 15`, `x − 4 = 9`, `5 + x = 12`, `3x = 12` |
+
+- **Taking away** has a regroup row over the top number: at each place that can lend, the top digit as
+  it is after regrouping (the 5 tens of 52 become 4; the 0 tens of 403 become 9). Optional, like carries.
+- **A product by two digits** has two partial rows; Enter goes from one row to the next, then to the
+  answer. Each row gets its own tick.
+- **Fractions** are stacked. The kid's fraction is two boxes; `/` goes from the top to the bottom, ↑ ↓
+  move between them, Backspace in an empty bottom goes back up. The answer row stacks the same way.
+  A sum takes any equal fraction (`22/24` for `11/12`); when it is not equal, the box that broke is
+  ringed (`5/14` for `2/7 + 3/7` rings the 14).
+- **Equations** have no cells: the kid works on the typed lines and writes `x = 8` (or `8`). A typed
+  step is right when it is true for the answer (`x + 7 − 7 = 15 − 7`), so every true step gets a tick.
+- Generators draw numbers the bug rules tell apart (a taking-away problem never has ones 5 apart:
+  "smaller from larger" and "did not reduce" would give the same answer).
+- `?p=` takes all of them: `/keys?p=53-27|403-128|6x7|34x26|2/7+3/7|3/4=?/12|x+7=15`.
+
+### The bugs (27)
+
+| id | what the kid did | example | kind |
+|---|---|---|---|
+| `add_forgot_carry` | dropped the carried 1 | `47 + 38` → 75 | arithmetic |
+| `add_carry_twice` | added the 1 twice | → 95 | arithmetic |
+| `add_whole_column_sum` | wrote each column's whole sum | → 715 | concept |
+| `add_swapped_places` | swapped tens and ones | → 58 | concept |
+| `sub_smaller_from_larger` | took the smaller digit from the larger | `53 − 27` → 34 | concept |
+| `sub_forgot_borrow` | wrote 0 where the top was smaller | → 30 | concept |
+| `sub_borrow_no_reduce` | regrouped but did not take 1 from the next place | → 36 | arithmetic |
+| `sub_borrow_across_zero` | the 0 became 9, the hundreds kept their 1 | `403 − 128` → 375 | arithmetic |
+| `sub_added_instead` | added | `52 − 27` → 79 | concept |
+| `mul_added_instead` | added | `6 × 7` → 13 | concept |
+| `mul_one_group_short` | one group too few | → 36 | arithmetic |
+| `mul_one_group_over` | one group too many | → 48 | arithmetic |
+| `mul_tens_dropped_zero` | left out the zeros | `40 × 6` → 24 | concept |
+| `mul_tens_extra_zero` | one zero too many | → 2400 | concept |
+| `mul_forgot_carry` | forgot the carried tens | `46 × 7` → 282 | arithmetic |
+| `mul_carry_added_first` | added the carry before multiplying | → 562 | arithmetic |
+| `mul_no_placeholder` | no placeholder zero | `34 × 26` → 272 | concept |
+| `mul_ones_only` | multiplied by the ones digit only | → 204 | concept |
+| `mul_column_by_column` | tens by tens, ones by ones | → 624 | concept |
+| `frac_added_denominators` | added the bottoms too | `2/7 + 3/7` → 5/14 | fractions |
+| `frac_not_scaled_numerator` | same bottoms, tops left as they were | `3/4 + 1/6` → 4/12 | fractions |
+| `frac_multiplied_denominators` | multiplied the bottoms, added the tops | → 4/24 | fractions |
+| `eqv_added_same` | added to the top what was added to the bottom | `3/4 = ?/12` → 11 | fractions |
+| `eqv_copied_numerator` | kept the top | `2/5 = ?/15` → 2 | fractions |
+| `eqv_wrote_factor` | wrote how many times bigger | → 3 | fractions |
+| `eq_same_operation` | did the same operation | `x + 7 = 15` → 22 | inverse_operation |
+| `eq_sign_error` | took the bigger from the smaller | → −8 | sign |
+| `eq_subtracted_coefficient` | took the number away instead of dividing | `3x = 12` → 9 | inverse_operation |
+
+`__tests__/breadth.test.ts` generates each wrong answer and checks it is matched, checks that every
+rule's answer on every generated problem names a rule, and that the right answer matches none.
+Fractions match in any equal form (`1/3` is `4/12`).
+
+### Smaller problems and manipulatives (`families/shrinks.ts`, `Manipulatives.tsx`)
+
+Every smaller problem is one line with a box; its answer goes back up into the cell (or cells: `24`
+into the tens and hundreds), the answer row (an equation) or the fraction (its bottom written with it).
+
+| bug | the smaller problem | manipulative |
+|---|---|---|
+| a borrow (smaller from larger, wrote 0) | `13 − 7 = ?` "1 ten is 10 ones." | base-ten cubes (the ten as 10 ones in tomato) |
+| did not reduce | `5 − 1 − 2 = ?` "The tens gave 1 to the ones." | base-ten rods |
+| across a zero | `4 − 1 − 1 = ?` "The 0 tens have nothing to give…" | base-ten |
+| a times-table slip | `30 + 12 = ?` "6 × 7 is 6 × 5 and 6 × 2." | area model, split at 5 |
+| the zeros of a ten | `4 × 6 = ?` "40 is 4 tens." | area model |
+| the carry | `4 × 7 + 4 = ?` "You carried 4." | none |
+| the placeholder | `34 × 20 = ?` into the second row | none |
+| fraction bottoms | `9 + 2 = ?` "3/4 is 9/12. 1/6 is 2/12." | fraction bars (twelfths) |
+| an equivalent fraction | `3 × 3 = ?` "4 parts became 12" | fraction bars (fourths above twelfths) |
+| an equation | `15 − 7 = ?` "Undo + 7" (`12 ÷ 3 = ?` for `3x`) | a number line from 15 |
+
+All of them are driven by the keyboard: number keys type the box; Space adds one (a cube, a rod, a
+shaded part, a row of the area model); Backspace takes one away (a typed digit, without a
+manipulative); ← → move the number line's marker; Enter checks the box; ↑ ↓ leave it.
 
 ### Not yet
 

@@ -3,9 +3,12 @@
  * tutor's cells are `given`; the kid fills `digit`, `blank` and `carry` cells. Pure data, no DOM, so
  * the same engine can run on the iPad later.
  *
- * Phase 1 builds two layouts: `columns` (a sum set out in place-value columns, with a carry row) and
- * `equation` (one line, for the smaller problem the tutor writes under a slip). Fractions and free
- * lines are Phase 3.
+ * Four layouts: `columns` (a sum, a difference or a product set out in place-value columns, with a
+ * carry or regroup row, and a product's partial rows), `equation` (one line with a box: a fact, and
+ * the smaller problem the tutor writes under a slip), `fraction` (fractions stacked, the kid's
+ * numerator over denominator) and `lines` (an equation solved on typed lines, Phase 3).
+ *
+ * Phase 1 built adding; the other kinds keep their own numbers in `math` (`families/`).
  */
 import type { SkillId } from "@/lib/learning/contracts";
 
@@ -14,6 +17,8 @@ export type CellRole = "digit" | "carry" | "blank" | "given";
 export interface Cell {
   /** unique in its item: `c1` carry into the tens, `a0` the first addend's ones, `r1` the answer's tens, `x` a blank */
   id: string;
+  /** how many characters it holds (a fraction's numerator, a box like `12`); 1 when absent */
+  width?: number;
   role: CellRole;
   /** what a right kid cell holds; a carry cell's due carry (absent when none is due) */
   expect?: string;
@@ -25,13 +30,17 @@ export interface Cell {
   spare?: boolean;
 }
 
-export type LineRole = "carry" | "operand" | "result";
+/** `partial`: a product's partial row (`34 × 6`, `34 × 20`); `carry` is a carry or regroup row */
+export type LineRole = "carry" | "operand" | "partial" | "result";
+
+/** The operation signs a page writes. */
+export type Op = "+" | "−" | "×" | "÷";
 
 export interface ColumnLine {
   id: string;
   role: LineRole;
-  /** the sign written before the line: `+` on the last addend */
-  op?: "+";
+  /** the sign written before the line: `+` on the last addend, `−` on what is taken away, `×` on the multiplier */
+  op?: Op;
   /** one slot per place, highest place first; null where nothing is written */
   cells: (Cell | null)[];
 }
@@ -54,9 +63,43 @@ export interface EquationLayout {
   line: EquationLine;
 }
 
-export type Layout = ColumnsLayout | EquationLayout;
+/** A fraction on the page: the tutor's (both given) or the kid's (cells, `width` 3). */
+export interface FracPart {
+  id: string;
+  num: Cell;
+  den: Cell;
+}
 
-export type ItemKind = "sum" | "missing_addend" | "fact";
+export interface FractionLayout {
+  kind: "fraction";
+  /** fractions and signs, in reading order: `2/7 + 3/7 = ?/?`, `3/4 = ?/12` */
+  parts: (FracPart | string)[];
+}
+
+/** An equation solved on typed lines: no cells, the kid's steps and the answer row are the work. */
+export interface LinesLayout {
+  kind: "lines";
+}
+
+export type Layout = ColumnsLayout | EquationLayout | FractionLayout | LinesLayout;
+
+export type ItemKind = "sum" | "missing_addend" | "fact" | "difference" | "product" | "fraction_sum" | "equivalent" | "equation";
+
+export interface Frac {
+  n: number;
+  d: number;
+}
+
+/** The numbers of a problem that is not adding (Phase 3), by family. */
+export type ItemMath =
+  | { kind: "subtract"; top: number; bottom: number }
+  | { kind: "multiply"; a: number; b: number }
+  | { kind: "fractions"; op: "+"; left: Frac; right: Frac }
+  | { kind: "equivalent"; from: Frac; to: number }
+  | { kind: "equation"; form: EquationForm; a: number; b: number; letter: string; x: number };
+
+/** `x + a = b`, `x − a = b`, `a + x = b`, `ax = b` (a times x). */
+export type EquationForm = "x+a" | "x-a" | "a+x" | "ax";
 
 export interface MathItem {
   /** stable: the same problem has the same id */
@@ -72,9 +115,11 @@ export interface MathItem {
   total: number;
   /** a missing digit: which addend, at which place, and that addend as written (`?6`) */
   hidden?: { addend: number; place: number; template: string };
-  /** the answer row's right answer */
+  /** the answer row's right answer: a number, a fraction `5/7`, the unknown's value */
   answer: string;
   layout: Layout;
+  /** a problem that is not adding: its own numbers (`addends` and `total` are its operands and result) */
+  math?: ItemMath;
 }
 
 /** Cell values the kid typed, by cell id. */
@@ -274,8 +319,17 @@ export function itemFromText(text: string): MathItem | null {
 
 /** Every cell, in page order (top line first, left to right). */
 export function allCells(item: MathItem): Cell[] {
-  if (item.layout.kind === "equation") return item.layout.line.parts.filter((p): p is Cell => typeof p !== "string");
-  return item.layout.lines.flatMap((l) => l.cells.filter((c): c is Cell => c !== null));
+  const layout = item.layout;
+  switch (layout.kind) {
+    case "equation":
+      return layout.line.parts.filter((p): p is Cell => typeof p !== "string");
+    case "fraction":
+      return layout.parts.flatMap((p) => (typeof p === "string" ? [] : [p.num, p.den]));
+    case "lines":
+      return [];
+    case "columns":
+      return layout.lines.flatMap((l) => l.cells.filter((c): c is Cell => c !== null));
+  }
 }
 
 /** The cells the kid types in. */
@@ -289,17 +343,46 @@ export function cellById(item: MathItem, id: string): Cell | undefined {
 
 /** The lines of the item, in page order. */
 export function lineIds(item: MathItem): string[] {
-  return item.layout.kind === "equation" ? [item.layout.line.id] : item.layout.lines.map((l) => l.id);
+  const layout = item.layout;
+  switch (layout.kind) {
+    case "equation":
+      return [layout.line.id];
+    case "fraction":
+      return [FRACTION_LINE];
+    case "lines":
+      return [];
+    case "columns":
+      return layout.lines.map((l) => l.id);
+  }
 }
+
+/** A fraction problem is one line on the page. */
+export const FRACTION_LINE = "fractions";
 
 export function lineOfCell(item: MathItem, cellId: string): string | null {
-  if (item.layout.kind === "equation") return item.layout.line.parts.some((p) => typeof p !== "string" && p.id === cellId) ? item.layout.line.id : null;
-  return item.layout.lines.find((l) => l.cells.some((c) => c?.id === cellId))?.id ?? null;
+  const layout = item.layout;
+  switch (layout.kind) {
+    case "equation":
+      return layout.line.parts.some((p) => typeof p !== "string" && p.id === cellId) ? layout.line.id : null;
+    case "fraction":
+      return allCells(item).some((c) => c.id === cellId) ? FRACTION_LINE : null;
+    case "lines":
+      return null;
+    case "columns":
+      return layout.lines.find((l) => l.cells.some((c) => c?.id === cellId))?.id ?? null;
+  }
 }
 
-/** The kid cells that hold the answer: the result row of a sum, the box of a missing digit. */
+/** The kid cells that hold the answer: the result row of a sum (a difference, a product), the box of a missing digit, a fraction's. */
 export function answerCells(item: MathItem): Cell[] {
-  if (item.kind === "sum") return kidCells(item).filter((c) => c.role === "digit");
+  if (item.layout.kind === "columns" && item.kind !== "missing_addend") {
+    const result = item.layout.lines.find((l) => l.role === "result");
+    return (result?.cells ?? []).filter((c): c is Cell => c !== null && c.role !== "given");
+  }
+  if (item.layout.kind === "fraction") {
+    const kid = item.layout.parts.filter((p): p is FracPart => typeof p !== "string").find((p) => p.num.role !== "given" || p.den.role !== "given");
+    return kid ? [kid.num, kid.den].filter((c) => c.role !== "given") : [];
+  }
   return kidCells(item).filter((c) => c.role === "blank");
 }
 
@@ -315,9 +398,39 @@ export function answerLine(item: MathItem): string | null {
  */
 export function answerFromWork(item: MathItem, values: Values): string | null {
   const cells = answerCells(item);
-  if (cells.some((c) => !c.spare && !(values[c.id] ?? "").trim())) return null;
+  if (!cells.length || cells.some((c) => !c.spare && !(values[c.id] ?? "").trim())) return null;
+  if (item.kind === "fraction_sum") return `${normalizeNumber(values[cells[0].id] ?? "")}/${normalizeNumber(values[cells[1]?.id] ?? "")}`;
   const text = cells.map((c) => (values[c.id] ?? "").trim()).join("");
   return text ? normalizeNumber(text) : null;
+}
+
+// ---------------------------------------------------------------- answers
+
+/** A fraction as typed (`5/7`, `5 / 7`), or null. */
+export function parseFrac(raw: string): Frac | null {
+  const m = /^\s*(-?\d+)\s*\/\s*(\d+)\s*$/.exec(raw);
+  if (!m) return null;
+  const f = { n: Number(m[1]), d: Number(m[2]) };
+  return f.d > 0 ? f : null;
+}
+
+export function gcd(a: number, b: number): number {
+  a = Math.abs(a);
+  b = Math.abs(b);
+  while (b) [a, b] = [b, a % b];
+  return a || 1;
+}
+
+/** Is the kid's answer (already canonical) the item's? A fraction sum takes any equal fraction (`6/8` for `3/4`). */
+export function answersEqual(item: MathItem, kid: string): boolean {
+  if (!kid) return false;
+  if (kid === item.answer) return true;
+  if (item.kind === "fraction_sum") {
+    const a = parseFrac(kid);
+    const b = parseFrac(item.answer);
+    return a !== null && b !== null && a.n * b.d === b.n * a.d;
+  }
+  return false;
 }
 
 /**
@@ -325,6 +438,20 @@ export function answerFromWork(item: MathItem, values: Values): string | null {
  * counts too: `66` for `?6` reads as `6`.
  */
 export function canonicalAnswer(item: MathItem, raw: string): string {
+  if (item.math?.kind === "equation") {
+    const t = raw.replace(/\s+/g, "").replace(/[−–—]/g, "-");
+    const m = new RegExp(`^(?:${item.math.letter}=)?(-?\\d+)$`, "i").exec(t);
+    return m ? String(Number(m[1])) : t;
+  }
+  if (item.kind === "fraction_sum") {
+    const f = parseFrac(raw);
+    return f ? `${f.n}/${f.d}` : raw.replace(/\s+/g, "");
+  }
+  if (item.kind === "equivalent" && item.math?.kind === "equivalent") {
+    // `9/12` for `?/12` reads as 9
+    const f = parseFrac(raw);
+    if (f && f.d === item.math.to) return String(f.n);
+  }
   const s = normalizeNumber(raw);
   const hidden = item.hidden;
   if (!hidden || s.length !== hidden.template.length || s.length < 2) return s;
@@ -334,7 +461,10 @@ export function canonicalAnswer(item: MathItem, raw: string): string {
   return s[hidden.template.indexOf("?")];
 }
 
-/** The answer with the digit at `place` replaced (a carry back into an answer typed on its own). */
+/**
+ * The answer with the digits from `place` up replaced (a carry back into an answer typed on its own):
+ * one digit (`8` into the tens of `75`), or more (`24` into the tens and hundreds of `2400`).
+ */
 export function patchAnswer(item: MathItem, answer: string, place: number, digit: string): string {
   const s = normalizeNumber(answer);
   if (!s) return s;
@@ -342,7 +472,46 @@ export function patchAnswer(item: MathItem, answer: string, place: number, digit
     const hidden = item.hidden!;
     return s.length === hidden.template.length && s.length > 1 ? hidden.template.replace("?", digit) : digit;
   }
-  const i = s.length - 1 - place;
-  if (i < 0) return s;
-  return s.slice(0, i) + digit + s.slice(i + 1);
+  if (!/^\d+$/.test(s) || !/^\d+$/.test(digit)) return s;
+  let out = s;
+  for (let k = 0; k < digit.length; k++) {
+    const p = place + (digit.length - 1 - k);
+    while (out.length - 1 < p) out = `0${out}`;
+    const i = out.length - 1 - p;
+    out = out.slice(0, i) + digit[k] + out.slice(i + 1);
+  }
+  return normalizeNumber(out);
+}
+
+// ---------------------------------------------------------------- the smaller problem's line
+
+const SIGN_WORDS: Readonly<Record<string, string>> = { "+": "plus", "−": "minus", "×": "times", "÷": "divided by", "=": "equals" };
+
+/**
+ * One line with one box (Phase 3's smaller problems): `12 − 7 = ?`, `30 + 12 = ?`, `4 × 7 + 4 = ?`.
+ * Numbers are the tutor's, `?` is the box (as wide as its answer), signs are written between.
+ */
+export function lineFact(tokens: readonly (number | "?" | Op | "=")[], answer: number, skill: SkillId): MathItem {
+  if (tokens.filter((t) => t === "?").length !== 1) throw new Error("lineFact: exactly one box");
+  const parts: (Cell | string)[] = tokens.map((t, i) =>
+    t === "?"
+      ? { id: "x", role: "blank", place: i, expect: String(answer), ...(String(answer).length > 1 ? { width: String(answer).length } : {}) }
+      : typeof t === "number"
+        ? { id: `q${i}`, role: "given", place: i, value: String(t) }
+        : t,
+  );
+  const text = tokens.map(String).join(" ");
+  const words = tokens.map((t) => (t === "?" ? "blank" : typeof t === "number" ? String(t) : SIGN_WORDS[t])).join(" ");
+  const numbers = tokens.filter((t): t is number => typeof t === "number");
+  return {
+    id: `fact:${text.replace(/\s+/g, "")}`,
+    skill,
+    kind: "fact",
+    text,
+    words,
+    addends: numbers,
+    total: answer,
+    answer: String(answer),
+    layout: { kind: "equation", line: { id: "fact", parts } },
+  };
 }

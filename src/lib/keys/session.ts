@@ -324,7 +324,20 @@ export function problemReducer(s: ProblemState, a: ProblemAction): ProblemState 
       if (!back) return { ...s, subMark: "ring", notice: null };
       const values = root(back.stack).values;
       const fromWork = answerFromWork(s.item, values);
-      const answer = !s.answer.trim() ? s.answer : s.answerFromWork ? (fromWork ?? "") : patchAnswer(s.item, s.answer, back.place, back.value);
+      // where the answer row goes: the value itself (an equation's), else it follows the work (an
+      // answer filled from it, a fraction's), else the typed answer patched at the place that came back
+      const intoAnswer = answerCells(s.item).some((c) => c.id === back.cellId);
+      const answer =
+        back.cellId === null
+          ? back.value
+          : !s.answer.trim()
+            ? s.answer
+            : s.answerFromWork || fromWork
+              ? (fromWork ?? "")
+              : intoAnswer
+                ? patchAnswer(s.item, s.answer, back.place, back.value)
+                : s.answer;
+      const carried = { cellId: back.cellId ?? ANSWER_LINE, value: back.value };
       const next: ProblemState = {
         ...s,
         stack: back.stack,
@@ -332,7 +345,7 @@ export function problemReducer(s: ProblemState, a: ProblemAction): ProblemState 
         help: null,
         subMark: null,
         solvedSteps: [...s.solvedSteps, { ...back.solved, value: back.value }],
-        carried: { cellId: back.cellId, value: back.value },
+        carried,
       };
       const rechecked = runCheck(next);
       return { ...rechecked, carried: next.carried };

@@ -62,7 +62,8 @@ describe("the journey: 26 + ?6 = 92", () => {
     expect(open.step.item.text).toBe("1 + 2 + ? = 9");
     expect(KEYS_COPY.lead[open.step.lead]).toBe("The 1 you carried is a ten.");
     expect(open.step.under).toBe("b");
-    expect(open.step.manipulative?.groups.map((g) => g.count)).toEqual([1, 2, 6]);
+    const blocks = open.step.manipulative;
+    expect(blocks?.kind === "base_ten" ? blocks.groups.map((g) => g.count) : null).toEqual([1, 2, 6]);
 
     // A slip in the smaller problem gets its own Look again.
     s = run(s, { type: "sub_cell", id: "x", value: "7" }, { type: "sub_check" });

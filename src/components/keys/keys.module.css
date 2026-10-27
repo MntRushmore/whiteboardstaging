@@ -447,6 +447,14 @@
   display: flex;
   align-items: center;
 }
+.stepRing {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  max-width: 100%;
+  pointer-events: none;
+}
 .stepInput {
   width: 100%;
   height: 48px;
@@ -885,6 +893,85 @@
 
 .perfectSticker {
   color: var(--sunny) !important;
+}
+
+/* ---------------------------------------------------------------- Phase 3: fractions, equations, manipulatives */
+
+.fractions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 0;
+}
+.frac {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}
+.fracBar {
+  align-self: stretch;
+  height: 3px;
+  min-width: 28px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.fractions .fracBar {
+  background: var(--cobalt);
+}
+.fracGiven {
+  font-family: var(--hand);
+  font-weight: 700;
+  font-size: 2.25rem;
+  line-height: 1;
+  color: var(--cobalt);
+}
+.fracBig {
+  font-size: 0.8em;
+  line-height: 1;
+  margin: 0 0.1em;
+}
+.fracLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15em;
+}
+.fracCellWrap {
+  position: relative;
+}
+.fracCell {
+  width: 72px;
+}
+.answerFracCell {
+  width: 3.4ch;
+  height: 40px;
+  text-align: center;
+  font-size: 1.5rem;
+}
+.answerFracCell + .fracBar,
+.frac .answerFracCell ~ .fracBar {
+  background: var(--ink);
+}
+.stepsOnly {
+  grid-column: 1 / -1;
+  max-width: 640px;
+}
+.cubes {
+  flex-wrap: wrap;
+  max-width: 96px;
+  align-content: flex-end;
+}
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 @media (max-width: 960px) {

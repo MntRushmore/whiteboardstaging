@@ -4,7 +4,9 @@
  * word "wrong".
  */
 import type { BugId } from "./bugs";
+import { nudgeFamily, workedFamily } from "./families/words";
 import { carryInto, cellById, digitAt, placeName, type MathItem } from "./item";
+import type { SubStep } from "./shrink";
 
 export const KEYS_COPY = {
   title: "Today's practice",
@@ -37,6 +39,17 @@ export const KEYS_COPY = {
   /** the smaller problem's lead line, by copy key */
   lead: {
     carry_is_ten: "The 1 you carried is a ten.",
+    regroup: "Regroup: 1 from the next place is 10 here.",
+    regroup_lent: "That place gave 1 away.",
+    regroup_zero: "The 0 has nothing to give, so the next place gives 1.",
+    times_split: "Split it into two easy parts.",
+    times_tens: "Multiply the digits, then count the tens.",
+    times_carry: "Multiply first. Then add what you carried.",
+    times_placeholder: "This digit is tens. Write a 0 first.",
+    fraction_same: "The bottom stays the same. Add the tops.",
+    fraction_common: "Make the bottoms the same first.",
+    fraction_split: "Each part splits into smaller parts.",
+    undo: "Undo it to find the number.",
   },
   carriedBack: (value: string) => `${value} goes back up.`,
   blocksHint: "Space adds a ten. Backspace takes one away. Enter checks it.",
@@ -55,8 +68,15 @@ export const KEYS_COPY = {
 
 export type LeadKey = keyof typeof KEYS_COPY.lead;
 
+/** The smaller problem's lead as the tutor writes it: with this problem's numbers when it has some. */
+export function leadOf(step: Pick<SubStep, "lead" | "leadText">): string {
+  return step.leadText ?? KEYS_COPY.lead[step.lead];
+}
+
 /** The tutor's one-line nudge under the work: for a named bug, else a general first step. */
 export function nudgeFor(item: MathItem, bug: BugId | null): string {
+  const family = nudgeFamily(item, bug);
+  if (family) return family;
   const ones = item.addends.map((n) => digitAt(n, 0));
   const onesSum = ones.reduce((s, n) => s + n, 0);
   switch (bug) {
@@ -83,6 +103,8 @@ export function nudgeFor(item: MathItem, bug: BugId | null): string {
  * with what goes where. The kid still types it.
  */
 export function workedFor(item: MathItem, bug: BugId | null, cellId?: string): string {
+  const family = workedFamily(item, bug, cellId);
+  if (family) return family;
   const cell = cellId ? cellById(item, cellId) : undefined;
   if (item.kind === "missing_addend" && item.hidden) {
     const p = item.hidden.place;

@@ -3,16 +3,19 @@
 import { useCallback, useEffect, useRef, type KeyboardEvent } from "react";
 import { ANSWER_LINE, stepLine } from "@/lib/keys/check";
 import { KEYS_COPY } from "@/lib/keys/copy";
-import { cellById, lineOfCell, placeName } from "@/lib/keys/item";
-import { afterDigit, carryFor, firstCell, gridMove, intentFor } from "@/lib/keys/keymap";
+import { lookAgainWhere } from "@/lib/keys/a11y";
+import { cellById, lineOfCell, type MathItem } from "@/lib/keys/item";
+import { afterDigit, carryFor, firstCell, gridMove, intentFor, nextRowStart } from "@/lib/keys/keymap";
+import { boxMax, boxStart, boxStep } from "@/lib/keys/shrink";
 import { sayInputFor } from "@/lib/keys/say";
 import { openStep, outcomeOf, rootValues, type ProblemAction, type ProblemState } from "@/lib/keys/session";
 import { ColumnCells } from "./ColumnCells";
+import { FractionCells, FractionText } from "./FractionCells";
 import { askHint, speakLine } from "./tutorVoice";
 import { useSaid } from "./useKeysTutor";
 import styles from "./keys.module.css";
 import { Burst, Eye, Ring, Tick } from "./TutorMarks";
-import { TutorWriting } from "./TutorWriting";
+import { boxWidth, TutorWriting } from "./TutorWriting";
 
 export interface TypedLinesProps {
   problem: ProblemState;
@@ -26,8 +29,18 @@ export interface TypedLinesProps {
   grade: number | null;
 }
 
-/** The problem as the tutor writes it, a `?` drawn as an empty box. */
-function ProblemText({ text, words }: { text: string; words: string }) {
+/** The problem as the tutor writes it, a `?` drawn as an empty box, fractions stacked. */
+function ProblemText({ item }: { item: MathItem }) {
+  const { text, words } = item;
+  if (item.layout.kind === "fraction") {
+    return (
+      <h2 className={styles.problem} aria-label={words}>
+        <span aria-hidden="true" className={styles.fracLine}>
+          <FractionText text={text} />
+        </span>
+      </h2>
+    );
+  }
   return (
     <h2 className={styles.problem} aria-label={words}>
       {text.split("?").map((part, i) => (
@@ -37,6 +50,62 @@ function ProblemText({ text, words }: { text: string; words: string }) {
         </span>
       ))}
     </h2>
+  );
+}
+
+/** What the answer row keeps of what is typed: digits; a fraction's `/`; an equation's letter, `=` and minus. */
+function answerText(item: MathItem, raw: string): string {
+  if (item.math?.kind === "equation") {
+    const L = item.math.letter;
+    return raw.replace(new RegExp(`[^\\d\\s=${L}${L.toUpperCase()}\\-−]`, "g"), "").slice(0, 10);
+  }
+  if (item.layout.kind === "fraction") return raw.replace(/[^\d\s/]/g, "").slice(0, 9);
+  return raw.replace(/[^\d\s]/g, "").slice(0, 7);
+}
+
+/**
+ * A fraction answer, stacked (docs/KEYS.md, "Fraction input"): the top, `/` goes down to the bottom,
+ * ↑ ↓ move between them, Backspace in an empty bottom goes back up. The row's value is `top/bottom`.
+ */
+function FractionAnswer({
+  value,
+  readOnly,
+  onKey,
+  onChange,
+}: {
+  value: string;
+  readOnly: boolean;
+  onKey: (e: KeyboardEvent<HTMLInputElement>, part: "num" | "den") => void;
+  onChange: (v: string) => void;
+}) {
+  const [num = "", den = ""] = value.split("/");
+  const join = (n: string, d: string) => (n || d ? `${n}/${d}` : "");
+  const box = (part: "num" | "den") => (
+    <input
+      id={part === "num" ? "keys-answer" : undefined}
+      data-slot={part === "num" ? ANSWER_LINE : `${ANSWER_LINE}:den`}
+      className={`${styles.answerInput} ${styles.answerFracCell}`}
+      value={part === "num" ? num : den}
+      inputMode="numeric"
+      autoComplete="off"
+      spellCheck={false}
+      readOnly={readOnly}
+      maxLength={3}
+      aria-label={part === "num" ? "Answer, top of the fraction" : "Answer, bottom of the fraction"}
+      aria-describedby="keys-feedback"
+      onKeyDown={(e) => onKey(e, part)}
+      onChange={(e) => {
+        const v = e.target.value.replace(/\D/g, "").slice(0, 3);
+        onChange(part === "num" ? join(v, den) : join(num, v));
+      }}
+    />
+  );
+  return (
+    <span className={styles.frac}>
+      {box("num")}
+      <span className={styles.fracBar} aria-hidden="true" />
+      {box("den")}
+    </span>
   );
 }
 
@@ -51,10 +120,7 @@ function announce(p: ProblemState, said: string | null): string {
     return said === null ? "" : `${ring}${said} ${open.step.item.words}.`;
   }
   if (p.help?.kind === "nudge") return said ?? p.help.text;
-  if (p.phase === "look_again") {
-    const cell = p.ringed.length ? cellById(p.item, p.ringed[0]) : undefined;
-    return cell ? `${KEYS_COPY.lookAgain} The ${placeName(cell.place)}.` : KEYS_COPY.lookAgain;
-  }
+  if (p.phase === "look_again") return lookAgainWhere(p.item, p.ringed);
   return "";
 }
 
@@ -110,7 +176,8 @@ export function TypedLines({ problem, dispatch, last, onNext, onNowYouTry, grade
     const isOpen = open !== null;
     if (was.item !== item.id) {
       const first = firstCell(item);
-      focus(first ? `cell:${first}` : ANSWER_LINE);
+      // an equation starts on its first line
+      focus(first ? `cell:${first}` : item.layout.kind === "lines" ? stepLine(0) : ANSWER_LINE);
     } else if (phase === "done" && was.phase !== "done") {
       focus("next");
     } else if (isOpen && !was.open) {
@@ -152,6 +219,7 @@ export function TypedLines({ problem, dispatch, last, onNext, onNowYouTry, grade
   const setCell = (id: string, value: string) => dispatch({ type: "cell", id, value });
 
   function onCellKey(id: string, e: KeyboardEvent<HTMLInputElement>) {
+    if (item.layout.kind === "fraction") return onFracKey(id, e);
     const intent = intentFor(e, "cell");
     if (!intent) return;
     e.preventDefault();
@@ -182,6 +250,49 @@ export function TypedLines({ problem, dispatch, last, onNext, onNowYouTry, grade
       case "carry": {
         const to = carryFor(item, id);
         if (to) focus(`cell:${to}`);
+        return;
+      }
+      case "enter": {
+        if (done) return onNext();
+        // a product's partial rows: Enter goes on to the next row, then to the answer
+        const next = nextRowStart(item, id);
+        if (next) return focus(`cell:${next}`);
+        dispatch({ type: "fill_answer" });
+        focus(ANSWER_LINE);
+        return;
+      }
+      case "check":
+        return check();
+      case "help":
+        return help();
+    }
+  }
+
+  /** A fraction's top or bottom: digits fill it (up to three), `/` goes down to the bottom, arrows move. */
+  function onFracKey(id: string, e: KeyboardEvent<HTMLInputElement>) {
+    const intent = intentFor(e, "frac");
+    if (!intent) return;
+    e.preventDefault();
+    const cell = cellById(item, id);
+    const width = cell?.width ?? 3;
+    const v = values[id] ?? "";
+    switch (intent.type) {
+      case "digit":
+        if (done) return;
+        return setCell(id, (v + intent.digit).slice(0, width));
+      case "over":
+      case "move": {
+        const dir = intent.type === "over" ? "down" : intent.dir;
+        const to = dir === "up" || dir === "down" ? gridMove(item, id, dir) : null;
+        if (to) focus(`cell:${to}`);
+        else if (dir === "down") focus(stepLine(0));
+        return;
+      }
+      case "erase": {
+        if (done) return;
+        if (v) return setCell(id, v.slice(0, -1));
+        const up = gridMove(item, id, "up");
+        if (up) focus(`cell:${up}`);
         return;
       }
       case "enter":
@@ -229,9 +340,19 @@ export function TypedLines({ problem, dispatch, last, onNext, onNowYouTry, grade
     }
   }
 
-  function onAnswerKey(e: KeyboardEvent<HTMLInputElement>) {
+  /** The answer row (`part`: a stacked fraction's top or bottom; `/` stacks it, arrows move between them). */
+  function onAnswerKey(e: KeyboardEvent<HTMLInputElement>, part: "whole" | "num" | "den" = "whole") {
     const intent = intentFor(e, "answer");
+    if (part === "den" && e.key === "Backspace" && !(problem.answer.split("/")[1] ?? "")) {
+      e.preventDefault();
+      return focus(ANSWER_LINE);
+    }
     if (!intent) return;
+    if (intent.type === "over") {
+      if (part !== "num") return;
+      e.preventDefault();
+      return focus(`${ANSWER_LINE}:den`);
+    }
     e.preventDefault();
     switch (intent.type) {
       case "enter":
@@ -240,7 +361,10 @@ export function TypedLines({ problem, dispatch, last, onNext, onNowYouTry, grade
       case "check":
         return check();
       case "move":
-        return focus(stepLine(problem.steps.length - 1));
+        if (part === "num" && intent.dir === "down") return focus(`${ANSWER_LINE}:den`);
+        if (part === "den" && intent.dir === "up") return focus(ANSWER_LINE);
+        if (intent.dir === "up") return focus(stepLine(problem.steps.length - 1));
+        return;
       case "help":
         return help();
     }
@@ -248,16 +372,38 @@ export function TypedLines({ problem, dispatch, last, onNext, onNowYouTry, grade
 
   function onBoxKey(id: string, e: KeyboardEvent<HTMLInputElement>) {
     const intent = intentFor(e, "box");
-    if (!intent) return;
+    if (!intent || !open) return;
+    const m = open.step.manipulative;
+    const raw = open.values[id] ?? "";
+    const n = Number(raw) || 0;
+    const width = boxWidth(open.step.item, id);
+    const max = boxMax(m, Number(open.step.item.answer));
+    const line = m?.kind === "number_line" ? m : null;
+    if (intent.type === "move" && (intent.dir === "up" || intent.dir === "down")) {
+      // up and down leave the box for the lines around it (the browser's own moves are not wanted here)
+      e.preventDefault();
+      return focus(intent.dir === "up" ? stepLine(0) : ANSWER_LINE);
+    }
     e.preventDefault();
-    const n = Number(open?.values[id] ?? "") || 0;
     switch (intent.type) {
       case "digit":
-        return dispatch({ type: "sub_cell", id, value: intent.digit });
-      case "add_block":
-        return dispatch({ type: "sub_cell", id, value: String(Math.min(9, n + 1)) });
-      case "erase":
-        return dispatch({ type: "sub_cell", id, value: n > 1 ? String(n - 1) : "" });
+        return dispatch({ type: "sub_cell", id, value: width > 1 ? (raw + intent.digit).slice(-width) : intent.digit });
+      case "add_block": {
+        const from = raw === "" ? boxStart(m) : n;
+        return dispatch({ type: "sub_cell", id, value: String(Math.min(max, from + boxStep(m))) });
+      }
+      case "move": {
+        if (!line) return;
+        const from = raw === "" ? line.start : n;
+        const to = Math.max(line.min, Math.min(line.max, from + (intent.dir === "right" ? 1 : -1)));
+        return dispatch({ type: "sub_cell", id, value: String(to) });
+      }
+      case "erase": {
+        // a typed number loses its last digit; built blocks, bars and rows lose one step
+        if (!m || line) return dispatch({ type: "sub_cell", id, value: raw.slice(0, -1) });
+        const next = n - boxStep(m);
+        return dispatch({ type: "sub_cell", id, value: next > 0 ? String(next) : "" });
+      }
       case "enter":
       case "check":
         return dispatch({ type: "sub_check" });
@@ -282,7 +428,7 @@ export function TypedLines({ problem, dispatch, last, onNext, onNowYouTry, grade
 
   return (
     <div ref={surface} className={styles.surface}>
-      <ProblemText text={item.text} words={item.words} />
+      <ProblemText item={item} />
       <p className={styles.workLabel}>{KEYS_COPY.workHere}</p>
 
       <div className={styles.work}>
@@ -299,8 +445,20 @@ export function TypedLines({ problem, dispatch, last, onNext, onNowYouTry, grade
             onInput={(id, v) => setCell(id, v)}
           />
         )}
+        {item.layout.kind === "fraction" && (
+          <FractionCells
+            item={item}
+            values={values}
+            marks={problem.marks}
+            ringed={problem.ringed}
+            readOnly={done}
+            carried={problem.carried?.cellId ?? null}
+            onKey={onCellKey}
+            onInput={(id, v) => setCell(id, v)}
+          />
+        )}
 
-        <div className={styles.steps} role="group" aria-label="Your steps">
+        <div className={`${styles.steps} ${item.layout.kind === "lines" ? styles.stepsOnly : ""}`} role="group" aria-label="Your steps">
           <span className={styles.stepsHead} aria-hidden="true">
             {KEYS_COPY.stepsHead}
           </span>
@@ -319,7 +477,12 @@ export function TypedLines({ problem, dispatch, last, onNext, onNowYouTry, grade
                   onKeyDown={(e) => onStepKey(i, e)}
                   onChange={(e) => dispatch({ type: "step", index: i, value: e.target.value.replace(/\?/g, "") })}
                 />
-                {problem.marks[stepLine(i)] === "ring" && <Ring wide />}
+                {problem.marks[stepLine(i)] === "ring" && (
+                  // the ring goes round what was typed, not the whole line
+                  <span className={styles.stepRing} style={{ width: `calc(${Math.max(3, text.length)}ch + 20px)` }}>
+                    <Ring wide />
+                  </span>
+                )}
               </span>
               <span className={styles.markSlot}>{problem.marks[stepLine(i)] === "tick" && <Tick label={`Step ${i + 1} is right`} />}</span>
             </div>
@@ -343,22 +506,27 @@ export function TypedLines({ problem, dispatch, last, onNext, onNowYouTry, grade
           <label htmlFor="keys-answer" className={styles.answerLabel}>
             {KEYS_COPY.answer}
           </label>
-          <span className={styles.answerInputWrap}>
-            <input
-              id="keys-answer"
-              data-slot={ANSWER_LINE}
-              className={styles.answerInput}
-              // as wide as the answer, so the tutor's ring fits it
-              style={{ width: `calc(${Math.max(2, problem.answer.length) + 1}ch + 16px)` }}
-              value={problem.answer}
-              inputMode="numeric"
-              autoComplete="off"
-              spellCheck={false}
-              readOnly={done}
-              aria-describedby="keys-feedback"
-              onKeyDown={onAnswerKey}
-              onChange={(e) => dispatch({ type: "answer", value: e.target.value.replace(/[^\d\s]/g, "").slice(0, 6) })}
-            />
+          <span className={`${styles.answerInputWrap} ${problem.carried?.cellId === ANSWER_LINE ? styles.arrived : ""}`}>
+            {item.kind === "fraction_sum" ? (
+              <FractionAnswer value={problem.answer} readOnly={done} onKey={onAnswerKey} onChange={(v) => dispatch({ type: "answer", value: v })} />
+            ) : (
+              <input
+                id="keys-answer"
+                data-slot={ANSWER_LINE}
+                className={styles.answerInput}
+                // as wide as the answer, so the tutor's ring fits it
+                style={{ width: `calc(${Math.max(2, problem.answer.length) + 1}ch + 16px)` }}
+                value={problem.answer}
+                placeholder={item.math?.kind === "equation" ? `${item.math.letter} = ` : undefined}
+                inputMode={item.math?.kind === "equation" ? "text" : "numeric"}
+                autoComplete="off"
+                spellCheck={false}
+                readOnly={done}
+                aria-describedby="keys-feedback"
+                onKeyDown={(e) => onAnswerKey(e)}
+                onChange={(e) => dispatch({ type: "answer", value: answerText(item, e.target.value) })}
+              />
+            )}
             {problem.marks[ANSWER_LINE] === "ring" && <Ring wide />}
           </span>
           {problem.marks[ANSWER_LINE] === "tick" && <Tick label="Your answer is right" />}

@@ -5,8 +5,8 @@
  */
 import { kidCells, type Cell, type MathItem } from "./item";
 
-/** Where focus is: a column cell, a typed step, the answer row, the smaller problem's box. */
-export type SlotKind = "cell" | "step" | "answer" | "box";
+/** Where focus is: a column cell, a typed step, the answer row, the smaller problem's box, a fraction's top or bottom. */
+export type SlotKind = "cell" | "step" | "answer" | "box" | "frac";
 
 export type Dir = "left" | "right" | "up" | "down";
 
@@ -18,7 +18,9 @@ export type Intent =
   | { type: "enter" }
   | { type: "check" }
   | { type: "help" }
-  | { type: "add_block" };
+  | { type: "add_block" }
+  /** `/`: from a fraction's top to its bottom (the fraction stacks) */
+  | { type: "over" };
 
 export interface KeyLike {
   key: string;
@@ -50,7 +52,14 @@ export function intentFor(e: KeyLike, slot: SlotKind): Intent | null {
       if (digit) return { type: "digit", digit };
       if (e.key === " ") return { type: "add_block" };
       if (e.key === "Backspace" || e.key === "Delete") return { type: "erase" };
-      if (e.key === "ArrowUp" || e.key === "ArrowDown") return { type: "move", dir: ARROWS[e.key] };
+      // up and down leave the box; left and right move a number line's marker
+      if (ARROWS[e.key]) return { type: "move", dir: ARROWS[e.key] };
+      return null;
+    case "frac":
+      if (digit) return { type: "digit", digit };
+      if (e.key === "/") return { type: "over" };
+      if (e.key === "Backspace" || e.key === "Delete") return { type: "erase" };
+      if (ARROWS[e.key]) return { type: "move", dir: ARROWS[e.key] };
       return null;
     case "step":
       if (e.key === "ArrowUp" || e.key === "ArrowDown") return { type: "move", dir: ARROWS[e.key] };
@@ -59,6 +68,8 @@ export function intentFor(e: KeyLike, slot: SlotKind): Intent | null {
       return null;
     case "answer":
       if (e.key === "ArrowUp") return { type: "move", dir: "up" };
+      if (e.key === "ArrowDown") return { type: "move", dir: "down" };
+      if (e.key === "/") return { type: "over" };
       return null;
   }
 }
@@ -73,6 +84,8 @@ interface GridCell {
 
 /** The kid cells of a column item with their row (line) and column on the page. */
 function grid(item: MathItem): GridCell[] {
+  // a fraction's top over its bottom: two rows of one column
+  if (item.layout.kind === "fraction") return kidCells(item).map((cell) => ({ cell, row: cell.place, col: 0 }));
   if (item.layout.kind !== "columns") return kidCells(item).map((cell, i) => ({ cell, row: 0, col: i }));
   const out: GridCell[] = [];
   item.layout.lines.forEach((line, row) =>
@@ -124,11 +137,25 @@ export function carryFor(item: MathItem, id: string): string | null {
   return (carries.find((g) => g.cell.place === here.cell.place) ?? carries.find((g) => g.cell.place === here.cell.place + 1))?.cell.id ?? null;
 }
 
-/** Where the kid starts: a sum's ones cell, a missing digit's box. */
+/**
+ * Where the kid starts: the ones cell of the first row they write (a sum's answer, a product's first
+ * partial row), a missing digit's box, a fraction's top. Null for an equation (it starts on a line).
+ */
 export function firstCell(item: MathItem): string | null {
   const cells = grid(item).filter((g) => g.cell.role !== "carry" && !g.cell.spare);
   const ones = cells.filter((g) => g.cell.place === Math.min(...cells.map((c) => c.cell.place)));
-  return ones[ones.length - 1]?.cell.id ?? null;
+  return ones[0]?.cell.id ?? null;
+}
+
+/** Enter in a row that is not the last: the next row's ones cell (a product's second partial row, then its sum). */
+export function nextRowStart(item: MathItem, id: string): string | null {
+  const here = at(item, id);
+  if (!here || here.cell.role === "carry") return null;
+  const below = grid(item).filter((g) => g.row > here.row && g.cell.role !== "carry" && !g.cell.spare);
+  if (!below.length) return null;
+  const row = Math.min(...below.map((g) => g.row));
+  const inRow = below.filter((g) => g.row === row);
+  return inRow.sort((p, q) => p.cell.place - q.cell.place)[0].cell.id;
 }
 
 /** The bottom line's cells (the arrow down from them leaves the column). */

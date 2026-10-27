@@ -8,10 +8,8 @@
  * a word the tutor never says, or comes later than SAY_WAIT_MS is dropped for the fixed line.
  */
 import { z } from "zod";
-import { KEYS_COPY, SAY_MAX_CHARS, SAY_MOMENTS, SAY_WAIT_MS, sayable, tidyLine, type SayMoment } from "./copy";
+import { leadOf, SAY_MAX_CHARS, SAY_MOMENTS, SAY_WAIT_MS, sayable, tidyLine, type SayMoment } from "./copy";
 import type { ProblemState } from "./session";
-
-const KEYS_LEAD: Readonly<Record<string, string>> = KEYS_COPY.lead;
 
 const plain = (max: number) => z.string().trim().max(max);
 
@@ -85,7 +83,7 @@ export function sayInputFor(p: ProblemState, grade: number | null): SayInput | n
   if (help?.kind === "smaller") {
     const t = p.stack[p.stack.length - 1];
     if (!t?.step) return null;
-    return { ...base, moment: "smaller", step: t.step.item.text, level: 2, copy: KEYS_LEAD[t.step.lead] };
+    return { ...base, moment: "smaller", step: t.step.item.text, level: 2, copy: leadOf(t.step) };
   }
   if (help?.kind === "nudge" && p.bug) return { ...base, moment: "nudge", step: null, level: 1, copy: help.text };
   return null;
