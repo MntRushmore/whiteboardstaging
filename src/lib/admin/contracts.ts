@@ -551,6 +551,14 @@ export const AdminAskChatSchema = z.object({
 });
 export type AdminAskChat = z.infer<typeof AdminAskChatSchema>;
 
+/**
+ * GET /api/admin/runs (?boardId=, ?limit= up to 300): the picture tutor's runs — app_events of kind
+ * board_draw (a run: mode, tutor model, timings, cost, the read-back, recheck and alignment flags in
+ * `meta`) and board_draw_outcome (accepted, rejected…), newest first. For the iPad admin console.
+ */
+export const AdminRunListSchema = z.object({ generatedAt: z.string(), runs: z.array(AdminEventSchema) });
+export type AdminRunList = z.infer<typeof AdminRunListSchema>;
+
 export const ADMIN_LIMITS = {
   users: 2000,
   boardsPage: 48,

@@ -97,6 +97,7 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
 
 /** Routes whose handlers legitimately have no zod body schema. */
 export const NO_BODY_ROUTES = Object.freeze([
+  "src/app/api/admin/runs/route.ts", // GET only (the iPad admin console's picture tutor runs)
   "src/app/api/credits/route.ts", // GET only
   "src/app/api/config/status/route.ts", // GET only
   "src/app/api/admin/gc/route.ts", // GET (Vercel cron) or POST with an empty body; options are query params
@@ -269,6 +270,16 @@ export const API_ROUTES = Object.freeze([
     limit: "adminConsole",
     body: "zod",
     purpose: "Admin console: app_events grouped into issues (?days=1|7|30), and their state (open, muted, fixed, note); PATCH logged as issue.update",
+    status: "active",
+  },
+  {
+    path: "/api/admin/runs",
+    file: "src/app/api/admin/runs/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "none",
+    purpose: "Admin console (iPad): the picture tutor's runs (board_draw and board_draw_outcome app_events), newest first (?boardId=, ?limit=)",
     status: "active",
   },
   {
