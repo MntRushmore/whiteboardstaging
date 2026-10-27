@@ -213,6 +213,7 @@ public struct BoardEditorView<TopTrailing: View, Help: View, Overlay: View>: Vie
         switch n.kind {
         case .pictureFailed: return Banner(.lookAgain, DockCopy.pictureFailed, message: DockCopy.tryAgain, surface: .ink)
         case .pdfFailed: return Banner(.lookAgain, DockCopy.pdfFailed, message: DockCopy.tryAgain, surface: .ink)
+        case .nothingToPaste: return Banner(.lookAgain, DockCopy.nothingToPaste, message: DockCopy.nothingToPasteMessage, surface: .ink)
         case .boardFull: return Banner(.paused, DockCopy.boardFull, message: DockCopy.boardFullMessage, surface: .ink)
         }
     }
@@ -224,7 +225,19 @@ public struct BoardEditorView<TopTrailing: View, Help: View, Overlay: View>: Vie
         case .photos: showPhotos = true
         case .camera: showCamera = true
         case .files: showFiles = true
+        case .paste: Task { await addPasted() }
         }
+    }
+
+    /// The clipboard's picture on the board: a question copied on a Mac arrives here by Universal
+    /// Clipboard (the owner, 2026-10-27: "a way ... so the ipad screen can see my laptop for questions").
+    private func addPasted() async {
+        guard let image = UIPasteboard.general.image else {
+            controller.notice = BoardNotice(kind: .nothingToPaste)
+            return
+        }
+        let prepared = await Task.detached(priority: .userInitiated) { try? PictureImport.prepare(image) }.value
+        await add(prepared, source: "paste")
     }
 
     private func addPhoto(_ item: PhotosPickerItem) async {

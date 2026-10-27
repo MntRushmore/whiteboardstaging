@@ -69,7 +69,7 @@ public struct PendingPicture: Identifiable, Equatable, Sendable {
 
 /// Something the board has to tell the kid (the editor shows it as a banner).
 public struct BoardNotice: Equatable, Sendable, Identifiable {
-    public enum Kind: String, Sendable { case pictureFailed, boardFull, pdfFailed }
+    public enum Kind: String, Sendable { case pictureFailed, boardFull, pdfFailed, nothingToPaste }
     public let id = UUID()
     public var kind: Kind
 

@@ -7,7 +7,7 @@ import SwiftUI
 /// move into `DS.Icon` when a custom icon set replaces the symbols.)
 public enum BoardIcon: Sendable, Equatable {
     case ds(DS.Icon)
-    case select, line, arrow, box, circle, photos, camera, files, newPage, copy, trash, pages, highlighter
+    case select, line, arrow, box, circle, photos, camera, files, paste, newPage, copy, trash, pages, highlighter
 
     var systemName: String {
         switch self {
@@ -20,6 +20,7 @@ public enum BoardIcon: Sendable, Equatable {
         case .photos: return "photo.on.rectangle"
         case .camera: return "camera"
         case .files: return "doc"
+        case .paste: return "doc.on.clipboard"
         case .newPage: return "doc.badge.plus"
         case .copy: return "plus.square.on.square"
         case .trash: return "trash"

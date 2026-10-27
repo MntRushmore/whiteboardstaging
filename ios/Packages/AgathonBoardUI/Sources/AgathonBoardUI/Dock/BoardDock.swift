@@ -250,7 +250,8 @@ struct PenSwatches: View {
 
 /// Where a picture comes from.
 public enum PictureSource: String, Sendable {
-    case photos, camera, files
+    /// a picture on the clipboard: a question copied on a Mac (Universal Clipboard), a screenshot
+    case photos, camera, files, paste
 }
 
 /// A panel over the dock (the web's `DockPopover`): an ink shelf of tools, centred above the dock.
@@ -328,5 +329,10 @@ struct DockPanelView: View {
             panel = nil
             onPicture(.files)
         }) { BoardIconView(icon: .files) }
+        // a question copied on the Mac (⌘⇧⌃4 there; the same Apple ID and Handoff) lands here
+        DockButton(title: DockCopy.paste, action: {
+            panel = nil
+            onPicture(.paste)
+        }) { BoardIconView(icon: .paste) }
     }
 }
