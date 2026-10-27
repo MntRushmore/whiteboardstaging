@@ -34,24 +34,36 @@ Where it falls short:
 
 We copy none of its look, names or copy. No mascot, no orb, no two-panel split.
 
-## The screen: the iPad's Problem Page, typed
+## The screen: Focus (the owner's pick, 2026-10-27)
 
-- **Top bar.** A round back button; "Today's practice" with "Problem 2 of 5" under it. On the right:
-  the stars pill ("1 of 5"), the sunny Help me button, the ink Ask button (Phase 2; inert for now)
-  and More.
-- **One white page** (radius 18) on the chalk ground (#F1F2F6). The problem at the top in the tutor's
-  hand: Kalam Bold, cobalt #2D5BFF. Under it, "Work it out here" and ruled lines.
-- **The kid types on the lines.** Each Enter adds a line, in kid ink #14151F (never cobalt), set in
-  Lexend with tabular numerals. A column problem (`26 + ?6 = 92`) shows as a real column: place-value
-  headers, a carry row (carries in tomato #FF5A36), digit cells filled right to left. Fractions stack
-  when `/` is typed (Phase 3).
-- **"Answer:"** row at the bottom of the page.
-- **Checked when done,** like the iPad: on Enter in the answer row (or Ctrl+Enter), never while the
-  kid thinks. A right line gets a cobalt tick in the margin. The line that broke gets a cobalt ring
-  and the yellow "Look again." banner (sunny #FFD12E with an eye icon). Never red, never the word
-  "wrong".
-- **Wins** reuse the iPad's: "You got it." (success green), the "Nailed it." pill, stars filling the
-  pill, and a celebration at the end of a set.
+Three directions were mocked up as clickable pages (Focus, Squared paper, Cards); the owner picked
+**Focus**. One big problem fills the page, the kid types straight into it, and the tutor's help is
+written right under it.
+
+- **Top bar.** As on the iPad: a round back button; "Today's practice" with "Problem 2 of 5" under
+  it; the stars pill, the sunny Help me, the ink Ask (Phase 2; inert for now) and More (the keys,
+  and a Sounds switch).
+- **One white page** (radius 28) on the chalk ground. A small capital line says what to do ("Add.
+  Ones first.", "Find the missing digit.").
+- **The column is the hero,** centred and big (104 px boxes at 1366 wide). The problem's digits are
+  printed in ink (Lexend), the rule is the mark's ink bar, carries are tomato, and the kid's boxes
+  are chalk. An empty carry box and the spare box stay invisible until the kid goes there.
+- **No answer row for a column or a fraction.** Their own boxes are the answer, so Enter in any box
+  checks (a product's partial rows: Enter goes on to the next row first). Only an equation, worked on
+  its step lines, keeps the "Answer:" row.
+- **Feedback beside the column:** "Look again." (sunny eye, "Press ? for a hint."), "You got it."
+  (success green, "On your own." / "With a little help."), or the "Nailed it." pill on a first try.
+  The tutor's tick and ring are the only cobalt on the problem.
+- **The tutor writes under the column,** in cobalt Kalam: the nudge, or the smaller problem with
+  flat base-ten rods (tomato carried, cobalt the tutor's, ink the kid's, white the room left). While
+  it writes, the column steps back to a smaller size so everything fits on a 1280 × 720 screen.
+- **Typed steps on request:** "+ Show my steps" (or ↓ from the column) opens the step lines.
+- **The foot:** the keys that work right now (`0–9`, `⌫`, `c`, `Space`, `?`, `Enter`) and one
+  button, Check or Next problem.
+- **Feel** (`src/components/keys/feel.ts`): a typed digit pops into its box, a new rod drops in, a
+  star flies from the cheer into the stars pill, and soft sounds answer a key, a check, the smaller
+  problem and a star. Reduce Motion turns the motion off; the Sounds switch in More turns the sounds
+  off (remembered on the device).
 
 ## Better than the competitor
 

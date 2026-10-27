@@ -23,10 +23,10 @@ export interface ColumnCellsProps {
 }
 
 /**
- * A sum, a difference or a product set out in columns (docs/KEYS.md): place headers, the carry or
- * regroup row (tomato), the tutor's digits in cobalt, a product's partial rows, the kid's cells in
- * ink, filled right to left. Keys are the work surface's
- * (`TypedLines`); this draws.
+ * A sum, a difference or a product set out in columns (docs/KEYS.md, "Focus"): place headers, the
+ * carry or regroup row (tomato), the problem's digits printed in ink, a product's partial rows, the
+ * kid's boxes filled right to left. The tutor's marks (ticks, rings, the pointer) are the only
+ * cobalt. Keys are the work surface's (`TypedLines`); this draws.
  */
 export function ColumnCells({ item, values, marks, ringed, readOnly, carried, point, onKey, onInput }: ColumnCellsProps) {
   const layout = item.layout as ColumnsLayout;
@@ -88,7 +88,7 @@ export function ColumnCells({ item, values, marks, ringed, readOnly, carried, po
             ))}
             <span className={styles.markSlot}>{marks[line.id] === "tick" && <Tick label={`${line.id === "result" ? "The answer" : line.role === "partial" ? "This row" : "This line"} is right`} />}</span>
           </div>
-          {line.op && <div className={styles.rule} style={{ width: layout.places * 64 - 8 }} aria-hidden="true" />}
+          {line.op && <div className={styles.rule} style={{ ["--places" as string]: layout.places }} aria-hidden="true" />}
         </div>
       ))}
       {point?.place !== null && point?.place !== undefined && (

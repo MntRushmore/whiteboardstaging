@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ChevronLeft, MoreHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useReducer, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useFeatureLabs } from "@/lib/featureLabs";
 import { KEYS_COPY } from "@/lib/keys/copy";
@@ -10,6 +10,7 @@ import { generateMixed, generateSet, isKeysSkill, itemsFromList, variantItem, ty
 import type { MathItem } from "@/lib/keys/item";
 import { isBonus, offersNowYouTry, ownOf, perfectOf, setPosition, setReducer, starsOf, startSet, type ProblemAction } from "@/lib/keys/session";
 import { AllDone } from "./AllDone";
+import { bump, flyStar, play, setSoundsOn, soundsOn } from "./feel";
 import { KEYS_FONT_VARS } from "./fonts";
 import styles from "./keys.module.css";
 import { HelpMark, StarIcon } from "./TutorMarks";
@@ -167,9 +168,32 @@ function KeysSession({ source, rootClass }: { source: SetSource; rootClass: stri
   const onNext = useCallback(() => dispatch({ type: "next" }), []);
 
   const { n, count } = setPosition(state);
-  const stars = starsOf(state);
   const bonus = !state.finished && isBonus(state);
   const subtitle = state.finished ? KEYS_COPY.allDone : bonus ? KEYS_COPY.nowYouTry : KEYS_COPY.problemOf(n, count);
+
+  // read on the first render: the More card that shows it only opens after the page has mounted
+  const [sounds, setSounds] = useState(() => typeof window === "undefined" || soundsOn());
+  const toggleSounds = () => {
+    setSoundsOn(!sounds);
+    setSounds(!sounds);
+  };
+
+  // The pill counts a star when it lands: a solved problem's star flies up from the cheer.
+  const stars = starsOf(state);
+  const [landed, setLanded] = useState({ round: 0, n: 0 });
+  const shown = landed.round === round ? Math.min(landed.n, stars) : 0;
+  const pill = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (stars <= shown) return;
+    const t = window.setTimeout(() => {
+      flyStar(document.querySelector("[data-cheer]"), pill.current, () => {
+        setLanded({ round, n: stars });
+        bump(pill.current);
+        play("star");
+      });
+    }, 320);
+    return () => window.clearTimeout(t);
+  }, [stars, shown, round]);
 
   return (
     <main className={rootClass}>
@@ -182,9 +206,9 @@ function KeysSession({ source, rootClass }: { source: SetSource; rootClass: stri
           <p className={styles.subtitle}>{subtitle}</p>
         </div>
         <div className={`${styles.barRight} ${styles.barAnchor}`}>
-          <span key={stars} className={styles.starsPill} data-filled={stars > 0 ? "" : undefined} role="status" aria-label={`Stars: ${KEYS_COPY.starsOf(stars, count)}`}>
+          <span ref={pill} className={styles.starsPill} data-filled={shown > 0 ? "" : undefined} role="status" aria-label={`Stars: ${KEYS_COPY.starsOf(stars, count)}`}>
             <StarIcon />
-            <span aria-hidden="true">{KEYS_COPY.starsOf(stars, count)}</span>
+            <span aria-hidden="true">{KEYS_COPY.starsOf(shown, count)}</span>
           </span>
           {!state.finished && (
             <button type="button" className={`${styles.btn} ${styles.sunny} ${styles.helpMe}`} onClick={() => dispatch({ type: "help" })} aria-keyshortcuts="?" aria-label={KEYS_COPY.helpMe}>
@@ -219,6 +243,12 @@ function KeysSession({ source, rootClass }: { source: SetSource; rootClass: stri
                 <span>{KEYS_COPY.readAloud}</span>
               </label>
               <p className={styles.switchNote}>{KEYS_COPY.readAloudNote}</p>
+              <button type="button" className={styles.soundSwitch} role="switch" aria-checked={sounds} onClick={toggleSounds}>
+                <span>{KEYS_COPY.sounds}</span>
+                <span className={styles.switchTrack} aria-hidden="true">
+                  <span className={styles.switchKnob} />
+                </span>
+              </button>
             </div>
           )}
         </div>

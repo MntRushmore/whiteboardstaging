@@ -82,7 +82,7 @@ export function TutorWriting({ solved, open, subMark, help, line, pending, onBox
   // step it stays as written
   const lead = open ? (help?.kind === "smaller" ? line : leadOf(open.step)) : null;
   return (
-    <div className={`${styles.help} ${styles.workFull}`}>
+    <div className={styles.help}>
       {solved.map((s, i) => (
         <p key={i} className={styles.solvedStep}>
           <span>{leadOf(s.step)}</span>
