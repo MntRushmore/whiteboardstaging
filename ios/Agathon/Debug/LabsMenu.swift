@@ -1,4 +1,5 @@
 #if DEBUG
+import AgathonKit
 import AgathonOnboarding
 import SwiftUI
 
@@ -44,7 +45,7 @@ private struct LabsButton: ViewModifier {
 }
 
 private enum Lab: String, CaseIterable, Identifiable {
-    case board, editor, brain, design, live, ask, billing, debugScreens, onboarding, training, picture, pictureSettings
+    case board, editor, brain, design, live, ask, billing, debugScreens, onboarding, training, picture, pictureSettings, macScreen
 
     var id: String { rawValue }
 
@@ -67,6 +68,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .billing: return "Billing Lab (StoreKit test purchases)"
         case .onboarding: return "Onboarding (the first run)"
         case .training: return "Training Center (bench the tutor)"
+        case .macScreen: return "Mac screen panel (stub frame)"
         case .picture: return "Picture tutor (stub server)"
         case .pictureSettings: return "Picture tutor's admin page"
         }
@@ -84,6 +86,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .billing: return "creditcard"
         case .onboarding: return "hand.wave"
         case .training: return "checklist"
+        case .macScreen: return "laptopcomputer"
         case .picture: return "pencil.and.scribble"
         case .pictureSettings: return "slider.horizontal.3"
         }
@@ -107,6 +110,7 @@ private struct LabScreen: View {
             case .billing: BillingLabView()
             case .onboarding: OnboardingLab(gate: AppParentalGate(), close: close)
             case .training: TrainingCenterView(close: close)
+            case .macScreen: MacScreenLab()
             case .picture: PictureTutorLabView(close: close)
             case .pictureSettings: PictureTutorSettingsLab()
             }
@@ -120,6 +124,20 @@ private struct LabScreen: View {
             }
             .padding(16) }
         }
+    }
+}
+
+/// The Mac screen panel beside a board, on a stand-in frame (`-lab macScreen`; add `-macScreen.stub`).
+private struct MacScreenLab: View {
+    @StateObject private var model = MacScreenModel()
+    @State private var open = true
+    @Environment(AgathonBackend.self) private var backend
+
+    var body: some View {
+        MacScreenContainer(isOpen: $open, model: model, onBring: { _ in }) {
+            BoardLabView()
+        }
+        .onAppear { model.start(backend) }
     }
 }
 #endif

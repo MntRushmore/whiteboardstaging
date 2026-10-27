@@ -38,6 +38,9 @@ final class BoardScreenModel: ObservableObject {
     @Published private(set) var phase: Phase = .loading
     @Published private(set) var tutor: BoardTutor?
     @Published var askOpen = false
+    /// the Mac screen panel: a window shared from a computer (agathon.app/share), live beside the board
+    @Published var macOpen = MacScreenModel.openAtLaunch
+    let mac = MacScreenModel()
     @Published var money: MoneyScreen?
     @Published private(set) var audience: BoardAudience?
     /// A word for the kid over the board for a moment (work put back from the backup, nearly full).

@@ -106,7 +106,10 @@ private struct BoardRoom: View {
     /// a Live popover is open (the help chooser, the grown-ups' settings)
     @State private var popoverOpen = false
 
+    @Environment(AgathonBackend.self) private var backend
+
     var body: some View {
+        MacScreenContainer(isOpen: $model.macOpen, model: model.mac, onBring: bring) {
         AskPanelContainer(isOpen: $model.askOpen, ask: model.tutor?.ask) {
             BoardEditorView(
                 controller: controller, title: title, onBack: close,
@@ -141,10 +144,27 @@ private struct BoardRoom: View {
                 }
             }
         }
+        }
+        .onChange(of: model.macOpen, initial: true) { _, open in
+            if open { model.mac.start(backend) } else { model.mac.stop(backend) }
+        }
+        .onDisappear { model.mac.stop(backend) }
         .overlay(alignment: .top) { noticeBanner }
         #if DEBUG
         .overlay(alignment: .bottomLeading) { BoardDebugProbe(model: model) }
         #endif
+    }
+
+    /// The Mac's window, now, as a picture on the page: the tutor sees the question too.
+    private func bring(_ image: UIImage) {
+        Task {
+            let prepared = await Task.detached(priority: .userInitiated) { try? PictureImport.prepare(image) }.value
+            guard let prepared else {
+                controller.notice = BoardNotice(kind: .pictureFailed)
+                return
+            }
+            _ = await controller.insert(prepared, source: "mac")
+        }
     }
 
     @ViewBuilder private var overlay: some View {
@@ -249,6 +269,7 @@ private struct BoardTopTrailing: View {
     }
 
     @ViewBuilder private func askButton(words: Bool) -> some View {
+        macButton(words: words)
         if model.tutor != nil && !model.askOpen {
             Group {
                 if words {
@@ -260,6 +281,23 @@ private struct BoardTopTrailing: View {
             }
             .accessibilityLabel(AskCopy.title)
             .accessibilityIdentifier("ask.open")
+        }
+    }
+}
+
+extension BoardTopTrailing {
+    /// Opens the Mac screen panel (a window shared from a computer, live beside the board).
+    @ViewBuilder func macButton(words: Bool) -> some View {
+        if !model.macOpen {
+            Group {
+                if words {
+                    PillButton(MacScreenCopy.open, icon: .laptop, kind: .secondary) { model.macOpen = true }
+                        .fixedSize()
+                } else {
+                    RoundButton(.laptop, fill: .paper, label: MacScreenCopy.open) { model.macOpen = true }
+                }
+            }
+            .accessibilityIdentifier("macScreen.open")
         }
     }
 }
