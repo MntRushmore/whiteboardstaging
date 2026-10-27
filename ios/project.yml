@@ -55,7 +55,7 @@ packages:
 settings:
   base:
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "1522"
     # the commit a build came from (shown on Account; scripts pass AGATHON_COMMIT=<sha>)
     AGATHON_COMMIT: dev
     SWIFT_VERSION: "5.0"
