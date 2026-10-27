@@ -25,7 +25,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 IOS="$ROOT/ios"
 TEAM=SG4YJW2K5Z
-BUNDLE=app.agathon.Agathon
+BUNDLE=app.agathon.ios
 
 UPLOAD=0; BUMP=1; SET_BUILD=""; ARCHIVE_ONLY=0
 while [ $# -gt 0 ]; do
