@@ -199,6 +199,8 @@ export const ATTEMPT_ORIGINS = [
   "practice",
   /** the chat taught it ("explain it"): the tutor wrote the whole worked solution */
   "teach",
+  /** Agathon Keys: typed step by step on a laptop (/keys, docs/KEYS.md); no board (`boardId` null) */
+  "keys",
 ] as const;
 export type AttemptOrigin = (typeof ATTEMPT_ORIGINS)[number];
 

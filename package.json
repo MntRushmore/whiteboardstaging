@@ -32,6 +32,7 @@
     "bundle:check": "node scripts/check-bundle.mjs",
     "dead-code": "node scripts/find-dead-code.mjs",
     "smoke:live": "node scripts/live-smoke.mjs",
+    "qa:keys": "node scripts/keys-qa.mjs",
     "brain:build": "node scripts/build-ios-brain.mjs --report",
     "brain:check": "node scripts/build-ios-brain.mjs --check",
     "brain:golden": "BRAIN_GOLDEN_WRITE=1 vitest run src/__eval__/brain/golden.test.ts",

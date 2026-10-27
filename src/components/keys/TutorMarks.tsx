@@ -67,11 +67,17 @@ export function StarIcon({ size = 20 }: { size?: number }) {
   );
 }
 
-/** A practice sticker: a star (done on your own) or a ring (done with a hint), die-cut on ink. */
-export function Sticker({ kind }: { kind: "star" | "ring" }) {
+/** A practice sticker: a star (done on your own), a ring (done with a hint) or perfect (5 for 5), die-cut on ink. */
+export function Sticker({ kind }: { kind: "star" | "ring" | "perfect" }) {
   return (
     <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">
-      {kind === "star" ? (
+      {kind === "perfect" ? (
+        <>
+          <circle cx="28" cy="28" r="25" fill="#FFFFFF" />
+          <circle cx="28" cy="28" r="21" fill={TOMATO} />
+          <path d="M28 12 L32.2 21.2 L42 22.3 L34.7 29 L36.7 38.8 L28 33.9 L19.3 38.8 L21.3 29 L14 22.3 L23.8 21.2 Z" fill={SUNNY} strokeLinejoin="round" />
+        </>
+      ) : kind === "star" ? (
         <path
           d="M28 4 L34.6 18.3 L50 20.2 L38.6 30.8 L41.6 46.2 L28 38.6 L14.4 46.2 L17.4 30.8 L6 20.2 L21.4 18.3 Z"
           fill={SUNNY}

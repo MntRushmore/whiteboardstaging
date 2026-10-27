@@ -79,7 +79,8 @@ async function readToday(userId: string): Promise<Extract<TodayState, { status: 
   return {
     status: "ready",
     today,
-    phase: finished ? "done" : boardId ? "continue" : "start",
+    // a day started on Keys (a laptop) has done problems and no board
+    phase: finished ? "done" : boardId || done > 0 ? "continue" : "start",
     goal,
     done,
     stars,
@@ -157,7 +158,13 @@ function usePreview(ready: Extract<TodayState, { status: "ready" }> | null, plan
   return preview && preview.key === key && preview.skills.length > 0 ? preview.skills : null;
 }
 
-export function useToday(userId: string): { state: TodayState; actions: TodayActions; preview: PlanSkill[] | null } {
+/**
+ * `keys`: this is a laptop or Chromebook (a fine pointer, no touch) and the kid has Keys on (Feature
+ * Labs "Keyboard practice"): Start and Continue open Today's practice on Keys (`/keys`, docs/KEYS.md)
+ * instead of a board, when the day's set fits Keys (`planKeysSet(...).keysable`).
+ */
+export function useToday(userId: string, opts: { keys?: boolean } = {}): { state: TodayState; actions: TodayActions; preview: PlanSkill[] | null } {
+  const keys = opts.keys === true;
   const router = useRouter();
   const [state, setState] = useState<TodayState>({ status: "loading" });
   const [busy, setBusyState] = useState<TodayActions["busy"]>(null);
@@ -231,12 +238,19 @@ export function useToday(userId: string): { state: TodayState; actions: TodayAct
 
   const start = useCallback(() => {
     // on the free board (no plan), the day's new board is the plan screen instead (`newBoards.ts`)
-    if (busyRef.current || !mayMakeBoard()) return;
+    if (busyRef.current || (!keys && !mayMakeBoard())) return;
     if (!claim("start")) return;
     const today = localDay();
-    void Promise.all([import("@/lib/daily/plan"), planInput(today)])
-      .then(async ([{ planDailySet }, input]) => {
+    void Promise.all([import("@/lib/daily/plan"), planInput(today), keys ? import("@/lib/keys/plan") : null])
+      .then(async ([{ planDailySet }, input, keysPlan]) => {
         const plan = planDailySet(input);
+        // a laptop with Keys on: Today's practice typed, when the day's set fits Keys (no board is made)
+        if (keysPlan && keysPlan.planKeysSet(plan, [], input.path).keysable) {
+          clientMetric("daily.keys", { phase: "start" });
+          router.push("/keys");
+          return;
+        }
+        if (!mayMakeBoard()) return fail("daily_create_failed", TODAY_COPY.failedLine);
         if (plan.problems.length === 0) return fail("daily_no_problems", TODAY_COPY.noProblems);
         const deps: StartDeps = {
           userId,
@@ -255,14 +269,24 @@ export function useToday(userId: string): { state: TodayState; actions: TodayAct
         router.push(`/board/${result.boardId}`);
       })
       .catch(() => fail("daily_start_failed", TODAY_COPY.failedLine));
-  }, [claim, planInput, fail, router, userId]);
+  }, [claim, planInput, fail, router, userId, keys]);
 
   const continueToday = useCallback(() => {
-    if (!ready?.boardId || !claim("continue")) return;
+    // a laptop with Keys on, or a day started on Keys (no board): on to Keys, or a board for the rest
+    if (keys || !ready?.boardId) {
+      if (keys && claim("continue")) {
+        clientMetric("daily.keys", { phase: "continue" });
+        router.push("/keys");
+        return;
+      }
+      if (!keys) start();
+      return;
+    }
+    if (!claim("continue")) return;
     const boardId = continueDailyBoard({ boardId: ready.boardId, day: ready.today, goal: ready.goal }, { userId, readDailyMarker: (id) => readDailyMarker(id), writeDailyMarker: (m) => writeDailyMarker(m), now: Date.now });
     clientMetric("daily.continue", { done: ready.done, goal: ready.goal });
     router.push(`/board/${boardId}`);
-  }, [ready, claim, router, userId]);
+  }, [ready, claim, router, userId, keys, start]);
 
   const practiseMore = useCallback(() => {
     if (busyRef.current || !mayMakeBoard()) return;

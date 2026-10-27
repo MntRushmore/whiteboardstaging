@@ -2,7 +2,9 @@
 
 import type { KeyboardEvent } from "react";
 import type { Mark } from "@/lib/keys/check";
-import { placeName, type Cell, type ColumnsLayout, type MathItem, type Values } from "@/lib/keys/item";
+import { cellLabel } from "@/lib/keys/a11y";
+import { placeName, type ColumnsLayout, type MathItem, type Values } from "@/lib/keys/item";
+import type { Pointer } from "@/lib/keys/session";
 import styles from "./keys.module.css";
 import { Ring, Tick } from "./TutorMarks";
 
@@ -14,28 +16,19 @@ export interface ColumnCellsProps {
   readOnly: boolean;
   /** a cell the tutor just carried a value back into */
   carried: string | null;
+  /** Help me's nudge points here: the tutor's cobalt marker under that column */
+  point: Pointer | null;
   onKey: (cellId: string, e: KeyboardEvent<HTMLInputElement>) => void;
   onInput: (cellId: string, value: string) => void;
 }
 
-function cellLabel(c: Cell, ringed: boolean): string {
-  const where =
-    c.role === "carry"
-      ? `Carry into the ${placeName(c.place)}`
-      : c.role === "blank"
-        ? `Missing ${placeName(c.place)} digit`
-        : c.spare
-          ? "Spare box, left of the answer"
-          : `Answer, ${placeName(c.place)} digit`;
-  return ringed ? `${where}. Look again.` : where;
-}
-
 /**
- * A sum set out in columns (docs/KEYS.md): place headers, the carry row (tomato), the tutor's digits
- * in cobalt, the kid's cells in ink, filled right to left. Keys are the work surface's
- * (`TypedLines`); this draws.
+ * A sum, a difference or a product set out in columns (docs/KEYS.md, "Focus"): place headers, the
+ * carry or regroup row (tomato), the problem's digits printed in ink, a product's partial rows, the
+ * kid's boxes filled right to left. The tutor's marks (ticks, rings, the pointer) are the only
+ * cobalt. Keys are the work surface's (`TypedLines`); this draws.
  */
-export function ColumnCells({ item, values, marks, ringed, readOnly, carried, onKey, onInput }: ColumnCellsProps) {
+export function ColumnCells({ item, values, marks, ringed, readOnly, carried, point, onKey, onInput }: ColumnCellsProps) {
   const layout = item.layout as ColumnsLayout;
   const places = Array.from({ length: layout.places }, (_, i) => layout.places - 1 - i);
   const spare = new Set(layout.lines.flatMap((l) => l.cells.filter((c) => c?.spare).map((c) => c!.place)));
@@ -45,8 +38,8 @@ export function ColumnCells({ item, values, marks, ringed, readOnly, carried, on
       <div className={styles.colRow} aria-hidden="true">
         <span className={styles.opSlot} />
         {places.map((p) => (
-          <span key={p} className={`${styles.slot} ${styles.placeHead}`}>
-            {spare.has(p) ? "" : placeName(p)}
+          <span key={p} className={`${styles.slot} ${styles.placeHead}`} data-pointed={point?.place === p ? "" : undefined}>
+            {spare.has(p) ? "" : layout.places - spare.size >= 3 ? placeInitial(p) : placeName(p)}
           </span>
         ))}
         <span className={styles.markSlot} />
@@ -80,7 +73,7 @@ export function ColumnCells({ item, values, marks, ringed, readOnly, carried, on
                       spellCheck={false}
                       maxLength={1}
                       readOnly={readOnly}
-                      aria-label={cellLabel(c, ringed.includes(c.id))}
+                      aria-label={cellLabel(item, c, values[c.id] ?? "", ringed.includes(c.id))}
                       onKeyDown={(e) => onKey(c.id, e)}
                       onChange={(e) => {
                         // typing is handled on keydown; this catches paste, IME and on-screen keyboards
@@ -93,11 +86,36 @@ export function ColumnCells({ item, values, marks, ringed, readOnly, carried, on
                 )}
               </span>
             ))}
-            <span className={styles.markSlot}>{marks[line.id] === "tick" && <Tick label={`${line.id === "result" ? "The answer" : "This line"} is right`} />}</span>
+            <span className={styles.markSlot}>{marks[line.id] === "tick" && <Tick label={`${line.id === "result" ? "The answer" : line.role === "partial" ? "This row" : "This line"} is right`} />}</span>
           </div>
-          {line.op && <div className={styles.rule} style={{ width: layout.places * 64 - 8 }} aria-hidden="true" />}
+          {line.op && <div className={styles.rule} style={{ ["--places" as string]: layout.places }} aria-hidden="true" />}
         </div>
       ))}
+      {point?.place !== null && point?.place !== undefined && (
+        <div className={styles.colRow} aria-hidden="true">
+          <span className={styles.opSlot} />
+          {places.map((p) => (
+            <span key={p} className={styles.slot}>
+              {p === point.place && <PointerArrow />}
+            </span>
+          ))}
+          <span className={styles.markSlot} />
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Three columns or more: the headers a worksheet uses (H T O), so they never run into each other. */
+function placeInitial(place: number): string {
+  return ["O", "T", "H", "Th"][place] ?? placeName(place);
+}
+
+/** The tutor's pointer under a column (Help me's nudge): a short cobalt arrow, drawn in one stroke. */
+function PointerArrow() {
+  return (
+    <svg className={styles.pointer} viewBox="0 0 40 32" aria-hidden="true">
+      <path className={styles.draw} pathLength={1} d="M20 30 L20 6 M10 15 L20 4 L30 15" fill="none" stroke="#2D5BFF" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }

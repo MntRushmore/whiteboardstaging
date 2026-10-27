@@ -3,7 +3,7 @@
  * judged the moment the kid asks (Enter in the answer row, Ctrl+Enter), never while they think.
  * Pure: the same input gives the same marks.
  */
-import { allCells, answerFromWork, answerLine, canonicalAnswer, lineIds, lineOfCell, type MathItem, type Values } from "./item";
+import { allCells, answerFromWork, answerLine, answersEqual, canonicalAnswer, lineIds, lineOfCell, normalizeNumber, type Cell, type MathItem, type Values } from "./item";
 
 export type Mark = "tick" | "ring";
 
@@ -45,12 +45,28 @@ function cellOff(role: string, expect: string | undefined, spare: boolean | unde
   return v !== expect;
 }
 
+/**
+ * A fraction sum's numerator and denominator are judged together: any fraction equal to the sum is
+ * right (`22/24` for `11/12`). Otherwise the denominator is right only as the sum's own (the least
+ * common one), and the numerator only as the sum's over it: `5/14` for `2/7 + 3/7` rings the 14.
+ */
+function fractionCellsOff(item: MathItem, values: Values, num: Cell, den: Cell): string[] {
+  const n = normalizeNumber(values[num.id] ?? "");
+  const d = normalizeNumber(values[den.id] ?? "");
+  if (n && d && answersEqual(item, `${n}/${d}`)) return [];
+  const off: string[] = [];
+  if (d && d !== den.expect) off.push(den.id);
+  if (n && n !== num.expect) off.push(num.id);
+  return off;
+}
+
 /** Judges one item. Empty cells are left alone; a carry cell is optional. */
 export function check(item: MathItem, input: ProblemInput): CheckResult {
   const { values } = input;
   const steps = input.steps ?? [];
   const wrongCells: string[] = [];
   const emptyCells: string[] = [];
+  const pair = item.kind === "fraction_sum" ? allCells(item).filter((c) => c.role !== "given") : [];
   for (const c of allCells(item)) {
     if (c.role === "given") continue;
     const v = values[c.id] ?? "";
@@ -58,24 +74,35 @@ export function check(item: MathItem, input: ProblemInput): CheckResult {
       if (c.role !== "carry" && !c.spare) emptyCells.push(c.id);
       continue;
     }
+    if (pair.includes(c)) continue;
     if (cellOff(c.role, c.expect, c.spare, v)) wrongCells.push(c.id);
   }
+  if (pair.length === 2) wrongCells.push(...fractionCellsOff(item, values, pair[0], pair[1]));
 
   const fromWork = answerFromWork(item, values);
   const typed = input.answer.trim();
   const answer = typed ? canonicalAnswer(item, typed) : fromWork ? canonicalAnswer(item, fromWork) : "";
   const ready = answer !== "";
-  const answerOk = ready && answer === item.answer;
+  const answerOk = ready && answersEqual(item, answer);
 
   const marks: Record<string, Mark> = {};
   const badLines = new Set(wrongCells.map((id) => lineOfCell(item, id)).filter((l): l is string => l !== null));
   for (const l of badLines) marks[l] = "ring";
   // The work's answer line gets a tick once it is filled and right.
   const workLine = answerLine(item);
-  if (workLine && !badLines.has(workLine) && fromWork !== null && canonicalAnswer(item, fromWork) === item.answer) marks[workLine] = "tick";
+  if (workLine && !badLines.has(workLine) && fromWork !== null && answersEqual(item, canonicalAnswer(item, fromWork))) marks[workLine] = "tick";
+  // a product's partial rows: a tick once a row is filled and right
+  if (item.layout.kind === "columns") {
+    for (const line of item.layout.lines) {
+      if (line.role !== "partial" || badLines.has(line.id)) continue;
+      const cells = line.cells.filter((c): c is Cell => c !== null && !c.spare);
+      if (cells.length && cells.every((c) => (values[c.id] ?? "").trim() === c.expect)) marks[line.id] = "tick";
+    }
+  }
 
+  const unknown = item.math?.kind === "equation" ? { letter: item.math.letter, value: item.math.x } : undefined;
   steps.forEach((s, i) => {
-    const m = judgeStep(s);
+    const m = judgeStep(s, unknown);
     if (m) marks[stepLine(i)] = m;
   });
 
@@ -105,11 +132,19 @@ export function check(item: MathItem, input: ProblemInput): CheckResult {
 
 /**
  * A typed step judged as a sum: `6 + 6 = 12` is a tick, `2 + 7 = 8` a ring. A line with no `=`, one
- * that ends in `=` (unfinished), or one that is not plain arithmetic gets no mark.
+ * that ends in `=` (unfinished), or one that is not plain arithmetic gets no mark. With an unknown
+ * (an equation's `x` and its value), a step is right when it is true for that value: `x = 15 − 7`
+ * and `x + 7 − 7 = 15 − 7` are ticks, `x = 22` a ring.
  */
-export function judgeStep(text: string): Mark | null {
-  const t = text
-    .replace(/\s+/g, "")
+export function judgeStep(text: string, unknown?: { letter: string; value: number }): Mark | null {
+  let t0 = text.replace(/\s+/g, "");
+  if (unknown) {
+    const L = unknown.letter;
+    const v = `(${unknown.value})`;
+    // `3x` is 3 times x, `x3` is never written; the letter itself is a number now
+    t0 = t0.replace(new RegExp(`(\\d|\\))${L}`, "gi"), `$1*${v}`).replace(new RegExp(L, "gi"), v);
+  }
+  const t = t0
     .replace(/[×xX*·]/g, "*")
     .replace(/[÷:]/g, "/")
     .replace(/[−–—]/g, "-");

@@ -2,26 +2,33 @@
 
 import Link from "next/link";
 import { ChevronLeft, MoreHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useReducer, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { useAuth } from "@/components/AuthProvider";
 import { useFeatureLabs } from "@/lib/featureLabs";
 import { KEYS_COPY } from "@/lib/keys/copy";
-import { generateSet, itemsFromList } from "@/lib/keys/generate";
-import { setReducer, starsOf, startSet, type ProblemAction } from "@/lib/keys/session";
+import { generateMixed, generateSet, isKeysSkill, itemsFromList, variantItem, type KeysSkill } from "@/lib/keys/generate";
+import type { MathItem } from "@/lib/keys/item";
+import { isBonus, offersNowYouTry, ownOf, perfectOf, setPosition, setReducer, starsOf, startSet, type ProblemAction } from "@/lib/keys/session";
 import { AllDone } from "./AllDone";
+import { bump, flyStar, play, setSoundsOn, soundsOn } from "./feel";
 import { KEYS_FONT_VARS } from "./fonts";
 import styles from "./keys.module.css";
 import { HelpMark, StarIcon } from "./TutorMarks";
+import { useReadAloud } from "./tutorVoice";
 import { TypedLines } from "./TypedLines";
+import { useKeysDay, type KeysDay } from "./useKeysDay";
+import { nowYouTrySeed, useKeysRecord, useLearner } from "./useKeysTutor";
 
 const KEY_LIST: [string, string][] = [
   ["0–9", "Fill a box. A column fills right to left."],
-  ["c", "Open the carry box over this column."],
+  ["c", "Open the carry (or regroup) box over this column."],
   ["← → ↑ ↓", "Move between boxes and lines."],
   ["Enter", "Go to the answer. In the answer, check it."],
   ["Ctrl + Enter", "Check, from anywhere."],
-  ["?", "Help me."],
-  ["Space", "Add a ten to the blocks."],
-  ["Backspace", "Clear a box, or take a ten away."],
+  ["?", "Help me. Again for more help."],
+  ["/", "In a fraction: go from the top to the bottom."],
+  ["Space", "Build: add a block, a part or a row."],
+  ["Backspace", "Clear a box, or take one away."],
 ];
 
 const noop = () => () => {};
@@ -31,43 +38,46 @@ export interface KeysPageProps {
   seed: number;
   /** `?p=26+?6=92|47+38`: exactly these problems (QA) */
   list?: string | null;
+  /** `?seed=` or `?skill=` was given: that set, not Today's practice (QA) */
+  fixed?: boolean;
+  /** `?skill=times_tables`: a set of that skill (QA) */
+  skill?: string | null;
+}
+
+/** Where a page's problems come from, and "More like these". */
+interface SetSource {
+  items: MathItem[];
+  more: (round: number) => MathItem[];
+  /** Today's practice: its day and goal, saved to the daily record as the kid goes */
+  daily: KeysDay | null;
 }
 
 /**
  * Keys (docs/KEYS.md): Today's practice with only a keyboard, as the iPad's Problem Page. Behind the
- * Feature Labs switch "Keyboard practice". The set lives here; the work surface is `TypedLines`.
+ * Feature Labs switch "Keyboard practice". With no `?p=`, `?seed=` or `?skill=`, a signed-in kid gets
+ * Today's practice from their path and record (`useKeysDay`); otherwise the day's adding set. The set
+ * lives in `KeysSession`; the work surface is `TypedLines`.
  */
-export function KeysPage({ seed, list }: KeysPageProps) {
+export function KeysPage({ seed, list, fixed = false, skill = null }: KeysPageProps) {
   const { features, setFeature, loading } = useFeatureLabs();
+  const { user, loading: authLoading } = useAuth();
   // Feature Labs reads this browser's cache first: render only once mounted, so the server's page and
   // the browser's first render agree.
   const mounted = useSyncExternalStore(noop, () => true, () => false);
+  const fromList = useMemo(() => (list ? itemsFromList(list) : []), [list]);
+  const daily = !fromList.length && !fixed;
+  const day = useKeysDay(user?.id ?? null, daily && features.keys, authLoading);
 
-  const [round, setRound] = useState(0);
-  const items = useMemo(() => {
-    const fromList = list ? itemsFromList(list) : [];
-    return fromList.length ? fromList : generateSet(seed + round);
-  }, [list, seed, round]);
-  const [state, dispatch] = useReducer(setReducer, items, startSet);
-  const [moreOpen, setMoreOpen] = useState(false);
-
-  const onMore = useCallback(() => {
-    const next = round + 1;
-    setRound(next);
-    dispatch({ type: "restart", items: list ? items : generateSet(seed + next) });
-  }, [round, list, items, seed]);
-
-  useEffect(() => {
-    if (!moreOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMoreOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [moreOpen]);
-
-  const problemDispatch = useCallback((a: ProblemAction) => dispatch(a), []);
-  const onNext = useCallback(() => dispatch({ type: "next" }), []);
+  const source = useMemo<SetSource | null>(() => {
+    if (fromList.length) return { items: fromList, more: () => fromList, daily: null };
+    if (day.status === "loading") return null;
+    if (day.day) {
+      const d = day.day;
+      return { items: d.items, more: (round) => generateMixed(d.seed + round, d.plan.skills), daily: d };
+    }
+    const own: KeysSkill = skill && isKeysSkill(skill) ? skill : "add_within_100";
+    return { items: generateSet(seed, 5, own), more: (round) => generateSet(seed + round, 5, own), daily: null };
+  }, [fromList, day, seed, skill]);
 
   const rootClass = `${styles.root} ${KEYS_FONT_VARS}`;
 
@@ -96,8 +106,94 @@ export function KeysPage({ seed, list }: KeysPageProps) {
     );
   }
 
-  const count = state.items.length;
+  if (!source) {
+    return (
+      <main className={rootClass} aria-busy="true">
+        <div className={styles.gate}>
+          <p role="status">{KEYS_COPY.gate.loading}</p>
+        </div>
+      </main>
+    );
+  }
+
+  return <KeysSession key={source.items.map((i) => i.id).join("|")} source={source} rootClass={rootClass} />;
+}
+
+/** One set on the page: the top bar, the problems, All done. */
+function KeysSession({ source, rootClass }: { source: SetSource; rootClass: string }) {
+  const [round, setRound] = useState(0);
+  const [state, dispatch] = useReducer(setReducer, source.items, startSet);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const { user } = useAuth();
+  const learner = useLearner(user?.id ?? null);
+  const attemptId = useKeysRecord(state, learner, Boolean(user));
+  const [readAloud, setReadAloud] = useReadAloud();
+
+  // Now you try: one more like it, after a problem done with help (the same attempt, the same problem)
+  const nowYouTry = useMemo(() => {
+    if (!offersNowYouTry(state)) return null;
+    return variantItem(state.problem.item, nowYouTrySeed(attemptId(state.index)));
+  }, [state, attemptId]);
+  const onNowYouTry = useCallback(() => {
+    if (nowYouTry) dispatch({ type: "now_you_try", item: nowYouTry });
+  }, [nowYouTry]);
+
+  const onMore = useCallback(() => {
+    const next = round + 1;
+    setRound(next);
+    dispatch({ type: "restart", items: source.more(next) });
+  }, [round, source]);
+
+  // Today's practice: the day's stars and done, saved as they come (counts only go up on the server)
+  const solved = starsOf(state);
+  const own = ownOf(state);
+  const daily = round === 0 ? source.daily : null;
+  useEffect(() => {
+    if (!daily || !user || solved === 0) return;
+    void import("@/lib/daily/store").then(({ saveDailyPractice }) =>
+      saveDailyPractice({ day: daily.day, boardId: null, goal: daily.items.length, done: solved, stars: own }),
+    );
+  }, [daily, user, solved, own]);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [moreOpen]);
+
+  const problemDispatch = useCallback((a: ProblemAction) => dispatch(a), []);
+  const onNext = useCallback(() => dispatch({ type: "next" }), []);
+
+  const { n, count } = setPosition(state);
+  const bonus = !state.finished && isBonus(state);
+  const subtitle = state.finished ? KEYS_COPY.allDone : bonus ? KEYS_COPY.nowYouTry : KEYS_COPY.problemOf(n, count);
+
+  // read on the first render: the More card that shows it only opens after the page has mounted
+  const [sounds, setSounds] = useState(() => typeof window === "undefined" || soundsOn());
+  const toggleSounds = () => {
+    setSoundsOn(!sounds);
+    setSounds(!sounds);
+  };
+
+  // The pill counts a star when it lands: a solved problem's star flies up from the cheer.
   const stars = starsOf(state);
+  const [landed, setLanded] = useState({ round: 0, n: 0 });
+  const shown = landed.round === round ? Math.min(landed.n, stars) : 0;
+  const pill = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (stars <= shown) return;
+    const t = window.setTimeout(() => {
+      flyStar(document.querySelector("[data-cheer]"), pill.current, () => {
+        setLanded({ round, n: stars });
+        bump(pill.current);
+        play("star");
+      });
+    }, 320);
+    return () => window.clearTimeout(t);
+  }, [stars, shown, round]);
 
   return (
     <main className={rootClass}>
@@ -107,15 +203,15 @@ export function KeysPage({ seed, list }: KeysPageProps) {
         </Link>
         <div className={styles.titleBlock}>
           <h1 className={styles.title}>{KEYS_COPY.title}</h1>
-          <p className={styles.subtitle}>{state.finished ? KEYS_COPY.allDone : KEYS_COPY.problemOf(state.index + 1, count)}</p>
+          <p className={styles.subtitle}>{subtitle}</p>
         </div>
         <div className={`${styles.barRight} ${styles.barAnchor}`}>
-          <span className={styles.starsPill} aria-label={`Stars: ${KEYS_COPY.starsOf(stars, count)}`}>
+          <span ref={pill} className={styles.starsPill} data-filled={shown > 0 ? "" : undefined} role="status" aria-label={`Stars: ${KEYS_COPY.starsOf(stars, count)}`}>
             <StarIcon />
-            <span aria-hidden="true">{KEYS_COPY.starsOf(stars, count)}</span>
+            <span aria-hidden="true">{KEYS_COPY.starsOf(shown, count)}</span>
           </span>
           {!state.finished && (
-            <button type="button" className={`${styles.btn} ${styles.sunny} ${styles.helpMe}`} onClick={() => dispatch({ type: "help" })} aria-keyshortcuts="?">
+            <button type="button" className={`${styles.btn} ${styles.sunny} ${styles.helpMe}`} onClick={() => dispatch({ type: "help" })} aria-keyshortcuts="?" aria-label={KEYS_COPY.helpMe}>
               <HelpMark size={30} />
               <span className={styles.label}>{KEYS_COPY.helpMe}</span>
               <span className={styles.kbd} aria-hidden="true">
@@ -142,16 +238,35 @@ export function KeysPage({ seed, list }: KeysPageProps) {
                   </div>
                 ))}
               </dl>
+              <label className={styles.switchRow}>
+                <input type="checkbox" role="switch" checked={readAloud} onChange={(e) => setReadAloud(e.target.checked)} />
+                <span>{KEYS_COPY.readAloud}</span>
+              </label>
+              <p className={styles.switchNote}>{KEYS_COPY.readAloudNote}</p>
+              <button type="button" className={styles.soundSwitch} role="switch" aria-checked={sounds} onClick={toggleSounds}>
+                <span>{KEYS_COPY.sounds}</span>
+                <span className={styles.switchTrack} aria-hidden="true">
+                  <span className={styles.switchKnob} />
+                </span>
+              </button>
             </div>
           )}
         </div>
       </header>
 
-      <section className={styles.page} aria-label={state.finished ? KEYS_COPY.allDone : KEYS_COPY.problemOf(state.index + 1, count)}>
+      <section className={styles.page} aria-label={subtitle}>
         {state.finished ? (
-          <AllDone outcomes={state.outcomes} onMore={onMore} />
+          <AllDone outcomes={state.outcomes.filter((_, i) => !isBonus(state, i))} perfect={perfectOf(state)} onMore={onMore} />
         ) : (
-          <TypedLines key={`${round}:${state.index}`} problem={state.problem} dispatch={problemDispatch} last={state.index === count - 1} onNext={onNext} />
+          <TypedLines
+            key={`${round}:${state.index}:${state.items.length}`}
+            problem={state.problem}
+            dispatch={problemDispatch}
+            last={state.index === state.items.length - 1}
+            onNext={onNext}
+            onNowYouTry={nowYouTry ? onNowYouTry : null}
+            grade={learner.grade}
+          />
         )}
       </section>
     </main>

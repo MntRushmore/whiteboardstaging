@@ -511,7 +511,11 @@ describe("the migration's lists and limits match the contract", () => {
 
   it("course, origin, outcome and mistake kinds are the code's lists (a new value needs a migration first)", () => {
     expect(listAfter("constraint learning_attempts_course_known")).toEqual([...COURSE_IDS]);
-    expect(listAfter("constraint learning_attempts_origin_known")).toEqual([...ATTEMPT_ORIGINS]);
+    // the origins' check was replaced since (`keys`): the latest migration's list is the one that holds
+    const keys = readFileSync(resolve(__dirname, "../../../../supabase/migrations/20261027030000_keys_origin.sql"), "utf8");
+    const origins = /add constraint learning_attempts_origin_known\s+check \(origin in \(([^)]*)\)/.exec(keys)?.[1] ?? "";
+    expect([...origins.matchAll(/'([^']*)'/g)].map((m) => m[1])).toEqual([...ATTEMPT_ORIGINS]);
+    expect(listAfter("constraint learning_attempts_origin_known")).toEqual(ATTEMPT_ORIGINS.filter((o) => o !== "keys"));
     expect(listAfter("constraint learning_attempts_outcome_known")).toEqual([...OUTCOMES]);
     expect(listAfter("if k not in")).toEqual([...MISTAKE_KINDS]);
   });

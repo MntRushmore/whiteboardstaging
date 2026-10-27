@@ -781,6 +781,16 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
+    path: "/api/keys/say",
+    file: "src/app/api/keys/say/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "keysSay",
+    body: "zod",
+    purpose: "Agathon Keys: the tutor's one line for a slip or a Help me rung (wording only; the judgement is the page's own), with the copy line when the model is slow or fails (uncharged)",
+    status: "active",
+  },
+  {
     path: "/api/live/speak",
     file: "src/app/api/live/speak/route.ts",
     methods: ["POST"],
