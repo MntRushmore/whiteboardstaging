@@ -15,7 +15,7 @@ import {
   type SaveFailure,
 } from "@/lib/featureLabsState";
 
-export type FeatureKey = "stickers" | "pdfUpload";
+export type FeatureKey = "stickers" | "pdfUpload" | "keys";
 
 export type FeatureMeta = {
   key: FeatureKey;
@@ -42,11 +42,20 @@ export const FEATURES: FeatureMeta[] = [
     status: "experimental",
     icon: "Upload",
   },
+  {
+    key: "keys",
+    title: "Keyboard practice",
+    description:
+      "Today's practice with just a keyboard, at /keys: two-digit adding with carrying, checked step by step. For laptops and Chromebooks.",
+    status: "experimental",
+    icon: "Keyboard",
+  },
 ];
 
 export const DEFAULT_FEATURES: Record<FeatureKey, boolean> = {
   stickers: false,
   pdfUpload: false,
+  keys: false,
 };
 
 const STORAGE_KEY = "agathon.featureLabs.v1";
