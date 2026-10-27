@@ -20,7 +20,7 @@ export const APPLE_PLAN = {
   /** Its subscription group's reference name (the .storekit file and App Store Connect). */
   subscriptionGroup: "Agathon Unlimited",
   /** The app's bundle id (APPLE_BUNDLE_ID overrides, for a fork). */
-  bundleId: "app.agathon.Agathon",
+  bundleId: "app.agathon.ios",
   /** The introductory offer: a free week, as on the web. */
   trialDays: UNLIMITED_PLAN.trialDays,
 } as const;

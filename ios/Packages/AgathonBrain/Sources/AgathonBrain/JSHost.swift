@@ -11,7 +11,7 @@ import os
 /// call is synchronous (`scripts/build-ios-brain.mjs` fails the build if browser-only code is
 /// reachable), so none are installed — a half-working stand-in would hide a mistake.
 final class JSHost {
-    private static let log = Logger(subsystem: "app.agathon.Agathon", category: "brain.js")
+    private static let log = Logger(subsystem: "app.agathon.ios", category: "brain.js")
 
     let virtualMachine: JSVirtualMachine
     let context: JSContext

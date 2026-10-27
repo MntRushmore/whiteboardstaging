@@ -13,7 +13,7 @@
  *                                    configured so is refused outright. APPLE_XCODE_CERT, when set,
  *                                    pins Xcode's certificate (its signature is then checked).
  *                      unset         Apple billing is off: both routes answer 503.
- *   APPLE_BUNDLE_ID    the app's bundle id (default app.agathon.Agathon)
+ *   APPLE_BUNDLE_ID    the app's bundle id (default app.agathon.ios)
  *   APPLE_APP_APPLE_ID the app's numeric Apple ID (App Store Connect > App Information); required
  *                      with Production, where Apple's library checks notifications carry it.
  */

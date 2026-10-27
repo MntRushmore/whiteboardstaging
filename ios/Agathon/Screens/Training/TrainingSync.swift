@@ -7,7 +7,7 @@ import os
 /// iPad's copy (`TrainingStore`) always, Supabase's tables (`TrainingRepository`) when they are there.
 @MainActor
 enum TrainingSync {
-    static let log = Logger(subsystem: "app.agathon.Agathon", category: "training")
+    static let log = Logger(subsystem: "app.agathon.ios", category: "training")
 
     /// The signed-in user is an admin (asked once per sign-in; a failed ask is "no").
     static func isAdmin(_ backend: AgathonBackend) async -> Bool {

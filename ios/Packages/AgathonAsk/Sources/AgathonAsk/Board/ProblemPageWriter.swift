@@ -24,7 +24,7 @@ import os
 /// (`InstantPen`), so the board does not flip through the set.
 @MainActor
 public final class ProblemPageWriter {
-    static let log = Logger(subsystem: "app.agathon.Agathon", category: "ask")
+    static let log = Logger(subsystem: "app.agathon.ios", category: "ask")
 
     /// A set to write: its problems, the set's id (`daily:2026-10-19`, `ask:<uuid>`) and where its
     /// problems come from (`practice`, `chat`).

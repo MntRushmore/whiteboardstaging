@@ -28,7 +28,7 @@ import UIKit
 ///    bank's next step in the tutor's hand), then the walk-through (the bank's steps, a tap between).
 @MainActor
 final class SATSessionModel: ObservableObject {
-    nonisolated static let log = Logger(subsystem: "app.agathon.Agathon", category: "sat")
+    nonisolated static let log = Logger(subsystem: "app.agathon.ios", category: "sat")
 
     enum Phase {
         case loading

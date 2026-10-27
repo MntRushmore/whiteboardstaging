@@ -21,7 +21,7 @@ import SwiftUI
 ///   -liveLabDemo <name>      run a script: `e2e` (a slip ticked and ringed, a hint, the next step,
 ///                            Solve and Now you try), `slip`, `solve`
 /// Environment: AGATHON_TEST_EMAIL / AGATHON_TEST_PASSWORD sign the QA user in when signed out.
-/// Every step and latency is logged as `LIVELAB …` (subsystem app.agathon.Agathon, category live).
+/// Every step and latency is logged as `LIVELAB …` (subsystem app.agathon.ios, category live).
 struct LiveLabView: View {
     @Environment(AgathonBackend.self) private var backend
     @StateObject private var lab = LiveLabModel()
@@ -118,7 +118,7 @@ final class LiveLabModel: ObservableObject {
         let lines: [String]
     }
 
-    static let log = Logger(subsystem: "app.agathon.Agathon", category: "live")
+    static let log = Logger(subsystem: "app.agathon.ios", category: "live")
     static let hands = ["clean", "slanted", "steep", "messy"]
     static let paces = ["lab"] + KidPace.all.map(\.name)
     static let scenarios = [

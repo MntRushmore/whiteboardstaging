@@ -39,7 +39,7 @@ import os
 ///     line cancels everything still in flight for it.
 @MainActor
 public final class LiveLoop: ObservableObject {
-    static let log = Logger(subsystem: "app.agathon.Agathon", category: "live")
+    static let log = Logger(subsystem: "app.agathon.ios", category: "live")
 
     // MARK: dependencies
 

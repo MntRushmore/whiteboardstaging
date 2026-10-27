@@ -109,7 +109,7 @@ struct FakeStoreKit {
 
     func transaction(signed: Date, expires: Date, trial: Bool, id: String? = nil, revoked: Date? = nil) -> String {
         var body: [String: Any] = [
-            "originalTransactionId": originalID, "transactionId": id ?? originalID, "bundleId": "app.agathon.Agathon",
+            "originalTransactionId": originalID, "transactionId": id ?? originalID, "bundleId": "app.agathon.ios",
             "productId": StorePlan.productID, "purchaseDate": ms(signed), "originalPurchaseDate": ms(signed), "expiresDate": ms(expires),
             "quantity": 1, "type": "Auto-Renewable Subscription", "appAccountToken": token.uuidString.lowercased(),
             "inAppOwnershipType": "PURCHASED", "signedDate": ms(signed), "environment": "Xcode", "storefront": "USA",

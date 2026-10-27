@@ -4,7 +4,7 @@
      destination "export" writes Agathon.ipa to disk; the script then uploads it with an App Store
      Connect API key (altool). The script swaps in "upload" only for UPLOAD_WITH=xcodebuild.
      Automatic signing: Xcode re-signs with the team's Apple Distribution certificate and an
-     App Store provisioning profile for app.agathon.Agathon (App Attest, production). -->
+     App Store provisioning profile for app.agathon.ios (App Attest, production). -->
 <plist version="1.0">
 <dict>
 	<key>method</key>

@@ -47,7 +47,7 @@ public protocol AskBoardHelper: AnyObject {
 /// (`LiveBoard.write`: AgathonBoard's `TutorWriter`, origin `.tutor`, never in the kid's undo).
 @MainActor
 public final class AskBoardDriver: AskBoardContext {
-    static let log = Logger(subsystem: "app.agathon.Agathon", category: "ask")
+    static let log = Logger(subsystem: "app.agathon.ios", category: "ask")
 
     public let board: LiveBoard
     public let brain: Brain

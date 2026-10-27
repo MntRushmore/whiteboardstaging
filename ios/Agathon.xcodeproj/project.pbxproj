@@ -457,7 +457,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.agathon.Agathon;
+				PRODUCT_BUNDLE_IDENTIFIER = app.agathon.ios;
 				PRODUCT_NAME = Agathon;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -479,7 +479,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.agathon.Agathon;
+				PRODUCT_BUNDLE_IDENTIFIER = app.agathon.ios;
 				PRODUCT_NAME = Agathon;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;

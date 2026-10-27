@@ -123,7 +123,7 @@ final class PictureTutorLog: ObservableObject {
     static let shared = PictureTutorLog()
     static let key = "pictureTutor.runs"
     static let keep = 10
-    static let os = Logger(subsystem: "app.agathon.Agathon", category: "picture-tutor")
+    static let os = Logger(subsystem: "app.agathon.ios", category: "picture-tutor")
 
     @Published private(set) var runs: [PictureTutorRun]
     private let defaults: UserDefaults

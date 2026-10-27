@@ -42,7 +42,7 @@ struct KidSessionControls: View {
 @MainActor
 final class KidSessionPlayer: ObservableObject {
     static let shared = KidSessionPlayer()
-    nonisolated static let log = Logger(subsystem: "app.agathon.Agathon", category: "kidSession")
+    nonisolated static let log = Logger(subsystem: "app.agathon.ios", category: "kidSession")
 
     static var requested: KidSession? {
         let args = ProcessInfo.processInfo.arguments

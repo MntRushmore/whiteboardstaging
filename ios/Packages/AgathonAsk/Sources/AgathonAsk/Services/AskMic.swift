@@ -133,7 +133,7 @@ public struct LiveSpeechToText: SpeechToText {
 /// The microphone's permission is asked for on the first press, never before.
 @MainActor
 public final class AskMic: ObservableObject {
-    static let log = Logger(subsystem: "app.agathon.Agathon", category: "ask")
+    static let log = Logger(subsystem: "app.agathon.ios", category: "ask")
 
     public enum Phase: Equatable {
         case idle

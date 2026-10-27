@@ -15,7 +15,7 @@ import UIKit
 /// (training work never counts as anyone's practice).
 @MainActor
 final class TrainingBoard: ObservableObject {
-    nonisolated static let log = Logger(subsystem: "app.agathon.Agathon", category: "training")
+    nonisolated static let log = Logger(subsystem: "app.agathon.ios", category: "training")
 
     let controller = BoardController()
     let services: TrainingServices

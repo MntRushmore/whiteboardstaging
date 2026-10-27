@@ -24,7 +24,7 @@ import SwiftUI
 ///   -askLabOpen YES          Ask open from the start
 ///   -askLabAsk "<words>"     send these words once the board is up (`a|b`: one after the other)
 ///   -askLabLive YES          the live backend instead of the scripted tutor
-/// Every step is logged as `ASKLAB …` (subsystem app.agathon.Agathon, category ask).
+/// Every step is logged as `ASKLAB …` (subsystem app.agathon.ios, category ask).
 struct AskLabView: View {
     @Environment(AgathonBackend.self) private var backend
     @StateObject private var lab = AskLabModel()
@@ -67,7 +67,7 @@ struct AskLabView: View {
 /// The Lab's board, its Ask, and the scripted tutor.
 @MainActor
 final class AskLabModel: ObservableObject {
-    static let log = Logger(subsystem: "app.agathon.Agathon", category: "ask")
+    static let log = Logger(subsystem: "app.agathon.ios", category: "ask")
     static let prompts = [
         "How do I add 1/2 and 1/4?",
         "3 more like these",

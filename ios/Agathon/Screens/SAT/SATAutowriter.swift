@@ -19,7 +19,7 @@ enum SATAutowriter {
     }
 
     static let progress = Progress()
-    static let log = Logger(subsystem: "app.agathon.Agathon", category: "satAutowrite")
+    static let log = Logger(subsystem: "app.agathon.ios", category: "satAutowrite")
 
     static func writeNext(_ model: SATSessionModel) async {
         let lines = SATDebugFlags.autowrite

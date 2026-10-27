@@ -5,14 +5,14 @@
  * Read here, not through src/lib/env.ts (another lane edits that file; route files may not read
  * process.env at all):
  *  - `APP_ATTEST_APP_ID`: the App ID whose SHA-256 every attestation and assertion must carry as its
- *    RP ID hash. Default `SG4YJW2K5Z.app.agathon.Agathon` (team SG4YJW2K5Z, bundle
- *    app.agathon.Agathon).
+ *    RP ID hash. Default `SG4YJW2K5Z.app.agathon.ios` (team SG4YJW2K5Z, bundle
+ *    app.agathon.ios, the App Store record 6761506513).
  *  - whether the debug bypass may be used (`debugBypassAllowed`): never on a production server.
  */
 import { X509Certificate } from "node:crypto";
 
 /** Team ID + "." + bundle ID, as Apple hashes it into authData's RP ID. */
-export const DEFAULT_APP_ID = "SG4YJW2K5Z.app.agathon.Agathon";
+export const DEFAULT_APP_ID = "SG4YJW2K5Z.app.agathon.ios";
 
 /** The App ID attestations and assertions are checked against (env APP_ATTEST_APP_ID, else DEFAULT_APP_ID). */
 export function appAttestAppId(): string {

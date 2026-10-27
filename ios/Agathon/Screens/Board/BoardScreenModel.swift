@@ -16,7 +16,7 @@ import UIKit
 /// hand; leaving the app saves at once; closing saves, stops everything and lets it all go.
 @MainActor
 final class BoardScreenModel: ObservableObject {
-    nonisolated static let log = Logger(subsystem: "app.agathon.Agathon", category: "board")
+    nonisolated static let log = Logger(subsystem: "app.agathon.ios", category: "board")
 
     enum Phase {
         case loading

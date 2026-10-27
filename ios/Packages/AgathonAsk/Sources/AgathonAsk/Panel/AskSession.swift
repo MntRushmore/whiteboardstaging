@@ -22,7 +22,7 @@ extension AskSpeechQueue: AskSpeechSink {}
 /// server after (`POST /api/live/ask/history/move` with the saved turns).
 @MainActor
 public final class AskSession: ObservableObject {
-    static let log = Logger(subsystem: "app.agathon.Agathon", category: "ask")
+    static let log = Logger(subsystem: "app.agathon.ios", category: "ask")
     /// How long the screen's picture may hold an ask up: after this it goes without one.
     public static let imageWait: Duration = .milliseconds(1200)
     /// How long an ask waits for the saved chat still being read.

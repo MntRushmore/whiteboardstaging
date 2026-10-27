@@ -43,7 +43,7 @@ public struct LiveSpeechAudio: SpeechAudioSource {
 /// the iPad's own voice (AVSpeechSynthesizer) for ten minutes before the route is tried again.
 @MainActor
 public final class AskVoice: PhraseSpeaker {
-    static let log = Logger(subsystem: "app.agathon.Agathon", category: "ask")
+    static let log = Logger(subsystem: "app.agathon.ios", category: "ask")
     /// after the route said it is unavailable, the device's voice for this long
     public static let routeDown: TimeInterval = 600
     /// after any other failure (a 502/504 page from Cloudflare, a 429, a dropped connection), the

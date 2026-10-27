@@ -86,7 +86,7 @@ targets:
       - package: AgathonSAT
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.agathon.Agathon
+        PRODUCT_BUNDLE_IDENTIFIER: app.agathon.ios
         PRODUCT_NAME: Agathon
         TARGETED_DEVICE_FAMILY: "2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
