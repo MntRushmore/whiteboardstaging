@@ -98,6 +98,7 @@ struct BoardScreen: View {
 // MARK: - The open board
 
 private struct BoardRoom: View {
+    @Environment(AgathonBackend.self) private var backend
     @ObservedObject var model: BoardScreenModel
     @ObservedObject var session: BoardSession
     @ObservedObject var controller: BoardController
@@ -107,6 +108,14 @@ private struct BoardRoom: View {
     @State private var popoverOpen = false
 
     var body: some View {
+        content
+            .sheet(item: $model.flagging) { flag in
+                NewBugReportSheet(boardId: model.request?.board.id, screenshot: flag.screenshot, context: flag.context) {}
+                    .environment(backend)
+            }
+    }
+
+    @ViewBuilder private var content: some View {
         AskPanelContainer(isOpen: $model.askOpen, ask: model.tutor?.ask) {
             BoardEditorView(
                 controller: controller, title: title, onBack: close,
@@ -231,6 +240,7 @@ private struct BoardTopTrailing: View {
                 LiveStatusView(loop: loop).fixedSize()
                 GrownUpLiveButton(loop: loop)
             }
+            flagButton
             askButton(words: words)
         }
     }
@@ -244,8 +254,15 @@ private struct BoardTopTrailing: View {
             } else if let loop = model.liveLoop {
                 GrownUpLiveButton(loop: loop)
             }
+            flagButton
             askButton(words: false)
         }
+    }
+
+    /// Flag a bug: a picture of the board and what it knew go with a note (the owner, 2026-10-27).
+    private var flagButton: some View {
+        RoundButton(.bug, label: "Flag a bug") { model.flagBug(controller: session.controller) }
+            .accessibilityIdentifier("board.flagBug")
     }
 
     @ViewBuilder private func askButton(words: Bool) -> some View {

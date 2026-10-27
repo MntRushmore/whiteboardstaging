@@ -94,6 +94,10 @@ const envSchema = z.object({
   // A link signed with the _PREVIOUS value still works, so a rotation keeps it there for 30 days.
   REPORT_LINK_SECRET: optionalString,
   REPORT_LINK_SECRET_PREVIOUS: optionalString,
+  // The bug agent's door (GET/PATCH /api/agent/bugs…, src/lib/server/bugAgent.ts): its bearer token,
+  // and the admin account its replies to reporters are sent as. Unset: the routes answer 503.
+  BUG_AGENT_TOKEN: optionalString,
+  BUG_AGENT_ADMIN_ID: optionalString,
 
   // Transactional email through Resend (src/lib/email). Unset: nothing is sent, nothing breaks.
   RESEND_API_KEY: optionalString,

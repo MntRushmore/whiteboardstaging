@@ -116,6 +116,9 @@ private struct BugReportCard: View {
 /// "Report a problem": a few words, sent with what the app knows (version, device, screen).
 struct NewBugReportSheet: View {
     var boardId: String?
+    /// A picture of the board (flagged from a board) and what the board knew then.
+    var screenshot: Data? = nil
+    var context: [String: String] = [:]
     let sent: () async -> Void
 
     @Environment(AgathonBackend.self) private var backend
@@ -126,7 +129,18 @@ struct NewBugReportSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.l) {
-            SheetHeader("Report a problem", onClose: { dismiss() })
+            SheetHeader(screenshot == nil ? "Report a problem" : "Flag a bug", onClose: { dismiss() })
+            if let screenshot, let image = UIImage(data: screenshot) {
+                HStack(spacing: DS.Space.m) {
+                    Image(uiImage: image).resizable().scaledToFit().frame(height: 96)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(DS.Color.line, lineWidth: 1))
+                    Text("A picture of your board and what the tutor just did go with it.")
+                        .dsFont(.caption).foregroundStyle(DS.Color.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityIdentifier("bugs.screenshot")
+            }
             Text("What happened? (optional)").dsFont(.button, size: 16).foregroundStyle(DS.Color.ink)
             TextField("", text: $message, prompt: Text("The pen stopped drawing when…").foregroundStyle(DS.Color.inkSecondary), axis: .vertical)
                 .lineLimit(4 ... 8)
@@ -152,18 +166,18 @@ struct NewBugReportSheet: View {
     private func send() {
         busy = true
         let device = UIDevice.current
-        let diagnostics = [
+        let diagnostics = context.merging([
             "platform": "ios",
             "release": backend.release.string,
             "device": device.model,
             "system": "\(device.systemName) \(device.systemVersion)",
             "locale": Locale.current.identifier,
-        ]
+        ]) { _, app in app }
         Task {
             defer { busy = false }
             do {
                 try await ReportsService(api: backend.api, client: backend.supabase)
-                    .fileBugReport(message: message, boardId: boardId, diagnostics: diagnostics)
+                    .fileBugReport(message: message, boardId: boardId, diagnostics: diagnostics, screenshot: screenshot)
                 await sent()
                 dismiss()
             } catch {

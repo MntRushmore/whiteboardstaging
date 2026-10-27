@@ -163,9 +163,9 @@ public final class ReportsService: Sendable {
         _ = try await api.post("/api/bug-reports/\(reportId)/messages", body: ["body": clean], as: EmptyResponse.self)
     }
 
-    /// Files a bug report (a row of `bug_reports`, as the web's Report a bug does): the words and
-    /// what the app knows about where it happened. No screenshot yet.
-    public func fileBugReport(message: String?, boardId: String? = nil, diagnostics: [String: String]) async throws {
+    /// Files a bug report (a row of `bug_reports`, as the web's Report a bug does): the words, what the
+    /// app knows about where it happened, and a picture of the board when flagged from one (a JPEG).
+    public func fileBugReport(message: String?, boardId: String? = nil, diagnostics: [String: String], screenshot: Data? = nil) async throws {
         let user = client.auth.currentUser
         struct Row: Encodable {
             let user_id: String?
@@ -173,10 +173,12 @@ public final class ReportsService: Sendable {
             let board_id: String?
             let message: String?
             let diagnostics: [String: String]
+            let screenshot: String?
         }
         let clean = message?.trimmingCharacters(in: .whitespacesAndNewlines)
         let row = Row(user_id: user?.id.uuidString.lowercased(), user_email: user?.email, board_id: boardId,
-                      message: (clean?.isEmpty ?? true) ? nil : clean, diagnostics: diagnostics)
+                      message: (clean?.isEmpty ?? true) ? nil : clean, diagnostics: diagnostics,
+                      screenshot: screenshot.map { "data:image/jpeg;base64,\($0.base64EncodedString())" })
         _ = try await SkewRetry.run {
             try await client.from("bug_reports").insert(row, returning: .minimal).execute()
         }

@@ -38,6 +38,8 @@ final class BoardScreenModel: ObservableObject {
     @Published private(set) var phase: Phase = .loading
     @Published private(set) var tutor: BoardTutor?
     @Published var askOpen = false
+    /// A bug being flagged from this board (the sheet's picture and context).
+    @Published var flagging: BugFlag?
     @Published var money: MoneyScreen?
     @Published private(set) var audience: BoardAudience?
     /// A word for the kid over the board for a moment (work put back from the backup, nearly full).
@@ -56,6 +58,8 @@ final class BoardScreenModel: ObservableObject {
     private(set) var request: OpenBoard?
     private weak var backend: AgathonBackend?
     private weak var canvas: BoardCanvasView?
+    /// the board's canvas, for a bug flag's picture
+    var attachedCanvas: BoardCanvasView? { canvas }
     private var opened = false
     private(set) var closed = false
     private var practiceTask: Task<Void, Never>?
@@ -287,5 +291,49 @@ final class BoardScreenModel: ObservableObject {
 
     func retry() async {
         await phase.session?.retry()
+    }
+}
+
+/// A bug flagged from the board: what the screen showed and what the board knew.
+struct BugFlag: Identifiable {
+    let id = UUID()
+    var screenshot: Data?
+    var context: [String: String]
+}
+
+extension BoardScreenModel {
+    /// The owner, 2026-10-27: "I need a way to flag bugs on the board": the board as it is on screen,
+    /// and the board's state, ready for a note.
+    func flagBug(controller: BoardController) {
+        flagging = BugFlag(screenshot: boardSnapshot(), context: bugContext(controller: controller))
+    }
+
+    private func boardSnapshot() -> Data? {
+        guard let canvas = attachedCanvas, canvas.bounds.width > 0 else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = min(1.5, canvas.window?.screen.scale ?? 2)
+        let image = UIGraphicsImageRenderer(bounds: canvas.bounds, format: format).image { _ in
+            canvas.drawHierarchy(in: canvas.bounds, afterScreenUpdates: false)
+        }
+        return image.jpegData(compressionQuality: 0.6)
+    }
+
+    private func bugContext(controller: BoardController) -> [String: String] {
+        var c: [String: String] = [
+            "board": request?.board.id ?? "",
+            "screen": controller.currentScreenID.rawValue,
+            "page": "\(controller.screenIndex) of \(controller.screenCount)",
+            "zoom": String(format: "%.2f", attachedCanvas?.zoom ?? 1),
+            "infinite": controller.infinite ? "on" : "off",
+            "build": "\(AppConfig.version) (\(AppConfig.build)) \(AppConfig.commit)",
+        ]
+        if let picture {
+            c["pictureTutor"] = picture.mode.rawValue
+            c["pictureRuns"] = PictureTutorLog.shared.runs.prefix(5).map {
+                "\($0.mode.rawValue) \($0.outcome) run=\($0.runId ?? "-") \(Int($0.endMs ?? 0))ms"
+            }.joined(separator: " | ")
+        }
+        if let loop = liveLoop { c["liveChecking"] = loop.settings.checking.rawValue }
+        return c
     }
 }
