@@ -68,6 +68,9 @@ export const LIMITS = {
   satRead: { limit: 60, windowMs: MINUTE },
   satAttempt: { limit: 60, windowMs: MINUTE },
   satTutor: { limit: 30, windowMs: MINUTE },
+  // Agathon Keys' tutor lines (POST /api/keys/say, docs/KEYS.md): one per Look again or Help me rung,
+  // uncharged; past it the page says the copy line it already has.
+  keysSay: { limit: 30, windowMs: MINUTE },
   // Live Math routes (budgets are defined once, in the shared contracts).
   liveRecognize: LIVE_RATE_LIMITS.liveRecognize,
   liveCheck: LIVE_RATE_LIMITS.liveCheck,
