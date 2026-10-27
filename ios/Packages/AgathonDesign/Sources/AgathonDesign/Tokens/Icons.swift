@@ -9,6 +9,8 @@ extension DS {
         case close, lock, plus, star, flame, play, home, path, chart, check, hand, palette
         case offline, retry, lookAgain, pause, person, book, delete, sparkle
         case search, trash, signOut, notSaved, family, settings, bug, report
+        /// the Mac screen panel: a window shared from a computer, live beside the board
+        case laptop
 
         public var id: String { rawValue }
 
@@ -24,6 +26,7 @@ extension DS {
             case .forward: "chevron.right"
             case .more: "ellipsis"
             case .chat: "bubble.left"
+            case .laptop: "laptopcomputer"
             case .mic: "mic"
             case .send: "arrow.up"
             case .speaker: "speaker.wave.2"
@@ -71,6 +74,7 @@ extension DS {
             case .forward: "Next"
             case .more: "More"
             case .chat: "Ask"
+            case .laptop: "Mac screen"
             case .mic: "Talk"
             case .send: "Send"
             case .speaker: "Read it out"

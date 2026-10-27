@@ -278,13 +278,11 @@ describe("POST /api/board/draw: a run", () => {
     expect(drawEvents()[0].meta).toMatchObject({ tutorModel: BOARD_DRAW_MODELS.tutorFast });
   }, 15_000);
 
-  it("a voice request paints even when the tutor sees no need (Reed's prompt alone)", async () => {
+  it("Draw now with nothing to add says so instead of painting (2026-10-26: it painted a whole new drawing on a solved page)", async () => {
     replies = [tutorReply(false), painterReply(PAINTED)];
     const ev = await lines(await draw(post("/api/board/draw", { ...RUN(), source: "voice" })));
-    expect(ev.map((e) => e.type)).toEqual(["status", "status", "done"]);
-    expect(ev[1]).toEqual({ type: "status", stage: "drawing", instructions: "" });
-    const text = (upstream[1].body.messages as Array<{ content: Array<{ text?: string }> }>)[0].content[1].text ?? "";
-    expect(text).not.toContain("Additional drawing instructions");
+    expect(ev.map((e) => e.type)).toEqual(["status", "none"]);
+    expect(upstream.some((u) => u.body.model === BOARD_DRAW_MODELS.painter)).toBe(false);
   });
 
   it("given instructions skip the tutor and are painted directly", async () => {

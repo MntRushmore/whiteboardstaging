@@ -40,6 +40,9 @@ final class BoardScreenModel: ObservableObject {
     @Published var askOpen = false
     /// A bug being flagged from this board (the sheet's picture and context).
     @Published var flagging: BugFlag?
+    /// the Mac screen panel: a window shared from a computer (agathon.app/share), live beside the board
+    @Published var macOpen = MacScreenModel.openAtLaunch
+    let mac = MacScreenModel()
     @Published var money: MoneyScreen?
     @Published private(set) var audience: BoardAudience?
     /// A word for the kid over the board for a moment (work put back from the backup, nearly full).
