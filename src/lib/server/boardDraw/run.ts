@@ -71,6 +71,8 @@ export type RunSummary = {
   readbackStrays?: string[];
   /** 2 when the picture was painted again */
   paints?: number;
+  /** the first picture didn't line up with the board (then it was painted again) */
+  misaligned?: boolean;
   strokes?: number;
   strokesDropped?: string;
   alignScore?: number;
@@ -136,6 +138,13 @@ function classify(err: unknown, stage: "tutor" | "painter" | "after"): RunError 
 type TutorAnswer = { model: string; decision: TutorDecision };
 
 /** One tutor call: the decision, or a throw (upstream error, timeout, unreadable reply). */
+/** Below this the picture doesn't line up with the board (good runs score 0.9–1). */
+export const MIN_ALIGN = 0.7;
+
+/** What a second painting is told after a picture that moved the page. */
+const KEEP_STILL_NOTE =
+  "Your last picture moved or redrew the page. Return the SAME image at the same size and framing, every existing mark exactly where it is, and only add new marks in empty space.";
+
 async function askTutor(model: string, input: RunInput, summary: RunSummary, stop: AbortSignal, note?: string): Promise<TutorAnswer> {
   const data = await openrouterChat(
     {
@@ -291,7 +300,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
   emit({ type: "status", stage: "drawing", instructions });
 
   // 2–4. paint, diff and trace; once more when the read-back finds a number the tutor never asked for
-  type Painted = { overlayPng: Buffer; picturePng: Buffer; reveal: RevealResult };
+  type Painted = { overlayPng: Buffer; picturePng: Buffer; reveal: RevealResult; align: number };
   const paintOnce = async (prompt: string, bail: (err: unknown, stage: "painter" | "after") => RunSummary | null): Promise<Painted | RunSummary | null> => {
     // 2. the painter: Reed's prompt (voice form: always an image) plus the instructions
     let pictureBytes: Buffer;
@@ -351,12 +360,26 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
     summary.strokes = reveal.strokes.length;
     if (reveal.dropped) summary.strokesDropped = reveal.dropped;
     if (signal.aborted) return bail(null, "after");
-    return { overlayPng, picturePng, reveal };
+    return { overlayPng, picturePng, reveal, align: summary.alignScore ?? 1 };
   };
   const firstPrompt = reedPrompt(input.mode, "voice", instructions || null);
   const first = await paintOnce(firstPrompt, fail);
   if (!first || !("overlayPng" in first)) return first ?? fail(null, "after");
   let painted: Painted = first;
+  // A picture that doesn't line up with the board: the painter moved or redrew the page, and its
+  // "additions" are the student's own writing shifted (the owner's board, 2026-10-27: alignment 0.30,
+  // their question copied in blue over their work). Painted once more, told to keep everything still;
+  // still off, nothing is shown rather than ink over the work.
+  if (painted.align < MIN_ALIGN && !signal.aborted) {
+    summary.paints = 2;
+    summary.misaligned = true;
+    const again = await paintOnce(`${firstPrompt}\n\n${KEEP_STILL_NOTE}`, (err, stage) => (signal.aborted ? fail(err, stage) : null));
+    if (again && !("overlayPng" in again)) return again;
+    if (!again || again.align < MIN_ALIGN) {
+      return fail(new RunError("misaligned", "The drawing didn't line up with the board. Try again.", true), "after");
+    }
+    painted = again;
+  }
   if (input.mode !== "feedback") {
     const strays = await strayNumbersOf(painted.overlayPng, board.width, board.height, instructions, signal, input.requestId);
     if (strays.length > 0 && !signal.aborted) {
