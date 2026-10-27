@@ -1,6 +1,9 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { Check, Flame, Play, Sparkles, Star } from "lucide-react";
+import { useFeatureLabs } from "@/lib/featureLabs";
+import { isKeyboardDevice } from "@/lib/keys/device";
 import { Button } from "@/registry/components/button/button";
 import { ConfettiBurst } from "@/components/onboarding/ConfettiBurst";
 import { TODAY_COPY } from "@/lib/daily/copy";
@@ -167,8 +170,13 @@ export function TodayView({ state, actions, preview = null }: { state: Extract<T
   );
 }
 
+const noSubscribe = () => () => {};
+
 export default function TodayCard({ userId }: TodayCardProps) {
-  const { state, actions, preview } = useToday(userId);
+  // a laptop or Chromebook with Keys on: Start and Continue open Today's practice typed (docs/KEYS.md)
+  const { features } = useFeatureLabs();
+  const laptop = useSyncExternalStore(noSubscribe, () => isKeyboardDevice(), () => false);
+  const { state, actions, preview } = useToday(userId, { keys: features.keys && laptop });
   if (state.status === "loading") {
     return <TodaySkeleton />;
   }

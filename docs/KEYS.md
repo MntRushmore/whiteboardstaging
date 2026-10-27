@@ -75,19 +75,26 @@ We copy none of its look, names or copy. No mascot, no orb, no two-panel split.
 
 ```
 src/lib/keys/          pure TS, no DOM, vitest
-  item.ts      MathItem: a layout (columns | equation) of cells {id, role: digit|carry|blank|given, expect?, value?}
-  generate.ts  MathItems from a SKILLS id + seed (the learning generators' seeded Rng)
+  item.ts      MathItem: a layout (columns | equation | fraction | lines) of cells {id, role: digit|carry|blank|given, expect?, value?}
+  families/    Phase 3: subtraction, multiplication, fractions, equations (items, generators, words, smaller problems)
+  generate.ts  MathItems from a Keys skill + seed (the learning generators' seeded Rng); variants; `?p=` parsing
   check.ts     the exact check of each line and cell -> { ok, wrongCells, firstBadLine, marks }
-  bugs/        buggy rules by area; matchBug(item, answer) -> bug id | null
-  shrink.ts    (item, bug, cell) -> SubStep: a smaller MathItem + a manipulative + a copy key
+  bugs/        buggy rules by area (27); matchBug(item, answer) -> bug id | null
+  shrink.ts    (item, bug, cell) -> SubStep: a smaller MathItem + a manipulative + where its answer goes
   stack.ts     a sub-step under its line; its answer flows back into the parent
-  session.ts   working -> look again -> helping (nudge | smaller) -> back -> done; the set of 5
-  keymap.ts    the keyboard map: a key on a slot -> an intent; moving around the column
-  copy.ts      every word the kid reads (fixed copy, no LLM in Phase 1)
-src/components/keys/   KeysPage, ColumnCells, TypedLines, TutorWriting (cobalt Kalam lines, ticks,
-                       rings), BlockTray, AllDone, Blocks fonts and styles
+  session.ts   working -> look again -> helping (nudge | smaller | worked) -> back -> done; the set, Now you try
+  keymap.ts    the keyboard map: a key on a slot -> an intent; moving around the column and fractions
+  copy.ts      every word the kid reads (the fixed lines the tutor's words fall back to)
+  say.ts       /api/keys/say's contract and the page's 1.5 s wait     hint.ts   the check endpoint's hint
+  record.ts    the learning record's AttemptRecord (origin keys)      a11y.ts   cell names for screen readers
+  plan.ts      Today's practice on Keys                               comebacks.ts, device.ts
+src/components/keys/   KeysPage (the gate, the day's set, KeysSession), ColumnCells, FractionCells,
+                       TypedLines, TutorWriting (cobalt Kalam lines, ticks, rings), BlockTray and
+                       Manipulatives, AllDone, tutorVoice (say, hint, read aloud), useKeysTutor,
+                       useKeysDay, Blocks fonts and styles
 src/app/(platform)/keys/page.tsx
-src/app/api/keys/say/route.ts   (Phase 2) tutor wording via src/lib/brain, with the fixed copy as fallback
+src/app/api/keys/say/route.ts   the tutor's wording, with the fixed copy as fallback
+scripts/keys-qa.mjs             Chromebook sizes, 200% zoom, 390 px, axe
 ```
 
 **Design tokens on the web.** Chalk ground, white page, Bricolage Grotesque ExtraBold headings,
@@ -218,7 +225,7 @@ on its own, patched by the carry back), `keys-12-keys-card.png` (More: the keys)
 | 1. A slice | done (`feat/keys-page`) |
 | 2. The tutor and the record | done (`feat/keys-full`) |
 | 3. Breadth | done (`feat/keys-full`) |
-| 4. The habit | see below |
+| 4. The habit | done (`feat/keys-full`); Home on a real account still to try on staging |
 
 ## Phase 2: the tutor's voice and the record
 
@@ -392,6 +399,98 @@ All of them are driven by the keyboard: number keys type the box; Space adds one
 shaded part, a row of the area model); Backspace takes one away (a typed digit, without a
 manipulative); ← → move the number line's marker; Enter checks the box; ↑ ↓ leave it.
 
+## Phase 4: the habit
+
+### Today's practice on a laptop
+
+- **Home** (`TodayCard` → `useToday`): on a laptop or Chromebook (`isKeyboardDevice`: the main pointer
+  is fine and nothing is touch) with Keys on (Feature Labs "Keyboard practice"), Start and Continue
+  open `/keys` instead of a board, when the day's set fits Keys (`planKeysSet(...).keysable`: at least
+  three of its five skills are ones Keys writes; a Kindergartner's day is not, and keeps the board).
+  No board is made. An iPad, a phone and a touch-screen laptop keep the board.
+- **The set** (`/keys` with no `?p=`, `?seed=` or `?skill=`, signed in; `useKeysDay`): the board's own
+  day (`loadDailyPlanInput` + `planDailySet`: the grade's path, the weak spots, a review, the same for
+  the same kid on the same day), each skill made a Keys skill (`keysSkillFor`; one Keys cannot write is
+  swapped for the nearest on the path), drawn with the day's seed. Signed out, or a read that fails:
+  the day's adding set, as in Phase 1.
+- **The day's record**: each problem solved saves `daily_practice` (`save_daily_practice`, board
+  null, done and stars only go up), so the streak, the stars on Home and the week's dots count Keys.
+  A day started on Keys shows Continue on Home (its row has done problems and no board).
+
+### Spaced comebacks (`comebacks.ts`)
+
+A skill the kid got through only with help (`with_help`, or the tutor finished it), on Keys or a
+board, comes back as ONE warm-up problem 2 days later and again 7 days later (local days, from
+`learning_attempts`). It opens the set, in place of the review. One is done once the skill is worked
+again on or after its day; a missed 2-day one gives way to the 7-day one; a newer help starts again.
+
+### Progress for parents
+
+Keys writes the learning record (Phase 2), so the Progress page, mastery, the skill path, the family
+page's stats and the weekly report read Keys attempts with the board's: every one of them takes the
+origins in `ATTEMPT_ORIGINS`, which has `keys`, and none filters by origin in SQL. Tested in
+`__tests__/habit.test.ts` (the summary's totals, skills and mistakes; the weekly report's `toRecord`).
+
+### Accessibility
+
+- Every cell says where it is and what it holds (`a11y.ts`): "Tens digit of the answer, empty",
+  "Carry into the hundreds, 1", "Tens digit after regrouping, 9", "Ones digit of the second row",
+  "Top of your fraction (the numerator)", "Missing tens digit". A ringed cell adds "Look again.".
+- A polite live region says every check and help: "Look again at the tens digit of the answer.",
+  the tutor's line as shown, the smaller problem in words, "You got it. Nailed it."; the stars pill is
+  a status.
+- Focus rings are cobalt and 3 px everywhere; Help me keeps its name when its label hides (narrow).
+- Sizes are in rem, so the page grows with the browser's text and zoom; at 200% (640 × 360) and at
+  390 px it reflows to one column and never scrolls sideways (the manipulatives' drawings shrink).
+- Reduce Motion: no burst, no star pop, no tutor's "…" pulse, no drawn-in marks.
+- Tomato carries are 24 px (large text: 3.1:1 passes AA there).
+
+### Chromebook QA (`npm run qa:keys`)
+
+`scripts/keys-qa.mjs` drives `/keys` with the keyboard only in Chromium at 1366 × 768, 1280 × 720,
+200% zoom and 390 px, with Reduce Motion on, through four journeys (a borrow and its blocks, fraction
+bars, a number line, a long product's rings), screenshots each moment and runs axe on each page. It
+fails on a serious or critical axe violation, a sideways scroll or a browser error. Last run: clean.
+It needs Playwright (not an app dependency) and the dev server.
+
+### Screenshots (Phases 2–4)
+
+| | |
+|---|---|
+| ![Nudge](qa-screenshots/keys/keys-p2-02-nudge-points.png) | ![Smaller](qa-screenshots/keys/keys-p2-03-smaller.png) |
+| **Help me, rung 1.** The nudge and the cobalt arrow under the tens. | **Rung 2.** The smaller problem and its blocks. |
+| ![Worked](qa-screenshots/keys/keys-p2-04-worked.png) | ![Now you try](qa-screenshots/keys/keys-p2-05-done-now-you-try.png) |
+| **Rung 3.** The worked step in the tutor's hand. | **Done with help.** "Now you try one" and Next. |
+| ![Perfect](qa-screenshots/keys/keys-p2-07-all-done-perfect.png) | ![Read aloud](qa-screenshots/keys/keys-p2-08-more-read-aloud.png) |
+| **All done, every one alone.** The 5 for 5 sticker (here 2 for 2). | **More.** The keys and the read-aloud switch. |
+| ![Borrow](qa-screenshots/keys/keys-p3-02-sub-blocks-ones.png) | ![Long product](qa-screenshots/keys/keys-p3-05-long-mult-placeholder.png) |
+| **A borrow.** `13 − 7 = ?` with the ten as 10 ones; Space built 6. | **No placeholder.** `34 × 26`: the second row and the sum ringed. |
+| ![Placeholder](qa-screenshots/keys/keys-p3-06-long-mult-smaller.png) | ![Area model](qa-screenshots/keys/keys-p3-07-area-model.png) |
+| **Its smaller problem.** `34 × 20 = ?` goes into the second row. | **A times-table slip.** `6 × 7` as `6 × 5` and `6 × 2`, a row a Space. |
+| ![Fraction bars](qa-screenshots/keys/keys-p3-09-fraction-bars.png) | ![Stacked answer](qa-screenshots/keys/keys-p3-11-fraction-answer-stacked.png) |
+| **The bottoms added.** Sevenths stay sevenths; the bar shades with Space. | **A fraction answer.** `11`, `/`, `12`: stacked. |
+| ![Equivalent](qa-screenshots/keys/keys-p3-13-equivalent-bars.png) | ![Number line](qa-screenshots/keys/keys-p3-15-number-line.png) |
+| **An equivalent fraction.** Fourths over twelfths. | **An equation.** Undo + 7 on a number line (← →). |
+| ![Equation done](qa-screenshots/keys/keys-p3-16-equation-done.png) | ![1366](qa-screenshots/keys/keys-qa-1366-sub-smaller.png) |
+| **Back up.** 8 goes into the answer row; solved. | **1366 × 768.** |
+| ![200%](qa-screenshots/keys/keys-qa-zoom200-sub-nudge.png) | ![390](qa-screenshots/keys/keys-qa-390-fraction-bars.png) |
+| **200% zoom.** One column, no sideways scroll. | **390 px.** |
+
 ### Not yet
 
 - The Ask button (inert, "Ask is coming soon.").
+- Home's Start and Continue on a real account (local runs here are signed out, with no local
+  Supabase): try on staging with the flag on, from a Chromebook.
+- Coming back to a half-done set starts it again from problem 1 (the day's record keeps the most
+  done, so the streak is right).
+
+## Deploy
+
+1. Apply `supabase/migrations/20261027030000_keys_origin.sql` (the `keys` origin) **before** the code,
+   or Keys attempts are refused (the page still works; it records nothing until then).
+2. The feature flag is Feature Labs' "Keyboard practice" (`keys`, per account, off by default); no
+   server flag.
+3. No new env. `/api/keys/say` uses `OPENROUTER_API_KEY` and `LIVE_MODEL_TITLE`'s model (falls back to
+   the fixed lines without them); read aloud uses `/api/live/speak`'s `ELEVENLABS_API_KEY` (the
+   browser's voice without it).
+

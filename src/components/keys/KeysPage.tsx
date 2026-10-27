@@ -6,25 +6,28 @@ import { useCallback, useEffect, useMemo, useReducer, useState, useSyncExternalS
 import { useAuth } from "@/components/AuthProvider";
 import { useFeatureLabs } from "@/lib/featureLabs";
 import { KEYS_COPY } from "@/lib/keys/copy";
-import { generateSet, itemsFromList, variantItem } from "@/lib/keys/generate";
-import { isBonus, offersNowYouTry, perfectOf, setPosition, setReducer, starsOf, startSet, type ProblemAction } from "@/lib/keys/session";
+import { generateMixed, generateSet, isKeysSkill, itemsFromList, variantItem, type KeysSkill } from "@/lib/keys/generate";
+import type { MathItem } from "@/lib/keys/item";
+import { isBonus, offersNowYouTry, ownOf, perfectOf, setPosition, setReducer, starsOf, startSet, type ProblemAction } from "@/lib/keys/session";
 import { AllDone } from "./AllDone";
 import { KEYS_FONT_VARS } from "./fonts";
 import styles from "./keys.module.css";
 import { HelpMark, StarIcon } from "./TutorMarks";
 import { useReadAloud } from "./tutorVoice";
 import { TypedLines } from "./TypedLines";
+import { useKeysDay, type KeysDay } from "./useKeysDay";
 import { nowYouTrySeed, useKeysRecord, useLearner } from "./useKeysTutor";
 
 const KEY_LIST: [string, string][] = [
   ["0–9", "Fill a box. A column fills right to left."],
-  ["c", "Open the carry box over this column."],
+  ["c", "Open the carry (or regroup) box over this column."],
   ["← → ↑ ↓", "Move between boxes and lines."],
   ["Enter", "Go to the answer. In the answer, check it."],
   ["Ctrl + Enter", "Check, from anywhere."],
   ["?", "Help me. Again for more help."],
-  ["Space", "Add a ten to the blocks."],
-  ["Backspace", "Clear a box, or take a ten away."],
+  ["/", "In a fraction: go from the top to the bottom."],
+  ["Space", "Build: add a block, a part or a row."],
+  ["Backspace", "Clear a box, or take one away."],
 ];
 
 const noop = () => () => {};
@@ -34,56 +37,46 @@ export interface KeysPageProps {
   seed: number;
   /** `?p=26+?6=92|47+38`: exactly these problems (QA) */
   list?: string | null;
+  /** `?seed=` or `?skill=` was given: that set, not Today's practice (QA) */
+  fixed?: boolean;
+  /** `?skill=times_tables`: a set of that skill (QA) */
+  skill?: string | null;
+}
+
+/** Where a page's problems come from, and "More like these". */
+interface SetSource {
+  items: MathItem[];
+  more: (round: number) => MathItem[];
+  /** Today's practice: its day and goal, saved to the daily record as the kid goes */
+  daily: KeysDay | null;
 }
 
 /**
  * Keys (docs/KEYS.md): Today's practice with only a keyboard, as the iPad's Problem Page. Behind the
- * Feature Labs switch "Keyboard practice". The set lives here; the work surface is `TypedLines`.
+ * Feature Labs switch "Keyboard practice". With no `?p=`, `?seed=` or `?skill=`, a signed-in kid gets
+ * Today's practice from their path and record (`useKeysDay`); otherwise the day's adding set. The set
+ * lives in `KeysSession`; the work surface is `TypedLines`.
  */
-export function KeysPage({ seed, list }: KeysPageProps) {
+export function KeysPage({ seed, list, fixed = false, skill = null }: KeysPageProps) {
   const { features, setFeature, loading } = useFeatureLabs();
+  const { user, loading: authLoading } = useAuth();
   // Feature Labs reads this browser's cache first: render only once mounted, so the server's page and
   // the browser's first render agree.
   const mounted = useSyncExternalStore(noop, () => true, () => false);
+  const fromList = useMemo(() => (list ? itemsFromList(list) : []), [list]);
+  const daily = !fromList.length && !fixed;
+  const day = useKeysDay(user?.id ?? null, daily && features.keys, authLoading);
 
-  const [round, setRound] = useState(0);
-  const items = useMemo(() => {
-    const fromList = list ? itemsFromList(list) : [];
-    return fromList.length ? fromList : generateSet(seed + round);
-  }, [list, seed, round]);
-  const [state, dispatch] = useReducer(setReducer, items, startSet);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const { user } = useAuth();
-  const learner = useLearner(user?.id ?? null);
-  const attemptId = useKeysRecord(state, learner, Boolean(user));
-  const [readAloud, setReadAloud] = useReadAloud();
-
-  // Now you try: one more like it, after a problem done with help (the same attempt, the same problem)
-  const nowYouTry = useMemo(() => {
-    if (!offersNowYouTry(state)) return null;
-    return variantItem(state.problem.item, nowYouTrySeed(attemptId(state.index)));
-  }, [state, attemptId]);
-  const onNowYouTry = useCallback(() => {
-    if (nowYouTry) dispatch({ type: "now_you_try", item: nowYouTry });
-  }, [nowYouTry]);
-
-  const onMore = useCallback(() => {
-    const next = round + 1;
-    setRound(next);
-    dispatch({ type: "restart", items: list ? items : generateSet(seed + next) });
-  }, [round, list, items, seed]);
-
-  useEffect(() => {
-    if (!moreOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMoreOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [moreOpen]);
-
-  const problemDispatch = useCallback((a: ProblemAction) => dispatch(a), []);
-  const onNext = useCallback(() => dispatch({ type: "next" }), []);
+  const source = useMemo<SetSource | null>(() => {
+    if (fromList.length) return { items: fromList, more: () => fromList, daily: null };
+    if (day.status === "loading") return null;
+    if (day.day) {
+      const d = day.day;
+      return { items: d.items, more: (round) => generateMixed(d.seed + round, d.plan.skills), daily: d };
+    }
+    const own: KeysSkill = skill && isKeysSkill(skill) ? skill : "add_within_100";
+    return { items: generateSet(seed, 5, own), more: (round) => generateSet(seed + round, 5, own), daily: null };
+  }, [fromList, day, seed, skill]);
 
   const rootClass = `${styles.root} ${KEYS_FONT_VARS}`;
 
@@ -112,6 +105,67 @@ export function KeysPage({ seed, list }: KeysPageProps) {
     );
   }
 
+  if (!source) {
+    return (
+      <main className={rootClass} aria-busy="true">
+        <div className={styles.gate}>
+          <p role="status">{KEYS_COPY.gate.loading}</p>
+        </div>
+      </main>
+    );
+  }
+
+  return <KeysSession key={source.items.map((i) => i.id).join("|")} source={source} rootClass={rootClass} />;
+}
+
+/** One set on the page: the top bar, the problems, All done. */
+function KeysSession({ source, rootClass }: { source: SetSource; rootClass: string }) {
+  const [round, setRound] = useState(0);
+  const [state, dispatch] = useReducer(setReducer, source.items, startSet);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const { user } = useAuth();
+  const learner = useLearner(user?.id ?? null);
+  const attemptId = useKeysRecord(state, learner, Boolean(user));
+  const [readAloud, setReadAloud] = useReadAloud();
+
+  // Now you try: one more like it, after a problem done with help (the same attempt, the same problem)
+  const nowYouTry = useMemo(() => {
+    if (!offersNowYouTry(state)) return null;
+    return variantItem(state.problem.item, nowYouTrySeed(attemptId(state.index)));
+  }, [state, attemptId]);
+  const onNowYouTry = useCallback(() => {
+    if (nowYouTry) dispatch({ type: "now_you_try", item: nowYouTry });
+  }, [nowYouTry]);
+
+  const onMore = useCallback(() => {
+    const next = round + 1;
+    setRound(next);
+    dispatch({ type: "restart", items: source.more(next) });
+  }, [round, source]);
+
+  // Today's practice: the day's stars and done, saved as they come (counts only go up on the server)
+  const solved = starsOf(state);
+  const own = ownOf(state);
+  const daily = round === 0 ? source.daily : null;
+  useEffect(() => {
+    if (!daily || !user || solved === 0) return;
+    void import("@/lib/daily/store").then(({ saveDailyPractice }) =>
+      saveDailyPractice({ day: daily.day, boardId: null, goal: daily.items.length, done: solved, stars: own }),
+    );
+  }, [daily, user, solved, own]);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [moreOpen]);
+
+  const problemDispatch = useCallback((a: ProblemAction) => dispatch(a), []);
+  const onNext = useCallback(() => dispatch({ type: "next" }), []);
+
   const { n, count } = setPosition(state);
   const stars = starsOf(state);
   const bonus = !state.finished && isBonus(state);
@@ -133,7 +187,7 @@ export function KeysPage({ seed, list }: KeysPageProps) {
             <span aria-hidden="true">{KEYS_COPY.starsOf(stars, count)}</span>
           </span>
           {!state.finished && (
-            <button type="button" className={`${styles.btn} ${styles.sunny} ${styles.helpMe}`} onClick={() => dispatch({ type: "help" })} aria-keyshortcuts="?">
+            <button type="button" className={`${styles.btn} ${styles.sunny} ${styles.helpMe}`} onClick={() => dispatch({ type: "help" })} aria-keyshortcuts="?" aria-label={KEYS_COPY.helpMe}>
               <HelpMark size={30} />
               <span className={styles.label}>{KEYS_COPY.helpMe}</span>
               <span className={styles.kbd} aria-hidden="true">

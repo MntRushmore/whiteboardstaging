@@ -351,11 +351,12 @@
   outline: 2px dashed var(--line);
   outline-offset: -2px;
 }
+/* tomato on white is 3.1:1: the carry digits are large text (24 px), where 3:1 passes AA */
 .carryCell {
   width: 40px;
   height: 36px;
   border-radius: 12px;
-  font-size: 1.375rem;
+  font-size: 1.5rem;
   color: var(--tomato);
 }
 .carryCell:placeholder-shown:not(:focus) {
@@ -504,6 +505,11 @@
   align-items: center;
   gap: 32px;
   flex-wrap: wrap;
+  min-width: 0;
+}
+.subRow > * {
+  min-width: 0;
+  max-width: 100%;
 }
 .equation {
   position: relative;
@@ -967,11 +973,20 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+/* a manipulative's drawing shrinks with a narrow page (390 px, 200% zoom) */
+.fit {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 .barRow {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 @media (max-width: 960px) {

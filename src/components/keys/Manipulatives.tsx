@@ -18,7 +18,7 @@ function FractionBarTray({ bars, built }: { bars: FractionBars; built: number })
   const width = Math.min(520, Math.max(240, bars.parts * 34));
   const bar = (parts: number, fill: (i: number) => string, label: string) => (
     <div className={styles.barRow}>
-      <svg width={width} height="34" viewBox={`0 0 ${width} 34`} aria-hidden="true">
+      <svg className={styles.fit} style={{ maxWidth: width }} viewBox={`0 0 ${width} 34`} aria-hidden="true">
         {Array.from({ length: parts }, (_, i) => {
           const w = width / parts;
           return <rect key={i} x={i * w + 1} y="1" width={w - 2} height="32" rx="5" fill={fill(i)} />;
@@ -44,8 +44,8 @@ function NumberLineTray({ line, value }: { line: NumberLine; value: number | nul
   const width = Math.min(560, Math.max(280, n * 26));
   const x = (v: number) => 16 + ((v - line.min) / n) * (width - 32);
   return (
-    <div className={styles.tray} aria-hidden="true">
-      <svg width={width} height="74" viewBox={`0 0 ${width} 74`}>
+    <div className={styles.tray} style={{ width: "100%", maxWidth: width }} aria-hidden="true">
+      <svg className={styles.fit} viewBox={`0 0 ${width} 74`}>
         <line x1="10" y1="40" x2={width - 10} y2="40" stroke={INK} strokeWidth="2.5" strokeLinecap="round" />
         {Array.from({ length: n + 1 }, (_, i) => {
           const v = line.min + i;
