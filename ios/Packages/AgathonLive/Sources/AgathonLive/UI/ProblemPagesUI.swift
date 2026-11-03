@@ -81,9 +81,9 @@ public struct FixReadingSheet: View {
         _typed = State(initialValue: fix.unread ? "" : PlainMath.plain(fix.latex))
     }
 
-    public var body: some View {
-        VStack(alignment: .leading, spacing: DS.Space.m) {
-            SheetHeader(LiveCopy.Reading.sheetTitle, onClose: onCancel)
+    /// What it read, the readings offered and the keypad (between the header and the buttons).
+    private var readings: some View {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(LiveCopy.Reading.iRead.uppercased()).dsFont(.label).foregroundStyle(DS.Color.inkSecondary)
                 HStack(alignment: .center, spacing: DS.Space.m) {
@@ -133,6 +133,19 @@ public struct FixReadingSheet: View {
                 .accessibilityIdentifier("live.fix.typed")
                 MathKeypad(text: $typed)
             }
+        }
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            SheetHeader(LiveCopy.Reading.sheetTitle, onClose: onCancel)
+            // the readings and the keypad scroll when the sheet is short (an 11" iPad held sideways: the
+            // title and Use this ran off its edges); the header and the buttons stay put
+            ViewThatFits(in: .vertical) {
+                readings
+                ScrollView(.vertical) { readings }
+                    .scrollBounceBehavior(.basedOnSize)
+            }
             HStack(spacing: DS.Space.xs) {
                 Spacer()
                 PillButton(LiveCopy.Reading.cancel, kind: .secondaryOnPaper, action: onCancel)
@@ -141,8 +154,11 @@ public struct FixReadingSheet: View {
                     .accessibilityIdentifier("live.fix.use")
             }
         }
-        .padding(DS.Space.xl)
+        .padding(.horizontal, DS.Space.xl)
+        .padding(.vertical, DS.Space.l)
         .frame(width: 560)
+        // (the page sheet is wider and taller than the content: the paper fills it)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DS.Color.surface)
         // a container: its controls keep their own ids (a container's id on its own overrides them)
         .accessibilityElement(children: .contain)

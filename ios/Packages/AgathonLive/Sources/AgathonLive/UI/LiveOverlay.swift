@@ -170,7 +170,7 @@ struct PagesLayer: View {
         .sheet(item: Binding(get: { pages.fixing.map { FixID(id: $0.id) } }, set: { if $0 == nil { loop.closeFix() } })) { _ in
             // the sheet watches the pages itself: the readings it may have been arrive after it opens
             FixSheetHost(pages: pages, loop: loop)
-                .presentationDetents([.large])
+                .modifier(FixSheetSizing())
                 .presentationCornerRadius(DS.Radius.card)
         }
         .dsAnimation(DS.Motion.snap, value: pages.action)
@@ -293,6 +293,19 @@ struct PagesLayer: View {
 /// The sheet's identity: one line's fix (its readings change under it without a new sheet).
 struct FixID: Identifiable, Equatable {
     let id: String
+}
+
+/// "Fix what I read" is taller than a form sheet on an 11" iPad held sideways (its title and Use this
+/// ran off the sheet's edges): iPadOS 18 gives it the page sheet's height, with room for the whole
+/// keypad; on 17, and on an iPad mini, what does not fit scrolls (`FixReadingSheet`).
+struct FixSheetSizing: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.presentationSizing(.page)
+        } else {
+            content.presentationDetents([.large])
+        }
+    }
 }
 
 /// "Fix what I read" for the line being fixed, kept up to date as its other readings arrive.

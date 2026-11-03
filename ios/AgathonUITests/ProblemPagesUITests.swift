@@ -166,6 +166,14 @@ final class ProblemPagesUITests: XCTestCase {
         XCTAssertTrue(alt.waitForExistence(timeout: 15), "no reading offered")
         XCTAssertTrue(alt.label.contains("3x = 15"), "the first reading offered is \(alt.label)")
         snap("05-fix-sheet")
+        // the whole sheet is on screen, sideways on an 11" iPad too (its title and Use this ran off its edges)
+        // (on a short sheet the readings and keypad scroll between the header and the buttons)
+        let use = element("live.fix.use"), keypad = element("live.key.7"), close = element("live.fix").buttons["Close"].firstMatch
+        XCTAssertTrue(use.isHittable, "Use this can't be tapped")
+        XCTAssertTrue(keypad.isHittable, "the keypad's top row is out of sight")
+        XCTAssertGreaterThan(use.frame.minY, keypad.frame.maxY, "Use this is not under the keypad")
+        XCTAssertLessThanOrEqual(use.frame.maxY, app.windows.firstMatch.frame.maxY - 24, "Use this is at the screen's edge")
+        if close.exists { XCTAssertGreaterThanOrEqual(close.frame.minY, 24, "the sheet's Close is at the screen's edge") }
         alt.tap()
         waitFor("debug.live", matching: #"3x = 15=tick"#, timeout: 30)
         waitFor("debug.live", matching: #"read 3x = 15=fixed"#, timeout: 10)
