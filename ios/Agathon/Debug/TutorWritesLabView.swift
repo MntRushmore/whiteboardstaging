@@ -111,7 +111,17 @@ final class TutorWritesLab: ObservableObject {
             if case .solving = loop.activity { return true }
             return loop.busy
         }()
-        return "read \(read) | steps \(steps) | writing \(writing ? "yes" : "no") | card \(card)"
+        // where the tutor's steps are on screen (view points), for the UI test's eraser
+        let box: String = {
+            guard let canvas else { return "-" }
+            let pts = store.records.values.flatMap { r -> [CGPoint] in
+                guard case .stroke(let s) = r, s.author == .tutor, s.meta["tutorStepId"] != nil else { return [] }
+                return s.points.map { p in let v = canvas.camera.toView(s.pagePoint(p)); return canvas.convert(v, to: nil) }
+            }
+            guard let x0 = pts.map(\.x).min(), let x1 = pts.map(\.x).max(), let y0 = pts.map(\.y).min(), let y1 = pts.map(\.y).max() else { return "-" }
+            return "\(Int(x0)),\(Int(y0)),\(Int(x1 - x0)),\(Int(y1 - y0))"
+        }()
+        return "read \(read) | steps \(steps) | writing \(writing ? "yes" : "no") | card \(card) | box \(box)"
     }
 
     func attach(_ canvas: BoardCanvasView) {

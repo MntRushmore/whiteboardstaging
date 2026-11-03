@@ -134,6 +134,29 @@ struct TutorWritesLoopTests {
         #expect(second.y > first.maxY, "one under the other")
     }
 
+    /// The kid rubs the tutor's step out (the eraser takes the tutor's ink like any): the next ask goes on
+    /// from what is left — the same step again, once — and a step of their own under it is never covered.
+    @Test func aStepRubbedOutIsWrittenAgainOnTheNextAsk() async throws {
+        let h = Harness(mode: .suggest)
+        await h.start()
+        await h.write("2x + 3 = 11", at: Vec2(200, 120))
+        await h.pass(700)
+        trustAll(h)
+        h.loop.helpMe()
+        await h.pass(100)
+        #expect(steps(h) == ["2x = 8"])
+        let first = try #require(box(strokes(h, step: "2x = 8")))
+        h.board.erase(strokes(h, step: "2x = 8").map(\.id))
+        await h.pass(700)
+        #expect(steps(h).isEmpty, "rubbed out")
+        h.loop.helpMe()
+        await h.pass(100)
+        #expect(steps(h) == ["2x = 8"], "written again, once: \(steps(h))")
+        let again = try #require(box(strokes(h, step: "2x = 8")))
+        #expect(abs(again.y - first.y) < first.h, "in the same place, under the work")
+        #expect(h.loop.hints.first?.message == "Subtract 3 from both sides.")
+    }
+
     @Test func showMeOnAHintCardWritesTheStep() async throws {
         let h = Harness(mode: .feedback)
         await h.start()

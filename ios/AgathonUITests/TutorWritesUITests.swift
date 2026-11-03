@@ -85,6 +85,36 @@ final class TutorWritesUITests: XCTestCase {
         snap("slip-1-done")
     }
 
+    /// The kid rubs the tutor's step out with the eraser (a finger on the simulator: no Pencil seen), then
+    /// asks again: the step is written again, once.
+    func testRubbingOutTheStep() throws {
+        launch("equation")
+        waitFor("tutorWrites.probe", matching: #"read 1 "#, timeout: 40)
+        tapHelpMeAndFilm("erase-1")
+        waitFor("tutorWrites.probe", matching: #"steps 1 .*writing no"#, timeout: 20)
+        tap("live.hint.gotIt")
+        let label = element("tutorWrites.probe").label
+        let box = try XCTUnwrap(label.range(of: #"box (\d+),(\d+),(\d+),(\d+)"#, options: .regularExpression).map { String(label[$0]) },
+                                "no step box: \(label)")
+        let n = box.dropFirst(4).split(separator: ",").compactMap { Double($0) }
+        app.buttons["Eraser"].firstMatch.tap()
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        // three passes across the step, top, middle and bottom
+        for f in [0.25, 0.5, 0.75] {
+            let y = n[1] + n[3] * f
+            origin.withOffset(CGVector(dx: n[0] - 12, dy: y))
+                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: n[0] + n[2] + 12, dy: y)))
+        }
+        waitFor("tutorWrites.probe", matching: #"steps 0 "#, timeout: 10)
+        snap("erase-2-rubbed-out")
+        app.buttons["Pen"].firstMatch.tap()
+        tap("live.helpMe")
+        waitFor("tutorWrites.probe", matching: #"steps 1 .*writing no"#, timeout: 20)
+        sleep(2)
+        XCTAssertTrue(element("tutorWrites.probe").label.contains("steps 1 "), "written more than once")
+        snap("erase-3-written-again")
+    }
+
     // MARK: - helpers
 
     /// Help me, then frames while the tutor's pen writes (the pen should start within a second).
