@@ -222,6 +222,10 @@ public final class LiveLoop: ObservableObject {
     /// The model's words for the step it is about to write (`solveWithModel`), for `beforeWritingSteps`.
     var pendingStepExplanation: String?
 
+    /// "The tutor writes it out" waiting on a readback (docs/TUTOR-WRITES.md): the line read back, and the
+    /// ask to carry on with once the kid confirms or fixes it.
+    var pendingShowMe: (readback: String, lineId: String?, answer: Bool)?
+
     // MARK: network
 
     var offlineQueue = Set<String>()
