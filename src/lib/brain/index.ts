@@ -53,6 +53,8 @@ import type { LearnerHint, MistakeKind } from "@/lib/learning/hint";
 import type { CourseId } from "@/lib/onboarding/courseIds";
 import type { Grade } from "@/lib/learning/grades";
 import type { ComplexRootsSetting } from "@/lib/live/engine/complexSetting";
+import { checkStep, nextTutorStep, type TutorStepArgs, type TutorStepResult } from "@/lib/live/tutorStep";
+import { stackStepOf, type StackStepArgs, type StackStepResult } from "@/lib/live/stackStep";
 import { sha1Hex } from "./sha1";
 import { decode, encode, encodePlain } from "./json";
 import { chatPicture, startChatPlan, takeChatPlan, type ChatPlanArgs, type ChatScreenArgs } from "./chat";
@@ -712,6 +714,31 @@ export function jitProbe(args: { n?: number }): { ms: number; sum: number } {
   return { ms: now() - t0, sum };
 }
 
+// ------------------------------------------------------------------ the tutor writes it out
+
+/**
+ * The next step of the student's work, checked by the engine (docs/TUTOR-WRITES.md,
+ * `src/lib/live/tutorStep.ts`): one step per ask, from the last right line; the final answer held
+ * back unless `answer`; `unsure` (and nothing to write) when the engine cannot vouch for a step.
+ */
+export function tutorStepOf(args: TutorStepArgs): TutorStepResult {
+  need(Array.isArray(args.work) && args.work.every((l) => typeof l === "string"), "work is an array of LaTeX strings");
+  return nextTutorStep(engine(), args);
+}
+
+/** Is `step` a right next step after `from`, by the engine alone (a model's step must pass it too)? */
+export function checkStepOf(args: { from: string; step: string; written?: string[] }): { ok: boolean; why: string; solved: boolean } {
+  need(typeof args.from === "string" && typeof args.step === "string", "from and step are strings");
+  const r = checkStep(engine(), args.from, args.step, { written: args.written });
+  return { ok: r.ok, why: r.why, solved: r.analysis?.solved === true };
+}
+
+/** The next column of a stacked sum, placed in the tutor's hand (`src/lib/live/stackStep.ts`). */
+export function stackStep(args: StackStepArgs): StackStepResult {
+  need(typeof args.latex === "string" && args.stack && typeof args.stack === "object", "latex is a string and stack a stacked sum");
+  return stackStepOf(args);
+}
+
 // ------------------------------------------------------------------ the boundary
 
 type Method = { run: (args: never) => unknown; plain?: boolean };
@@ -726,6 +753,9 @@ export const METHODS: Readonly<Record<string, Method>> = {
   analyzeLine: { run: analyzeLine },
   judgeLine: { run: judgeLineOf },
   stackedLine: { run: stackedLineOf },
+  tutorStep: { run: tutorStepOf },
+  checkStep: { run: checkStepOf },
+  stackStep: { run: stackStep, plain: true },
   analyzeColumn: { run: analyzeColumnOf },
   localSolve: { run: localSolveOf },
   calculate: { run: calculate },
