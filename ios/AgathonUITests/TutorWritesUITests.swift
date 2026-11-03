@@ -78,6 +78,10 @@ final class TutorWritesUITests: XCTestCase {
         waitFor("tutorWrites.probe", matching: #"read 2 "#, timeout: 40)
         tapHelpMeAndFilm("slip-1")
         waitFor("tutorWrites.probe", matching: #"steps 1 "#, timeout: 20)
+        // one right step beside the ring: Next step's own correction and Help me's are never both written
+        sleep(3)
+        let probe = element("tutorWrites.probe").label
+        XCTAssertTrue(probe.contains("steps 1 "), "the step was written twice: \(probe)")
         snap("slip-1-done")
     }
 
