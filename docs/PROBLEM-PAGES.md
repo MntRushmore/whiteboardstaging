@@ -285,7 +285,7 @@ States:
 | state | when | look |
 |---|---|---|
 | **read** | read, no reason to doubt it | chalk, quiet |
-| **asking** ("Is this right?") | the two readers disagree (when the second opinion is on), or Mathpix's strokes confidence is under 0.99, or the page's context makes another reading likely (a lone `×` on an `x` page; `0` where the page's problem has an `a`) | pale sunny (flat), "Is this right?" |
+| **asking** ("Is this right?") | the two readers disagree (when the second opinion is on), or Mathpix's strokes confidence is under 0.9 (0.99 until 2026-11-03; docs/eval/reader-realink.md), or the page's context makes another reading likely (a lone `×` on an `x` page; `0` where the page's problem has an `a`) | pale sunny (flat), "Is this right?" |
 | **unread** | nothing could be read (confidence under 0.6, or no read) | pale sunny, "I couldn't read this. Tap to fix." |
 | **fixed** | the kid (or a grown-up) confirmed, picked or typed it | chalk, a small pen mark |
 
@@ -520,7 +520,7 @@ the copy at its top, page 1 still with its answer spot.
   the move is one undo step and reads nothing again; a fixed reading survives a re-read and is dropped
   by new ink; a confirmed reading is trusted; an asking line is never ringed (the check asks
   instead); `ReadingContext`'s suggestions (and the cases it must not touch), never applied without a
-  tap; the asking triggers (disagreement, confidence < 0.99, context).
+  tap; the asking triggers (disagreement, confidence < 0.9, context).
 - **Unit (AgathonBoard):** `ProblemPage` round trip, the layout's rows for one- and three-line problems,
   `moveToNewScreen` + undo, the template layer's paths.
 - **Unit (AgathonAsk):** the writer makes a page per problem, strips the number, keeps `chatProblem`, adds
