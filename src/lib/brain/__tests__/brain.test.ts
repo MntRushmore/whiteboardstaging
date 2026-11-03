@@ -29,7 +29,7 @@ import { getEngine } from "@/lib/live/engine";
 import type { InkLine, InkStroke } from "@/lib/live/contracts";
 import { barGroups, splitInk } from "@/lib/live/diagrams";
 import { stackGroups } from "@/lib/live/stackedSums";
-import { toInkStrokes as fixtureInk, writeStack } from "@/lib/live/__fixtures__/strokes";
+import { handRow, toInkStrokes as fixtureInk, writeStack } from "@/lib/live/__fixtures__/strokes";
 import { clusterLines, unionRects } from "@/lib/live/strokeClusters";
 import { buildPayload, hashPayload } from "@/lib/live/strokePayload";
 import { localSolve } from "@/lib/live/localSolve";
@@ -234,6 +234,25 @@ describe("stacked sums", () => {
     // started (no answer yet): nothing
     const open = stacked(["123", "+456"], null);
     expect(stackedLineOf({ latex: "\\begin{array}{r} 123 \\\\ +456 \\\\ \\hline \\end{array}", stack: open }).analysis?.verdict).toBe("none");
+  });
+
+  it("her answer copied out again under it is one answer: ticked (the real-ink bench: never marked)", () => {
+    const sum = writeStack(["23", "\\times 4"], "92");
+    const bottom = Math.max(...fixtureInk(sum.answer).map((s) => s.bounds.y + s.bounds.h));
+    const again = (digits: string) => {
+      const ink = fixtureInk([...sum.all, ...handRow(digits, 400, bottom + 12, 40, 40)]);
+      const got = clusterStrokes({ strokes: ink.map((s) => ({ id: s.id as string, x: s.segments[0].map((p) => p.x), y: s.segments[0].map((p) => p.y) })) });
+      expect(got.stacks).toHaveLength(1);
+      expect(got.stacks[0].more).toBe(true);
+      return got.stacks[0];
+    };
+    const right = stackedLineOf({ latex: "\\begin{array}{r} 23 \\\\ \\times 4 \\\\ \\hline 92 \\\\ 92 \\end{array}", confidence: 0.99, stack: again("92") });
+    expect(right.analysis).toMatchObject({ verdict: "ok", solved: true });
+    expect(right.tick).not.toBeNull();
+    // a different number under it is no copy: quiet, as long multiplication's rows are
+    const other = stackedLineOf({ latex: "\\begin{array}{r} 23 \\\\ \\times 4 \\\\ \\hline 92 \\\\ 29 \\end{array}", confidence: 0.99, stack: again("29") });
+    expect(other.analysis?.verdict).not.toBe("mismatch");
+    expect(other.tick).toBeNull();
   });
 
   it("a read of a stack without its layout is worked from the read; a fraction misread from one is quiet; any other line is no stack", () => {

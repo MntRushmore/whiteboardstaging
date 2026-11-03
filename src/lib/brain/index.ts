@@ -26,7 +26,7 @@ import { all, create, version as mathjsVersion } from "mathjs";
 import type { TLShapeId } from "tldraw";
 import { createEngine } from "@/lib/live/engine";
 import { arithmeticOf, bracketLine, isArithmetic, isStackRead, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "@/lib/live/engine/columnWork";
-import { parseStacked, rowPlaces, stackedAnalysis, workStacked } from "@/lib/live/engine/columnArithmetic";
+import { answerWrittenAgain, parseStacked, rowPlaces, stackedAnalysis, workStacked } from "@/lib/live/engine/columnArithmetic";
 import { answerAfterRestatedEnd, inkLeadsWithMinus, inkTimesDots, leadingSigns, readVariants, readYoungHand, rightAnswerTo, withTrailingTimesDot } from "@/lib/live/youngHand";
 import type { AnalyzeContext, GraphForOptions, HelpMode, InkLine, InkStroke, LineAnalysis, LiveEngine, Rect } from "@/lib/live/contracts";
 import { barGroups, fractionGroups, splitInk, type Diagram, type StrokeVerdict } from "@/lib/live/diagrams";
@@ -53,6 +53,8 @@ import type { LearnerHint, MistakeKind } from "@/lib/learning/hint";
 import type { CourseId } from "@/lib/onboarding/courseIds";
 import type { Grade } from "@/lib/learning/grades";
 import type { ComplexRootsSetting } from "@/lib/live/engine/complexSetting";
+import { checkStep, nextTutorStep, type TutorStepArgs, type TutorStepResult } from "@/lib/live/tutorStep";
+import { stackStepOf, type StackStepArgs, type StackStepResult } from "@/lib/live/stackStep";
 import { sha1Hex } from "./sha1";
 import { decode, encode, encodePlain } from "./json";
 import { chatPicture, startChatPlan, takeChatPlan, type ChatPlanArgs, type ChatScreenArgs } from "./chat";
@@ -184,6 +186,8 @@ export interface JudgeLineArgs {
    * answer is judged as a line of its own (`= 7`, `answerAfterRestatedEnd`).
    */
   beside?: boolean;
+  /** the problem is ONE relation the tutor wrote (`WorkInput.posed`): not a system, not the kid's own first line */
+  posed?: boolean;
 }
 
 /** `judgeLine` (engine/columnWork.ts): a line of the student's working judged in its column, as `LiveLoop.judge` does. */
@@ -194,7 +198,7 @@ export function judgeLineOf(args: JudgeLineArgs): LineAnalysis {
   const arithmetic = arithmeticOf(problem);
   const above = Array.isArray(args.above) ? args.above.filter((l) => typeof l === "string") : [];
   const beside = args.beside && arithmetic && arithmetic.length === 1 ? answerAfterRestatedEnd(args.latex, arithmetic[0]) : null;
-  return judgeLine(engine(), args.latex, { ctx, arithmetic, above, slip: args.slip, beside });
+  return judgeLine(engine(), args.latex, { ctx, arithmetic, above, slip: args.slip, beside, posed: args.posed === true && problem.length === 1 });
 }
 
 /**
@@ -282,8 +286,11 @@ export function stackedLineOf(args: StackedLineArgs): StackedLineResult {
     const analysis = read ? stackedAnalysis(workStacked(read), sure) : bracketLine(engine(), args.latex, problem, sure, mode);
     return { stacked: true, analysis, tick: null, ring: null };
   }
+  // the ink's rows under the answer: long multiplication's — or her answer written again under it
+  // (the real-ink bench: a product's answer copied out again under it was never ticked)
+  const more = sum.more && !(read && !read.rows && answerWrittenAgain(args.latex));
   // the board's `stackWork`: the read and the ink agree on the rows (long multiplication's under the answer)
-  const grid = read && !(sum.more && !read.rows) && read.operands.length === sum.rows.length ? stackGrid(sum, rowPlaces(read)) : null;
+  const grid = read && !(more && !read.rows) && read.operands.length === sum.rows.length ? stackGrid(sum, rowPlaces(read)) : null;
   const opts = grid && grid.answerLast !== null && !read?.rows ? { answerLast: grid.answerLast } : {};
   const work = read && grid ? workStacked(read, opts) : null;
   const analysis = work || read ? stackedAnalysis(work, sure) : bracketLine(engine(), args.latex, problem, sure, mode);
@@ -291,7 +298,7 @@ export function stackedLineOf(args: StackedLineArgs): StackedLineResult {
   const doneAnalysis = doneWork && doneWork.wrong !== -1 ? stackedAnalysis(doneWork, sure) : null;
   // `markRect`: round the line, or after it — on a sum, after the answer row and round its first wrong digit
   const answer = sum.answer?.rect;
-  if (!answer || sum.more) return { stacked: true, analysis, tick: null, ring: null };
+  if (!answer || more) return { stacked: true, analysis, tick: null, ring: null };
   const block = unionRects([sum.ruleRect, answer, ...sum.rows.map((r) => r.rect)]);
   const tick = { ...answer, w: block.x + block.w - answer.x };
   const ring = (work && grid && work.wrong !== -1 && grid.answerGlyph(work.wrong)) || answer;
@@ -403,7 +410,9 @@ export function clusterStrokes(args: ClusterArgs): ClusterResult {
   const cells = Array.isArray(args.cells) ? args.cells : [];
   const columns = columnOptionsOf(cells, args.mates);
   const apart = cells.length > 1 ? (group: InkStroke[]) => splitAcrossProblems(group, cells) : undefined;
-  const clustered = clusterLines(split.writing, previousLines, fixed, { zoom: args.zoom, columns, apart, newId: idSource("ln", args.idSeed) });
+  // the tutor's problems: the row of operations right under one is a line (`mergeOperationRows`)
+  const heads = cells.length > 0 ? cells.map((c) => c.head) : (args.equations ?? []);
+  const clustered = clusterLines(split.writing, previousLines, fixed, { zoom: args.zoom, columns, apart, newId: idSource("ln", args.idSeed), heads });
   // with `cells` (even none) the board's flush: its strays go too (a tap of the pen is never a line)
   const lines = Array.isArray(args.cells) ? withoutStrays(clustered, split.writing, columns, cells) : clustered;
   return { lines, diagrams: split.diagrams, bars: split.bars, stacks: split.stacks, glyph: split.glyph, roles: Object.fromEntries(split.roles) };
@@ -712,6 +721,31 @@ export function jitProbe(args: { n?: number }): { ms: number; sum: number } {
   return { ms: now() - t0, sum };
 }
 
+// ------------------------------------------------------------------ the tutor writes it out
+
+/**
+ * The next step of the student's work, checked by the engine (docs/TUTOR-WRITES.md,
+ * `src/lib/live/tutorStep.ts`): one step per ask, from the last right line; the final answer held
+ * back unless `answer`; `unsure` (and nothing to write) when the engine cannot vouch for a step.
+ */
+export function tutorStepOf(args: TutorStepArgs): TutorStepResult {
+  need(Array.isArray(args.work) && args.work.every((l) => typeof l === "string"), "work is an array of LaTeX strings");
+  return nextTutorStep(engine(), args);
+}
+
+/** Is `step` a right next step after `from`, by the engine alone (a model's step must pass it too)? */
+export function checkStepOf(args: { from: string; step: string; written?: string[] }): { ok: boolean; why: string; solved: boolean } {
+  need(typeof args.from === "string" && typeof args.step === "string", "from and step are strings");
+  const r = checkStep(engine(), args.from, args.step, { written: args.written });
+  return { ok: r.ok, why: r.why, solved: r.analysis?.solved === true };
+}
+
+/** The next column of a stacked sum, placed in the tutor's hand (`src/lib/live/stackStep.ts`). */
+export function stackStep(args: StackStepArgs): StackStepResult {
+  need(typeof args.latex === "string" && args.stack && typeof args.stack === "object", "latex is a string and stack a stacked sum");
+  return stackStepOf(args);
+}
+
 // ------------------------------------------------------------------ the boundary
 
 type Method = { run: (args: never) => unknown; plain?: boolean };
@@ -726,6 +760,9 @@ export const METHODS: Readonly<Record<string, Method>> = {
   analyzeLine: { run: analyzeLine },
   judgeLine: { run: judgeLineOf },
   stackedLine: { run: stackedLineOf },
+  tutorStep: { run: tutorStepOf },
+  checkStep: { run: checkStepOf },
+  stackStep: { run: stackStep, plain: true },
   analyzeColumn: { run: analyzeColumnOf },
   localSolve: { run: localSolveOf },
   calculate: { run: calculate },

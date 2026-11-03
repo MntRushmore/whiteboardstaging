@@ -94,12 +94,34 @@ const TRAILING_SURE_TICK_RE = /(\d\}?)\s*(?:\\checkmark|\\text\s*\{\s*[✓✔]\s
  */
 function mathsOfText(latex: string): string {
   return latex.replace(/\\text\s*\{([^{}]*)\}/g, (m, inner: string) => {
-    const t = inner.trim();
+    const t = textAsKidMeant(inner).trim();
     if (/^\d+\s*[Rr]\s*\d+$/.test(t)) return ` ${t} `;
     if (/^[\d\s.,+\-=/()×÷:<>]+$/.test(t) && /[\d=+\-<>]/.test(t)) return ` ${t} `;
     return m;
   });
 }
+
+/**
+ * Text-mode junk in a read of a child's numbers (real-ink bench, docs/eval/reader-realink.md): Mathpix
+ * writes a stroke it cannot place as a CJK or kana character (`\text { の - } 4` for `-4`) or a
+ * full-width sign (`－`), and a `1` as a bar (`\text { |5 }` for `15`). A child's maths is never
+ * written in those scripts: full-width signs are their ASCII selves, the rest goes, and a bar
+ * touching a digit is a `1`. Only used to see whether the text is maths (`mathsOfText`): text that
+ * is not stays exactly as it was read.
+ */
+function textAsKidMeant(inner: string): string {
+  return inner
+    .replace(/[\uFF01-\uFF5E]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[\u3000-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]/g, " ")
+    .replace(/\|(?=\s*\d)|(?<=\d\s*)\|/g, "1");
+}
+
+/**
+ * A number with a letter written a little low after it, read as its subscript (`=7_{x}+2` for
+ * `= 7x + 2`): a number has no subscript at school (a base's is digits, `101_{2}`), so the letter
+ * is the next factor. A letter's or a word's subscript (`a_{n}`, `\log_{b}`) is left alone.
+ */
+const NUMBER_SUBSCRIPT_RE = /(?<![A-Za-z\\_^{}\d.])(\d+(?:\.\d+)?)\s*_\s*(?:\{\s*([A-Za-z])\s*\}|([A-Za-z])(?![A-Za-z]))/g;
 
 /**
  * A long-division bracket as Mathpix reads one with its quotient over it: the divisor and its bracket
@@ -438,6 +460,12 @@ function numbersIn(latex: string): string[] {
 export function readYoungHand(latex: string, ctx: YoungReadContext): string {
   // her numbers read as words, her long division's bracket read as words and a fraction
   let s = bracketOfRead(mathsOfText(latex)).replace(/⌣/g, "\\smile ").replace(/⌢/g, "\\frown ");
+  // a letter written low after a number, read as its subscript (`7_{x}`: `NUMBER_SUBSCRIPT_RE`)
+  s = s.replace(NUMBER_SUBSCRIPT_RE, (_m, n: string, a?: string, b?: string) => `${n} ${a ?? b}`);
+  // a plus written high, read as an exponent with a term after it (`4 x^{+} 3=11`), and her `x` read
+  // as a times sign with nothing to multiply (`\times=5`): no maths is either, so they are what she
+  // wrote wherever they are (real-ink bench; before, only the second look before a ring tried them)
+  s = s.replace(SIGN_EXPONENT_RE, " + ").replace(LONE_TIMES_RE, "$1x");
   // an empty `\text { }` (a tap of the pen read as text) is nothing: `\text { } \approx 12` is `\approx 12`
   s = s.replace(/\\text\s*\{\s*\}/g, " ");
   // two bars read stacked, and a curved bar wherever it is

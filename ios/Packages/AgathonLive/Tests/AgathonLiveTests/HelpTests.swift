@@ -39,11 +39,21 @@ struct HelpTests {
         #expect(card.lineId == lineId)
         #expect(card.message == "Look again at how you divided 8 by 2.")
         #expect(card.title == "Hint")
-        // More help: the right next step, by hand, beside the line; the card closes
+        // Show me: the right step after the last right line is the answer (x = 4), so it is held back and
+        // the card says what to do instead (docs/TUTOR-WRITES.md)
         h.loop.moreHelp(card)
         await h.pass(100)
-        #expect(h.loop.hints.isEmpty)
-        #expect(h.board.tutorStrokes(withMeta: "suggestFor", "x = 5").first?.meta["handLine"]?.stringValue == "x = 4")
+        // (on a free board the kid's own problem is read back once first: the messy-handwriting guard)
+        #expect(h.loop.hints.first?.title == "I read")
+        h.loop.moreHelp(try #require(h.loop.hints.first))
+        await h.pass(100)
+        // …and the ringed line, before a correction goes beside it (it may be misread)
+        #expect(h.loop.hints.first?.message == "I read: x = 5")
+        h.loop.moreHelp(try #require(h.loop.hints.first))
+        await h.pass(100)
+        #expect(h.loop.hints.first?.title == "One step left")
+        #expect(h.loop.hints.first?.message == "One step left: divide both sides by 2. You can do this one.")
+        #expect(h.board.tutorStrokes(withMeta: "suggestFor", "x = 5").isEmpty, "the answer is not written")
         #expect(h.services.solveRequests.isEmpty, "the engine knew the step: no model")
     }
 
@@ -63,6 +73,12 @@ struct HelpTests {
         await h.write("2x + 3 = 11", at: Vec2(200, 120))
         await h.pass(700)
         h.loop.helpMe()
+        await h.pass(100)
+        // the kid's own problem is read back first (docs/TUTOR-WRITES.md): Yes, that's right
+        let readback = try #require(h.loop.hints.first)
+        #expect(readback.action == .readback && readback.message == "I read: 2x + 3 = 11")
+        #expect(h.board.tutorStrokes.filter { $0.meta["mark"] == nil }.isEmpty, "nothing written before the read is confirmed")
+        h.loop.moreHelp(readback)
         await h.pass(100)
         let block = h.board.tutorStrokes.filter { $0.meta["handLine"] != nil && $0.meta["mark"] == nil }
         #expect(block.first?.meta["handLine"]?.stringValue == "2x = 8", "one step, from the engine")

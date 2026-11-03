@@ -332,8 +332,17 @@ export function createEngine(mod: MathModule): LiveEngine {
     const out: LineAnalysis = { kind: "expression", math: t.source, resultLatex: "", verdict: "none", note: "" };
     const prev = ctx.previous;
     if (prev && prev.kind === "expression" && prev.math) {
-      const prevVars = safeVars(prev.math);
-      if (prevVars && sameSet(prevVars, unknowns)) out.verdict = expressionsEquivalent(math, prev.math, t.source, unknowns);
+      // the line above is a derivative to take (`\frac{d}{dx}(x^{4} + 5x)`): this line is judged
+      // against its value (`4x^{3} + 5`; a right one was left unmarked — the real-ink bench). A
+      // derivative has one value, so a different one is a slip; an integral's has a `+ C` and is not
+      // taken here
+      let prevMath = prev.math;
+      if (/^\s*derivative\s*\(/.test(prevMath)) {
+        const res = safeEvaluate(math, prevMath);
+        if (res.ok && isNodeValue(res.value)) prevMath = res.value.toString();
+      }
+      const prevVars = safeVars(prevMath);
+      if (prevVars && sameSet(prevVars, unknowns)) out.verdict = expressionsEquivalent(math, prevMath, t.source, unknowns);
     }
     return out;
   };

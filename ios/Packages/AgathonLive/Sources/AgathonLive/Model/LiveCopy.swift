@@ -48,7 +48,8 @@ public enum LiveCopy {
 
     public enum Hint {
         public static let gotIt = "Got it"
-        public static let moreHelp = "More help"
+        /// the tutor writes the next step (docs/TUTOR-WRITES.md)
+        public static let moreHelp = "Show me"
         public static let readAloud = "Read it out"
         public static func level(_ n: Int) -> String { n <= 1 ? "Hint" : n == 2 ? "Closer look" : "One step" }
         /// the engine's own words when the model has none: where, never what

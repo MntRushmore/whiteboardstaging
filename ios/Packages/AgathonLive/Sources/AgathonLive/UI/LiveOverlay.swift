@@ -130,7 +130,7 @@ public struct LiveOverlay: View {
         let width = min(380, max(260, size.width - 32))
         let x = min(max(16, below.x - 12), size.width - width - 16)
         let roomBelow = size.height - below.y > 260
-        HintCardView(card: h, pointsUp: roomBelow, onGotIt: { loop.dismissHint(h.id) }, onMore: { loop.moreHelp(h) }, onSpeak: onSpeak)
+        HintCardView(card: h, pointsUp: roomBelow, onGotIt: { loop.cardFirstButton(h) }, onMore: { loop.moreHelp(h) }, onSpeak: onSpeak)
             .frame(width: width)
             .alignmentGuide(.leading) { _ in -x }
             .alignmentGuide(.top) { d in roomBelow ? -(below.y + 14) : -(above.y - 14 - d.height) }
@@ -310,7 +310,8 @@ struct FixSheetHost: View {
     }
 }
 
-/// The tutor's hint: a cobalt bubble pointing at its line, its words, and Got it / More help.
+/// The tutor's hint: a cobalt bubble pointing at its line, its words, and Got it / Show me (or the
+/// tutor's step card's Next step, Show the answer).
 public struct HintCardView: View {
     let card: HintCard
     let pointsUp: Bool
@@ -327,6 +328,18 @@ public struct HintCardView: View {
     }
 
     private var spoken: String { [card.message, card.question].compactMap { $0 }.joined(separator: " ") }
+
+    /// The second button: More help (Show me: the tutor writes the step), the tutor's Next step, Show
+    /// the answer; none on a card that only says something.
+    private var moreTitle: String? {
+        switch card.action {
+        case .more, .offer: return LiveCopy.Hint.moreHelp
+        case .next: return LiveCopy.Writes.nextStep
+        case .answer: return LiveCopy.Writes.showAnswer
+        case .readback: return LiveCopy.Reading.yesRight
+        case .none: return nil
+        }
+    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
@@ -352,10 +365,13 @@ public struct HintCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: DS.Space.xs) {
-                CardButton(LiveCopy.Hint.gotIt, fill: DS.Color.paper, text: DS.Color.ink, action: onGotIt)
+                CardButton(card.action == .offer ? LiveCopy.Writes.notNow : card.action == .readback ? LiveCopy.Writes.fixIt : LiveCopy.Hint.gotIt,
+                           fill: DS.Color.paper, text: DS.Color.ink, action: onGotIt)
                     .accessibilityIdentifier("live.hint.gotIt")
-                CardButton(LiveCopy.Hint.moreHelp, fill: DS.Color.cobaltDeep, text: DS.Color.onInk, action: onMore)
-                    .accessibilityIdentifier("live.hint.more")
+                if let more = moreTitle {
+                    CardButton(more, fill: DS.Color.cobaltDeep, text: DS.Color.onInk, action: onMore)
+                        .accessibilityIdentifier("live.hint.more")
+                }
             }
         }
         .padding(DS.Space.l)

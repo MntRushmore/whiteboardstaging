@@ -26,6 +26,11 @@ import { parseStacked, stackedAnalysis, workStacked } from "./columnArithmetic";
 
 /** A number, as a young student writes an answer: `14`, `-3`, `2.5`, `\frac{3}{4}`, `3/4` (an `=` before it allowed). */
 const BARE_NUMBER = /^\s*=?\s*-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}|\d+\s*\/\s*\d+)\s*$/;
+/**
+ * A lone number under an equation in one letter, as its value: a plain number, or an angle (`49^{\circ}`
+ * under `x + 41^{\circ} = 90^{\circ}`: a lone angle was left unmarked — the real-ink bench). Only ever ticked (`judgeLine`).
+ */
+const BARE_VALUE = /^\s*=?\s*-?\s*(?:\d+(?:\.\d+)?(?:\s*\^\s*\{?\s*\\circ\s*\}?|\s*°)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}|\d+\s*\/\s*\d+)\s*$/;
 /** The same, as the last side of a line (`7 + 5 = 12`'s `12`): the line ends in the answer. */
 const PLAIN_NUMBER = /^\s*-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}|\d+\s*\/\s*\d+)\s*$/;
 
@@ -147,6 +152,11 @@ export interface WorkInput {
   slip?: LineAnalysis;
   /** the line is (part of) a value the column gives a letter (`givens.ts`: the `3` of `x =` read apart): never an answer */
   given?: boolean;
+  /**
+   * The column's problem is ONE relation the tutor wrote (not a system, not the student's own first
+   * line): `y = 2x + 9` under `y - 5 = 2(x + 2)` answers it (`answersBySimplestForm`).
+   */
+  posed?: boolean;
 }
 
 /** The line judged in its column (see the file comment). Never throws past the engine's own guard. */
@@ -213,7 +223,7 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
       if (answer.verdict === "ok" || answer.verdict === "mismatch") a = { ...answer, bareAnswer: true };
     }
     if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(latex))) a = { ...a, solved: true };
-  } else if (a.verdict === "none" && !input.given && BARE_NUMBER.test(latex)) {
+  } else if (a.verdict === "none" && !input.given && BARE_VALUE.test(latex)) {
     // a lone number under an equation in one letter, when it is that letter's value, is the answer
     // (`12` under `x/2 - 5 = 1`, `2` after `y = -6 + 8`: children write it without `x =`). Only a
     // right one: a lone wrong number may be a side sum, and a ring there would be on right work.
@@ -223,7 +233,7 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
       if (answer.verdict === "ok") a = { ...answer, bareAnswer: true };
     }
   }
-  if (a.verdict === "ok" && !a.solved && !input.arithmetic && answersBySimplestForm(a, ctx)) a = { ...a, solved: true };
+  if (a.verdict === "ok" && !a.solved && !input.arithmetic && answersBySimplestForm(a, ctx, input.posed === true)) a = { ...a, solved: true };
   if (a.verdict !== "mismatch" || a.solved) return a;
   // not right from the last right line: carried on from the slip right above it? Then the
   // mistake is that slip's (ringed already), and this step gets no mark of its own
@@ -324,6 +334,7 @@ export function judgeColumn(engine: LiveEngine, column: WorkColumn, mode: HelpMo
         arithmetic: arithmeticOf(head),
         above: lines.slice(0, i).filter((l) => l && !isStackRead(l)),
         slip: last && isSlip(last) ? last : undefined,
+        posed: problem !== null && problem.length === 1,
       }),
     );
   }
@@ -335,12 +346,22 @@ export function judgeColumn(engine: LiveEngine, column: WorkColumn, mode: HelpMo
  * real-ink bench: simplify problems, an inequality, `C = 10\pi`, `y = -4x + 7` were ticked but the page
  * never counted solved): in a column with no equation, an expression in simplest form; a letter alone
  * against a number (`x \ge 9`); a letter given its value in simplest form (`C = 10\pi`, `y = -4x + 7`).
+ * And under ONE equation in x and y the tutor posed (`posed`), `y` in terms of `x` in simplest form.
  */
-function answersBySimplestForm(a: LineAnalysis, ctx: AnalyzeContext): boolean {
+function answersBySimplestForm(a: LineAnalysis, ctx: AnalyzeContext, posed = false): boolean {
   const math = a.math.trim();
   if (!math) return false;
   if (a.kind === "inequality") {
     return ctx.original?.kind === "inequality" && /^(?:[a-zA-Z]\s*(?:>=|<=|>|<)\s*-?\s*[\d.]+|-?\s*[\d.]+\s*(?:>=|<=|>|<)\s*[a-zA-Z])$/.test(math);
+  }
+  // a line in x and y the tutor posed (`y - 5 = 2(x + 2)`, `2x + 3y = 6`) is answered by `y` in terms of
+  // x in its simplest form (`y = 2x + 9`; the real-ink bench: right, ticked, and the page never solved).
+  // Only ONE relation the tutor wrote: in a system, `y = 10 - x` is a step
+  if (posed && a.kind === "function" && ctx.original?.kind === "equation") {
+    const m = /^y\s*=\s*(.+)$/.exec(math);
+    const letters = new Set((ctx.original.math.replace(/\b(?:sqrt|sin|cos|tan|log|ln|exp|pi)\b/g, "").match(/[a-zA-Z]/g) ?? []));
+    const solvedForY = /^\s*y\s*==?\s*[^y]*$/.test(ctx.original.math);
+    if (m && !/y/.test(m[1]) && /x/.test(m[1]) && letters.size === 2 && letters.has("x") && letters.has("y") && !solvedForY) return simplestForm(m[1]);
   }
   if (ctx.original) return false;
   if (a.kind === "expression") return Boolean(ctx.previous) && simplestForm(math);

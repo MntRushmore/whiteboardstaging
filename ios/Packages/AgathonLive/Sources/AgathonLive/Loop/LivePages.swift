@@ -73,6 +73,9 @@ public final class LivePages: ObservableObject {
     public internal(set) var lastSafetyNet: String?
     /// the kid's last stroke on the page (scheduler ms)
     var lastInkAt = -Double.infinity
+    /// when the page was last checked (scheduler ms): a "?" on ink newer than that waits for the next
+    /// check (`questionWaitsForCheck`)
+    var checkedAt = -Double.infinity
     /// per stroke: when the kid last drew or changed it (the line the pen is on is never judged at a
     /// pause)
     var strokeAt: [String: Double] = [:]
@@ -174,8 +177,10 @@ public enum PageTiming {
     public static let chipsBackMs = 1_000.0
     /// the safety net checks this long after the long pause, if the work is still unchecked
     public static let safetyMarginMs = 3_000.0
-    /// Mathpix's strokes confidence under this: "Is this right?" (the eval's threshold)
-    public static let askBelowConfidence = 0.99
+    /// Mathpix's strokes confidence under this: "Is this right?". 0.9, not the synthetic eval's 0.99: on
+    /// real kids' ink (docs/eval/reader-realink.md) the reads at 0.9–0.99 were right 16 times in 19,
+    /// and asking only held back a slip's ring; at 0.85 a stray was ringed.
+    public static let askBelowConfidence = 0.9
 }
 
 /// LiveMeta's keys for problem pages (on a `line` record).

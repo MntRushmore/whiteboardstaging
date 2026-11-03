@@ -475,6 +475,28 @@ describe("splitInk: a bar under a whole equation is \"divide both sides\" (`divi
     expect(lines[0].strokeIds).toEqual([bar.id, ...two.map((s) => s.id)]);
   });
 
+  it("on the iPad's problem page: the bar in the first row of the work, past the reach under her own line, half the problem's width, a 2 under it (real-ink bench, re-drawn)", () => {
+    // the page's problem at the top; the work starts under the problem's own area, so her first bar
+    // is ~2.4 of her glyphs below it (more than under a line of her own) and covers only half the
+    // tutor's wider hand
+    const problem = boundsOf(writeAt("3x - 6 = 9", 88, 60, VARIANTS[0], 48 / 44));
+    const glyph = boundsOf(writeAt("2", 0, 0)).h;
+    const at = (gap: number) => {
+      const y = problem.y + problem.h + gap * glyph;
+      const bar = new Pen(`page${gap}`, 6).stroke({ x: problem.x + 16, y }, { x: problem.x + 16 + 0.55 * problem.w, y: y + 1 });
+      return { bar, two: centred("2", bar) };
+    };
+    const near = at(2.4);
+    expect(near.bar.bounds.y - (problem.y + problem.h)).toBeGreaterThan(DIAGRAM_RULES.divisionAboveFactor * glyph);
+    expect(splitInk([near.bar, ...near.two], [], { equations: [problem] }).bars).toEqual([{ bar: near.bar.id, divisor: near.two.map((s) => s.id) }]);
+    // too far under it to be about it
+    const far = at(5);
+    expect(splitInk([far.bar, ...far.two], [], { equations: [problem] }).bars).toEqual([]);
+    // a line of hers between the problem and the bar: the bar is not under the tutor's problem
+    const hers = writeAt("x + 1", problem.x + 16, problem.y + problem.h + 0.4 * glyph);
+    expect(splitInk([...hers, near.bar, ...near.two], [], { equations: [problem] }).bars.some((b) => b.bar === near.bar.id)).toBe(false);
+  });
+
   it("under the student's own 2x + 3 = 11: the equation stays one line, the bar and the 2 another", () => {
     const eq = writeAt("2x + 3 = 11", 200, 300);
     const r = boundsOf(eq);

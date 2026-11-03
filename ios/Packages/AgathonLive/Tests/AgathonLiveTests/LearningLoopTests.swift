@@ -110,14 +110,15 @@ struct LearningLoopTests {
         #expect(a.asks == 1)
         #expect(a.hints == 1)
         #expect(a.mistakes["concept"] == 1, "the model's kind: \(a.mistakes)")
-        // More help: the right step beside the ring, by hand
+        // Show me: the right step beside the ring is the answer (x = 4), held back (docs/TUTOR-WRITES.md):
+        // an ask, no step written
         let card = try #require(h.loop.hints.first)
         h.loop.moreHelp(card)
         await h.pass(100)
         await learned(h)
         a = try only(h)
         #expect(a.asks == 2)
-        #expect(a.tutorSteps == 1)
+        #expect(a.tutorSteps == 0)
         // the kid finishes it: with help
         await h.write("x = 4", at: Vec2(200, 420))
         await h.pass(700)

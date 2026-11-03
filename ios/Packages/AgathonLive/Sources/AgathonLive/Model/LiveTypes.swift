@@ -22,6 +22,8 @@ public enum LiveTiming {
     public static let settleMs = 2_500.0
     /// Auto in Suggest: stopped this long on an unfinished problem, the tutor writes its next step
     public static let stuckMs = 6_000.0
+    /// a long stall on a problem page in Hint: the tutor offers its next step (docs/TUTOR-WRITES.md)
+    public static let stallOfferMs = 25_000.0
     /// a line just read shows its readback this long
     public static let readbackMs = 2_500.0
     /// an unsure read gets its "?" only after this
@@ -211,6 +213,8 @@ public struct HintCard: Identifiable, Equatable, Sendable {
     public var question: String?
     /// 1: a hint, 2: a closer look, 3: one step
     public var level: Int
+    /// what its second button does (More help; the tutor's step cards: Next step, Show the answer)
+    public var action: HintAction = .more
 }
 
 /// A cheer the board shows beside a tick (or a kind word beside a ring).

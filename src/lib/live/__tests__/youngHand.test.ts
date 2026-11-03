@@ -125,6 +125,36 @@ describe("readYoungHand: a wobbly `=` as Mathpix reads it", () => {
     expect(readYoungHand("x = 2v", ANYWHERE)).toBe("x = 2v");
   });
 
+  it("text-mode junk in a read of her numbers: a CJK or kana stroke goes, a full-width sign is itself, a bar touching a digit is a 1 (real-ink bench, re-said)", () => {
+    expect(readYoungHand("\\text { の - } 4", ANYWHERE)).toBe("- 4");
+    expect(readYoungHand("\\text { |5 }", ARITHMETIC)).toBe("15");
+    expect(readYoungHand("\\text { 2| }", ANYWHERE)).toBe("21");
+    expect(readYoungHand("\\text {－} 3", ANYWHERE)).toBe("- 3");
+    // words, and text that is still no maths without the junk, stay as read
+    expect(readYoungHand("\\text { apples }", ANYWHERE)).toBe("\\text { apples }");
+    expect(readYoungHand("\\text { ご }", ANYWHERE)).toBe("\\text { ご }");
+    expect(readYoungHand("|x - 3| = 5", ANYWHERE)).toBe("|x - 3| = 5");
+  });
+
+  it("a letter written low after a number is its next factor, not its subscript; a letter's subscript stays", () => {
+    expect(readYoungHand("=7_{x}+2", ANYWHERE)).toBe("=7 x+2");
+    expect(readYoungHand("12_{y} = 24", ANYWHERE)).toBe("12 y = 24");
+    for (const read of ["a_{n} = 2n + 1", "x_{1} + x_{2} = 5", "\\log_{b} 8 = 3", "101_{2} = 5", "v_{0} = 3"]) {
+      expect(readYoungHand(read, ANYWHERE), read).toBe(read);
+    }
+  });
+
+  it("a plus written high (`x^{+}` with a term after it) is a plus, and a times sign with nothing to multiply is her x, on any line", () => {
+    expect(readYoungHand("4 x^{+} 3=11", ANYWHERE)).toBe("4 x + 3=11");
+    expect(readYoungHand("-3 y^{+} 10-2 y", ANYWHERE)).toBe("-3 y + 10-2 y");
+    expect(readYoungHand("\\times=5", ANYWHERE)).toBe("x=5");
+    expect(readYoungHand("2(\\times+1)=8", ANYWHERE)).toBe("2(x+1)=8");
+    // an ion's charge, a product, and a line still being written stay as read
+    for (const read of ["\\mathrm{Na}^{+}", "3 \\times 4=12", "6 \\times", "\\times 3 \\quad \\times 3"]) {
+      expect(readYoungHand(read, ANYWHERE), read).toBe(read);
+    }
+  });
+
   it("leaves every line of the eval corpus as it is (algebra, geometry, trigonometry, calculus, statistics …)", () => {
     const changed: string[] = [];
     for (const p of CORPUS) {

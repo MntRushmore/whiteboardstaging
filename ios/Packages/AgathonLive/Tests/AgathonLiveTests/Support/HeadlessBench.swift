@@ -295,6 +295,21 @@ enum Oracle {
         return "\\begin{array}{r} " + r[...lastOp].joined(separator: " \\\\ ") + " \\\\ \\hline " + r[(lastOp + 1)...].joined(separator: " \\\\ ") + " \\end{array}"
     }
 
+    /// Whole lines read together as a reader lays them out (nil: one after the other, as before): on
+    /// one row (each pair overlapping in height by half the shorter), left to right with a `\quad`
+    /// between; one under another and a stacked sum, its array.
+    static func laidOut(_ lines: [String], _ boxes: [BrainRect]) -> String? {
+        guard lines.count == boxes.count, lines.count > 1 else { return nil }
+        let order = boxes.indices.sorted { boxes[$0].y < boxes[$1].y }
+        let oneRow = zip(order, order.dropFirst()).allSatisfy { a, b in
+            let A = boxes[a], B = boxes[b]
+            return min(A.maxY, B.maxY) - max(A.y, B.y) >= 0.5 * min(A.h, B.h)
+        }
+        if oneRow { return boxes.indices.sorted { boxes[$0].x < boxes[$1].x }.map { lines[$0] }.joined(separator: " \\quad ") }
+        let stacked = zip(order, order.dropFirst()).allSatisfy { a, b in boxes[b].y >= boxes[a].y + 0.5 * boxes[a].h }
+        return stacked ? stackedArray(order.map { lines[$0] }) : nil
+    }
+
     /// What a perfect reader says for what was written: no layout spacing.
     static func spoken(_ latex: String) -> String {
         latex.replacingOccurrences(of: "\\qquad", with: " ").replacingOccurrences(of: "\\quad", with: " ")

@@ -140,18 +140,33 @@ extension LiveLoop {
 
     /// A read that failed: ONE more with a crop of the line when the server had nothing to fall
     /// back on (`needsCrop`); any other failure is the read's.
+    ///
+    /// Mathpix finding the strokes unreadable (`unreadable`, its `strokes_no_content`) with `needsCrop`
+    /// too is tried once more with the crop as well, as the web board does (`recognizeWithCropFallback`):
+    /// the crop reader (Mathpix v3/text behind `RECOGNIZE_CROP_READER`, else the vision model) reads
+    /// what the strokes reader could not — on the real-ink bench (docs/eval/reader-realink.md) such a line
+    /// was never read at all. When that read fails too, or no crop can be made, the first answer stands:
+    /// the line is unreadable (its gentle "?"), never a hiccup.
     func recognizeAgain(after error: Error, request: RecognizeRequest, id: String, hash: String) async throws -> (RecognizeResponse, Bool) {
         let failure = LiveFailure.from(error)
-        guard case .needsCrop(let down) = failure, request.crop == nil else { throw error }
+        let unreadable = failure == .unreadable && RecognizerHints(error).needsCrop
+        var down = false
+        if case .needsCrop(let d) = failure { down = d } else if !unreadable { throw error }
+        guard request.crop == nil else { throw error }
         if down { recognizer = "vision" }
-        guard let crop = crop(id) else { throw LiveFailure.unreadable }
+        guard let crop = crop(id) else { throw unreadable ? error : LiveFailure.unreadable }
         var request = request
         request.crop = crop
         request.cropOnly = true
         count("recognize")
-        let res = try await services.recognize(request)
-        cache[hash] = res
-        return (res, false)
+        do {
+            let res = try await services.recognize(request)
+            cache[hash] = res
+            return (res, false)
+        } catch let cropError {
+            if unreadable && !Task.isCancelled && !(cropError is CancellationError) { throw error }
+            throw cropError
+        }
     }
 
     func acquireReadSlot() async {
@@ -256,7 +271,8 @@ extension LiveLoop {
             guard let self, self.rt[id]?.processing == ticket, self.settings.enabled, let st = self.lines[id] else { return }
             self.rt[id]?.unreadableTimer = nil
             self.rt[id]?.unreadableShown = true
-            if self.settings.mode != .off { self.syncMark(st, .question, "unread") }
+            // check when done: the "?" comes with the check (`questionWaitsForCheck`)
+            if self.settings.mode != .off && !self.questionWaitsForCheck(st) { self.syncMark(st, .question, "unread") }
         }
     }
 

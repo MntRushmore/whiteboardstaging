@@ -66,6 +66,15 @@ struct RealInkBenchTests {
         var why: String?
         var readMs: Double?
         var markMs: Double?
+        /// the tutor asks "Is this right?" about its reading of the line (the chip; no ring until the kid says)
+        var asked: Bool? = nil
+        /// `readRight`, but a row of a stacked sum read as one block (`\begin{array}`) is read right when
+        /// one of the block's rows says what the row says (`rowOfStack`): the sum is one line by design
+        var readRightRow: Bool? = nil
+        /// the second opinion's read of the line (SECOND=1) and whether it agreed with the read
+        var second: String? = nil
+        var agree: Bool? = nil
+        var confidence: Double? = nil
     }
 
     struct CaseOutcome: Codable {
@@ -200,6 +209,8 @@ struct RealInkBenchTests {
                             brain: TestBrain.shared, background: TestBrain.background, scheduler: scheduler, connectivity: ManualConnectivity())
         // HOLD=0: the tutor without the wait before a ring or a "?" on a line still being written
         if let hold = ProcessInfo.processInfo.environment["AGATHON_REALINK_HOLD"].flatMap(Double.init) { loop.doubtHoldMs = hold }
+        // SECOND=1: the second opinion on every read (a crop with each; `BenchServices` answers it)
+        if ProcessInfo.processInfo.environment["AGATHON_REALINK_SECOND"] == "1" { loop.pages.secondOpinion = true }
         let clock = HeadlessBench.Clock(loop: loop, scheduler: scheduler)
         let written = Written()
         var earlyMarks: [String] = []
@@ -236,11 +247,17 @@ struct RealInkBenchTests {
                     return array
                 }
                 var whole: [String] = []
+                var boxes: [BrainRect] = []
                 var partial = false
                 for (k, line) in written.lines.enumerated() where !line.strokes.isEmpty && !line.strokes.isDisjoint(with: held) {
                     if !line.strokes.isSubset(of: held) || line.strokes.count < total[k] { partial = true; break }
                     whole.append(Oracle.spoken(line.latex))
+                    boxes.append(BrainRect.around(line.strokes.compactMap { board.store.stroke(RecordID($0)).map(StrokeBounds.of) }) ?? BrainRect(x: 0, y: 0, w: 0, h: 0))
                 }
+                // several whole lines in one read, laid out as a reader lays them out: side by side on one
+                // row, a gap between them (`x = 5 \quad x = -5`); rows of numbers stacked as a sum, an
+                // array (as the stacked-sum branch above, for a stack the split did not set apart)
+                if !partial, whole.count > 1, let laid = Oracle.laidOut(whole, boxes) { return laid }
                 if ProcessInfo.processInfo.environment["AGATHON_REALINK_DEBUG"] == "1" {
                     print("ORACLE \(request.lineId) inLines=\(loop.lines[request.lineId] != nil) held=\(held.count) req=\(request.strokes.x.count) "
                           + "partial=\(partial) whole=\(whole) lines=\(written.lines.map { "\($0.strokes.intersection(held).count)/\($0.strokes.count)" })")
@@ -312,13 +329,34 @@ struct RealInkBenchTests {
             lines.append(LineOutcome(written: line.latex, expect: line.expect, read: r.read, readRight: r.readRight, pieces: obs.lineIds.count,
                                      marks: marks, falseRing: right && marks.contains(.ring), missedRing: !right && !marks.contains(.ring),
                                      questionOnRight: right && marks.contains(.question), pass: r.pass, why: r.why?.text,
-                                     readMs: r.readMs, markMs: r.markMs))
+                                     readMs: r.readMs, markMs: r.markMs, asked: r.reading == "asking",
+                                     readRightRow: r.readRight == false ? Self.rowOfStack(line.latex, read: r.read ?? "") : r.readRight,
+                                     second: obs.lineIds.first.flatMap { loop.pages.second[$0]?.latex },
+                                     agree: obs.lineIds.first.flatMap { loop.pages.second[$0]?.agree },
+                                     confidence: r.confidence))
         }
         let strayRings = loop.lines.keys.filter { !owned.contains($0) && loop.trainingMark(on: $0) == .ring }.count
         if ProcessInfo.processInfo.environment["AGATHON_REALINK_DEBUG"] == "1" {
+            print("CONTEXT \(c.id) equations=\(loop.clusterContext().equations) bars=\(loop.barStrokeIds.count)")
             for st in loop.lines.values.sorted(by: { ($0.column, $0.row) < ($1.column, $1.row) }) {
                 print("LINE \(c.id) \(owned.contains(st.id) ? "labeled" : "STRAY") col\(st.column) row\(st.row) \(st.latex) conf=\(st.confidence) "
                       + "[\(st.analysis?.verdict ?? "-")\(st.analysis?.misreadLikely == true ? " misread?" : "")] mark=\(loop.trainingMark(on: st.id).rawValue) strokes=\(st.ink.strokeIds.count) box=\(st.bounds)")
+            }
+            // where each labeled line's strokes went: which tutor line, or what the split made of them
+            let context = loop.clusterContext()
+            let strokes = board.store.kidStrokes(on: board.currentScreenID)
+            let request = ClusterRequest(strokes: strokes, previousLines: loop.lines.values.map(\.ink), zoom: board.fitZoom,
+                                         equations: context.equations, cells: context.cells, mates: context.mates)
+            let roles = (try? await loop.brain.clusterStrokes(request))?.roles ?? [:]
+            // the request itself, to replay the clusterer outside the app (OUT is inside the private corpus)
+            if let out = ProcessInfo.processInfo.environment["AGATHON_BENCH_OUT"], let json = try? JSONEncoder().encode(request) {
+                try? json.write(to: URL(fileURLWithPath: out).appendingPathComponent("cluster-\(c.id).json"))
+            }
+            let lineOf = Dictionary(loop.lines.values.flatMap { st in st.ink.strokeIds.map { ($0, "r\(st.row)c\(st.column)") } }, uniquingKeysWith: { a, _ in a })
+            for k in -1..<c.lines.count {
+                let mine = k < 0 ? Set(order).subtracting(ids.flatMap { $0.map(\.rawValue) }) : Set(ids[k].map(\.rawValue))
+                let fate = order.filter(mine.contains).map { id in lineOf[id] ?? "[\(roles[id].map { "\($0.role):\($0.reason)" } ?? "gone")]" }
+                print("FATE \(c.id) line\(k) \(fate.joined(separator: " "))")
             }
         }
         let solved = loop.trainingSolved
@@ -330,6 +368,15 @@ struct RealInkBenchTests {
     }
 
     // MARK: - the report
+
+    /// A stacked sum's row read right inside the block (`\begin{array}{r} 128 \\ +47 \\ \hline 175 \end{array}`
+    /// holds `+47`): one of the block's rows is the same maths as the written row.
+    static func rowOfStack(_ written: String, read: String) -> Bool {
+        guard read.contains("\\begin{array}") else { return false }
+        let body = read.replacingOccurrences(of: #"\\(?:begin|end)\{array\}(?:\{[^}]*\})?"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\\hline", with: "").replacingOccurrences(of: "\n", with: " ")
+        return body.components(separatedBy: "\\\\").contains { TrainingJudge.sameMaths($0, written) }
+    }
 
     /// A case right as a teacher sees the page: every line's pieces carry the mark it wants (a tick on an
     /// answer, a ring on a slip, never a ring or a "?" on right work), no stray ringed, and the page
@@ -358,10 +405,15 @@ struct RealInkBenchTests {
         s += "cases \(cases.count): pass \(pct(cases.filter { $0.pass == true }.count, cases.count))"
         s += "; no ring on right work \(pct(cases.filter { c in !c.lines.contains(where: \.falseRing) && c.strayRings == 0 }.count, cases.count))\n"
         s += "lines \(lines.count): judged right \(pct(lines.filter { $0.pass == true }.count, lines.count))"
-        s += "; read right \(pct(read.filter { $0.readRight == true }.count, read.count)) of \(read.count) read; one piece \(pct(lines.filter { $0.pieces == 1 }.count, lines.count))\n"
+        s += "; read right \(pct(read.filter { $0.readRight == true }.count, read.count)) of \(read.count) read"
+        s += " (\(pct(read.filter { $0.readRightRow == true }.count, read.count)) counting a stacked sum's rows)"
+        s += "; one piece \(pct(lines.filter { $0.pieces == 1 }.count, lines.count))\n"
         s += "RINGS ON RIGHT WORK: \(right.filter(\.falseRing).count) of \(right.count) right lines; strays ringed \(cases.map(\.strayRings).reduce(0, +))\n"
         s += "missed slips: \(slips.filter(\.missedRing).count) of \(slips.count); \"?\" on right work: \(right.filter(\.questionOnRight).count)\n"
         let solvedCases = cases.filter { $0.solvedExpected != nil }
+        let asked = lines.filter { $0.asked == true }
+        s += "asked \"Is this right?\": \(asked.count) lines (\(asked.filter { $0.readRight == false }.count) misread, \(asked.filter { $0.readRight == true }.count) read right); "
+        s += "misreads not asked about: \(read.filter { $0.readRight == false && $0.asked != true }.count)\n"
         s += "solved as expected: \(pct(solvedCases.filter { $0.solvedExpected == $0.solvedGot }.count, solvedCases.count)) of \(solvedCases.count)\n"
         let readMs = lines.compactMap(\.readMs).sorted()
         let markMs = lines.compactMap(\.markMs).sorted()
@@ -381,6 +433,9 @@ struct RealInkBenchTests {
         s += "why lines failed:\n"
         for (w, n) in why.sorted(by: { $0.value > $1.value }) { s += "  \(n) × \(w)\n" }
         s += "calls: reads \(counts.recognizeCalls) called, \(counts.recognizeCached) cached; other \(counts.otherCalls); refused \(counts.refused)\n"
+        if counts.secondCalls + counts.secondCached + counts.secondMisses > 0 {
+            s += "second opinions: \(counts.secondCalls) called, \(counts.secondCached) cached, \(counts.secondMisses) missing\n"
+        }
         return s
     }
 }

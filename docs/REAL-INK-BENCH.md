@@ -54,11 +54,36 @@ CHECK=asIGo MODE=replay CACHE=… scripts/ios-realink-bench.sh run
 HOLD=0 CHECK=asIGo MODE=replay CACHE=… scripts/ios-realink-bench.sh run
 ```
 
+### A route flag production does not have yet
+
+`MODE=server` against production benches the flags production has. To bench a recognize-route flag
+(`RECOGNIZE_CROP_READER`, `RECOGNIZE_SECOND_OPINION`), run this checkout's `next dev` with the flag in
+its environment against the local Supabase stack and point the bench at it, from a copy of a
+production cache, so only what the flag changes is called:
+
+```bash
+RECOGNIZE_CROP_READER=mathpix-text npx next dev -p 3971        # (NEXT_PUBLIC_SUPABASE_URL=… if the stack is on another port)
+cp runs/cache.json runs/cache-flag.json
+SERVER=local MODE=server MAX_RECOGNIZE=… CACHE=…/runs/cache-flag.json OUT=…/runs scripts/ios-realink-bench.sh run
+# the second opinion on every read (each crop read once by v3/text, cached by the crop; needs the crop reader on)
+SECOND=1 SERVER=local MODE=server MAX_RECOGNIZE=… CACHE=… scripts/ios-realink-bench.sh run
+```
+
+`SUPABASE_URL` points the bench at a local stack on another port. Replays (`MODE=replay`) are
+deterministic with `PARALLEL=1`; at the default 3 a run moves by about one case. Results:
+docs/eval/reader-realink.md.
+
 The wait (`PageTiming.doubtHoldMs` / `LIVE_TIMING.doubtHoldMs`, 2.5 s) comes from the corpus's own
 timing: kids' pauses inside a line are p90 1.3 s, p95 2.4 s. On 2026-10-22 (all 208 cases, check as I
 go) it took rings on half-written lines from 55 to 14; what is left follows pauses longer than it.
 
 Keep `OUT` inside the corpus folder: the results name what kids wrote.
+
+The oracle reads several whole lines held in one read as a reader lays them out: side by side on one
+row joined by `\quad` (`x = 5 \quad x = -5`, as Mathpix gives it), rows of a stacked sum as its array.
+`DEBUG=1` prints, for each labeled line, where each of its strokes went (the tutor line, or what the
+split made of it: a stray, a separator, a drawing) and writes each case's cluster request to
+`OUT/cluster-<case>.json`, to run the clusterer on it outside the app.
 
 ## What it reports
 
@@ -67,8 +92,10 @@ Ranked by what a kid feels:
 1. **Rings on right work** (and strays ringed) — the worst thing the tutor can do.
 2. **Missed slips** — a wrong line left alone.
 3. **"?" on right work** — the tutor could not read it.
-4. Lines judged right, read right, kept as one line; pages solved as expected; read and mark
-   latency after pen-up.
+4. Lines judged right, read right (and read right counting a stacked sum's rows inside its block),
+   kept as one line; pages solved as expected; read and mark latency after pen-up.
+5. The lines the tutor asked "Is this right?" about (misread or read right), and with `SECOND=1` the
+   second opinions called and cached; each line's outcome keeps its confidence and second opinion.
 
 Every piece a labeled line became is looked at, not just the main one, so a line split in two with a
 ring on one half still counts as a ring on right work.

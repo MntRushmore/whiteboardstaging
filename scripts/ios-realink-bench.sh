@@ -9,7 +9,11 @@
 #   CASES=<file>   the corpus's bench cases (default ~/whiteboardstaging/agathon-corpus/bench/cases.json)
 #   ONLY=<ids, id prefixes or tag:<tag>>   PACE=real|fast|line   CHECK=whenDone|asIGo
 #   HOLD=<ms>   the wait before a ring or "?" on a line still being written (0: none; default the app's)
-#   MODE=server|replay|oracle  SERVER=prod|local  OUT=<dir>  CACHE=<file>
+#   MODE=server|replay|oracle  SERVER=prod|local|dev  OUT=<dir>  CACHE=<file>
+#     (dev: this checkout's `next dev` on PORT against production's Supabase, as qa-bench — the way to
+#     bench a route flag production does not have yet, e.g. RECOGNIZE_CROP_READER; docs/eval/reader-realink.md)
+#   SECOND=1   the second opinion on every read (each crop read once, cached by the crop; needs a
+#              server with RECOGNIZE_CROP_READER=mathpix-text to answer it with v3/text)
 #   MAX_RECOGNIZE=<n> MAX_OTHER=<n>   the budgets (default 0: no paid calls at all)
 #   PARALLEL=<n>  LABEL=<name>  DD=<DerivedData>  SIM=<simulator name>
 set -u
@@ -29,6 +33,7 @@ export TEST_RUNNER_AGATHON_REALINK_PACE=${PACE:-real}
 export TEST_RUNNER_AGATHON_REALINK_DEBUG=${DEBUG:-0}
 export TEST_RUNNER_AGATHON_REALINK_CHECK=${CHECK:-whenDone}
 export TEST_RUNNER_AGATHON_REALINK_HOLD=${HOLD:-}
+export TEST_RUNNER_AGATHON_REALINK_SECOND=${SECOND:-0}
 export TEST_RUNNER_AGATHON_BENCH_MODE=$MODE
 export TEST_RUNNER_AGATHON_BENCH_OUT=$OUT
 export TEST_RUNNER_AGATHON_BENCH_CACHE=${CACHE:-$OUT/cache.json}
@@ -41,11 +46,12 @@ if [ "$MODE" = server ]; then
   if [ "$SERVER" = local ]; then
     PORT=${PORT:-3971}
     export TEST_RUNNER_AGATHON_API_URL=http://localhost:$PORT
-    export TEST_RUNNER_SUPABASE_URL=http://127.0.0.1:54321
+    export TEST_RUNNER_SUPABASE_URL=${SUPABASE_URL:-http://127.0.0.1:54321}
     export TEST_RUNNER_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-$(cd "$ROOT" && npx supabase status -o env 2>/dev/null | sed -n 's/^ANON_KEY="\(.*\)"$/\1/p')}
     export TEST_RUNNER_AGATHON_BENCH_EMAIL=${BENCH_EMAIL:-training-admin@example.com}
     export TEST_RUNNER_AGATHON_BENCH_PASSWORD=${BENCH_PASSWORD:-password123}
   else
+    [ "$SERVER" = dev ] && export TEST_RUNNER_AGATHON_API_URL=http://localhost:${PORT:-3971}
     export TEST_RUNNER_AGATHON_BENCH_EMAIL=qa-bench@agathon.app
     TEST_RUNNER_AGATHON_BENCH_PASSWORD=$(security find-generic-password -s "Agathon QA bench" -w) || { echo "no Keychain item 'Agathon QA bench'" >&2; exit 1; }
     export TEST_RUNNER_AGATHON_BENCH_PASSWORD

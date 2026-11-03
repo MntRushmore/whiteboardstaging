@@ -33,6 +33,11 @@ final class BenchServices: LiveServices, @unchecked Sendable {
         var hintsLocal = 0
         var refused = 0
         var errors = 0
+        /// the second opinion (`secondOpinion` reads): v3/text reads of a line's crop asked for, taken
+        /// from the cache, and missing from it (replay)
+        var secondCalls = 0
+        var secondCached = 0
+        var secondMisses = 0
     }
 
     /// What a run keeps for the next one.
@@ -40,6 +45,17 @@ final class BenchServices: LiveServices, @unchecked Sendable {
         var reads: [RecordedRead] = []
         var checks: [String: [CachedAnnotation]] = [:]
         var rereads: [String: RereadResponse] = [:]
+        /// the second opinion's read of a line's crop (Mathpix v3/text), by the crop; absent in older caches
+        var seconds: [String: SecondCached]?
+    }
+
+    /// What the second opinion read from one crop (`provider` "mathpix": v3/text; "vision" or nothing:
+    /// v3/text read nothing, so the route would have said nothing either).
+    struct SecondCached: Codable, Equatable {
+        var latex: String?
+        var confidence: Double?
+        var provider: String?
+        var ms: Double
     }
 
     /// An annotation of the model's, its line named by what the line said (line ids change run to run).
@@ -147,7 +163,8 @@ final class BenchServices: LiveServices, @unchecked Sendable {
         }
         if let hit, let latex = hit.latex {
             note(request.boardId, hit)
-            return RecognizeResponse(latex: latex, confidence: hit.confidence ?? 0.99, provider: hit.provider ?? "mathpix", ms: hit.ms)
+            let res = RecognizeResponse(latex: latex, confidence: hit.confidence ?? 0.99, provider: hit.provider ?? "mathpix", ms: hit.ms)
+            return await withSecondOpinion(res, request: request)
         }
         switch mode {
         case .replay:
@@ -179,20 +196,79 @@ final class BenchServices: LiveServices, @unchecked Sendable {
             await readPace.wait()
             let t0 = Date()
             do {
-                let res = try await upstream.recognize(request)
+                // the second opinion on a read not in the cache: asked for on its own (`withSecondOpinion`)
+                var plain = request
+                plain.secondOpinion = nil
+                if plain.cropOnly != true && request.secondOpinion == true { plain.crop = nil }
+                let res = try await upstream.recognize(plain)
                 let read = recorded(res.latex, res, ms: Date().timeIntervalSince(t0) * 1000, error: nil)
                 lock.withLock {
                     cache.reads.append(read)
                     readIndex[k] = cache.reads.count - 1
                 }
                 note(request.boardId, read)
-                return res
+                return await withSecondOpinion(res, request: request)
             } catch {
                 lock.withLock { counts.errors += 1 }
                 note(request.boardId, recorded(nil, nil, ms: Date().timeIntervalSince(t0) * 1000, error: String(String(describing: error).prefix(160))))
                 throw error
             }
         }
+    }
+
+    /// The second opinion as the route gives it (`RECOGNIZE_SECOND_OPINION=mathpix-text`): when the read
+    /// asked for one, Mathpix v3/text's read of the line's crop, and whether the two say the same maths
+    /// (`BenchSameRead`, the route's `sameRead`). The crop's read is cached by the crop, so the strokes
+    /// reads already cached cost nothing more and each crop is asked about once: in server mode as a
+    /// crop-only read (`cropOnly`), which a server with `RECOGNIZE_CROP_READER=mathpix-text` answers with
+    /// v3/text alone. An answer from the vision reader means v3/text read nothing: no second opinion,
+    /// as the route would give none.
+    private func withSecondOpinion(_ res: RecognizeResponse, request: RecognizeRequest) async -> RecognizeResponse {
+        guard request.secondOpinion == true, request.cropOnly != true, let crop = request.crop else { return res }
+        let key = SHA256.hash(data: Data(crop.utf8)).map { String(format: "%02x", $0) }.joined()
+        var second: SecondCached? = lock.withLock {
+            let h = cache.seconds?[key]
+            if h != nil { counts.secondCached += 1 }
+            return h
+        }
+        if second == nil {
+            guard mode == .server, let upstream else {
+                lock.withLock { counts.secondMisses += 1 }
+                return res
+            }
+            let allowed: Bool = lock.withLock {
+                guard counts.recognizeCalls + counts.secondCalls < maxRecognize else {
+                    counts.refused += 1
+                    return false
+                }
+                counts.secondCalls += 1
+                return true
+            }
+            guard allowed else { return res }
+            called(request.boardId, "second")
+            await readPace.wait()
+            var ask = request
+            ask.secondOpinion = nil
+            ask.cropOnly = true
+            let t0 = Date()
+            let got: SecondCached
+            do {
+                let r = try await upstream.recognize(ask)
+                got = SecondCached(latex: r.latex, confidence: r.confidence, provider: r.provider, ms: Date().timeIntervalSince(t0) * 1000)
+            } catch {
+                got = SecondCached(latex: nil, confidence: nil, provider: nil, ms: Date().timeIntervalSince(t0) * 1000)
+            }
+            lock.withLock {
+                if cache.seconds == nil { cache.seconds = [:] }
+                cache.seconds?[key] = got
+            }
+            second = got
+        }
+        guard let second, second.provider == "mathpix", let latex = second.latex, !latex.isEmpty else { return res }
+        var out = res
+        out.second = RecognizeResponse.SecondRead(latex: latex, confidence: second.confidence.map { min(1, max(0, $0)) })
+        out.agree = BenchSameRead.same(res.latex, latex)
+        return out
     }
 
     func reread(_ request: RereadRequest) async throws -> RereadResponse {
@@ -323,5 +399,36 @@ actor Pace {
             let wait = 60 - now.timeIntervalSince(times[0]) + 0.05
             try? await Task.sleep(for: .milliseconds(Int(max(50, wait * 1000))))
         }
+    }
+}
+
+/// The recognize route's `sameRead` (src/lib/live/sameRead.ts), for the bench's second opinion: do two
+/// reads of one line say the same maths as written? A spelling comparison, not maths.
+enum BenchSameRead {
+    static func flat(_ latex: String) -> String {
+        func re(_ s: String, _ pattern: String, _ with: String) -> String {
+            s.replacingOccurrences(of: pattern, with: with, options: .regularExpression)
+        }
+        var s = latex
+        s = re(s, #"\\(?:text|mathrm|textrm|mbox|operatorname)\s*\{([^{}]*)\}"#, "$1")
+        s = re(s, #"\\left|\\right|\\displaystyle"#, "")
+        s = re(s, #"\\[,;:! ]|\\quad|\\qquad"#, "")
+        s = re(s, #"\\cdot(?![a-zA-Z])"#, "\\\\times")
+        s = re(s, #"\\leq(?![a-zA-Z])"#, "\\\\le")
+        s = re(s, #"\\geq(?![a-zA-Z])"#, "\\\\ge")
+        s = re(s, #"\\neq(?![a-zA-Z])"#, "\\\\ne")
+        s = re(s, #"\\rightarrow(?![a-zA-Z])"#, "\\\\to")
+        s = re(s, #"\s+"#, "")
+        for _ in 0..<4 {
+            let next = re(s, #"([_^])\{([A-Za-z0-9])\}"#, "$1$2")
+            if next == s { break }
+            s = next
+        }
+        return re(s, #"\.$"#, "")
+    }
+
+    static func same(_ a: String, _ b: String) -> Bool {
+        let fa = flat(a)
+        return !fa.isEmpty && fa == flat(b)
     }
 }
