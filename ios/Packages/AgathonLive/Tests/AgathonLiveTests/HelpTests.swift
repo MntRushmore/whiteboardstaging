@@ -39,11 +39,13 @@ struct HelpTests {
         #expect(card.lineId == lineId)
         #expect(card.message == "Look again at how you divided 8 by 2.")
         #expect(card.title == "Hint")
-        // More help: the right next step, by hand, beside the line; the card closes
+        // Show me: the right step after the last right line is the answer (x = 4), so it is held back and
+        // the card says what to do instead (docs/TUTOR-WRITES.md)
         h.loop.moreHelp(card)
         await h.pass(100)
-        #expect(h.loop.hints.isEmpty)
-        #expect(h.board.tutorStrokes(withMeta: "suggestFor", "x = 5").first?.meta["handLine"]?.stringValue == "x = 4")
+        #expect(h.loop.hints.first?.title == "One step left")
+        #expect(h.loop.hints.first?.message == "One step left: divide both sides by 2. You can do this one.")
+        #expect(h.board.tutorStrokes(withMeta: "suggestFor", "x = 5").isEmpty, "the answer is not written")
         #expect(h.services.solveRequests.isEmpty, "the engine knew the step: no model")
     }
 

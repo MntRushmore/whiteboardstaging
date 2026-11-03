@@ -105,6 +105,9 @@ struct SATv2LoopTests {
 
     @Test func oneStepGoesThroughTheLiveHelpMe() async throws {
         let h = Harness(mode: .feedback)
+        // a SAT session decides its own last step (the question's answer is a pointer there): with its
+        // hook in place, the tutor's one step may be the answer (docs/TUTOR-WRITES.md)
+        h.loop.beforeWritingSteps = { _, _ in false }
         await h.start()
         // nothing read: the app writes the bank's step instead
         #expect(!h.loop.helpOneStep())

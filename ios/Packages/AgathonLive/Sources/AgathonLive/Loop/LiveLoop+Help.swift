@@ -131,22 +131,14 @@ extension LiveLoop {
         }
     }
 
-    /// The next help for a line (Suggest's Help me, More help on a card): a wrong line gets the right
-    /// step beside it; a right one its next step (`localSolve`, else the model's first step).
+    /// The next help for a line (Suggest's Help me, Show me on a card): the tutor writes the next step
+    /// (`showNextStep`, docs/TUTOR-WRITES.md) — the right step beside a wrong line, the next one under
+    /// a right one, each checked by the engine; the final answer held back unless allowed.
     public func escalate(_ id: String) {
         guard let target = lines[id], !target.latex.isEmpty, settings.mode != .off else { return }
         hints.removeAll { $0.lineId == id }
         rt[id]?.escalation += 1
-        let wrong = target.analysis?.verdict == "mismatch" || target.isModelFlagged
-        if wrong {
-            if suggestNextStep(id, now: true) { return }
-            if let good = lastGoodLineAbove(target) {
-                startSolve(column: target.column, fromLineId: good.id, lineId: good.id, onlyFirstStep: true)
-                return
-            }
-        }
-        if writeNextStep(target) { return }
-        startSolve(column: target.column, fromLineId: id, lineId: id, onlyFirstStep: true)
+        showNextStep(lineId: id)
     }
 
     // MARK: - hint cards
@@ -169,11 +161,17 @@ extension LiveLoop {
         hints.removeAll { $0.id == id }
     }
 
-    /// More help: the next rung (the next step, by hand).
+    /// The card's second button: Show me (the next step, by hand), the tutor's Next step, or Show the
+    /// answer (docs/TUTOR-WRITES.md).
     public func moreHelp(_ card: HintCard) {
         hints.removeAll { $0.id == card.id }
         noteAsked(card.lineId)
-        escalate(card.lineId)
+        switch card.action {
+        case .more where lines[card.lineId] != nil: escalate(card.lineId)
+        case .answer: showNextStep(lineId: lines[card.lineId] != nil ? card.lineId : nil, answer: true)
+        case .none: return
+        default: showNextStep(lineId: lines[card.lineId] != nil ? card.lineId : nil)
+        }
     }
 
     // MARK: - check (SSE)
@@ -603,18 +601,22 @@ extension LiveLoop {
         requestSolve(lineId: target.id, asked: false)
     }
 
-    /// Auto in Suggest: stuck for `stuckMs` on an unfinished problem, its next step, as Help me writes it.
+    /// Auto, stuck on an unfinished problem (`stuckMs` in Suggest; a long stall on a problem page in
+    /// Hint): the tutor OFFERS its next step on a card (docs/TUTOR-WRITES.md). Nothing is written until
+    /// the kid taps Show me.
     func autoStuck() {
         stuckTimer = nil
-        guard settings.mode == .suggest, autoReady(), !askedSinceInk, writer == nil, solving == 0 else { return }
-        guard let target = autoTarget(), autoWorkable(target, steps: true), autoOnce(autoKey("step", target)) else { return }
-        autoLines.insert(target.id)
-        escalate(target.id)
+        guard settings.mode == .suggest || settings.mode == .feedback, autoReady(), !askedSinceInk, writer == nil, solving == 0 else { return }
+        guard let target = autoTarget(), autoWorkable(target, steps: true) else { return }
+        offerNextStep(target)
     }
 
     func armStuck() {
         stuckTimer?.cancel()
-        stuckTimer = settings.auto && settings.mode == .suggest ? scheduler.after(LiveTiming.stuckMs) { [weak self] in self?.autoStuck() } : nil
+        // Hint offers only on a problem page, after a long stall (the owner's: an offer, never uninvited)
+        let wait: Double? = !settings.auto ? nil : settings.mode == .suggest ? LiveTiming.stuckMs
+            : settings.mode == .feedback && board.currentProblemPage?.kind == .problem ? LiveTiming.stallOfferMs : nil
+        stuckTimer = wait.map { scheduler.after($0) { [weak self] in self?.autoStuck() } }
     }
 
     /// The line Auto works on: where the pen last wrote (never a pick, never an old line).
