@@ -160,6 +160,15 @@ export const DIAGRAM_RULES = {
    */
   divisionAboveFactor: 2.2,
   divisionAboveShare: 0.6,
+  /**
+   * ...and under a problem the TUTOR wrote, with nothing of the kid's between it and the bar, up to
+   * `divisionAboveTutorFactor` glyphs above it and under `divisionTutorSpanShare` of its width: on the
+   * iPad's problem page the work starts under the problem's own area, a gap of its own (real-ink
+   * bench: a bar in the first row of the work, its divisor under it, was read as the divisor alone), and the
+   * tutor's hand is wider than the kid's bar under it.
+   */
+  divisionAboveTutorFactor: 3.5,
+  divisionTutorSpanShare: 0.5,
   divisionSpanShare: 0.6,
   divisionMaxSpan: 1.8,
   divisionBelowFactor: 1.5,
@@ -1133,11 +1142,19 @@ function divisionBars(geos: readonly Geo[], G: number, equations: readonly Rect[
     const x0 = Math.min(g.main.a.x, g.main.b.x);
     const x1 = Math.max(g.main.a.x, g.main.b.x);
     const y = (g.main.a.y + g.main.b.y) / 2;
-    const under = (e: Rect) => {
+    const under = (e: Rect, tutor = false) => {
       const gap = y - (e.y + e.h);
       const spanned = Math.min(x1, e.x + e.w) - Math.max(x0, e.x);
-      return gap >= -0.25 * G && gap <= Math.max(R.divisionAboveFactor * G, R.divisionAboveShare * e.h) && spanned >= R.divisionSpanShare * e.w && x1 - x0 <= R.divisionMaxSpan * e.w + 2 * G;
+      const reach = Math.max(R.divisionAboveFactor * G, R.divisionAboveShare * e.h);
+      if (gap >= -0.25 * G && gap <= reach && spanned >= R.divisionSpanShare * e.w && x1 - x0 <= R.divisionMaxSpan * e.w + 2 * G) return true;
+      // under the tutor's problem: further down and shorter, with nothing of hers in between
+      if (!tutor || gap < -0.25 * G || gap > Math.max(reach, R.divisionAboveTutorFactor * G)) return false;
+      if (spanned < R.divisionTutorSpanShare * e.w || x1 - x0 > R.divisionMaxSpan * e.w + 2 * G) return false;
+      const lo = Math.max(x0, e.x);
+      const hi = Math.min(x1, e.x + e.w);
+      return !geos.some((o) => o.i !== g.i && o.b.y + o.b.h > e.y + e.h && o.b.y + o.b.h < y - 0.25 * G && o.b.x < hi && o.b.x + o.b.w > lo);
     };
+    const underTutor = (e: Rect) => under(e, true);
     // writing level with the rule just past its ends: it is a fraction bar inside a line
     // (`y = \frac{k}{x}`, `f(x) = \frac{x^2 - 4}{x - 2}`), not a rule under one
     const beside = geos.some((o) => {
@@ -1147,8 +1164,8 @@ function divisionBars(geos: readonly Geo[], G: number, equations: readonly Rect[
       return (left >= -0.25 * G && left <= 2 * G) || (right >= -0.25 * G && right <= 2 * G);
     });
     if (beside) continue;
-    const row = equations.some(under) ? [] : equationAbove(g, geos, G, x0, x1, y);
-    if (row.length === 0 && !equations.some(under)) continue;
+    const row = equations.some(underTutor) ? [] : equationAbove(g, geos, G, x0, x1, y);
+    if (row.length === 0 && !equations.some(underTutor)) continue;
     const divisor = divisorUnder(g, geos, G, x0, x1, y, row);
     if (!divisor) continue;
     const own = new Set([g.i, ...row, ...divisor]);
