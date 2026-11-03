@@ -79,6 +79,12 @@ go) it took rings on half-written lines from 55 to 14; what is left follows paus
 
 Keep `OUT` inside the corpus folder: the results name what kids wrote.
 
+The oracle reads several whole lines held in one read as a reader lays them out: side by side on one
+row joined by `\quad` (`x = 5 \quad x = -5`, as Mathpix gives it), rows of a stacked sum as its array.
+`DEBUG=1` prints, for each labeled line, where each of its strokes went (the tutor line, or what the
+split made of it: a stray, a separator, a drawing) and writes each case's cluster request to
+`OUT/cluster-<case>.json`, to run the clusterer on it outside the app.
+
 ## What it reports
 
 Ranked by what a kid feels:

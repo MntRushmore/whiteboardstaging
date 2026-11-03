@@ -115,7 +115,9 @@ extension LiveLoop {
                         // on a one-line problem's row, after it: the problem's end written again,
                         // then the answer (`3 = 7` after the tutor's `4 +`, the web's `answerBeside`)
                         let beside = columnHead.map { $0.lines.count == 1 && Self.besideProblem(st.bounds, $0.rect) } ?? false
-                        raw = try await brain.judgeLine(judged, context: ctx, problem: problem, above: above, slip: slip, beside: beside)
+                        // the tutor's own one-line problem (not the kid's first line, not a system)
+                        let posed = columnHead.map { $0.lines.count == 1 && $0.lines == problem } ?? false
+                        raw = try await brain.judgeLine(judged, context: ctx, problem: problem, above: above, slip: slip, beside: beside, posed: posed)
                     } catch {
                         raw = LineAnalysis.unknown
                     }
@@ -258,6 +260,9 @@ extension LiveLoop {
                 if why != nil || unread, !userAsked, let wait = stillGrowing(st) {
                     syncMark(st, nil, learn: false)
                     renderWhenFinished(id, after: wait)
+                } else if why != nil || unread, !userAsked, questionWaitsForCheck(st) {
+                    // check when done: its "?" comes with the check
+                    syncMark(st, nil, learn: false)
                 } else {
                     syncMark(st, why != nil || unread ? .question : nil, why ?? (unread ? "unread" : nil))
                 }
@@ -357,7 +362,7 @@ extension LiveLoop {
     }
 
     func questionIfSettled(_ id: String) {
-        guard settled, let st = lines[id], let why = questionFor(st) else { return }
+        guard settled, let st = lines[id], !questionWaitsForCheck(st), let why = questionFor(st) else { return }
         syncMark(st, .question, why)
     }
 

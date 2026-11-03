@@ -241,6 +241,20 @@ export function parseStacked(latex: string, problem?: readonly string[] | null):
 }
 
 /**
+ * The read's answer is written again under itself (she copied it out neater): two or more rows under
+ * the rule, one number, no second rule. `parseStacked` reads that as one answer; the ink has the copy
+ * as more rows under the answer (`StackedSum.more`), which is not long multiplication's.
+ */
+export function answerWrittenAgain(latex: string): boolean {
+  const rows = arrayRows(latex);
+  if (!rows) return false;
+  const after = rows.slice(rows.indexOf("rule") + 1);
+  if (rows.indexOf("rule") < 0 || after.length < 2 || after.includes("rule")) return false;
+  const ns = after.map((r) => numberOf(cleanRow(r as string)));
+  return ns.every((n) => n !== null && n === ns[0]);
+}
+
+/**
  * Long multiplication's rows under the first rule (`after`), and their sum: two rows or more, or a
  * second rule — under which one row, the sum — or the last row read as a fraction over the sum
  * (`\frac{920}{1058}`, the second rule taken for its bar). A row may start with `+`. Null when it is

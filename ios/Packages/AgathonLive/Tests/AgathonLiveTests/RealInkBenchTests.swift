@@ -247,11 +247,17 @@ struct RealInkBenchTests {
                     return array
                 }
                 var whole: [String] = []
+                var boxes: [BrainRect] = []
                 var partial = false
                 for (k, line) in written.lines.enumerated() where !line.strokes.isEmpty && !line.strokes.isDisjoint(with: held) {
                     if !line.strokes.isSubset(of: held) || line.strokes.count < total[k] { partial = true; break }
                     whole.append(Oracle.spoken(line.latex))
+                    boxes.append(BrainRect.around(line.strokes.compactMap { board.store.stroke(RecordID($0)).map(StrokeBounds.of) }) ?? BrainRect(x: 0, y: 0, w: 0, h: 0))
                 }
+                // several whole lines in one read, laid out as a reader lays them out: side by side on one
+                // row, a gap between them (`x = 5 \quad x = -5`); rows of numbers stacked as a sum, an
+                // array (as the stacked-sum branch above, for a stack the split did not set apart)
+                if !partial, whole.count > 1, let laid = Oracle.laidOut(whole, boxes) { return laid }
                 if ProcessInfo.processInfo.environment["AGATHON_REALINK_DEBUG"] == "1" {
                     print("ORACLE \(request.lineId) inLines=\(loop.lines[request.lineId] != nil) held=\(held.count) req=\(request.strokes.x.count) "
                           + "partial=\(partial) whole=\(whole) lines=\(written.lines.map { "\($0.strokes.intersection(held).count)/\($0.strokes.count)" })")
@@ -335,6 +341,22 @@ struct RealInkBenchTests {
             for st in loop.lines.values.sorted(by: { ($0.column, $0.row) < ($1.column, $1.row) }) {
                 print("LINE \(c.id) \(owned.contains(st.id) ? "labeled" : "STRAY") col\(st.column) row\(st.row) \(st.latex) conf=\(st.confidence) "
                       + "[\(st.analysis?.verdict ?? "-")\(st.analysis?.misreadLikely == true ? " misread?" : "")] mark=\(loop.trainingMark(on: st.id).rawValue) strokes=\(st.ink.strokeIds.count) box=\(st.bounds)")
+            }
+            // where each labeled line's strokes went: which tutor line, or what the split made of them
+            let context = loop.clusterContext()
+            let strokes = board.store.kidStrokes(on: board.currentScreenID)
+            let request = ClusterRequest(strokes: strokes, previousLines: loop.lines.values.map(\.ink), zoom: board.fitZoom,
+                                         equations: context.equations, cells: context.cells, mates: context.mates)
+            let roles = (try? await loop.brain.clusterStrokes(request))?.roles ?? [:]
+            // the request itself, to replay the clusterer outside the app (OUT is inside the private corpus)
+            if let out = ProcessInfo.processInfo.environment["AGATHON_BENCH_OUT"], let json = try? JSONEncoder().encode(request) {
+                try? json.write(to: URL(fileURLWithPath: out).appendingPathComponent("cluster-\(c.id).json"))
+            }
+            let lineOf = Dictionary(loop.lines.values.flatMap { st in st.ink.strokeIds.map { ($0, "r\(st.row)c\(st.column)") } }, uniquingKeysWith: { a, _ in a })
+            for k in -1..<c.lines.count {
+                let mine = k < 0 ? Set(order).subtracting(ids.flatMap { $0.map(\.rawValue) }) : Set(ids[k].map(\.rawValue))
+                let fate = order.filter(mine.contains).map { id in lineOf[id] ?? "[\(roles[id].map { "\($0.role):\($0.reason)" } ?? "gone")]" }
+                print("FATE \(c.id) line\(k) \(fate.joined(separator: " "))")
             }
         }
         let solved = loop.trainingSolved

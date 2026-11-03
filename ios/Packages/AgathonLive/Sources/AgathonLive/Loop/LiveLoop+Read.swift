@@ -271,7 +271,8 @@ extension LiveLoop {
             guard let self, self.rt[id]?.processing == ticket, self.settings.enabled, let st = self.lines[id] else { return }
             self.rt[id]?.unreadableTimer = nil
             self.rt[id]?.unreadableShown = true
-            if self.settings.mode != .off { self.syncMark(st, .question, "unread") }
+            // check when done: the "?" comes with the check (`questionWaitsForCheck`)
+            if self.settings.mode != .off && !self.questionWaitsForCheck(st) { self.syncMark(st, .question, "unread") }
         }
     }
 

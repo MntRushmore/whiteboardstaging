@@ -255,6 +255,22 @@ describe("clusterLines — what a line of handwriting really is", () => {
     expect(clusterLines([...row1, ...row2])).toHaveLength(2);
   });
 
+  it("a fraction bar shorter than its denominator still holds its numerator (a kid's 1/3 at the end of a line)", () => {
+    // `y = 1/3`, as strokes: glyphs 20 tall; the bar 13 wide, the 3 under it 18 wide, the 1 a single stroke
+    const row = [glyph(0), glyph(16), glyph(32), stroke([50, 106], [62, 106]), stroke([50, 112], [62, 112])];
+    const one = stroke([80, 74], [80, 86]);
+    const bar = stroke([74, 98], [87, 98]);
+    const two = stroke([72, 106], [90, 124]);
+    expect(clusterLines([...row, one, bar, two])).toHaveLength(1);
+  });
+
+  it("but a short minus with its number beside it, between two rows, is no fraction bar", () => {
+    const above = [glyph(0, 60), glyph(16, 60), glyph(32, 60)];
+    const minus = [stroke([0, 98], [12, 98]), glyph(16, 88, 20)];
+    const below = [glyph(0, 120), glyph(16, 120), glyph(32, 120)];
+    expect(clusterLines([...above, ...minus, ...below])).toHaveLength(3);
+  });
+
   it("a last glyph written higher on a slant is still on the row", () => {
     const ink = [glyph(0, 104), glyph(16, 102), stroke([34, 110], [46, 108]), glyph(56, 92, 16)];
     expect(clusterLines(ink)).toHaveLength(1);
@@ -303,6 +319,61 @@ describe("clusterLines — an operation row under an equation (`mergeOperationRo
     const roots = withRow("x^{2} - 5x + 6 = 0", [["x = 2", ""], ["x = 3", "x^{2} - 5x + 6"]]);
     const rootLines = linesOf(roots.ink);
     for (const piece of roots.row) expect(rootLines).toContainEqual(ids(piece));
+  });
+
+  // the real-ink bench (children's ink, re-drawn here in the synthetic hands): notes of what she does
+  // to both sides, under the tutor's problem or running on past the line above, were two lines and
+  // two "?"s on right work
+  it.each(VARIANTS.map((v) => [v.name, v] as const))("the same note under each side of the TUTOR's problem is one line (%s)", (_name, variant) => {
+    // the tutor's problem is no stroke here: only its box (`heads`)
+    const head = { x: 100, y: 100, w: 360, h: 50 };
+    for (const note of ["-3x", "\\times 3", "+5"]) {
+      const left = writeAt(note, 110, 230, variant);
+      const right = writeAt(note, 380, 232, variant);
+      const next = writeAt("4x + 4 = 16", 110, 330, variant);
+      const lines = clusterLines([...left, ...right, ...next], [], [], { heads: [head] }).map((l) => [...l.strokeIds].sort());
+      expect(lines, note).toContainEqual(ids([...left, ...right]));
+      expect(lines, note).toContainEqual(ids(next));
+      // without the problem's box it is two pieces, as before
+      expect(clusterLines([...left, ...right, ...next]).length, note).toBe(3);
+    }
+  });
+
+  it("÷ 4 written as a bar over a 4 under each side of the tutor's problem is one line, whatever each bar's length", () => {
+    const head = { x: 100, y: 100, w: 300, h: 50 };
+    let seq = 0;
+    const bar = (x0: number, x1: number): InkStroke => ({
+      id: `shape:bar${++seq}` as never,
+      bounds: { x: x0, y: 230, w: x1 - x0, h: 1 },
+      segments: [[{ x: x0, y: 230 }, { x: x1, y: 231 }]],
+    });
+    const four = (x: number) => writeAt("4", x, 245);
+    const left = [bar(110, 330), ...four(200)];
+    const right = [bar(420, 480), ...four(430)];
+    const lines = clusterLines([...left, ...right], [], [], { heads: [head] }).map((l) => [...l.strokeIds].sort());
+    expect(lines).toContainEqual(ids([...left, ...right]));
+  });
+
+  it("but two answers under the tutor's problem, or two different operations, or a line between, stay apart", () => {
+    const head = { x: 100, y: 100, w: 360, h: 50 };
+    const keep = (a: InkStroke[], b: InkStroke[], others: InkStroke[] = []) => {
+      const lines = clusterLines([...a, ...b, ...others], [], [], { heads: [head] }).map((l) => [...l.strokeIds].sort());
+      expect(lines).toContainEqual(ids(a));
+      expect(lines).toContainEqual(ids(b));
+    };
+    keep(writeAt("x = 5", 110, 230), writeAt("x = -5", 380, 230));
+    keep(writeAt("-4", 110, 230), writeAt("+7", 380, 230));
+    keep(writeAt("-3", 110, 300), writeAt("-3", 380, 300), writeAt("2x + 3 = 11", 110, 200));
+  });
+
+  it("× 3 under each side of a line, the second running on past its end, is one line", () => {
+    const eq = writeAt("\\frac{x}{3} + 14 = 19", 300, 300);
+    const r = unionRects(eq.map((s) => s.bounds));
+    const left = writeAt("\\times 3", r.x - 10, r.y + r.h + 18, VARIANTS[0], 0.95);
+    const right = writeAt("\\times 3", r.x + r.w - 20, r.y + r.h + 10, VARIANTS[0], 0.95);
+    const lines = linesOf([...eq, ...left, ...right]);
+    expect(lines).toContainEqual(ids([...left, ...right]));
+    expect(lines).toContainEqual(ids(eq));
   });
 });
 

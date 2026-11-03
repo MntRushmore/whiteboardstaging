@@ -212,6 +212,11 @@ beside it, no answer after its `=`, no "Graph it", and tells the learning record
 the analysis and the "I read" chip go on as now. Auto's model checks and its stuck step look only at
 released lines.
 
+A line the tutor could not read has no reading to hold, but its "?" waits for the check all the same
+(`questionWaitsForCheck`: ink newer than the last check): the read of half a line fails, and a "?"
+mid-line told a kid the tutor could not read them while they were still writing (the real-ink bench:
+71 "?"s on half-written lines). The check puts it on with the other marks.
+
 ### Triggers and timings
 
 | trigger | when | notes |

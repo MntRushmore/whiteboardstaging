@@ -57,6 +57,9 @@ export const CLUSTER_RULES = {
   insideReachFactor: 0.6,
   insideMaxHeight: 0.8,
   barMinWidthFactor: 1.0,
+  /** ...or this short, with its numerator and denominator close over and under it (`isShortFractionBar`) */
+  shortBarMinFactor: 0.6,
+  shortBarReachFactor: 0.7,
   barReachFactor: 1.5,
   barCoverRatio: 0.5,
   /** an overline: what it covers is within this many medians under it, and nothing this close above (`isOverlineBar`) */
@@ -239,7 +242,7 @@ function isFlat(r: Rect, medianH: number): boolean {
 export function isFractionBar(stroke: InkStroke, strokes: InkStroke[], medianH: number): boolean {
   const { w } = stroke.bounds;
   if (!isFlat(stroke.bounds, medianH)) return false;
-  if (w < CLUSTER_RULES.barMinWidthFactor * medianH) return false;
+  if (w < CLUSTER_RULES.barMinWidthFactor * medianH && !(w >= CLUSTER_RULES.shortBarMinFactor * medianH && isShortFractionBar(stroke.bounds, strokes, medianH))) return false;
   const h = stroke.bounds.h;
   let blockers: Rect[] | null = null;
   for (const other of strokes) {
@@ -255,6 +258,31 @@ export function isFractionBar(stroke: InkStroke, strokes: InkStroke[], medianH: 
     if (isEqualsPair(stroke.bounds, ob, blockers)) return false;
   }
   return true;
+}
+
+/**
+ * A fraction bar shorter than a glyph (`shortBarMinFactor`): a kid's `\frac{1}{3}` with a bar narrower
+ * than its 3 (the real-ink bench: the numerator came loose, a line of its own and a "?"). Only with a glyph
+ * it covers close over it AND close under it (`shortBarReachFactor`), and nothing level with it on
+ * either side: a minus (`-5` under a line, `x - 1` between two rows) has its number beside it.
+ */
+function isShortFractionBar(bar: Rect, strokes: readonly InkStroke[], medianH: number): boolean {
+  const R = CLUSTER_RULES;
+  const cy = bar.y + bar.h / 2;
+  let over = false;
+  let under = false;
+  for (const s of strokes) {
+    const b = s.bounds;
+    if (b === bar || isFlat(b, medianH) || b.h < 0.3 * medianH) continue;
+    // something level with it, beside it: a minus in a row
+    if (b.y <= cy && b.y + b.h >= cy && gap1d(bar.x, bar.x + bar.w, b.x, b.x + b.w) <= 1.2 * medianH) return false;
+    if (!barCovers(bar, b, medianH)) continue;
+    const gap = gap1d(bar.y, bar.y + bar.h, b.y, b.y + b.h);
+    if (gap > R.shortBarReachFactor * medianH) continue;
+    if (b.y + b.h / 2 < cy) over = true;
+    else under = true;
+  }
+  return over && under;
 }
 
 /**
@@ -562,51 +590,79 @@ function mergeClusters(uf: UnionFind, raw: readonly Rect[], medianH: number): vo
  * is what a class writes to take 3 from both sides (`engine/operationLine.ts`), and the two `-3`s
  * are as far apart as `+ 3` and `11` — past the same-row join (`sameRowMaxGapFactor`), which keeps
  * side-by-side problems apart, as soon as the median glyph is a little small. Two or three groups
- * on one row, each short and starting with a short level bar (a `-`, the bar of a `+` or of a
- * `÷`), with nothing else between them on the row, all under ONE group just above that reaches
- * over each of them, are joined. Side-by-side columns each have their own line above; `-3` alone
- * under one side stays alone. Groups of strokes in, groups out.
+ * on one row, each short and starting with an operation (a short level bar: a `-`, the bar of a `+`
+ * or of a `÷`; or a `×`, two short strokes crossing), with nothing else between them on the row, all
+ * under ONE group just above that reaches over each of them, are joined. Side-by-side columns each
+ * have their own line above; `-3` alone under one side stays alone.
+ *
+ * The row right under the tutor's problem (`heads`: its ink is no stroke here) has no group above it
+ * of the student's: there two or three pieces that are the SAME operation, of about one width (`-3x`
+ * and `-3x`, `÷ 4` written as a bar over a 4 under each side), with nothing else on the row and no
+ * other ink between it and the problem, are joined too. The real-ink bench: notes like these under
+ * the tutor's problem, or under a line and running on past its end, were two lines, two "?"s on right work.
+ * Groups of strokes in, groups out.
  */
-export function mergeOperationRows(groups: InkStroke[][], medianH: number): InkStroke[][] {
-  if (groups.length < 3) return groups;
+export function mergeOperationRows(groups: InkStroke[][], medianH: number, heads: readonly Rect[] = []): InkStroke[][] {
+  if (groups.length < 2) return groups;
   const R = CLUSTER_RULES;
   const rects = groups.map((g) => unionRects(g.map((s) => s.bounds)));
-  const piece = groups.map((g, k) => {
-    const r = rects[k];
-    if (g.length > 12 || r.w > R.opPieceWidthFactor * medianH || r.h > R.opPieceHeightFactor * medianH) return false;
-    const first = [...g].sort((a, b) => a.bounds.x - b.bounds.x)[0].bounds;
-    return isFlat(first, medianH) && first.w <= R.opBarWidthFactor * medianH && first.w >= 0.25 * medianH;
-  });
-  const above = (k: number): number => {
-    const r = rects[k];
-    let best = -1;
-    let bestGap = Infinity;
-    rects.forEach((c, j) => {
-      if (j === k || piece[j]) return;
-      const gap = r.y - (c.y + c.h);
-      if (gap < -0.25 * medianH || gap > R.opRowReachFactor * medianH) return;
-      if (overlap1d(r.x, r.x + r.w, c.x, c.x + c.w) < 0.5 * r.w) return;
-      if (gap < bestGap) {
-        best = j;
-        bestGap = gap;
-      }
-    });
-    return best;
-  };
+  const kinds = groups.map((g) => operationOf(g, medianH));
+  const piece = kinds.map((k) => k !== null && k !== "over");
   const uf = new UnionFind(groups.length);
-  for (let a = 0; a < groups.length; a++) {
-    if (!piece[a]) continue;
-    const over = above(a);
-    if (over === -1) continue;
-    for (let b = 0; b < groups.length; b++) {
-      if (b === a || !piece[b] || rects[b].x <= rects[a].x || above(b) !== over) continue;
-      const A = rects[a];
-      const B = rects[b];
-      if (overlap1d(A.y, A.y + A.h, B.y, B.y + B.h) < 0.5 * Math.min(A.h, B.h)) continue;
-      // nothing else of the row between them
-      const between = rects.some((c, j) => j !== a && j !== b && c.x >= A.x + A.w && c.x + c.w <= B.x && overlap1d(A.y, A.y + A.h, c.y, c.y + c.h) > 0);
-      if (!between) uf.union(a, b);
+  if (groups.length >= 3) {
+    // `loose`: the pieces are one operation (`×2` and `×2`): each need only start under the line
+    // above (a kid's second note runs on past its end), and the row may slope
+    const above = (k: number, loose = false): number => {
+      const r = rects[k];
+      let best = -1;
+      let bestGap = Infinity;
+      rects.forEach((c, j) => {
+        if (j === k || piece[j]) return;
+        const gap = r.y - (c.y + c.h);
+        if (gap < -0.25 * medianH || gap > R.opRowReachFactor * medianH) return;
+        if (overlap1d(r.x, r.x + r.w, c.x, c.x + c.w) < 0.5 * r.w && !(loose && r.x >= c.x && r.x < c.x + c.w)) return;
+        if (gap < bestGap) {
+          best = j;
+          bestGap = gap;
+        }
+      });
+      return best;
+    };
+    for (let a = 0; a < groups.length; a++) {
+      if (!piece[a]) continue;
+      for (let b = 0; b < groups.length; b++) {
+        if (b === a || !piece[b] || rects[b].x <= rects[a].x) continue;
+        const loose = kinds[a] === kinds[b];
+        const over = above(a, loose);
+        if (over === -1 || above(b, loose) !== over) continue;
+        const A = rects[a];
+        const B = rects[b];
+        if (overlap1d(A.y, A.y + A.h, B.y, B.y + B.h) < (loose ? 0.3 : 0.5) * Math.min(A.h, B.h)) continue;
+        // nothing else of the row between them
+        const between = rects.some((c, j) => j !== a && j !== b && c.x >= A.x + A.w && c.x + c.w <= B.x && overlap1d(A.y, A.y + A.h, c.y, c.y + c.h) > 0);
+        if (!between) uf.union(a, b);
+      }
     }
+  }
+  // the first row under one of the tutor's problems: the same operation on each side
+  for (const head of heads) {
+    const below = rects.map((r, k) => k).filter((k) => rects[k].y >= head.y + 0.5 * head.h);
+    if (below.length < 2) continue;
+    const top = below.reduce((a, b) => (rects[b].y < rects[a].y ? b : a));
+    const T = rects[top];
+    const row = below.filter((k) => overlap1d(T.y, T.y + T.h, rects[k].y, rects[k].y + rects[k].h) >= 0.5 * Math.min(T.h, rects[k].h));
+    if (row.length < 2 || row.length > 3) continue;
+    // ...starting under it (the next note may run on past its end: a kid's hand is bigger than the tutor's)
+    if (Math.min(...row.map((k) => rects[k].x)) >= head.x + head.w) continue;
+    // nothing of the student's between the problem and the row
+    const rowTop = Math.min(...row.map((k) => rects[k].y));
+    if (rects.some((c, j) => !row.includes(j) && c.y + c.h <= rowTop && c.y >= head.y + 0.5 * head.h)) continue;
+    const kind = kinds[row[0]];
+    if (kind === null || !row.every((k) => kinds[k] === kind)) continue;
+    // about one width (a bar over a number is as long as the side it divides: any width)
+    const widths = row.map((k) => rects[k].w);
+    if (kind !== "over" && Math.max(...widths) > 2.2 * Math.min(...widths)) continue;
+    for (const k of row.slice(1)) uf.union(row[0], k);
   }
   const merged = new Map<number, InkStroke[]>();
   groups.forEach((g, k) => {
@@ -614,6 +670,50 @@ export function mergeOperationRows(groups: InkStroke[][], medianH: number): InkS
     merged.set(root, [...(merged.get(root) ?? []), ...g]);
   });
   return [...merged.values()];
+}
+
+/**
+ * The operation a short group of strokes starts with (`mergeOperationRows`), or null when it is no
+ * operation on a number: `minus` (a short level bar first), `plus` (that bar with a stroke across
+ * it), `times` (two short strokes crossing, first), `over` (a bar over everything else in it: `÷ 2`
+ * written as a fraction bar with no top). Never a group with an `=` in it (`x = 2` beside `x = 3`).
+ */
+export function operationOf(g: readonly InkStroke[], medianH: number): "minus" | "plus" | "times" | "over" | null {
+  const R = CLUSTER_RULES;
+  if (g.length === 0 || g.length > 12) return null;
+  const r = unionRects(g.map((s) => s.bounds));
+  if (r.h > R.opPieceHeightFactor * medianH || holdsEquals(g, medianH)) return null;
+  const sorted = [...g].sort((a, b) => a.bounds.x - b.bounds.x);
+  const first = sorted[0].bounds;
+  // (the bar is the widest level stroke: the number under it may start a little left of it)
+  const bar = g.filter((s) => isFlat(s.bounds, medianH)).sort((a, b) => b.bounds.w - a.bounds.w)[0];
+  if (g.length >= 2 && bar && bar.bounds.w >= 0.8 * medianH) {
+    const top = bar.bounds;
+    const rest = g.filter((s) => s !== bar).map((s) => s.bounds);
+    const under = rest.every((b) => b.y >= top.y + top.h && b.x >= top.x - 0.25 * medianH && b.x + b.w <= top.x + top.w + 0.25 * medianH);
+    if (under && rest.some((b) => b.h >= 0.4 * medianH)) return "over";
+  }
+  if (r.w > R.opPieceWidthFactor * medianH) return null;
+  if (isFlat(first, medianH) && first.w <= R.opBarWidthFactor * medianH && first.w >= 0.25 * medianH) {
+    const across = sorted.slice(1).some((s) => {
+      const b = s.bounds;
+      return b.w < 0.6 * b.h && b.x <= first.x + first.w && b.x + b.w >= first.x && b.y < first.y && b.y + b.h > first.y + first.h;
+    });
+    return across ? "plus" : "minus";
+  }
+  if (sorted.length >= 3) {
+    const a = sorted[0].bounds;
+    const b = sorted[1].bounds;
+    const small = (x: Rect) => x.w >= 0.25 * medianH && x.h >= 0.25 * medianH && x.w <= 1.8 * medianH && x.h <= 1.8 * medianH;
+    if (
+      small(a) &&
+      small(b) &&
+      overlap1d(a.x, a.x + a.w, b.x, b.x + b.w) >= 0.6 * Math.min(a.w, b.w) &&
+      overlap1d(a.y, a.y + a.h, b.y, b.y + b.h) >= 0.6 * Math.min(a.h, b.h)
+    )
+      return "times";
+  }
+  return null;
 }
 
 /**
@@ -908,12 +1008,13 @@ export function clusterLines(
   strokes: InkStroke[],
   previous: InkLine[] = [],
   fixed: ReadonlyArray<readonly InkStroke[]> = [],
-  opts: { zoom?: number; columns?: ColumnOptions; apart?: (group: InkStroke[]) => InkStroke[][]; newId?: () => string } = {},
+  opts: { zoom?: number; columns?: ColumnOptions; apart?: (group: InkStroke[]) => InkStroke[][]; newId?: () => string; heads?: readonly Rect[] } = {},
 ): InkLine[] {
   const medianH = medianStrokeHeight(strokes);
   // two problems' rows cut apart first: an operation row joins pieces under ONE line above them
+  // (or the first row under one of the tutor's problems, `heads`)
   const rows = splitAtGutters(clusterStrokeGroups(strokes).map((idxs) => idxs.map((i) => strokes[i])), medianH, inkScale(opts.zoom));
-  const merged = mergeOperationRows(rows, medianH);
+  const merged = mergeOperationRows(rows, medianH, opts.heads ?? []);
   const clustered = opts.apart ? merged.flatMap((g) => opts.apart?.(g) ?? [g]).filter((g) => g.length > 0) : merged;
   const groups = [...clustered, ...fixed.filter((g) => g.length > 0)];
   const usedIds = new Set<string>();

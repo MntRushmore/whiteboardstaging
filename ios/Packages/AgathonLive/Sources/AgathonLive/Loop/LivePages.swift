@@ -73,6 +73,9 @@ public final class LivePages: ObservableObject {
     public internal(set) var lastSafetyNet: String?
     /// the kid's last stroke on the page (scheduler ms)
     var lastInkAt = -Double.infinity
+    /// when the page was last checked (scheduler ms): a "?" on ink newer than that waits for the next
+    /// check (`questionWaitsForCheck`)
+    var checkedAt = -Double.infinity
     /// per stroke: when the kid last drew or changed it (the line the pen is on is never judged at a
     /// pause)
     var strokeAt: [String: Double] = [:]

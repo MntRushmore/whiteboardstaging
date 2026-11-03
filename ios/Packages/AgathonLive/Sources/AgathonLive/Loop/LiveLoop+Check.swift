@@ -93,6 +93,7 @@ extension LiveLoop {
     /// Releases every finished line on the page and marks it.
     func runCheck(_ reason: CheckReason) {
         let now = scheduler.now
+        pages.checkedAt = now
         // what this check could not take (a line still being read or written) is taken by the long
         // pause, which the check had stopped, or else by the safety net
         defer {
@@ -106,6 +107,15 @@ extension LiveLoop {
             if unfinished(st, reason: reason, now: now) { continue }
             release(st)
             released.append(st)
+        }
+        // a line the tutor could not read gets its "?" now, with the other marks (`questionWaitsForCheck`)
+        for st in lines.values where st.latex.isEmpty && !reading.contains(st.id) && !offlineQueue.contains(st.id) {
+            if (penDown || board.isPenDown) && penLineId == st.id { continue }
+            if rt[st.id]?.unreadableShown == true {
+                syncMark(st, .question, "unread")
+            } else {
+                render(st.id)
+            }
         }
         guard !released.isEmpty else {
             if reason == .button && !heldOnOtherPages() { say(LiveCopy.Pages.nothingToCheck) }
@@ -125,6 +135,16 @@ extension LiveLoop {
         guard pages.released[st.id] != st.latex else { return }
         pages.released[st.id] = st.latex
         persistLine(st.id)
+    }
+
+    /// Check when done: a "?" (a line the tutor cannot read) waits for the check like every other mark.
+    /// On a line still being written it is noise — the read of half a line fails — and it told a kid
+    /// mid-line that the tutor could not read them (the real-ink bench: 71 "?"s on half-written lines,
+    /// every one of them). True while the line has ink newer than the last check.
+    func questionWaitsForCheck(_ st: LiveLine) -> Bool {
+        guard checksWhenDone, settings.enabled, settings.mode != .off else { return false }
+        let last = st.ink.strokeIds.compactMap { pages.strokeAt[$0] }.max() ?? -.infinity
+        return last > pages.checkedAt
     }
 
     /// Releases the finished lines of one column (Help me on a line there; a reading fixed there).

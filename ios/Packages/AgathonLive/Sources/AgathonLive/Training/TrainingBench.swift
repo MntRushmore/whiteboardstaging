@@ -84,17 +84,24 @@ public enum TrainingBench {
             results.append(r)
         }
         // a stacked sum is ONE line by design: its rows, rule and answer read as one `\begin{array}` and
-        // worked column by column (`LiveLoop+Stacks`) — its rows are no merge. The lowest (the answer)
-        // carries the sum's mark; the rows over it want none of their own
+        // worked column by column (`LiveLoop+Stacks`) — its rows are no merge. The answer row carries
+        // the sum's mark (the row its tick is level with; else the lowest); the other rows want none of
+        // their own (the real-ink bench: an answer copied out under itself took the mark from it)
         let stacked = Dictionary(grouping: results.indices.filter { k in
             results[k].pieces == 0 && results[k].lineId.map(loop.trainingStacked) == true
         }, by: { results[$0].lineId! })
         if !stacked.isEmpty {
             let strokes = loop.board.store.kidStrokes(on: loop.board.currentScreenID)
             let bottom = Dictionary(strokes.map { ($0.id, $0.y.max() ?? 0) }, uniquingKeysWith: max)
+            let top = Dictionary(strokes.map { ($0.id, $0.y.min() ?? 0) }, uniquingKeysWith: min)
             let low = { (k: Int) in ids[k].compactMap { bottom[$0.rawValue] }.max() ?? 0 }
-            for (_, rows) in stacked {
-                let answer = rows.max { low($0) < low($1) }
+            let high = { (k: Int) in ids[k].compactMap { top[$0.rawValue] }.min() ?? 0 }
+            for (lineId, rows) in stacked {
+                var answer = rows.max { low($0) < low($1) }
+                if let tick = loop.trainingStackAnswer(lineId) {
+                    let level = { (k: Int) in min(low(k), tick.bottom) - max(high(k), tick.top) }
+                    if let best = rows.max(by: { level($0) < level($1) }), level(best) > 0 { answer = best }
+                }
                 for k in rows {
                     results[k].pieces = 1
                     if k != answer { results[k].mark = .none }
