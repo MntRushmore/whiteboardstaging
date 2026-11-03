@@ -16,7 +16,7 @@ const RIGHT = 400;
 
 /** A row of glyphs right-aligned on the ones column (`text` may start with an operator). */
 function row(text: string, y: number): StackRow {
-  const chars = [...text.replace(/\\times/, "×")];
+  const chars = [...text.replace(/\\times/, "×").replace(/\s/g, "")];
   const glyphs: Rect[] = chars.map((_, i) => ({ x: RIGHT - (chars.length - 1 - i) * PITCH, y, w: 18, h: DH }));
   const x0 = glyphs[0].x;
   return { rect: { x: x0, y, w: RIGHT + 18 - x0, h: DH }, glyphs };
@@ -154,5 +154,30 @@ describe("multiplication", () => {
     const r = stackStepOf({ latex: latex(["46", "\\times 23"], "138"), stack: sum(["46", "\\times 23"], "138"), inkBottom: 100 + 2 * 45 + 6 + DH });
     expect(r.why).toBe("Tens row: 46 × 20 = 920. The 0 holds the ones place.");
     expect(r.parts.at(-1)!.part).toBe("r1");
+  });
+});
+
+describe("the messy-handwriting guard", () => {
+  const base = { latex: latex(["286", "+680"]), stack: sum(["286", "+680"]) };
+
+  it("reads a doubtful read back, and a kid's own sum once, before writing digits", () => {
+    expect(stackStepOf({ ...base, trust: "unsure" })).toMatchObject({ kind: "readback", parts: [], reading: "286 + 680" });
+    expect(stackStepOf({ ...base, trust: "sure" })).toMatchObject({ kind: "readback", parts: [] });
+    expect(stackStepOf({ ...base, trust: "confirmed" }).kind).toBe("step");
+  });
+
+  it("holds the rows to the tutor's problem: 286 + 680 read as 286 + 600 is read back", () => {
+    expect(stackStepOf({ ...base, trust: "sure", problem: ["286 + 680"] }).kind).toBe("step");
+    const misread = { latex: latex(["286", "+600"]), stack: sum(["286", "+600"]) };
+    expect(stackStepOf({ ...misread, trust: "sure", problem: ["286 + 680"] })).toMatchObject({ kind: "readback", parts: [], reading: "286 + 600" });
+  });
+
+  it("gives words only when a row as read does not fit its ink", () => {
+    // a carry merged into the top row: read 1286 over the ink's three digits
+    const merged = { latex: latex(["1286", "+680"]), stack: sum(["286", "+680"]) };
+    expect(stackStepOf({ ...merged, trust: "confirmed" })).toMatchObject({ kind: "unsure", parts: [] });
+    // a digit read twice in the answer: 66 read as 666
+    const doubled = { latex: latex(["286", "+680"], "666"), stack: sum(["286", "+680"], "66") };
+    expect(stackStepOf({ ...doubled, trust: "confirmed" }).parts).toEqual([]);
   });
 });

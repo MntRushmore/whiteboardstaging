@@ -19,6 +19,20 @@ public struct TutorStep: Codable, Hashable, Sendable {
         case unsure
         /// nothing to go on
         case nothing
+        /// a line must be confirmed as read first ("I read: … Is that right?"): `readback` says which
+        case readback
+    }
+
+    /// How far a line of the work is trusted as read (the messy-handwriting guard).
+    public enum Trust: String, Codable, Sendable {
+        /// read with no doubt
+        case sure
+        /// a low-confidence or "?" read, the second opinion disagreeing, a look-alike letter
+        case unsure
+        /// the kid said it is right, or typed it
+        case confirmed
+        /// the tutor's own step
+        case tutor
     }
 
     public var kind: Kind
@@ -34,6 +48,8 @@ public struct TutorStep: Codable, Hashable, Sendable {
     public var why: String
     /// the engine checked it
     public var checked: Bool
+    /// `readback`: the index into problem + work of the line to read back
+    public var readback: Int?
 
     /// A step to write now.
     public var writes: Bool { kind == .step || kind == .answer }
@@ -42,7 +58,7 @@ public struct TutorStep: Codable, Hashable, Sendable {
 /// The next column of a stacked sum (`stackStep`).
 public struct StackStep: Codable, Hashable, Sendable {
     public enum Kind: String, Codable, Sendable {
-        case step, answer, lastStep, fix, solved, hint, unsure, nothing
+        case step, answer, lastStep, fix, solved, hint, unsure, nothing, readback
     }
 
     public struct Part: Codable, Hashable, Sendable {
@@ -59,6 +75,8 @@ public struct StackStep: Codable, Hashable, Sendable {
     public var why: String
     /// the sum the parts belong to (`+ 286 680`)
     public var key: String
+    /// the sum as read, in a kid's words (`286 + 680`): what a readback says
+    public var reading: String?
 
     public var writes: Bool { !parts.isEmpty && (kind == .step || kind == .answer || kind == .fix) }
 }
@@ -76,6 +94,8 @@ extension Brain {
         var problem: [String]
         var work: [String]
         var answer: Bool
+        var trust: [TutorStep.Trust]?
+        var known: Bool
     }
 
     private struct CheckStepArgs: Encodable {
@@ -93,12 +113,17 @@ extension Brain {
         var inkBottom: Double?
         var zoom: Double?
         var lineId: String
+        var trust: TutorStep.Trust?
+        var problem: [String]
+        var known: Bool
     }
 
     /// The next step of `work` under `problem`, checked by the engine; the final answer only with
     /// `answer` (asked for, and the grown-ups allow answers).
-    public func tutorStep(problem: [String], work: [String], answer: Bool) throws -> TutorStep {
-        try call("tutorStep", TutorStepArgs(problem: problem, work: work, answer: answer))
+    /// `trust`: how far each line of `work` is trusted as read (nil: all `sure`); `known`: the problem
+    /// is known though not in `problem` (a SAT question). A misread line is read back, never written from.
+    public func tutorStep(problem: [String], work: [String], answer: Bool, trust: [TutorStep.Trust]? = nil, known: Bool = false) throws -> TutorStep {
+        try call("tutorStep", TutorStepArgs(problem: problem, work: work, answer: answer, trust: trust, known: known))
     }
 
     /// Is `step` a right next step after `from` (and not one of `written`)? What a model's step must pass.
@@ -109,8 +134,9 @@ extension Brain {
     /// The next column of the stacked sum `stack` (one of `clusterStrokes`' `stacks`) read as `latex`,
     /// after the parts the tutor has written into it (`tutor`), placed in the tutor's hand.
     public func stackStep(latex: String, confidence: Double, stack: JSONValue, tutor: [String], answer: Bool,
-                          inkBottom: Double?, zoom: Double?, lineId: String) throws -> StackStep {
+                          inkBottom: Double?, zoom: Double?, lineId: String, trust: TutorStep.Trust? = nil,
+                          problem: [String] = [], known: Bool = false) throws -> StackStep {
         try call("stackStep", StackStepArgs(latex: latex, confidence: confidence, stack: stack, tutor: tutor, answer: answer,
-                                            inkBottom: inkBottom, zoom: zoom, lineId: lineId))
+                                            inkBottom: inkBottom, zoom: zoom, lineId: lineId, trust: trust, problem: problem, known: known))
     }
 }

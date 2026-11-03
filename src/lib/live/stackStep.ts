@@ -42,6 +42,12 @@ export interface StackStepArgs {
   zoom?: number;
   /** the line's id (the hand's seed) */
   lineId?: string;
+  /** how far the read is trusted: `unsure` (a doubtful read) or `sure` is read back before digits are written from it, unless the problem is known; `confirmed` by the kid */
+  trust?: "sure" | "unsure" | "confirmed";
+  /** the problem the sum is the work of (the tutor's), if any: its numbers must be the rows' */
+  problem?: string[];
+  /** the problem is known though not in `problem` (a SAT question) */
+  known?: boolean;
 }
 
 export interface StackPart {
@@ -54,13 +60,15 @@ export interface StackPart {
 }
 
 export interface StackStepResult {
-  kind: "step" | "answer" | "lastStep" | "fix" | "solved" | "hint" | "unsure" | "nothing";
+  kind: "step" | "answer" | "lastStep" | "fix" | "solved" | "hint" | "unsure" | "nothing" | "readback";
   /** what to write, in order (right to left, as the sum is done); empty for words-only results */
   parts: StackPart[];
   /** what the column does, in a kid's words */
   why: string;
   /** the sum the parts belong to: its operator and numbers (`+ 286 680`) */
   key: string;
+  /** the sum as read, in a kid's words (`286 + 680`): what a readback says */
+  reading?: string;
 }
 
 const UNSURE = "I can't line up these columns for sure, so I won't guess. Write the numbers one under the other, then ask again.";
@@ -169,6 +177,17 @@ export function stackStepOf(args: StackStepArgs): StackStepResult {
   const work = workStacked(read, grid.answerLast === null || read.rows ? {} : { answerLast: grid.answerLast });
   if (!work) return nothing("unsure", UNSURE);
   const key = `${read.op} ${read.operands.join(" ")}`;
+  const reading = `${read.operands.join(` ${read.op === "-" ? "−" : read.op} `)}${read.answer ? ` = ${read.answer}` : ""}`;
+  // the messy-handwriting guard: the digits written must be the rows as read, and the rows the problem
+  if (!rowsMatchInk(sum, read, grid, work)) return nothing("unsure", UNSURE, key);
+  if (args.trust === "unsure") return { ...nothing("readback", "", key), reading };
+  const asked = problemNumbers(args.problem);
+  if (asked) {
+    const same = asked.op === read.op && [...asked.operands].sort().join(" ") === [...read.operands].map((n) => n.replace(/^0+(?=\d)/, "")).sort().join(" ");
+    if (!same && args.trust !== "confirmed") return { ...nothing("readback", "", key), reading };
+  } else if (!args.known && args.trust !== "confirmed" && args.trust !== undefined) {
+    return { ...nothing("readback", "", key), reading };
+  }
   const sure = (args.confidence ?? 1) >= STACK_RING_CONFIDENCE;
   const tutor = partsOf(args.tutor ?? []);
   const size = inlineHandSizeFor(grid.digit, args.zoom);
@@ -207,6 +226,47 @@ export function stackStepOf(args: StackStepArgs): StackStepResult {
     if (plan) parts.push({ part: `c${p + 1}`, text: String(carry), plan });
   }
   return { kind: final ? "answer" : "step", parts, why: columnWords(work, p, end), key };
+}
+
+/**
+ * The rows as read agree with the ink: each row has as many glyphs as digits read (one more for the
+ * operator on a row after the first), each digit sits in its column, and the answer row has as many
+ * glyphs as digits read. Off (a digit read twice, two digits touching, a carry merged into a row): the
+ * tutor writes no digits.
+ */
+function rowsMatchInk(sum: StackedSum, read: NonNullable<ReturnType<typeof parseStacked>>, grid: StackGrid, work: StackedWork): boolean {
+  const places = rowPlaces(read);
+  for (let i = 0; i < sum.rows.length; i++) {
+    const row = sum.rows[i];
+    const want = places[i];
+    if (!want) return false;
+    const extra = row.glyphs.length - want.digits;
+    if (extra < 0 || extra > (i === 0 ? 0 : 1)) return false;
+    const mine = row.glyphs.slice(row.glyphs.length - want.digits).reverse();
+    for (let j = 0; j < mine.length; j++) {
+      const c = mine[j].x + mine[j].w / 2;
+      if (Math.abs(c - grid.x(want.last + j)) > 0.45 * grid.pitch) return false;
+    }
+  }
+  if (sum.answer && !read.rows) {
+    // (a leading zero the student wrote is dropped from `written`: one glyph more is allowed)
+    const n = sum.answer.glyphs.length - work.written.size;
+    if (n < 0 || n > 1) return false;
+  }
+  return true;
+}
+
+/** The problem's numbers and operator when it is plain arithmetic of two or more whole numbers (`286 + 680`, `46 \times 23`). */
+function problemNumbers(problem: readonly string[] | undefined): { op: "+" | "-" | "×"; operands: string[] } | null {
+  const line = (problem ?? []).find((l) => /\d/.test(l));
+  if (!line) return null;
+  const t = line.replace(/\\left|\\right|\s|\\[,;! ]/g, "").replace(/=$/, "");
+  const ops = t.match(/\+|-|−|\\times|\\cdot|×|\*/g) ?? [];
+  const nums = t.split(/\+|-|−|\\times|\\cdot|×|\*/).filter(Boolean);
+  if (nums.length < 2 || !nums.every((n) => /^\d+(?:\.\d+)?$/.test(n)) || new Set(ops).size !== 1) return null;
+  const o = ops[0];
+  const op = o === "+" ? "+" : o === "-" || o === "−" ? "-" : "×";
+  return { op, operands: nums.map((n) => n.replace(/^0+(?=\d)/, "")) };
 }
 
 /** Long multiplication (`46 × 23`): its rows, one per ask, then a rule and their sum column by column. */

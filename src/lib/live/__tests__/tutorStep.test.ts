@@ -5,9 +5,14 @@
 import { all, create } from "mathjs";
 import { describe, expect, it } from "vitest";
 import { createEngine } from "../engine";
-import { checkStep, equationWhy, fractionNext, nextTutorStep, productNext, type TutorStepResult } from "../tutorStep";
+import { checkStep, equationWhy, fractionNext, nextTutorStep as nextStepRaw, productNext, type Trust, type TutorStepArgs, type TutorStepResult } from "../tutorStep";
 
 const engine = createEngine({ create, all } as unknown as Parameters<typeof createEngine>[0]);
+
+/** The kid's lines confirmed as read (the guard is tested on its own below): the step choice alone. */
+function nextTutorStep(e: typeof engine, args: TutorStepArgs): TutorStepResult {
+  return nextStepRaw(e, { ...args, trust: args.trust ?? args.work.map(() => "confirmed") });
+}
 
 /**
  * A kid who asks again and again: each step the tutor writes joins the work (an inline one goes on
@@ -16,13 +21,17 @@ const engine = createEngine({ create, all } as unknown as Parameters<typeof crea
  */
 function askUntilDone(problem: string[], work: string[], answer = false): { written: string[]; last: TutorStepResult } {
   const lines = [...work];
+  const trust: Trust[] = work.map(() => "confirmed");
   const written: string[] = [];
   for (let i = 0; i < 8; i++) {
-    const r = nextTutorStep(engine, { problem, work: lines, answer });
+    const r = nextTutorStep(engine, { problem, work: lines, answer, trust });
     if (r.kind !== "step" && r.kind !== "answer") return { written, last: r };
     written.push(r.step);
     if (r.inline) lines[lines.length - 1] = `${lines[lines.length - 1]} ${r.step}`;
-    else lines.push(r.step);
+    else {
+      lines.push(r.step);
+      trust.push("tutor");
+    }
     if (r.kind === "answer") return { written, last: r };
   }
   throw new Error("never finished");
@@ -156,5 +165,53 @@ describe("why, for equations", () => {
     expect(equationWhy(engine, "2x = 8", "x = 4")).toBe("Divide both sides by 2.");
     expect(equationWhy(engine, "5x = 2x + 9", "3x = 9")).toBe("Subtract 2x from both sides.");
     expect(equationWhy(engine, "2x + 3x = 10", "5x = 10")).toBe("Combine like terms on each side.");
+  });
+});
+
+describe("the messy-handwriting guard", () => {
+  const raw = (args: TutorStepArgs) => nextStepRaw(engine, args);
+
+  it("reads a kid's own problem back once before writing from it", () => {
+    expect(raw({ work: ["2x + 3 = 11"] })).toMatchObject({ kind: "readback", readback: 0, step: "" });
+    expect(raw({ work: ["2x + 3 = 11"], trust: ["confirmed"] })).toMatchObject({ kind: "step", step: "2x = 8" });
+  });
+
+  it("never writes a right step for a misread problem: 2x + 3 = 11 read as 2x + 3 = 17", () => {
+    const r = raw({ work: ["2x + 3 = 17"] });
+    expect(r.kind).toBe("readback");
+    expect(r.step).toBe("");
+  });
+
+  it("holds the kid's lines to the tutor's problem: a line that disagrees is read back first", () => {
+    // 2x = 8 misread as 2x = 6, read with no doubt
+    expect(raw({ problem: ["2x + 3 = 11"], work: ["2x = 6"] })).toMatchObject({ kind: "readback", readback: 1 });
+    // the kid says that is what they wrote: a slip, the right step beside it
+    expect(raw({ problem: ["2x + 3 = 11"], work: ["2x = 6"], trust: ["confirmed"] })).toMatchObject({ kind: "step", step: "2x = 8", slip: 1, from: 0 });
+    // a line that agrees with the problem needs no confirming
+    expect(raw({ problem: ["2x + 3 = 11"], work: ["2x = 8"], answer: true })).toMatchObject({ kind: "answer", step: "x = 4" });
+    expect(raw({ problem: ["2x + 3 = 11"], work: ["2x + 3 - 3 = 11 - 3"] })).toMatchObject({ kind: "step" });
+  });
+
+  it("reads back a doubtful read before anything", () => {
+    expect(raw({ problem: ["2x + 3 = 11"], work: ["2x = 8"], trust: ["unsure"] })).toMatchObject({ kind: "readback", readback: 1 });
+  });
+
+  it("goes on from the tutor's own steps without asking about them", () => {
+    expect(raw({ work: ["2x + 3 = 11", "2x = 8"], trust: ["confirmed", "tutor"], answer: true })).toMatchObject({ kind: "answer", step: "x = 4" });
+  });
+
+  it("holds a free board's chain to its first line", () => {
+    // the problem confirmed; a later line that disagrees, read with no doubt: read it back
+    expect(raw({ work: ["5x + 2 = 17", "5x = 19"], trust: ["confirmed", "sure"] })).toMatchObject({ kind: "readback", readback: 1 });
+    expect(raw({ work: ["5x + 2 = 17", "5x = 15"], trust: ["confirmed", "sure"], answer: true })).toMatchObject({ kind: "answer", step: "x = 3" });
+  });
+
+  it("holds numeric work to the problem's value", () => {
+    expect(raw({ problem: ["\\frac{1}{2} + \\frac{1}{3}"], work: ["= \\frac{3}{6} + \\frac{3}{6}"] })).toMatchObject({ kind: "readback", readback: 1 });
+    expect(raw({ problem: ["\\frac{1}{2} + \\frac{1}{3}"], work: ["= \\frac{3}{6} + \\frac{2}{6}"] }).kind).toBe("lastStep");
+  });
+
+  it("a known problem elsewhere (a SAT question) needs no confirming of the first line", () => {
+    expect(raw({ work: ["2x + 3 = 11"], known: true })).toMatchObject({ kind: "step", step: "2x = 8" });
   });
 });

@@ -39,7 +39,18 @@ export interface TutorStepArgs {
   work: string[];
   /** the final answer may be written: the kid asked for it, and the grown-ups allow answers */
   answer?: boolean;
+  /**
+   * How far each line of `work` is trusted as read (the messy-handwriting guard): `sure` (read with
+   * no doubt), `unsure` (a low-confidence or "?" read, the second opinion disagreeing, a look-alike
+   * letter), `confirmed` (the kid said it is right, or typed it), `tutor` (the tutor's own step).
+   * Default: every line `sure`.
+   */
+  trust?: Trust[];
+  /** the problem is known though not in `problem` (a SAT question): the kid's first line needs no confirming */
+  known?: boolean;
 }
+
+export type Trust = "sure" | "unsure" | "confirmed" | "tutor";
 
 export type TutorStepKind =
   /** one step to write */
@@ -52,6 +63,8 @@ export type TutorStepKind =
   | "solved"
   /** the engine could not vouch for any next step: write nothing, say so */
   | "unsure"
+  /** a line must be confirmed as read first (`readback`): "I read: … Is that right?" — nothing written */
+  | "readback"
   /** nothing to go on (no maths read) */
   | "nothing";
 
@@ -69,6 +82,8 @@ export interface TutorStepResult {
   why: string;
   /** the engine checked the step (always true for `step`, `answer` and `lastStep`) */
   checked: boolean;
+  /** `readback`: the index into problem + work of the line to read back; -1 otherwise */
+  readback?: number;
 }
 
 const RESULT_KINDS = new Set(["equation", "expression", "inequality"]);
@@ -447,6 +462,21 @@ export function checkStep(
   return { ok: true, analysis: a, why: "" };
 }
 
+/** Every side of the line the same expression in its letter (`5(x + 5) - 2x = 5x + 25 - 2x`). */
+function isRewriteChain(engine: LiveEngine, line: string): boolean {
+  if (/<|>|\\(?:le|ge|leq|geq|lt|gt|neq)(?![a-zA-Z])/.test(line)) return false;
+  const sides = line.split("=").map((x) => x.trim());
+  if (sides.length < 2 || sides.some((x) => !x)) return false;
+  const first = sampled(engine, sides[0]);
+  if (!first) return false;
+  const a0 = safely(() => engine.analyzeLine(sides[0], { mode: "answer" }));
+  if (!a0?.math || !/[a-zA-Z]/.test(a0.math.replace(/\b(?:pi|e)\b/g, ""))) return false;
+  return sides.slice(1).every((x) => {
+    const v = sampled(engine, x);
+    return v !== null && v.every((y, k) => Math.abs(y - first[k]) <= 1e-9 * Math.max(1, Math.abs(first[k])));
+  });
+}
+
 /** A value as simple as it goes: a whole number, a decimal, a fraction in lowest terms, a mixed number. */
 function isFinalValue(latex: string): boolean {
   const s = tidy(latex.replace(/^\s*=\s*/, ""));
@@ -474,17 +504,21 @@ export function nextTutorStep(engine: LiveEngine, args: TutorStepArgs): TutorSte
     const a = analyses[i];
     return Boolean(lines[i]?.trim()) && a !== null && (RESULT_KINDS.has(a.kind) || a.kind === "assignment");
   };
-  // the last right line, and a slip after it
-  let from = -1;
-  for (let i = 0; i < lines.length; i++) if (usable(i) && analyses[i]!.verdict !== "mismatch") from = i;
-  if (from === -1) return EMPTY(lines.some((l, i) => l.trim() && analyses[i]?.kind === "text") ? "unsure" : "nothing", -1, UNSURE);
-  let slip = -1;
-  for (let i = from + 1; i < lines.length; i++) {
-    if (usable(i) && analyses[i]!.verdict === "mismatch") {
-      slip = i;
-      break;
+  const guard = guardWork(engine, lines, analyses, problem.length, args, usable);
+  if (guard.readback !== -1) return { ...EMPTY("readback"), readback: guard.readback };
+  // the last right line, and a slip after it (by the problem when there is one to go by, else line by line)
+  let from = guard.from;
+  let slip = guard.slip;
+  if (from === -1) {
+    for (let i = 0; i < lines.length; i++) if (usable(i) && analyses[i]!.verdict !== "mismatch") from = i;
+    for (let i = from + 1; i < lines.length && from !== -1; i++) {
+      if (usable(i) && analyses[i]!.verdict === "mismatch") {
+        slip = i;
+        break;
+      }
     }
   }
+  if (from === -1) return EMPTY(lines.some((l, i) => l.trim() && analyses[i]?.kind === "text") ? "unsure" : "nothing", -1, UNSURE);
   const a = analyses[from]!;
   const line = lines[from];
   if (a.solved) return EMPTY("solved", from);
@@ -508,6 +542,12 @@ export function nextTutorStep(engine: LiveEngine, args: TutorStepArgs): TutorSte
     if (simplified?.[0]) candidates.push({ latex: simplified[0].startsWith("=") ? simplified[0] : `= ${simplified[0]}`, why: "", inline });
     const result = a.resultLatex || safely(() => engine.analyzeLine(`${expr} =`, { mode: "answer" }))?.resultLatex || "";
     if (result) candidates.push({ latex: `= ${result}`, why: "", final: isFinalValue(result), inline });
+  } else if (a.kind === "equation" && isRewriteChain(engine, line)) {
+    // `3x + 6x - 5 = 9x - 5`: rewrites of one expression, not an equation to solve — its next
+    // simplification, or it is as simple as it gets
+    const next = safely(() => engine.simplifySteps?.(lastSide(line)) ?? null);
+    if (!next?.length) return EMPTY("solved", from);
+    for (const n of next) candidates.push({ latex: n.startsWith("=") ? n : `= ${n}`, why: "Simplify." });
   } else if (a.kind === "equation" || a.kind === "inequality" || a.kind === "assignment") {
     // the engine's solve from the last right line (a slip under it set aside)
     const upto = lines.slice(0, from + 1);
@@ -529,6 +569,133 @@ export function nextTutorStep(engine: LiveEngine, args: TutorStepArgs): TutorSte
     return { ...base, kind: final ? "answer" : "step", why: why || NEXT };
   }
   return { ...EMPTY("unsure", from, UNSURE), slip };
+}
+
+// ---------------------------------------------------------------- the messy-handwriting guard
+
+/**
+ * A misread line must never become a right step for the wrong problem (`2x + 3 = 11` read as
+ * `2x + 3 = 17`: the tutor would write `2x = 14`, checked, in its own pen). Before any step:
+ *
+ *  1. Every line of the kid's that is read with doubt (`unsure`) is read back first.
+ *  2. The ANCHOR is the problem: the tutor's (`problem`), else the kid's first line. A kid's anchor on a
+ *     free board is read back once ("I read: … Is that right?") unless the kid has confirmed it.
+ *  3. Every later line is held to the anchor: an equation with the same solutions (the engine's
+ *     `analyzeLine` with the anchor as `previous`), an expression with the same value. A line that
+ *     differs is a slip or a misread: read back unless the kid confirmed it (then it is a slip: the
+ *     right step goes beside it, from the last line that agrees).
+ *
+ * `from` is the last line that agrees with the anchor (-1: no anchor to go by, the caller's own rule).
+ */
+function guardWork(
+  engine: LiveEngine,
+  lines: readonly string[],
+  analyses: readonly (LineAnalysis | null)[],
+  P: number,
+  args: TutorStepArgs,
+  usable: (i: number) => boolean,
+): { readback: number; from: number; slip: number } {
+  const trustOf = (i: number): Trust => (i < P ? "tutor" : (args.trust?.[i - P] ?? "sure"));
+  const none = { readback: -1, from: -1, slip: -1 };
+  // 1. a doubtful read is read back before anything is written from it
+  for (let i = P; i < lines.length; i++) if (lines[i].trim() && trustOf(i) === "unsure") return { ...none, readback: i };
+  // 2. the anchor: the tutor's problem (its first maths line), else the kid's first line
+  let anchor = -1;
+  if (P > 0) {
+    const maths = [...Array(P).keys()].filter(usable);
+    // a problem of more than one line (a system, givens): no one line to hold the work to
+    if (maths.length !== 1) return none;
+    anchor = maths[0];
+  } else {
+    for (let i = 0; i < lines.length; i++) if (usable(i)) { anchor = i; break; }
+    if (anchor === -1) return none;
+    if (!args.known && trustOf(anchor) === "sure") return { ...none, readback: anchor };
+  }
+  // 3. every later line against the anchor
+  let from = anchor;
+  for (let i = anchor + 1; i < lines.length; i++) {
+    if (!usable(i)) continue;
+    if (trustOf(i) === "tutor") {
+      from = i;
+      continue;
+    }
+    const same = sameAsAnchor(engine, lines[anchor], analyses[anchor]!, lines[i]);
+    if (same === "same") from = i;
+    else if (same === "different" || analyses[i]?.verdict === "mismatch") {
+      if (trustOf(i) === "confirmed") return { readback: -1, from, slip: i };
+      return { ...none, readback: i };
+    }
+    // a step it cannot hold to the problem (`5x = 2y` under `5x - 4 = 21`: 5x = 25 misread?): read back
+    else if (isRelation(lines[i]) && trustOf(i) === "sure") return { ...none, readback: i };
+    // anything else it cannot hold to the problem (a side calculation, a misread operation line): never
+    // what the step goes on from
+  }
+  return { readback: -1, from, slip: -1 };
+}
+
+/** An expression in one letter at a few values of it, or null. */
+function sampled(engine: LiveEngine, side: string): number[] | null {
+  let a = safely(() => engine.analyzeLine(side, { mode: "answer" }));
+  if (!a || a.kind !== "expression" || !a.math) a = safely(() => engine.analyzeLine(`${side} + 0`, { mode: "answer" }));
+  if (!a || a.kind !== "expression" || !a.math) return null;
+  const letters = [...new Set(a.math.replace(/\b(?:pi|e)\b/g, "").match(/\b[a-zA-Z]\b/g) ?? [])];
+  if (letters.length > 1) return null;
+  const expr = letters.length === 1 && letters[0] !== "x" ? a.math.replace(new RegExp(`\\b${letters[0]}\\b`, "g"), "x") : a.math;
+  const f = engine.compileExpr(expr);
+  if (!f) return null;
+  const out = [-2.5, 0.5, 1.75, 3].map((t) => f(t));
+  return out.every(Number.isFinite) ? out : null;
+}
+
+/** A number's value by the engine (`label` reads of a bare number taken as a sum), or null. */
+function numericValue(engine: LiveEngine, side: string): number | null {
+  let a = safely(() => engine.analyzeLine(side, { mode: "answer" }));
+  if (!a || a.kind !== "expression" || !a.math) a = safely(() => engine.analyzeLine(`${side} + 0`, { mode: "answer" }));
+  if (!a || a.kind !== "expression" || !a.math || /[a-zA-Z]/.test(a.math.replace(/\b(?:pi|e)\b/g, ""))) return null;
+  const f = engine.compileExpr(a.math);
+  const v = f ? f(0) : NaN;
+  return Number.isFinite(v) ? v : null;
+}
+
+/**
+ * Does `line` say the same as the anchor? An equation or inequality: equivalent (the engine's verdict
+ * with the anchor as `previous`). A numeric expression: every side of the line has its value.
+ */
+export function sameAsAnchor(engine: LiveEngine, anchorLatex: string, anchor: LineAnalysis, line: string): "same" | "different" | "unknown" {
+  const numeric = (l: string) => !/[a-zA-Z]/.test(l.replace(/\\[a-zA-Z]+/g, ""));
+  if (numeric(anchorLatex) && (anchor.kind === "expression" || endsWithEquals(anchorLatex) || anchor.kind === "equation")) {
+    if (!numeric(line)) return "unknown";
+    const want = numericValue(engine, lastSide(anchorLatex.split("=")[0] || anchorLatex));
+    if (want === null) return "unknown";
+    const sides = line.replace(/=\s*$/, "").split("=").map((x) => x.trim()).filter(Boolean);
+    if (sides.length === 0) return "unknown";
+    for (const side of sides) {
+      const v = numericValue(engine, side);
+      if (v === null) return "unknown";
+      if (Math.abs(v - want) > 1e-9 * Math.max(1, Math.abs(want))) return "different";
+    }
+    return "same";
+  }
+  if (anchor.kind === "expression") {
+    // an expression in a letter: every side of the line takes its values
+    const sides = line.replace(/=\s*$/, "").split("=").map((x) => x.trim()).filter(Boolean);
+    if (sides.length === 0 || /<|>|\\(?:le|ge|leq|geq|lt|gt|neq)(?![a-zA-Z])/.test(line)) return "unknown";
+    const base = sampled(engine, lastSide(anchorLatex));
+    if (!base) return "unknown";
+    for (const side of sides) {
+      const v = sampled(engine, side);
+      if (!v) return "unknown";
+      if (v.some((y, k) => Math.abs(y - base[k]) > 1e-9 * Math.max(1, Math.abs(base[k])))) return "different";
+    }
+    return "same";
+  }
+  if (anchor.kind !== "equation" && anchor.kind !== "inequality") return "unknown";
+  if (!isRelation(line)) return "unknown";
+  const a = safely(() => engine.analyzeLine(line, { mode: "answer", previous: anchor, original: anchor }));
+  if (!a) return "unknown";
+  if (a.verdict === "ok") return "same";
+  if (a.verdict === "mismatch") return "different";
+  return "unknown";
 }
 
 /** A kid's words when the engine cannot vouch for a step. */

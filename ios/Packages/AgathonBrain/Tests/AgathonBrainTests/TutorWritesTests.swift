@@ -12,22 +12,30 @@ struct TutorWritesTests {
 
     @Test func oneCheckedStepThenTheAnswerHeldBack() async throws {
         try await brain.load()
-        let first = try await brain.tutorStep(problem: [], work: ["2x + 3 = 11"], answer: false)
+        let first = try await brain.tutorStep(problem: [], work: ["2x + 3 = 11"], answer: false, trust: [.confirmed])
         #expect(first.kind == .step && first.writes && first.checked)
         #expect(first.step == "2x = 8")
         #expect(first.why == "Subtract 3 from both sides.")
-        let last = try await brain.tutorStep(problem: [], work: ["2x + 3 = 11", "2x = 8"], answer: false)
+        let last = try await brain.tutorStep(problem: [], work: ["2x + 3 = 11", "2x = 8"], answer: false, trust: [.confirmed, .tutor])
         #expect(last.kind == .lastStep && !last.writes)
         #expect(!last.why.contains("4"))
-        let answer = try await brain.tutorStep(problem: [], work: ["2x + 3 = 11", "2x = 8"], answer: true)
+        let answer = try await brain.tutorStep(problem: [], work: ["2x + 3 = 11", "2x = 8"], answer: true, trust: [.confirmed, .tutor])
         #expect(answer.kind == .answer && answer.step == "x = 4")
     }
 
     @Test func fractionsGoOnAfterTheKidsEquals() async throws {
         try await brain.load()
-        let r = try await brain.tutorStep(problem: [], work: ["\\frac{1}{2} + \\frac{1}{3} ="], answer: false)
+        let r = try await brain.tutorStep(problem: [], work: ["\\frac{1}{2} + \\frac{1}{3} ="], answer: false, trust: [.confirmed])
         #expect(r.kind == .step && r.inline)
         #expect(r.step == "\\frac{3}{6} + \\frac{2}{6}")
+    }
+
+    @Test func aMisreadProblemIsReadBackNeverWorked() async throws {
+        try await brain.load()
+        let r = try await brain.tutorStep(problem: [], work: ["2x + 3 = 17"], answer: false, trust: [.sure])
+        #expect(r.kind == .readback && r.readback == 0 && r.step.isEmpty)
+        let page = try await brain.tutorStep(problem: ["2x + 3 = 11"], work: ["2x = 6"], answer: false, trust: [.sure])
+        #expect(page.kind == .readback && page.readback == 1)
     }
 
     @Test func aModelsStepMustFollow() async throws {
