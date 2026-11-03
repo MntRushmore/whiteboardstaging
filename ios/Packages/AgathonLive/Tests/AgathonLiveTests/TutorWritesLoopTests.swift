@@ -374,7 +374,7 @@ struct TutorWritesLoopTests {
     }
 
     @Test func aDoubtfulReadOrADisagreeingSecondOpinionIsReadBackFirst() async throws {
-        for (confidence, second) in [(0.9, nil), (0.995, ("2x = 9", false))] as [(Double, (String, Bool)?)] {
+        for (confidence, second) in [(0.85, nil), (0.995, ("2x = 9", false))] as [(Double, (String, Bool)?)] {
             let h = Harness(mode: .suggest)
             await h.start()
             ChatProblemTests().tutorProblem(h, box: Box(x: 200, y: 100, w: 320, h: 60),

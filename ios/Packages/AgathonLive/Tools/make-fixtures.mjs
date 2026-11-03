@@ -55,6 +55,11 @@ const LINES = [
   "5x = 15",
   "x = 3",
   "\\frac{3}{4} + \\frac{1}{8} = \\frac{7}{8}",
+  // GrowingLineTests: a line read half-written (`x = 1` of `x = 12`), then its last digit
+  "2x = 24",
+  "2x = 2",
+  "x = 1",
+  "2",
 ];
 
 const r2 = (v) => Math.round(v * 100) / 100;
