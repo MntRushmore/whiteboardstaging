@@ -31,7 +31,7 @@ final class TutorWritesUITests: XCTestCase {
         tapHelpMeAndFilm("equation-1")
         waitFor("tutorWrites.probe", matching: #"steps 1 .*card Next step: Subtract 3 from both sides\."#, timeout: 20)
         tap("live.hint.more")
-        waitFor("tutorWrites.probe", matching: #"card One step left: One step left: divide both sides by 2"#, timeout: 20)
+        waitFor("tutorWrites.probe", matching: #"card One step left: Divide both sides by 2"#, timeout: 20)
         snap("equation-2-one-step-left")
     }
 

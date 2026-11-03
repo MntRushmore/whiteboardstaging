@@ -458,8 +458,18 @@ extension LiveLoop {
     /// The step's words on the tutor's card beside it, with what the kid may ask next.
     func openStepCard(_ lineId: String, anchor: BrainRect, title: String, message: String, action: HintAction) {
         guard !message.isEmpty else { return }
+        let message = Self.withoutTitle(message, title: title)
         hints = [HintCard(id: "\(lineId):write:\(message.hashValue)", lineId: lineId, anchor: anchor, title: title, message: message,
                           question: nil, level: 3, action: action)]
+    }
+
+    /// The card's words without its title said again ("ONE STEP LEFT" over "One step left: divide both
+    /// sides by 2." read twice): "Divide both sides by 2."
+    static func withoutTitle(_ message: String, title: String) -> String {
+        let prefix = "\(title): "
+        guard message.count > prefix.count, message.lowercased().hasPrefix(prefix.lowercased()) else { return message }
+        let rest = message.dropFirst(prefix.count)
+        return rest.prefix(1).uppercased() + rest.dropFirst()
     }
 
     // MARK: - the readback (the messy-handwriting guard)

@@ -92,7 +92,7 @@ struct TutorWritesLoopTests {
         #expect(steps(h) == ["2x = 8"], "x = 4 is not written")
         let last = try #require(h.loop.hints.first)
         #expect(last.title == "One step left")
-        #expect(last.message == "One step left: divide both sides by 2. You can do this one.")
+        #expect(last.message == "Divide both sides by 2. You can do this one.", "the title is not said twice")
         #expect(last.action == .none, "no Show the answer: the grown-ups have not allowed answers")
     }
 
