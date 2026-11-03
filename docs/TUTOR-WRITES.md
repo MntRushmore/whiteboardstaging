@@ -11,21 +11,29 @@ Screenshots (synthetic boards, Tutor Writes Lab): [`docs/tutor-writes/`](tutor-w
 | ![the step being written](tutor-writes/equation-1-pen-1.png) | ![the step written, its why on the card](tutor-writes/equation-1-written.png) |
 | ![the answer held back](tutor-writes/equation-2-one-step-left.png) | ![fractions after the kid's =](tutor-writes/fractions-1-written.png) |
 | ![a column and its carry](tutor-writes/column-2-tens-and-carry.png) | ![long multiplication: rule and sum](tutor-writes/long-3-rule-and-ones.png) |
+| ![the problem read back first](tutor-writes/equation-1-readback-1.png) | ![a slip read back before a correction](tutor-writes/slip-1-readback-2.png) |
 
 ## What a kid sees
 
 1. They write `2x + 3 = 11` and get stuck. They tap **Help me**.
-   - On **Next step**, Help me writes the step straight away.
-   - On **Hint** (the default), Help me first gives a hint card. Its **Show me** button writes the step.
-2. Within about a second, the tutor's pen starts writing `2x = 8` under their work in cobalt. Its `=`
+   - On **Next step**, Help me goes straight to the step.
+   - On **Hint** (the default), Help me first gives a hint card. Its **Show me** button goes to the
+     step.
+2. On a free board, the first time, the tutor reads their problem back before it writes anything:
+   "I read: 2x + 3 = 11. Is that right? Then I'll write the next step."
+   - **Yes, that's right** lets the tutor write.
+   - **Fix it** opens "Fix what I read". The step is then written from the fixed line.
+
+   See [the messy-handwriting guard](#the-messy-handwriting-guard).
+3. Within about a second, the tutor's pen starts writing `2x = 8` under their work in cobalt. Its `=`
    sits under their `=`, at their size, at the pen's natural pace.
-3. A tutor card beside the step says why ("Subtract 3 from both sides."). It has **Got it** and
+4. A tutor card beside the step says why ("Subtract 3 from both sides."). It has **Got it** and
    **Next step** buttons.
-4. **Next step** writes the step after the tutor's own. When the step left is the final answer, the
+5. **Next step** writes the step after the tutor's own. When the step left is the final answer, the
    card says "One step left: divide both sides by 2. You can do this one." and nothing is written.
    If the grown-ups allow answers, that card has a **Show the answer** button. Only that further ask
    writes `x = 4`.
-5. The steps are ordinary board ink. The kid can keep writing right below them, or rub them out. The
+6. The steps are ordinary board ink. The kid can keep writing right below them, or rub them out. The
    next ask carries on from whatever is on the page.
 
 ## Triggers
@@ -90,6 +98,77 @@ Screenshots (synthetic boards, Tutor Writes Lab): [`docs/tutor-writes/`](tutor-w
     long multiplication's rows gets words only. A slip in the rows gets its note, never digits.
   - A sum it cannot work gets "I can't line up these columns for sure…".
 
+## The messy-handwriting guard
+
+On real kids' ink about 75% of lines are read right. A misread can turn into a checked step for the
+wrong problem. For example, `2x + 3 = 11` read as `2x + 3 = 17` would get `2x = 14`, written in the
+tutor's own pen. That is worse than no help. So before any step, the tutor checks the lines the step
+rests on (`guardWork` in `tutorStep.ts`). When it is not sure of one, it reads that line back
+("I read: … Is that right?") and writes nothing yet.
+
+The readback uses what the tutor already has:
+
+- the "I read" read state (`readingState`): a Mathpix confidence under 0.99, the second opinion
+  disagreeing (`RECOGNIZE_SECOND_OPINION`), a look-alike letter, or an unread line;
+- the kid's own confirmation or fix;
+- "Fix what I read".
+
+**Fix it** opens the fix sheet. **Yes** confirms the read. Either way, the tutor then writes from
+the confirmed line (`pendingShowMe`).
+
+1. **A doubtful read** of any line of the kid's is read back first.
+2. **The anchor is the problem.**
+   - On a problem page, or wherever the tutor gave the problem, the anchor is the tutor's problem.
+   - On a free board, it is the kid's first line. That line is read back once (unless the kid has
+     already confirmed it) before the first step is written from it.
+3. **Every later line is held to the anchor.**
+   - An equation must have the same solutions (the engine's verdict with the anchor as `previous`).
+   - An expression must have the same value: numbers exactly, a one-letter expression at sample
+     values.
+   - A line that differs is read back. If the kid says that IS what they wrote, it is a slip, and the
+     right step goes beside it.
+   - A relation the engine cannot hold to the problem (`5x = 2y` under `5x - 4 = 21`) is read back.
+   - Anything else it cannot place (a misread operation line, a side calculation) is never what the
+     step goes on from.
+4. **Free board.** The tutor writes only when the problem line is confirmed and the chain agrees
+   with it.
+5. **Column steps.** The rows as read must fit the ink:
+   - each row has as many glyphs as digits read (one more for the operator), each digit sits in its
+     column, and the answer row's glyphs match its digits;
+   - if not (a digit read twice, a carry merged into a row, two digits touching), there are words
+     only and no digits;
+   - on a problem page the rows' numbers and operator must be the problem's, or the sum is read back;
+   - on a free board the sum is read back once ("I read: 286 + 680").
+6. **Not guarded.** A problem of more than one line (a system, or givens) has no single anchor. It
+   keeps the doubtful-read readback and the engine's own column judging.
+7. **Rewrite chains.** A chain of rewrites of one expression in a letter (`3x + 6x - 5 = 9x - 5`) is
+   simplified, or left as finished. It is never "solved" as an equation. The real-ink replay found
+   that this produced nonsense steps before.
+
+**Measured, messy synthetic slice** (`TutorWritesMessyTests`). The six scenarios are equation (free
+board and problem page), fractions, column addition (free and page) and long multiplication. They
+ran in six synthetic hands (clean, the scoreboard's messy, shaky, huge, tiny, jaggy), each read right
+and with one digit swapped and read with no doubt. That is 72 runs, with a kid who answers each
+readback truthfully.
+
+| | First answer to Help me | Steps written | Wrong for the true problem |
+|---|---|---|---|
+| Read right (36 runs) | step 5, readback 23, last step held 6, words only 2 | 96 | **0** |
+| Misread (36 runs) | step 0, readback 34, words only 2 | 96 | **0** |
+
+The 2 words-only runs in each row are the shaky hand's stacked sums: the rows didn't fit the ink.
+
+**Measured, real kids' reads** (`tutorStep.realink.test.ts`, `AGATHON_REALINK=1`). This replays a past
+real-ink bench run's cached reads, with no calls. It asks after every line of 198 attempts (stacked
+sums are left out because they need the ink), and every read counts as sure, which is the hardest
+case. Only aggregate numbers are reported; the corpus stays outside the repo.
+
+- 282 asks: 41 steps written, 87 read back, 26 last steps held, and 128 with nothing written
+  (54 already solved, 65 with no step the engine can vouch for, 9 with nothing to go on).
+- **0 written steps wrong for the labeled truth.** 14 steps were written on work that had a misread
+  somewhere; each was right, because the misread line was read back or set aside.
+- Without the guard: 70 steps written, 1 wrong.
+
 ## Where the code is
 
 | Piece | File |
@@ -101,7 +180,8 @@ Screenshots (synthetic boards, Tutor Writes Lab): [`docs/tutor-writes/`](tutor-w
 | Hooks | `LiveLoop+Help.swift`: `escalate` → `showNextStep`, `moreHelp` by the card's action, `autoStuck` offers instead of writing |
 | Card button | `HintCard.action`, `HintCardView` (Next step / Show the answer / Not now) |
 | Demo | Debug `Tutor Writes Lab` (`-lab tutorWrites -tutorWritesDemo equation\|fractions\|column\|long\|slip`). It uses a stand-in reader, so it needs no server and spends no money. |
-| Tests | `AgathonLiveTests/TutorWritesLoopTests`, `AgathonBrainTests/TutorWritesTests`, `AgathonUITests/TutorWritesUITests` |
+| Guard | `guardWork`, `sameAsAnchor` (`tutorStep.ts`); `rowsMatchInk`, `problemNumbers` (`stackStep.ts`); the readback card and resume (`LiveLoop+TutorWrites.swift`); hooks in `confirmReading` / `useReading` (`LiveLoop+Fix.swift`) |
+| Tests | `AgathonLiveTests/TutorWritesLoopTests`, `TutorWritesMessyTests`, `AgathonBrainTests/TutorWritesTests`, `AgathonUITests/TutorWritesUITests`, vitest `tutorStep.test.ts`, `stackStep.test.ts`, `tutorStep.realink.test.ts` (opt-in) |
 
 The meta on the tutor's strokes:
 
