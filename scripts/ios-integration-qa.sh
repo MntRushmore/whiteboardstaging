@@ -16,6 +16,7 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PORT=${PORT:-3901}
+SUPA_PORT=${SUPA_PORT:-54321}   # local Supabase API (another app may hold 54321: set api.port and this)
 OUT=${OUT:-$(mktemp -d -t agathon-ios-qa)}
 DD=${DD:-$OUT/dd}
 SIM=${SIM:-"iPad Pro 11-inch (M5)"}
@@ -23,7 +24,7 @@ mkdir -p "$OUT/shots" "$OUT/results"
 ANON=$(grep -E "^NEXT_PUBLIC_SUPABASE_ANON_KEY=" "$ROOT/.env.local" | cut -d= -f2-)
 export TEST_RUNNER_AGATHON_INTEGRATION=1
 export TEST_RUNNER_AGATHON_API_URL=http://localhost:$PORT
-export TEST_RUNNER_SUPABASE_URL=http://127.0.0.1:54321
+export TEST_RUNNER_SUPABASE_URL=http://127.0.0.1:$SUPA_PORT
 export TEST_RUNNER_SUPABASE_ANON_KEY=$ANON
 export TEST_RUNNER_JOURNEY_STATE=$OUT/journey-email.txt
 export TEST_RUNNER_JOURNEY_SHOTS=$OUT/shots
@@ -72,7 +73,7 @@ for step in $STEPS; do
     psqlq "update profiles set ink_balance=300 where user_id=(select id from auth.users where email='$EMAIL')" >/dev/null ;;
   resilience)
     rm -f "$OUT/netcut.flag"
-    node "$ROOT/scripts/lib/netcut-proxy.mjs" "$OUT/netcut.flag" > "$OUT/netcut.log" 2>&1 &
+    SUPA_PORT=$SUPA_PORT node "$ROOT/scripts/lib/netcut-proxy.mjs" "$OUT/netcut.flag" > "$OUT/netcut.log" 2>&1 &
     PROXY=$!
     sleep 1
     TEST_RUNNER_NETCUT_FLAG=$OUT/netcut.flag TEST_RUNNER_NETCUT_API_URL=http://127.0.0.1:3902 TEST_RUNNER_NETCUT_SUPABASE_URL=http://127.0.0.1:54329 \
