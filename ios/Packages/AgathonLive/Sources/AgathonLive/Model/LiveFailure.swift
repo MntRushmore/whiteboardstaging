@@ -62,6 +62,15 @@ struct RecognizerHints {
     var unreadable = false
     var transient = false
 
+    /// The hints on a failed call's answer (none on anything but the route's own `recognizer_failed`).
+    init(_ error: Error) {
+        guard case .http(let f)? = error as? APIError, f.code == "recognizer_failed" else {
+            self.init(nil)
+            return
+        }
+        self.init(f.body)
+    }
+
     init(_ body: AgathonKit.JSONValue?) {
         func flag(_ key: String) -> Bool {
             body?[key]?.boolValue == true || body?["details"]?[key]?.boolValue == true

@@ -109,6 +109,38 @@ struct ErrorPathTests {
         #expect(h.loop.lines.values.first?.latex == "2x = 8")
     }
 
+    /// Mathpix found the strokes unreadable and the route had no crop (`unreadable` + `needsCrop`): the
+    /// crop is sent once, as on the web, and its read is the line's (the real-ink bench: such a line was
+    /// never read at all; docs/eval/reader-realink.md).
+    @Test func unreadableStrokesAreReadOnceMoreFromTheCrop() async throws {
+        let h = Harness()
+        await h.start()
+        h.services.failNextReads([Self.http(503, #"{"error":"recognizer_failed","message":"no read","needsCrop":true,"unreadable":true}"#)])
+        await h.write("3x = 12", at: Vec2(200, 150))
+        await h.pass(700)
+        let reqs = h.services.recognizeRequests
+        #expect(reqs.count == 2)
+        #expect(reqs[1].cropOnly == true)
+        #expect(reqs[1].crop?.hasPrefix("data:image/jpeg;base64,") == true)
+        #expect(h.loop.lines.values.first?.latex == "3x = 12")
+    }
+
+    /// ...and when the crop cannot be read either, the line is still the strokes' unreadable one: its
+    /// gentle "?", never the tutor service's trouble.
+    @Test func anUnreadableCropLeavesTheGentleQuestionMark() async throws {
+        let h = Harness(mode: .feedback)
+        await h.start()
+        let unreadable = Self.http(503, #"{"error":"recognizer_failed","message":"no read","needsCrop":true,"unreadable":true}"#)
+        h.services.failNextReads([unreadable, Self.http(503, #"{"error":"recognizer_failed","message":"no read","unreadable":true}"#)])
+        await h.write("2x = 8", at: Vec2(200, 150))
+        await h.pass(700)
+        #expect(h.services.recognizeRequests.count == 2)
+        #expect(h.loop.activity == .idle, "no pill, no error")
+        await h.pass(3_000)
+        #expect(h.board.marks.first?.kind == .question)
+        #expect(h.board.marks.first?.why == "unread")
+    }
+
     @Test func aBlipIsTriedOnceMoreBeforeTheKidHears() async throws {
         let h = Harness()
         await h.start()
