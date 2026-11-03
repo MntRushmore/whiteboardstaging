@@ -382,10 +382,10 @@ struct ProblemPagesLoopTests {
         let h = harness(checking: .whenDone)
         await h.start()
         problemPage(h, ["2x + 3 = 11"])
-        await h.write("x = 5", at: Vec2(200, 280), confidence: 0.95)
+        await h.write("x = 5", at: Vec2(200, 280), confidence: 0.85)
         await h.pass(1_000)
         let st = try #require(line(h, "x = 5"))
-        #expect(h.loop.pages.readings.first { $0.id == st.id }?.state == .asking, "Mathpix under 0.99: Is this right?")
+        #expect(h.loop.pages.readings.first { $0.id == st.id }?.state == .asking, "Mathpix under 0.9: Is this right?")
         h.loop.checkPage()
         await h.pass(500)
         #expect(h.board.mark(on: "x = 5") == nil, "a read in doubt is never ringed")
@@ -395,6 +395,21 @@ struct ProblemPagesLoopTests {
         await h.pass(500)
         #expect(h.board.mark(on: "x = 5") == .ring)
         #expect(h.loop.pages.readings.first { $0.id == st.id }?.state == .fixed)
+    }
+
+    /// Real kids' ink read at 0.9–0.99 was nearly always right (docs/eval/reader-realink.md): trusted,
+    /// so a slip read that sure is ringed, not asked about.
+    @Test func aReadAtNinetyFiveIsTrustedAndASlipIsRinged() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        await h.write("x = 5", at: Vec2(200, 280), confidence: 0.95)
+        await h.pass(1_000)
+        let st = try #require(line(h, "x = 5"))
+        #expect(h.loop.pages.readings.first { $0.id == st.id }?.state == .read)
+        h.loop.checkPage()
+        await h.pass(500)
+        #expect(h.board.mark(on: "x = 5") == .ring)
     }
 
     @Test func aLookAlikeOfThePagesLetterAsksAndAFixStands() async throws {
