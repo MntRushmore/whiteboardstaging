@@ -147,4 +147,24 @@ describe("algebra keeps its rules", () => {
   it("under one of the tutor's problems", () => {
     expect(marks({ problem: ["2x + 3 = 11"], lines: ["2x = 8", "x = 4"] })).toEqual(["ok", "ok+solved"]);
   });
+
+  // the real-ink bench's oracle run (perfect reads): right answers ticked, but the page never solved,
+  // or no tick at all
+  it("y in terms of x in simplest form answers a line in x and y the tutor posed — not a step of a system, nor her own", () => {
+    expect(marks({ problem: ["y - 5 = 2(x + 2)"], lines: ["y - 5 = 2x + 4", "y = 2x + 9"] })).toEqual(["ok", "ok+solved"]);
+    expect(marks({ problem: ["y - 5 = 2(x + 2)"], lines: ["y = 2x + 4 + 5"] })).toEqual(["ok"]);
+    expect(marks({ problem: ["x + y = 10", "x - y = 2"], lines: ["y = 10 - x"] })).not.toContain("ok+solved");
+    expect(marks({ lines: ["x + y = 10", "y = 10 - x"] })).not.toContain("ok+solved");
+  });
+
+  it("an angle alone under an equation in one letter is its value", () => {
+    expect(marks({ problem: ["x + 41^{\\circ} = 90^{\\circ}"], lines: ["49^{\\circ}"] })).toEqual(["ok+solved"]);
+    // a wrong one may be a side sum: never ringed
+    expect(marks({ problem: ["x + 41^{\\circ} = 90^{\\circ}"], lines: ["50^{\\circ}"] })).not.toContain("mismatch");
+  });
+
+  it("the derivative the tutor asked for, ticked; a different one is a slip", () => {
+    expect(marks({ problem: ["\\frac{d}{dx}(x^{4} + 5x)"], lines: ["4x^{3} + 5"] })).toEqual(["ok+solved"]);
+    expect(marks({ problem: ["\\frac{d}{dx}(x^{4} + 5x)"], lines: ["4x^{3} + 5x"] })).toEqual(["mismatch"]);
+  });
 });

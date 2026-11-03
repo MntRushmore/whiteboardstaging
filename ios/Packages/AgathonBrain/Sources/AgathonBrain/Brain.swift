@@ -158,9 +158,12 @@ public actor Brain {
     /// carried on from it, with no mark of its own.
     /// `beside`: the line is on a one-line problem's row, after it (`3 = 7` after the tutor's `4 +`):
     /// the problem's end written again, then the answer, judged as `= 7`.
+    /// `posed`: `problem` is the tutor's own (one relation, not a system, not the kid's first line): `y`
+    /// in terms of `x` in simplest form answers a line in x and y (`y = 2x + 9` under `y - 5 = 2(x + 2)`).
     public func judgeLine(_ latex: String, context: AnalyzeContext = AnalyzeContext(), problem: [String]? = nil, above: [String] = [],
-                          slip: LineAnalysis? = nil, beside: Bool = false) throws -> LineAnalysis {
-        try call("judgeLine", JudgeLineArgs(latex: latex, context: context, problem: problem, above: above, slip: slip, beside: beside ? true : nil))
+                          slip: LineAnalysis? = nil, beside: Bool = false, posed: Bool = false) throws -> LineAnalysis {
+        try call("judgeLine", JudgeLineArgs(latex: latex, context: context, problem: problem, above: above, slip: slip, beside: beside ? true : nil,
+                                            posed: posed ? true : nil))
     }
 
     /// A stacked (column) sum's line, as the web's board judges and marks it (`LiveLoop.stackAnalysis`,
@@ -330,6 +333,7 @@ public actor Brain {
         var above: [String]
         var slip: LineAnalysis?
         var beside: Bool?
+        var posed: Bool?
     }
     private struct StackedLineArgs: Encodable {
         var latex: String

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextStep, parseStacked, placeName, placesLeft, stackedAnalysis, workStacked, type StackedRead } from "../columnArithmetic";
+import { answerWrittenAgain, nextStep, parseStacked, placeName, placesLeft, stackedAnalysis, workStacked, type StackedRead } from "../columnArithmetic";
 
 /**
  * Column (stacked) arithmetic (`engine/columnArithmetic.ts`): the array Mathpix reads a stacked sum
@@ -345,5 +345,15 @@ describe("the problem's operator for rows that are its numbers", () => {
     const read = parseStacked("\\begin{array}{r} 18 \\\\ 7 \\\\ \\hline 25 \\end{array}", ["18 \\times 7"])!;
     expect(read.op).toBe("×");
     expect(stackedAnalysis(workStacked(read)!, true).verdict).toBe("mismatch");
+  });
+});
+
+describe("her answer written again under itself (`answerWrittenAgain`)", () => {
+  it("two rows of one number under the rule, no second rule", () => {
+    expect(answerWrittenAgain("\\begin{array}{r} 34 \\\\ \\times6 \\\\ \\hline 204 \\\\ 204 \\end{array}")).toBe(true);
+    // long multiplication's rows are different numbers; one answer row is no copy
+    expect(answerWrittenAgain("\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 138 \\\\ 920 \\\\ \\hline 1058 \\end{array}")).toBe(false);
+    expect(answerWrittenAgain("\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 138 \\\\ 920 \\end{array}")).toBe(false);
+    expect(answerWrittenAgain(OWNER)).toBe(false);
   });
 });
