@@ -116,13 +116,13 @@ struct ErrorPathTests {
         let h = Harness()
         await h.start()
         h.services.failNextReads([Self.http(503, #"{"error":"recognizer_failed","message":"no read","needsCrop":true,"unreadable":true}"#)])
-        await h.write("3x = 12", at: Vec2(200, 150))
+        await h.write("3x = 15", at: Vec2(200, 150))
         await h.pass(700)
         let reqs = h.services.recognizeRequests
         #expect(reqs.count == 2)
         #expect(reqs[1].cropOnly == true)
         #expect(reqs[1].crop?.hasPrefix("data:image/jpeg;base64,") == true)
-        #expect(h.loop.lines.values.first?.latex == "3x = 12")
+        #expect(h.loop.lines.values.first?.latex == "3x = 15")
     }
 
     /// ...and when the crop cannot be read either, the line is still the strokes' unreadable one: its
