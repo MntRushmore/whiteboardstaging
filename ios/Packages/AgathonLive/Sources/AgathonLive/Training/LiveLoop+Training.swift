@@ -58,6 +58,12 @@ extension LiveLoop {
         lines[lineId].map(stackLike) ?? false
     }
 
+    /// Where a stacked sum's tick goes (after its answer row), page units: its top and bottom.
+    public func trainingStackAnswer(_ lineId: String) -> (top: Double, bottom: Double)? {
+        guard let tick = stackMarks[lineId]?.tick else { return nil }
+        return (tick.y, tick.y + tick.h)
+    }
+
     /// The tutor's mark on one of its lines (the page on show).
     public func trainingMark(on lineId: String) -> TrainingMark {
         let target = RecordID("line:\(lineId)")

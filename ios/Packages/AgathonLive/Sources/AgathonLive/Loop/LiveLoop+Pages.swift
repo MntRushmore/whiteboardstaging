@@ -82,7 +82,11 @@ extension LiveLoop {
             // judged — not a problem of the kid's own (it went unringed, and the page counted solved)
             let sameAnswer = mine.count == 1 && theirs.isSuperset(of: mine)
                 && judged.range(of: #"^\s*[a-zA-Z]\s*=[^=]*$"#, options: .regularExpression) != nil
-            if (solvedAbove && !sameAnswer) || otherLetters {
+            // a fact of plain numbers that is false (`2 \times 3 + 1 = 8` under a solved `4 + 4 = 8`)
+            // is no problem to work, it is a claim: a slip, ringed as ever (the real-ink bench: a false
+            // fact written after a solved one went unringed)
+            let falseFact = ArithmeticTruth.holds(judged) == false
+            if ((solvedAbove && !sameAnswer) || otherLetters) && !falseFact {
                 var r = a
                 r.verdict = "none"
                 r.note = ""
