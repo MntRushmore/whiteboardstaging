@@ -134,6 +134,8 @@ extension LiveLoop {
         hints.removeAll { $0.lineId == lineId }
         persistLine(lineId)
         recheck(st)
+        // the tutor was waiting on this line to write its step (docs/TUTOR-WRITES.md)
+        resumeShowMe(after: lineId)
     }
 
     /// A reading picked or typed: the line's reading from now on (for this ink), and judged again.
@@ -168,6 +170,8 @@ extension LiveLoop {
             guard let self else { return }
             await self.analyze(column: column)
             if let cur = self.lines[lineId] { self.recheck(cur) }
+            // the tutor was waiting on this line to write its step (docs/TUTOR-WRITES.md)
+            self.resumeShowMe(after: lineId)
         }
     }
 

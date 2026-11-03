@@ -36,6 +36,12 @@ struct TutorWritesLoopTests {
         return ids
     }
 
+    /// The kid has confirmed every line as read (the step choice tested on its own; the guard's own
+    /// tests below go through the readback).
+    func trustAll(_ h: Harness) {
+        for st in h.loop.lines.values where !st.latex.isEmpty { h.loop.pages.confirmed[st.id] = st.latex }
+    }
+
     /// The tutor's steps on the page: their LaTeX, top to bottom.
     func steps(_ h: Harness) -> [String] {
         var byId: [String: (latex: String, y: Double)] = [:]
@@ -62,6 +68,7 @@ struct TutorWritesLoopTests {
         await h.start()
         await h.write("2x + 3 = 11", at: Vec2(200, 120))
         await h.pass(700)
+        trustAll(h)
         h.loop.helpMe()
         await h.pass(100)
         #expect(steps(h) == ["2x = 8"], "one step, the engine's")
@@ -96,6 +103,7 @@ struct TutorWritesLoopTests {
         await h.write("2x + 3 = 11", at: Vec2(200, 120))
         await h.write("2x = 8", at: Vec2(200, 220))
         await h.pass(700)
+        trustAll(h)
         h.loop.helpMe()
         await h.pass(100)
         #expect(steps(h).isEmpty, "the first ask on the last step only says what to do")
@@ -112,6 +120,7 @@ struct TutorWritesLoopTests {
         await h.start()
         try await writeAny(h, "3(x - 2) = 12", at: Vec2(200, 120))
         await h.pass(700)
+        trustAll(h)
         h.loop.helpMe()
         await h.pass(100)
         #expect(steps(h) == ["3x - 6 = 12"])
@@ -130,6 +139,7 @@ struct TutorWritesLoopTests {
         await h.start()
         await h.write("5x + 2 = 17", at: Vec2(200, 120))
         await h.pass(700)
+        trustAll(h)
         h.loop.helpMe()
         await h.pass(100)
         let hint = try #require(h.loop.hints.first)
@@ -146,6 +156,7 @@ struct TutorWritesLoopTests {
         await h.write("2x + 3 = 11", at: Vec2(200, 120))
         try await writeAny(h, "2x = 9", at: Vec2(200, 230))
         await h.pass(3_500)
+        trustAll(h)
         #expect(h.board.mark(on: "2x = 9") == .ring)
         let wrong = try #require(h.loop.lines.values.first { $0.latex == "2x = 9" })
         h.loop.escalate(wrong.id)
@@ -192,6 +203,7 @@ struct TutorWritesLoopTests {
         await h.start()
         try await writeAny(h, "\\frac{1}{2} + \\frac{1}{3} =", at: Vec2(200, 120))
         await h.pass(700)
+        trustAll(h)
         h.loop.helpMe()
         await h.pass(100)
         let line = try #require(h.loop.lines.values.first)
@@ -227,6 +239,7 @@ struct TutorWritesLoopTests {
         await h.start()
         let ids = try await writeStack(h, ["286", "+680"], at: Vec2(300, 120))
         await h.pass(700)
+        trustAll(h)
         let line = try #require(h.loop.lines.values.first)
         #expect(h.loop.stackLike(line), "read as a stacked sum: \(line.latex)")
         h.loop.helpMe()
@@ -258,6 +271,7 @@ struct TutorWritesLoopTests {
         await h.start()
         try await writeStack(h, ["46", "\\times 23"], at: Vec2(300, 120))
         await h.pass(700)
+        trustAll(h)
         h.loop.helpMe()
         await h.pass(1_000)
         #expect(!h.board.tutorStrokes(withMeta: "stackPart", "r0").isEmpty, "the first row: \(h.loop.hints.first?.message ?? "-")")
@@ -280,6 +294,127 @@ struct TutorWritesLoopTests {
         #expect(steps(h).isEmpty, "nothing written uninvited")
         h.loop.moreHelp(card)
         await h.pass(100)
+        // the kid's own problem read back first, then the step
+        h.loop.moreHelp(try #require(h.loop.hints.first { $0.action == .readback }))
+        await h.pass(100)
         #expect(steps(h) == ["2x = 8"])
+    }
+
+    // MARK: - the messy-handwriting guard
+
+    @Test func aKidsOwnProblemIsReadBackOnceBeforeTheTutorWritesFromIt() async throws {
+        let h = Harness(mode: .suggest)
+        await h.start()
+        await h.write("2x + 3 = 11", at: Vec2(200, 120))
+        await h.pass(700)
+        h.loop.helpMe()
+        await h.pass(100)
+        let card = try #require(h.loop.hints.first)
+        #expect(card.action == .readback && card.title == "I read" && card.message == "I read: 2x + 3 = 11")
+        #expect(steps(h).isEmpty, "nothing written before the read is confirmed")
+        h.loop.moreHelp(card)
+        await h.pass(100)
+        #expect(steps(h) == ["2x = 8"], "Yes: the step, from the confirmed line")
+        // confirmed once: the next ask needs no readback
+        h.loop.moreHelp(try #require(h.loop.hints.first))
+        await h.pass(100)
+        #expect(h.loop.hints.first?.title == "One step left")
+    }
+
+    @Test func aMisreadProblemIsNeverWorkedFixItAndTheStepIsForTheRealOne() async throws {
+        let h = Harness(mode: .suggest)
+        await h.start()
+        // she wrote 2x + 3 = 11; it was read, with no doubt, as 2x + 3 = 17
+        await h.write("2x + 3 = 11", at: Vec2(200, 120), reads: "2x + 3 = 17")
+        await h.pass(700)
+        h.loop.helpMe()
+        await h.pass(100)
+        let card = try #require(h.loop.hints.first)
+        #expect(card.message == "I read: 2x + 3 = 17")
+        #expect(steps(h).isEmpty, "never 2x = 14")
+        // Fix it: "Fix what I read" opens; she types what she wrote; the step is for that
+        h.loop.cardFirstButton(card)
+        #expect(h.loop.pages.fixing?.id == card.lineId)
+        h.loop.useReading(card.lineId, latex: "2x + 3 = 11")
+        await h.pass(200)
+        #expect(steps(h) == ["2x = 8"])
+    }
+
+    @Test func onTheTutorsProblemALineThatDisagreesIsReadBackNotCorrected() async throws {
+        let h = Harness(mode: .suggest)
+        await h.start()
+        ChatProblemTests().tutorProblem(h, box: Box(x: 200, y: 100, w: 320, h: 60),
+                                        meta: ChatProblemTests.chatMeta(["2x + 3 = 11"], cell: Box(x: 180, y: 80, w: 700, h: 600)))
+        h.loop.problemsChanged()
+        // she wrote 2x = 8; it was read as 2x = 6
+        await h.write("2x = 8", at: Vec2(200, 220), reads: "2x = 6")
+        await h.pass(3_500)
+        let line = try #require(h.loop.lines.values.first { $0.latex == "2x = 6" })
+        h.loop.showNextStep(lineId: line.id)
+        await h.pass(100)
+        #expect(h.loop.hints.first?.action == .readback)
+        #expect(h.loop.hints.first?.message == "I read: 2x = 6")
+        #expect(steps(h).isEmpty, "no correction beside a line that may be misread")
+        // she says it IS 2x = 6: a slip, and the right step goes beside it
+        h.loop.moreHelp(try #require(h.loop.hints.first))
+        await h.pass(100)
+        #expect(steps(h) == ["2x = 8"])
+        // a line that agrees with the problem needs no readback at all
+        let h2 = Harness(mode: .suggest)
+        await h2.start()
+        ChatProblemTests().tutorProblem(h2, box: Box(x: 200, y: 100, w: 320, h: 60),
+                                        meta: ChatProblemTests.chatMeta(["2x + 3 = 11"], cell: Box(x: 180, y: 80, w: 700, h: 600)))
+        h2.loop.problemsChanged()
+        await h2.write("2x = 8", at: Vec2(200, 220))
+        await h2.pass(3_500)
+        h2.loop.settings.answerOnEquals = true
+        h2.loop.showNextStep(answer: true)
+        await h2.pass(100)
+        #expect(steps(h2) == ["x = 4"])
+    }
+
+    @Test func aDoubtfulReadOrADisagreeingSecondOpinionIsReadBackFirst() async throws {
+        for (confidence, second) in [(0.9, nil), (0.995, ("2x = 9", false))] as [(Double, (String, Bool)?)] {
+            let h = Harness(mode: .suggest)
+            await h.start()
+            ChatProblemTests().tutorProblem(h, box: Box(x: 200, y: 100, w: 320, h: 60),
+                                            meta: ChatProblemTests.chatMeta(["2x + 3 = 11"], cell: Box(x: 180, y: 80, w: 700, h: 600)))
+            h.loop.problemsChanged()
+            await h.write("2x = 8", at: Vec2(200, 220), confidence: confidence, second: second.map { (latex: $0.0, agree: $0.1) })
+            await h.pass(3_500)
+            let line = try #require(h.loop.lines.values.first { $0.latex == "2x = 8" })
+            h.loop.showNextStep(lineId: line.id)
+            await h.pass(100)
+            #expect(h.loop.hints.first?.action == .readback, "confidence \(confidence), second \(String(describing: second))")
+            #expect(steps(h).isEmpty)
+        }
+    }
+
+    @Test func aStackedSumIsHeldToTheProblemAndToItsInk() async throws {
+        // the tutor's problem is 286 + 680; the rows were read 286 + 600
+        let h = Harness(mode: .suggest)
+        await h.start()
+        ChatProblemTests().tutorProblem(h, box: Box(x: 300, y: 40, w: 200, h: 40),
+                                        meta: ChatProblemTests.chatMeta(["286 + 680"], cell: Box(x: 180, y: 20, w: 700, h: 600)))
+        h.loop.problemsChanged()
+        let ids = try await writeStack(h, ["286", "+680"], at: Vec2(300, 120))
+        await h.register(ids, reads: "\\begin{array}{r} 286 \\\\ +600 \\\\ \\hline \\end{array}")
+        await h.pass(700)
+        h.loop.helpMe()
+        await h.pass(300)
+        #expect(h.loop.hints.first?.action == .readback, "\(h.loop.hints.first?.message ?? "-")")
+        #expect(h.loop.hints.first?.message == "I read: 286 − 600" || h.loop.hints.first?.message == "I read: 286 + 600")
+        #expect(h.board.tutorStrokes(withMeta: "stackPart").isEmpty)
+        // a carry merged into the top row (read 1286 over three digits of ink): words only
+        let h2 = Harness(mode: .suggest)
+        await h2.start()
+        let ids2 = try await writeStack(h2, ["286", "+680"], at: Vec2(300, 120))
+        await h2.register(ids2, reads: "\\begin{array}{r} 1286 \\\\ +680 \\\\ \\hline \\end{array}")
+        await h2.pass(700)
+        trustAll(h2)
+        h2.loop.helpMe()
+        await h2.pass(300)
+        #expect(h2.board.tutorStrokes(withMeta: "stackPart").isEmpty, "no digits")
+        #expect(h2.loop.hints.first?.title == "Let's look together")
     }
 }

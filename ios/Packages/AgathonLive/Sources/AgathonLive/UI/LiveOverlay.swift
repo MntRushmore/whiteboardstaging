@@ -130,7 +130,7 @@ public struct LiveOverlay: View {
         let width = min(380, max(260, size.width - 32))
         let x = min(max(16, below.x - 12), size.width - width - 16)
         let roomBelow = size.height - below.y > 260
-        HintCardView(card: h, pointsUp: roomBelow, onGotIt: { loop.dismissHint(h.id) }, onMore: { loop.moreHelp(h) }, onSpeak: onSpeak)
+        HintCardView(card: h, pointsUp: roomBelow, onGotIt: { loop.cardFirstButton(h) }, onMore: { loop.moreHelp(h) }, onSpeak: onSpeak)
             .frame(width: width)
             .alignmentGuide(.leading) { _ in -x }
             .alignmentGuide(.top) { d in roomBelow ? -(below.y + 14) : -(above.y - 14 - d.height) }
@@ -336,6 +336,7 @@ public struct HintCardView: View {
         case .more, .offer: return LiveCopy.Hint.moreHelp
         case .next: return LiveCopy.Writes.nextStep
         case .answer: return LiveCopy.Writes.showAnswer
+        case .readback: return LiveCopy.Reading.yesRight
         case .none: return nil
         }
     }
@@ -364,7 +365,8 @@ public struct HintCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: DS.Space.xs) {
-                CardButton(card.action == .offer ? LiveCopy.Writes.notNow : LiveCopy.Hint.gotIt, fill: DS.Color.paper, text: DS.Color.ink, action: onGotIt)
+                CardButton(card.action == .offer ? LiveCopy.Writes.notNow : card.action == .readback ? LiveCopy.Writes.fixIt : LiveCopy.Hint.gotIt,
+                           fill: DS.Color.paper, text: DS.Color.ink, action: onGotIt)
                     .accessibilityIdentifier("live.hint.gotIt")
                 if let more = moreTitle {
                     CardButton(more, fill: DS.Color.cobaltDeep, text: DS.Color.onInk, action: onMore)

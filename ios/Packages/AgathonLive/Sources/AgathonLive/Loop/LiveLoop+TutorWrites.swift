@@ -82,6 +82,19 @@ extension LiveLoop {
         var line: LiveLine?
         /// where the `=` of a tutor's step is (page x), remembered on its strokes
         var equalsX: Double?
+        /// how far it is trusted as read (the messy-handwriting guard); the tutor's own steps are `tutor`
+        var trust: TutorStep.Trust = .tutor
+    }
+
+    /// How far a kid's line is trusted as read: confirmed (they said so, or typed it), unsure (the
+    /// tutor would ask "Is this right?": a low-confidence read, the second opinion disagreeing, a
+    /// look-alike letter, an unread line), else sure.
+    func readTrust(_ st: LiveLine) -> TutorStep.Trust {
+        switch readingState(st) {
+        case .fixed: return .confirmed
+        case .asking, .unread: return .unsure
+        default: return .sure
+        }
     }
 
     /// The tutor's step strokes on this screen, by step (`TutorWrites.stepId`).
@@ -109,7 +122,7 @@ extension LiveLoop {
         var entries: [WorkEntry] = []
         if let column, let target {
             for st in columnLines(column) where !st.latex.isEmpty && st.analysis?.kind != "operation" && st.row <= target.row {
-                entries.append(WorkEntry(latex: st.latex, rect: st.bounds, line: st))
+                entries.append(WorkEntry(latex: st.latex, rect: st.bounds, line: st, trust: readTrust(st)))
             }
         }
         // the column's stretch of the page: its lines and its problem
@@ -136,7 +149,9 @@ extension LiveLoop {
             return
         }
         let snapshot = entries.map(\.latex)
-        guard let r = try? await brain.tutorStep(problem: problem, work: snapshot, answer: answer),
+        // the messy-handwriting guard: how far each line is trusted as read, and whether the problem is known
+        guard let r = try? await brain.tutorStep(problem: problem, work: snapshot, answer: answer, trust: entries.map(\.trust),
+                                                 known: beforeWritingSteps != nil),
               gen == generation, workEntries(target).entries.map(\.latex) == snapshot else { return }
         let anchor = entries.last?.rect ?? head?.rect ?? board.screenRect
         let anchorId = target?.id ?? head.map { "work:\($0.id.key)" } ?? "work"
@@ -148,6 +163,14 @@ extension LiveLoop {
             openStepCard(anchorId, anchor: anchor, title: LiveCopy.Writes.lastStepTitle, message: r.why,
                          action: answersAllowed ? .answer : .none)
             if let target { tracker.helped(problem: problemKey(for: target), solved: false) }
+        case .readback:
+            // a line the step would rest on may be misread: "I read: … Is that right?" first
+            let i = (r.readback ?? -1) - problem.count
+            if i >= 0, i < entries.count, let line = entries[i].line {
+                openReadback(line, reading: MathText.plain(line.latex), target: target, answer: answer)
+            } else {
+                openStepCard(anchorId, anchor: anchor, title: LiveCopy.Writes.unsureTitle, message: LiveCopy.Writes.unsure, action: .none)
+            }
         case .solved:
             say(LiveCopy.Writes.solved)
         case .nothing:
@@ -340,7 +363,8 @@ extension LiveLoop {
         }
         func ask(_ parts: [String]) async -> StackStep? {
             try? await brain.stackStep(latex: target.latex, confidence: target.confidence, stack: stack, tutor: parts, answer: answer,
-                                       inkBottom: target.bounds.maxY, zoom: board.fitZoom, lineId: target.id)
+                                       inkBottom: target.bounds.maxY, zoom: board.fitZoom, lineId: target.id, trust: readTrust(target),
+                                       problem: head(for: target.column)?.lines ?? [], known: beforeWritingSteps != nil)
         }
         guard var r = await ask(Array(Set(mine.map(\.part)))), gen == generation, lines[target.id]?.latex == target.latex else { return }
         // the sum was rewritten: the digits the tutor wrote for the old one go
@@ -366,6 +390,8 @@ extension LiveLoop {
             openStepCard(target.id, anchor: target.bounds, title: LiveCopy.Writes.lastStepTitle, message: r.why, action: answersAllowed ? .answer : .none)
         case .hint:
             openStepCard(target.id, anchor: target.bounds, title: LiveCopy.Hint.level(1), message: r.why, action: .none)
+        case .readback:
+            openReadback(target, reading: r.reading ?? MathText.plain(target.latex), target: target, answer: answer)
         case .solved:
             say(LiveCopy.Writes.solved)
         case .unsure, .nothing:
@@ -409,6 +435,34 @@ extension LiveLoop {
         guard !message.isEmpty else { return }
         hints = [HintCard(id: "\(lineId):write:\(message.hashValue)", lineId: lineId, anchor: anchor, title: title, message: message,
                           question: nil, level: 3, action: action)]
+    }
+
+    // MARK: - the readback (the messy-handwriting guard)
+
+    /// "I read: 2x + 3 = 17. Is that right?" on the line the step would rest on, before anything is
+    /// written: Yes trusts the read and the tutor writes; Fix it opens "Fix what I read", and the step
+    /// is written from the fixed line.
+    func openReadback(_ line: LiveLine, reading: String, target: LiveLine?, answer: Bool) {
+        pendingShowMe = (line.id, target?.id, answer)
+        hints = [HintCard(id: "\(line.id):readback", lineId: line.id, anchor: line.bounds, title: LiveCopy.Reading.iRead,
+                          message: LiveCopy.Writes.readback(reading), question: LiveCopy.Writes.readbackQuestion, level: 1, action: .readback)]
+    }
+
+    /// The card's first button: Got it — or, on a readback, Fix it (the tutor waits for the fix).
+    public func cardFirstButton(_ card: HintCard) {
+        guard card.action == .readback else {
+            dismissHint(card.id)
+            return
+        }
+        hints.removeAll { $0.id == card.id }
+        openFix(card.lineId)
+    }
+
+    /// The kid confirmed or fixed the line the tutor read back: it writes its step now.
+    func resumeShowMe(after lineId: String) {
+        guard let p = pendingShowMe, p.readback == lineId else { return }
+        pendingShowMe = nil
+        showNextStep(lineId: p.lineId.flatMap { lines[$0] != nil ? $0 : nil } ?? lineId, answer: p.answer)
     }
 
     // MARK: - the offer after a long stall
@@ -472,6 +526,8 @@ public enum HintAction: Equatable, Sendable {
     case offer
     /// only Got it
     case none
+    /// "I read: … Is that right?" before the tutor writes: Fix it, or Yes, that's right
+    case readback
 }
 
 extension LiveCopy {
@@ -491,6 +547,9 @@ extension LiveCopy {
         public static let lastStepPlain = "Just one step left. You can do this one."
         public static let solved = "That one's finished. Nice work."
         public static let unsure = "I'm not sure of the next step here, so I won't guess. Try a hint, or ask me in Ask."
+        public static let fixIt = "Fix it"
+        public static func readback(_ plain: String) -> String { "I read: \(plain)" }
+        public static let readbackQuestion = "Is that right? Then I'll write the next step."
         public static let unsureColumns = "I can't line up these columns for sure, so I won't guess. Write the numbers one under the other, then ask again."
     }
 }

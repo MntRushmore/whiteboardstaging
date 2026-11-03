@@ -169,6 +169,8 @@ extension LiveLoop {
         switch card.action {
         case .more where lines[card.lineId] != nil: escalate(card.lineId)
         case .answer: showNextStep(lineId: lines[card.lineId] != nil ? card.lineId : nil, answer: true)
+        // "I read: … Is that right?" — Yes: the read is trusted, and the tutor writes its step
+        case .readback: confirmReading(card.lineId)
         case .none: return
         default: showNextStep(lineId: lines[card.lineId] != nil ? card.lineId : nil)
         }

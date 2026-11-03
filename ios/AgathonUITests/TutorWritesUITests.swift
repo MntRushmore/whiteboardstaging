@@ -3,7 +3,7 @@ import XCTest
 /// "The tutor writes it out" on the real Blocks board (docs/TUTOR-WRITES.md), in the Tutor Writes Lab:
 /// the kid's work in a synthetic hand, read back by a stand-in reader — no server, no sign-in, no ink
 /// spent, no real kid's writing. Each scenario: the work is written, the kid taps Help me (Next step),
-/// and the tutor's pen writes one step in cobalt while the frames are taken; then Next step on its
+/// says Yes to "I read: … Is that right?", and the tutor's pen writes one step in cobalt while the frames are taken; then Next step on its
 /// card, until the answer is all that is left (held back: "One step left").
 ///
 ///     xcodebuild test … -only-testing:AgathonUITests/TutorWritesUITests -parallel-testing-enabled NO \
@@ -86,6 +86,18 @@ final class TutorWritesUITests: XCTestCase {
     /// Help me, then frames while the tutor's pen writes (the pen should start within a second).
     private func tapHelpMeAndFilm(_ name: String) {
         tap("live.helpMe")
+        // the messy-handwriting guard: the kid's own problem (and a line that disagrees with it) is read
+        // back first — "I read: … Is that right?" — and Yes lets the tutor write
+        var n = 0
+        while n < 3 {
+            let probe = element("tutorWrites.probe")
+            let deadline = Date().addingTimeInterval(n == 0 ? 4 : 0.5)
+            while Date() < deadline && !probe.label.contains("card I read:") { Thread.sleep(forTimeInterval: 0.2) }
+            guard probe.label.contains("card I read:") else { break }
+            n += 1
+            snap("\(name)-readback-\(n)")
+            tap("live.hint.more")
+        }
         for (i, wait) in [0.35, 0.45, 0.6, 0.9].enumerated() {
             Thread.sleep(forTimeInterval: wait)
             snap("\(name)-pen-\(i + 1)", settle: false)
