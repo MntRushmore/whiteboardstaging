@@ -45,7 +45,7 @@ private struct LabsButton: ViewModifier {
 }
 
 private enum Lab: String, CaseIterable, Identifiable {
-    case board, editor, brain, design, live, ask, billing, debugScreens, onboarding, training, picture, pictureSettings, macScreen, admin
+    case board, editor, brain, design, live, tutorWrites, ask, billing, debugScreens, onboarding, training, picture, pictureSettings, macScreen, admin
 
     var id: String { rawValue }
 
@@ -63,6 +63,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .brain: return "Brain Lab (maths engine timings)"
         case .design: return "Design Gallery (the Blocks look)"
         case .live: return "Live Lab (the tutor on the board)"
+        case .tutorWrites: return "Tutor writes it out (no server)"
         case .ask: return "Ask Lab (the chat beside the board)"
         case .debugScreens: return "Old debug screens (kit lane)"
         case .billing: return "Billing Lab (StoreKit test purchases)"
@@ -82,6 +83,7 @@ private enum Lab: String, CaseIterable, Identifiable {
         case .brain: return "function"
         case .design: return "paintpalette"
         case .live: return "checkmark.bubble"
+        case .tutorWrites: return "pencil.line"
         case .ask: return "bubble.left.and.text.bubble.right"
         case .debugScreens: return "ladybug"
         case .billing: return "creditcard"
@@ -107,6 +109,7 @@ private struct LabScreen: View {
             case .brain: BrainLabView()
             case .design: DesignGallery()
             case .live: LiveLabView()
+            case .tutorWrites: TutorWritesLabView()
             case .ask: AskLabView()
             case .debugScreens: DebugScreens()
             case .billing: BillingLabView()
