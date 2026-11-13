@@ -234,6 +234,7 @@ private struct BoardTopTrailing: View {
             // and went, and a UI test's tap could land on the board between them (a finger's dot of ink)
             BoardAutowriteButton(model: model)
             KidSessionControls(model: model)
+            MacDriveRunner(model: model)
             #endif
         }
     }
@@ -303,7 +304,8 @@ private struct BoardTopTrailing: View {
 extension BoardTopTrailing {
     /// Opens the Mac screen panel (a window shared from a computer, live beside the board).
     @ViewBuilder func macButton(words: Bool) -> some View {
-        if !model.macOpen {
+        // running on a Mac (the iPad app on Apple silicon): the board is already on the computer
+        if !model.macOpen && !ProcessInfo.processInfo.isiOSAppOnMac {
             Group {
                 if words {
                     PillButton(MacScreenCopy.open, icon: .laptop, kind: .secondary) { model.macOpen = true }

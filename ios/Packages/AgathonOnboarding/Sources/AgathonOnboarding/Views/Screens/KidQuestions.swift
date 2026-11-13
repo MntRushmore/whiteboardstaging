@@ -43,8 +43,11 @@ struct HelloScreen: View {
                 HStack(spacing: 20) { cards }
             }
 
-            satChoice(c)
-                .reveal(3)
+            // no account needs App Attest, which an iPad app on a Mac doesn't have: a Mac signs in for SAT
+            if !ProcessInfo.processInfo.isiOSAppOnMac {
+                satChoice(c)
+                    .reveal(3)
+            }
 
             Button { model.openSignIn(from: .hello) } label: {
                 Text(c.signIn).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)

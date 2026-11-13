@@ -29,6 +29,7 @@ struct AgathonApp: App {
             .billingScreenOnLaunch() // `-billingScreen …` (Debug): ios/Agathon/Debug/BillingLabView.swift
             .debugWindow() // `-windowWidth 507` (Debug): a Split View-sized window, ios/Agathon/Debug/DebugWindow.swift
             #endif
+            .macWindowMinimum() // the iPad app on a Mac: a window never too small for the board and Ask
             .environment(backend)
             .environment(planStore)
             .task {

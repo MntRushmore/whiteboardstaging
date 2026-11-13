@@ -311,9 +311,12 @@ final class TryBoard {
     private func cantCheck(cannotAttest: Bool = false) {
         phase = .cantCheck
         if cannotAttest {
-            message = Message(kind: .paused, title: "The tutor can’t read writing on this iPad yet.",
-                              detail: "Type your answer instead, or tap Next.")
-            announce("The tutor can’t read writing on this iPad yet. Type your answer instead, or tap Next.")
+            // an iPad app on a Mac has no App Attest either
+            let title = ProcessInfo.processInfo.isiOSAppOnMac
+                ? "The tutor reads writing here once you have an account."
+                : "The tutor can’t read writing on this iPad yet."
+            message = Message(kind: .paused, title: title, detail: "Type your answer instead, or tap Next.")
+            announce("\(title) Type your answer instead, or tap Next.")
             return
         }
         message = Message(kind: .paused, title: "The tutor can’t check right now.", detail: "Tap Next to keep going.")
