@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The demo reel: finished clips in order (each opens on its own title card), then an Agathon end card.
 
-    demo-reel.py <out.mp4> <clip.mp4>…
+    demo-reel.py [--open "Opening title"] <out.mp4> <clip.mp4>…
 """
 import os, subprocess, sys, tempfile
 
@@ -25,12 +25,31 @@ def end_card(path):
     img.save(path)
 
 
+def open_card(text, path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cut", os.path.join(ROOT, "scripts/demo-picture-cut.py"))
+    cut = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cut)
+    cut.title_card(text).save(path)
+
+
 def main():
-    out, clips = sys.argv[1], sys.argv[2:]
+    args = sys.argv[1:]
+    opening = None
+    if args[0] == "--open":
+        opening, args = args[1], args[2:]
+    out, clips = args[0], args[1:]
     work = tempfile.mkdtemp(prefix="reel-")
     card = os.path.join(work, "end.png")
     end_card(card)
     inputs, chains = [], []
+    if opening:
+        first = os.path.join(work, "open.mp4")
+        open_png = os.path.join(work, "open.png")
+        open_card(opening, open_png)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-t", "2.5", "-framerate", "30", "-i", open_png, "-c:v", "libx264",
+                        "-pix_fmt", "yuv420p", first], check=True)
+        clips = [first] + clips
     for i, c in enumerate(clips):
         inputs += ["-i", c]
         chains.append(f"[{i}:v]fps=30,scale=1920:1080,setsar=1,format=yuv420p[v{i}]")

@@ -51,6 +51,24 @@ def title_card(text):
     return img
 
 
+def label_chip(text):
+    """A small Ink pill with the segment's grade and topic (the showcase's on-screen label)."""
+    from PIL import Image, ImageDraw, ImageFont
+    f = ImageFont.truetype(FONT, 30)
+    try:
+        f.set_variation_by_axes([24, 650, 100])
+    except Exception:
+        pass
+    probe = ImageDraw.Draw(Image.new("L", (1, 1)))
+    b = probe.textbbox((0, 0), text, font=f)
+    w, h = b[2] - b[0] + 44, 56
+    chip = Image.new("RGB", (w, h), INK)
+    ImageDraw.Draw(chip).text((22 - b[0], (h - (b[3] - b[1])) / 2 - b[1]), text, font=f, fill=PAPER)
+    mask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=h // 2, fill=255)
+    return chip, mask
+
+
 def page_rect(raw, at):
     """The board's white page in the screen (px): found in one frame, the page being pure white."""
     from PIL import Image
@@ -90,6 +108,8 @@ def main():
     title = title or script.get("title") or cid
     # each step's start, read off the player's corner square in the recording (PictureDemoSync)
     starts, end = sync_times(raw)
+    # the player's last step (a pause of a few seconds at most), not a wallpaper that looks like the square
+    end = min(end, max(starts.values()) + 3.0)
     M = {}
     steps = script["steps"]
     for i, st in enumerate(steps):
@@ -99,6 +119,14 @@ def main():
             # press), however long the player then waited to hear it was done
             if i > 0 and "tap" in steps[i - 1] and (i - 1) in starts:
                 M[st["mark"]] = min(starts[i], starts[i - 1] + 1.0)
+    # the writing began before the square was seen (the pen held the main thread): back from "written"
+    # to the last quiet second and a half
+    derived = False
+    if "written" in M and M["written"] - M.get("write", 0) < 1.0:
+        M["write"] = writing_start(raw, M["written"]) + 0.8
+        derived = True
+    if "--write-at" in sys.argv:
+        M["write"] = float(sys.argv[sys.argv.index("--write-at") + 1])
     # --end-at <mark>: the clip ends there (a take whose later part is not kept)
     if "--end-at" in sys.argv:
         name = sys.argv[sys.argv.index("--end-at") + 1]
@@ -137,13 +165,19 @@ def main():
         if b > a:
             spans.append((a, b, speed))
 
-    add(start, M["written"], 2.2)
-    add(M["written"], M["drawNow"], 1.0)
-    add(M["drawNow"], M["ghost"], 1.3)
-    add(M["ghost"], min(end, M["accept"] + 1.2), 1.0)
+    add(start, M["written"], 2.6)
+    # the kid reaching for Draw now (nothing on the board moves): brisk
+    add(M["written"], M["drawNow"], 3.0)
+    # the tutor reading (its pen moving over the work) quicker; the picture being drawn on at real speed
+    reveal = max(M["drawNow"], M["ghost"] - 4.5)
+    add(M["drawNow"], reveal, 2.4)
+    add(reveal, M["ghost"], 1.0)
+    # the picture waiting as a ghost, then Accept
+    add(M["ghost"], M["accept"], 1.8)
+    add(M["accept"], min(end, M["accept"] + 1.2), 1.0)
     add(M["accept"] + 1.2, M.get("answer", end), 1.0 if "answer" not in M else 1.4)
     if "answer" in M:
-        add(M["answer"], M["answered"], 2.0)
+        add(M["answer"], M["answered"], 2.4)
         if "tick" in M:
             add(M["answered"], M["tick"], 1.5)
             add(M["tick"], min(end, M["tick"] + 2.6), 1.0)
@@ -183,7 +217,9 @@ def main():
     keys = [(start, full), (M["write"] + 0.4, fit(problem, cap=1.45)), (M["written"] + 0.2, fit(problem, cap=1.45)),
             (M["drawNow"] + 0.6, full)]
     if picture:
-        keys += [(M["ghost"] - 1.5, full), (M["ghost"] + 0.6, fit(picture, pad=1.25, cap=1.6)), (M["accept"] + 1.0, fit(picture, pad=1.25, cap=1.6))]
+        # the picture with the question it answers
+        pq = (min(picture[0], problem[0]), min(picture[1], problem[1]), max(picture[2], problem[2]), max(picture[3], problem[3]))
+        keys += [(M["ghost"] - 1.5, full), (M["ghost"] + 0.6, fit(pq, pad=1.12, cap=1.5)), (M["accept"] + 1.0, fit(pq, pad=1.12, cap=1.5))]
     if "answer" in M and len(boxes) > 1:
         ans = boxes[-1]
         for b in boxes[nprob:]:
@@ -211,13 +247,17 @@ def main():
     dec = subprocess.Popen(["ffmpeg", "-v", "error", "-ss", f"{start:.3f}", "-to", f"{times[-1] + 0.2:.3f}", "-i", raw,
                             "-vf", f"fps={FPS},transpose=2,scale={SW}:{SH}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
                            stdout=subprocess.PIPE)
-    final = os.path.join(out, f"{cid}.mp4")
+    seg = "--no-card" in sys.argv
+    final = os.path.join(out, "segments", f"{cid}.mp4") if seg else os.path.join(out, f"{cid}.mp4")
+    os.makedirs(os.path.dirname(final), exist_ok=True)
     enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OW}x{OH}", "-r", str(FPS), "-i", "-",
                             "-c:v", "libx264", "-crf", "17", "-preset", "medium", "-pix_fmt", "yuv420p", "-movflags", "+faststart", final],
                            stdin=subprocess.PIPE)
-    card = title_card(title)
-    for _ in range(int(2.2 * FPS)):
-        enc.stdin.write(card.tobytes())
+    if "--no-card" not in sys.argv:
+        card = title_card(title)
+        for _ in range(int(2.2 * FPS)):
+            enc.stdin.write(card.tobytes())
+    label = label_chip(sys.argv[sys.argv.index("--label") + 1]) if "--label" in sys.argv else None
     n = SW * SH * 3
     src_i = -1
     frame = None
@@ -256,12 +296,14 @@ def main():
         mask = Image.new("L", part.size, 0)
         ImageDraw.Draw(mask).rounded_rectangle([ox - vx0, oy - vy0, ox - vx0 + SW * s, oy - vy0 + SH * s], radius=34 * s / BASE * 0.58 * 1.0, fill=255)
         img.paste(part, (int(round(vx0)), int(round(vy0))), mask)
+        if label:
+            img.paste(label[0], (36, 30), label[1])
         enc.stdin.write(img.tobytes())
     enc.stdin.close()
     enc.wait()
     dec.kill()
     dur = float(sh(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", final]).strip())
-    frames = os.path.join(out, "frames", cid)
+    frames = os.path.join(out, "frames", cid + ("-seg" if seg else ""))
     os.makedirs(frames, exist_ok=True)
     for f in os.listdir(frames):
         os.unlink(os.path.join(frames, f))
@@ -285,8 +327,19 @@ def sync_times(raw):
         r, g, b = (sum(buf[c::3]) / 36 for c in range(3))
         t = n / FPS
         n += 1
-        ok = abs(b - 89) < 20 and (g < 30 or abs(g - 120) < 30) and abs(r - 6 * round(r / 6)) < 2.6
-        seen.append((t, int(round(r / 6)) if ok else None))
+        ok = abs(b - 89) < 14 and (g < 30 or abs(g - 120) < 30)
+        seen.append((t, r if ok else None, g > 60))
+    # the recording's colours sit a few levels off what was drawn (its colour space): the offset that
+    # puts the reds nearest multiples of 6
+    # the square flickers green (the ticker): a still corner that happens to be the right blue is not it
+    flick = [False] * len(seen)
+    for i in range(len(seen)):
+        win = [x[2] for x in seen[max(0, i - 15):i + 15] if x[1] is not None]
+        flick[i] = sum(1 for a, b in zip(win, win[1:]) if a != b) >= 3
+    seen = [(t, r if (r is not None and flick[i]) else None) for i, (t, r, _) in enumerate(seen)]
+    reds = [r for _, r in seen if r is not None]
+    off = min((o / 2 for o in range(-10, 11)), key=lambda o: sum(abs((r + o) / 6 - round((r + o) / 6)) for r in reds)) if reds else 0
+    seen = [(t, None if r is None or abs((r + off) / 6 - round((r + off) / 6)) > 0.36 else int(round((r + off) / 6))) for t, r in seen]
     starts, last, best, run = {}, 0.0, -1, 0
     live = False
     for i, (t, idx) in enumerate(seen):
@@ -326,6 +379,34 @@ def changed_box(raw, a, b, page):
     if not bb:
         return None
     return (box[0] + bb[0], box[1] + bb[1], box[0] + bb[2], box[1] + bb[3])
+
+
+def writing_start(raw, written):
+    """Where the kid's writing that ends at `written` began: the start of the run of screen activity
+    (gaps under 0.8 s joined) that reaches it."""
+    import re, tempfile
+    a = max(0.0, written - 40)
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as t:
+        stats = t.name
+    vf = ("fps=10,transpose=2,crop=2000:1100:200:250,scale=500:-2,format=gray,tblend=all_mode=difference,lutyuv=y='if(gt(val,24),255,0)',"
+          f"signalstats,metadata=print:key=lavfi.signalstats.YAVG:file={stats}")
+    subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{a:.2f}", "-to", f"{written:.2f}", "-i", raw, "-vf", vf, "-f", "null", "-"], check=True)
+    t, active = None, []
+    for line in open(stats):
+        m = re.search(r"pts_time:([\d.]+)", line)
+        if m:
+            t = float(m.group(1))
+        m = re.search(r"YAVG=([\d.]+)", line)
+        if m and t is not None and float(m.group(1)) > 0.004:
+            active.append(a + t)
+    os.unlink(stats)
+    runs = []
+    for x in active:
+        if runs and x - runs[-1][1] <= 0.5:
+            runs[-1][1] = x
+        else:
+            runs.append([x, x])
+    return runs[-1][0] if runs else a
 
 
 def activity(raw, start, end):

@@ -106,9 +106,13 @@ final class PictureDemoSync: NSObject {
         link?.add(to: .main, forMode: .common)
     }
 
+    private var shown = -1
+
     @objc private func tick() {
-        if paused { return }
-        odd.toggle()
+        // while the UI test presses a button, only a new step changes the square (it waits for an idle app)
+        if paused && step == shown { return }
+        if !paused { odd.toggle() }
+        shown = step
         square.backgroundColor = UIColor(red: CGFloat(min(255, step * 6)) / 255, green: odd ? 0.47 : 0, blue: 0.35, alpha: 1)
         square.superview?.bringSubviewToFront(square)
     }
