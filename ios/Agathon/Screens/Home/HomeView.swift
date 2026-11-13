@@ -110,7 +110,9 @@ struct HomeView: View {
             // `-macDrive` (Debug/MacDrive.swift): straight onto the first board, a new one if there is none
             if MacDrive.steps != nil, !MacDrive.openedBoard {
                 MacDrive.openedBoard = true
-                if let board = model.boards.first {
+                let gone = await MacDrive.cleanUp(model.boards, backend: backend)
+                if !gone.isEmpty { await model.load(backend) }
+                if !MacDrive.newBoard, let board = model.boards.first {
                     openBoard = OpenBoard(board: board, audience: model.audience)
                 } else if let board = await model.create(backend, title: "Mac check") {
                     openBoard = OpenBoard(board: board, audience: model.audience)

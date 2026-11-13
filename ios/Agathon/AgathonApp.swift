@@ -35,6 +35,9 @@ struct AgathonApp: App {
             .task {
                 backend.auth.start()
                 planStore.start()
+                #if DEBUG
+                await MacDrive.signInIfAsked(backend) // `-macSignIn` (Debug/MacDrive.swift)
+                #endif
             }
             // A new account (sign-in, a family switch): its plan, and any transaction left unrecorded.
             .task(id: backend.auth.userId) {

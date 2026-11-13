@@ -1,5 +1,6 @@
 #if DEBUG
 import AgathonBoard
+import AgathonKit
 import AgathonLive
 import SwiftUI
 
@@ -11,7 +12,10 @@ import SwiftUI
 ///  - `stroke:x,y x,y …` a stroke in page units through the canvas's touch path, as a mouse would
 ///    (`pencil: false`, the pointer's even pressure);
 ///  - `check` / `help`: the page's Check and Help me; `ask:…` opens Ask and sends it as typed;
-///  - `closeAsk`; `wait:<seconds>`.
+///  - `closeAsk`; `wait:<seconds>`;
+///  - the picture tutor (with `-pictureTutor.enabled YES`, an admin): `drawNow`, then `accept` or `reject`.
+/// `-macSignIn <email>` signs in first, with the password in the MACDRIVE_PASSWORD environment variable
+/// (never an argument: arguments show in `ps`).
 /// Never in a Release build.
 @MainActor
 enum MacDrive {
@@ -23,15 +27,57 @@ enum MacDrive {
     }
 
     static var openedBoard = false
+
+    /// `-macSignIn <email>` with MACDRIVE_PASSWORD: signs in when signed out.
+    static func signInIfAsked(_ backend: AgathonBackend) async {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-macSignIn"), i + 1 < args.count,
+              let password = ProcessInfo.processInfo.environment["MACDRIVE_PASSWORD"], !password.isEmpty,
+              backend.auth.phase != .signedIn else { return }
+        do {
+            try await backend.auth.signIn(email: args[i + 1], password: password)
+            note("signed in")
+        } catch {
+            note("sign-in failed")
+        }
+    }
     static var played = false
 
-    static func play(_ model: BoardScreenModel) async {
+    /// `-macDriveNewBoard`: a new board ("Mac check") rather than the first one (a shared QA account's
+    /// boards stay as they are); `deleteBoard` as the last step removes it.
+    static var newBoard: Bool { ProcessInfo.processInfo.arguments.contains("-macDriveNewBoard") }
+
+    /// Each step and what came of it, in the app's tmp folder (`macdrive.log`): the Mac's unified log
+    /// isn't always readable from a terminal.
+    static func note(_ line: String) {
+        BoardScreenModel.log.notice("macDrive: \(line, privacy: .public)")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("macdrive.log")
+        let text = "\(Date().formatted(.iso8601)) \(line)\n"
+        if let h = try? FileHandle(forWritingTo: url) {
+            h.seekToEndOfFile(); h.write(Data(text.utf8)); try? h.close()
+        } else {
+            try? Data(text.utf8).write(to: url)
+        }
+    }
+
+    /// `-macDriveCleanup`: Home deletes this account's boards called "Mac check" (an earlier run's).
+    static func cleanUp(_ boards: [BoardSummary], backend: AgathonBackend) async -> Set<String> {
+        guard ProcessInfo.processInfo.arguments.contains("-macDriveCleanup") else { return [] }
+        var gone: Set<String> = []
+        for b in boards where b.title == "Mac check" {
+            if (try? await backend.boards.delete(id: b.id)) != nil { gone.insert(b.id) }
+        }
+        note("cleanup: deleted \(gone.count) Mac check board(s)")
+        return gone
+    }
+
+    static func play(_ model: BoardScreenModel, backend: AgathonBackend) async {
         guard let steps, !played, let tutor = model.tutor, let canvas = tutor.liveBoard.canvas else { return }
         played = true
         try? await Task.sleep(for: .seconds(2))
         for step in steps {
             let (verb, arg) = split(step)
-            BoardScreenModel.log.notice("macDrive: \(step, privacy: .public)")
+            note("step \(step) (picture: \(model.picture.map { "\($0.phase)" } ?? "none"), shown: \(model.picture?.shown.map { "\($0.state)" } ?? "none"))")
             switch verb {
             case "stroke":
                 let pts: [CGPoint] = arg.split(separator: " ").compactMap { pair in
@@ -52,11 +98,22 @@ enum MacDrive {
                 try? await Task.sleep(for: .milliseconds(600))
                 tutor.ask.session.send(arg)
             case "closeAsk": model.askOpen = false
+            case "drawNow": model.picture?.drawNow()
+            case "accept": model.picture?.accept()
+            case "reject": model.picture?.reject()
+            case "deleteBoard":
+                guard let id = model.request?.board.id else { break }
+                do {
+                    _ = try await backend.boards.delete(id: id)
+                    note("board deleted")
+                } catch {
+                    note("board delete failed")
+                }
             case "wait": try? await Task.sleep(for: .seconds(Double(arg) ?? 1))
             default: BoardScreenModel.log.error("macDrive: unknown step \(step, privacy: .public)")
             }
         }
-        BoardScreenModel.log.notice("macDrive: done")
+        note("done (shown: \(model.picture?.shown.map { "\($0.state)" } ?? "none"), images: \(tutor.liveBoard.controller.store.drawables(on: tutor.liveBoard.controller.currentScreenID).filter { if case .image = $0 { return true } else { return false } }.count))")
     }
 
     private static func split(_ step: String) -> (String, String) {
@@ -77,11 +134,21 @@ enum MacDrive {
 
 /// Plays `-macDrive` once the board's tutor is up.
 struct MacDriveRunner: View {
+    @Environment(AgathonBackend.self) private var backend
     @ObservedObject var model: BoardScreenModel
 
     var body: some View {
+        // not `.task`: the bar this sits in is laid out again as the picture tutor's chrome comes and
+        // goes, which would cancel the script's waits
         Color.clear.frame(width: 0, height: 0)
-            .task(id: model.tutor != nil) { await MacDrive.play(model) }
+            .onAppear { start() }
+            .onChange(of: model.tutor != nil) { _, _ in start() }
+    }
+
+    private func start() {
+        guard model.tutor != nil, !MacDrive.played else { return }
+        let model = model, backend = backend
+        Task { @MainActor in await MacDrive.play(model, backend: backend) }
     }
 }
 #endif
