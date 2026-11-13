@@ -140,8 +140,8 @@ def main():
     os.makedirs(frames, exist_ok=True)
     for f in os.listdir(frames):
         os.unlink(os.path.join(frames, f))
-    run(["ffmpeg", "-v", "error", "-y", "-i", final, "-vf", "fps=1,scale=1210:-2", os.path.join(frames, "%03d.jpg")])
-    run(["ffmpeg", "-v", "error", "-y", "-sseof", "-0.2", "-i", final, "-frames:v", "1", "-vf", "scale=1210:-2", os.path.join(frames, "last.jpg")])
+    run(["ffmpeg", "-v", "error", "-y", "-i", final, "-vf", "fps=1,scale=1210:-2", os.path.join(frames, "%03d.png")])
+    run(["ffmpeg", "-v", "error", "-y", "-sseof", "-0.2", "-i", final, "-frames:v", "1", "-vf", "scale=1210:-2", os.path.join(frames, "last.png")])
     cutaway = sum(b - a for a, b in still) - opt["--keep-idle"] * len(still)
     print(f"{final}: {dur:.1f} s (span {length:.1f} s, {len(still)} still stretches, {cutaway:.1f} s cut)")
 

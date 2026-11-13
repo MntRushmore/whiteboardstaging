@@ -70,9 +70,12 @@ final class KidSessionUITests: XCTestCase {
     func testPictureDemo() throws {
         let path = env["PICTURE_DEMO"] ?? ""
         try XCTSkipIf(path.isEmpty, "TEST_RUNNER_PICTURE_DEMO=<script.json>")
+        // the script's own mode (Suggest, Feedback, Solve's `answer`)
+        let script = FileManager.default.contents(atPath: path).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let mode = script?["mode"] as? String ?? env["PICTURE_MODE"] ?? "suggest"
         app = XCUIApplication()
         app.launchArguments += ["-noLabs", "-onboardingMute", "-demoRecording", "-pictureDemo", path, "-kidRun", env["KID_RUN"] ?? "run",
-                                "-pictureTutor.enabled", "YES", "-pictureTutor.mode", env["PICTURE_MODE"] ?? "suggest"]
+                                "-pictureTutor.enabled", "YES", "-pictureTutor.mode", mode]
         app.launch()
         tap("boards.new", wait: 60)
         XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 60), "the board never opened")

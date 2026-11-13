@@ -129,7 +129,12 @@ class Hand:
                         st, adv = self.glyph(ch, px, base, fs, drift)
                         out.append((st, "glyph"))
                         px += adv
-                pen += w + size * 0.12
+                pen += w + size * 0.2
+                continue
+            if tok == "²":
+                st, adv = self.glyph("2", pen + size * 0.03, y - size * 0.42, size * 0.55, drift)
+                out.append((st, "glyph"))
+                pen += adv + size * 0.06
                 continue
             if tok == " ":
                 pen += self.g[" "][0] * size / 1000 * self.u(0.68, 0.82)
@@ -208,63 +213,75 @@ def clips(font):
 
     out = {}
 
-    # 1. Grade 3–4: fractions of a pizza — the engine draws the pizza
-    h = H(11)
-    out["p1-pizza"] = {
-        "title": "Grade 3 · Fractions of a pizza",
-        "steps": [
-            {"auto": False},
-            {"mark": "write"},
-            h.line("Maya ate {3/8} of a pizza.", 110, 170),
-            {"pause": 0.5},
-            h.line("How much of the pizza is left?", 110, 285),
-            {"pause": 0.6},
-            h.line("Can you draw it?", 110, 385),
-            {"mark": "written"},
-            {"pause": 0.8},
-            {"tap": "picture.drawNow"},
-            {"mark": "drawNow"},
-            {"waitFor": "ghost", "timeout": 60},
-            {"mark": "ghost"},
-            {"pause": 2.5},
-            {"tap": "picture.accept"},
-            {"mark": "accept"},
-            {"pause": 2.0},
-            {"auto": True},
-            {"mark": "answer"},
-            h.line("{8/8} − {3/8} = {5/8}", 120, 600, size=64),
-            {"pause": 0.4},
-            h.line("{5/8} is left", 120, 760, size=60),
-            {"mark": "answered"},
-            {"waitFor": "tick", "timeout": 30},
-            {"mark": "tick"},
-            {"pause": 2.5},
-        ],
-    }
+    def ask_and_draw(h, problem, answer, mode="suggest", title=""):
+        """The kid writes the problem (the tutor's own look held off), taps Draw now, accepts the
+        picture, writes the answer; the tutor ticks it."""
+        steps = [{"auto": False}, {"mark": "write"}]
+        for i, (text, x, y, size) in enumerate(problem):
+            if i:
+                steps.append({"pause": 0.5})
+            steps.append(h.line(text, x, y, size=size))
+        steps += [{"mark": "written"}, {"pause": 0.8}, {"tap": "picture.drawNow"}, {"mark": "drawNow"},
+                  {"waitFor": "ghost", "timeout": 60}, {"mark": "ghost"}, {"pause": 2.5}, {"tap": "picture.accept"},
+                  {"mark": "accept"}, {"pause": 2.0}]
+        if not answer:
+            # Solve: the tutor's picture is the answer; it stays up a moment
+            return {"title": title, "mode": mode, "steps": steps + [{"pause": 2.0}, {"mark": "end"}]}
+        steps += [{"auto": True}, {"mark": "answer"}]
+        for i, (text, x, y, size) in enumerate(answer):
+            if i:
+                steps.append({"pause": 0.5})
+            steps.append({**h.line(text, x, y, size=size), "answer": True})
+        steps += [{"mark": "answered"}, {"waitFor": "tick", "timeout": 30}, {"mark": "tick"}, {"pause": 2.5}]
+        return {"title": title, "mode": mode, "steps": steps}
 
+    # 1. Grade 3–4: fractions of a pizza — the engine (Solve) draws the pizza, the slices eaten, the answer
+    out["p1-pizza"] = ask_and_draw(H(11), [("Maya ate {3/8} of a pizza.", 110, 170, 60), ("How much of the pizza is left?", 110, 285, 60),
+                                           ("Can you draw it?", 110, 385, 60)],
+                                   [], mode="answer", title="Grade 3 · Fractions of a pizza")
     # 3. Grade 4: an area model for 34 × 6
-    h = H(23, size=64)
-    out["p3-area"] = {
-        "title": "Grade 4 · An area model for 34 × 6",
+    out["p3-area"] = ask_and_draw(H(23, 64), [("34 × 6 = ?", 120, 180, 72), ("Show me with an area model", 120, 300, 64)],
+                                  [("30 × 6 = 180", 120, 560, 64), ("4 × 6 = 24", 120, 660, 64), ("180 + 24 = 204", 120, 770, 64)],
+                                  title="Grade 4 · An area model for 34 × 6")
+    # 2. Grade 3: 6 × 4 as an array
+    out["p2-array"] = ask_and_draw(H(31, 64), [("6 × 4 = ?", 120, 180, 76), ("Can you draw it as an array?", 120, 300, 60)],
+                                   [], mode="answer", title="Grade 3 · 6 × 4 as an array")
+    # 4. Grade 5: ½ + ⅓ with fraction bars
+    out["p4-bars"] = ask_and_draw(H(43, 64), [("{1/2} + {1/3} = ?", 120, 190, 80), ("Show me with fraction bars", 120, 320, 60)],
+                                  [("{3/6} + {2/6} = {5/6}", 120, 720, 76)], title="Grade 5 · Adding fractions with bars")
+    # 5. Grade 7: stuck on 3x + 5 = 20
+    out["p5-equation"] = ask_and_draw(H(53, 64), [("3x + 5 = 20", 120, 180, 80), ("I'm stuck. What do I do first?", 120, 300, 60)],
+                                      [("3x = 15", 120, 620, 76), ("x = 5", 120, 760, 76)], title="Grade 7 · Stuck on 3x + 5 = 20")
+    # 6. Grade 8: the ladder against the wall
+    out["p6-ladder"] = ask_and_draw(H(61, 54), [("A 10 ft ladder leans on a wall.", 110, 150, 54),
+                                                ("Its foot is 6 ft from the wall.", 110, 235, 54),
+                                                ("How high up the wall does it reach?", 110, 320, 54),
+                                                ("Can you draw it?", 110, 405, 54)],
+                                    [("6² + h² = 10²", 110, 560, 58), ("h² = 100 - 36 = 64", 110, 660, 58), ("h = 8 ft", 110, 760, 58)],
+                                    title="Grade 8 · A ladder and Pythagoras")
+    # 7. Grade 2: 47 + 38 with base-ten blocks
+    out["p7-blocks"] = ask_and_draw(H(71, 66), [("47 + 38 = ?", 120, 180, 80), ("Show me with base-ten blocks", 120, 300, 60)],
+                                    [("47 + 38 = 85", 120, 720, 76)], title="Grade 2 · 47 + 38 with base-ten blocks")
+    # 9. Grade 6: −3 + 5 on a number line
+    out["p9-numberline"] = ask_and_draw(H(97, 64), [("-3 + 5 = ?", 120, 180, 80), ("Show it on a number line", 120, 300, 60)],
+                                        [("-3 + 5 = 2", 120, 720, 76)], title="Grade 6 · −3 + 5 on a number line")
+    # 8. a slip: 52 − 27 = 35 → an arrow and a short, kind note (Feedback) → fixed → a checkmark
+    h = H(83, 72)
+    out["p8-slip"] = {
+        "title": "Grade 3 · A slip, an arrow, fixed",
+        "mode": "feedback",
         "steps": [
-            {"auto": False},
-            {"mark": "write"},
-            h.line("34 × 6 = ?", 120, 180, size=72),
-            {"pause": 0.6},
-            h.line("Show me with an area model", 120, 300),
-            {"mark": "written"},
-            {"pause": 0.8},
-            {"tap": "picture.drawNow"},
-            {"mark": "drawNow"},
-            {"waitFor": "ghost", "timeout": 60},
-            {"mark": "ghost"},
-            {"pause": 2.5},
-            {"tap": "picture.accept"},
-            {"mark": "accept"},
-            {"pause": 2.0},
             {"auto": True},
+            {"mark": "write"},
+            h.line("52 - 27 = 35", 140, 220, size=80),
+            {"mark": "written"},
+            {"mark": "drawNow"},
+            {"waitFor": "shown", "timeout": 60},
+            {"mark": "ghost"},
+            {"pause": 4.0},
+            {"mark": "accept"},
             {"mark": "answer"},
-            h.line("180 + 24 = 204", 120, 640, size=70),
+            {**h.line("52 - 27 = 25", 140, 520, size=80), "answer": True},
             {"mark": "answered"},
             {"waitFor": "tick", "timeout": 30},
             {"mark": "tick"},

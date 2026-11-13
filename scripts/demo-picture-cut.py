@@ -59,13 +59,24 @@ def page_rect(raw, at):
     im = Image.open(png).convert("L")
     w, h = im.size
     px = im.load()
-    row = h // 2
-    xs = [x for x in range(w) if px[x, row] >= 254]
-    col = w // 2
-    ys = [y for y in range(h) if px[col, y] >= 254]
-    if not xs or not ys:
+
+    def longest(line):
+        best, start, run = (0, 0), None, 0
+        for i, v in enumerate(line):
+            if v >= 253:
+                start = i if start is None else start
+                if i - start + 1 > best[1] - best[0]:
+                    best = (start, i + 1)
+            else:
+                start = None
+        return best
+
+    rows = sorted(longest([px[x, y] for x in range(w)]) for y in range(int(h * 0.3), int(h * 0.8), 40))
+    cols = sorted(longest([px[x, y] for y in range(h)]) for x in range(int(w * 0.5), int(w * 0.9), 40))
+    (x0, x1), (y0, y1) = rows[len(rows) // 2], cols[len(cols) // 2]
+    if x1 - x0 < w * 0.5 or y1 - y0 < h * 0.4:
         return (180, 240, 2060, 1150)
-    return (min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+    return (x0, y0, x1 - x0, y1 - y0)
 
 
 def main():
@@ -74,12 +85,20 @@ def main():
     if "--title" in sys.argv:
         title = sys.argv[sys.argv.index("--title") + 1]
     raw = os.path.join(out, "raw", f"{cid}-{take}.mp4")
-    t0 = float(open(os.path.join(out, "raw", f"{cid}-{take}.t0")).read())
     res = json.load(open(os.path.join(out, "results", take, f"{cid}.json")))
     script = json.load(open(os.path.join(out, "scripts", f"{cid}.json")))
     title = title or script.get("title") or cid
-    M = {k: v - t0 for k, v in res["marks"].items()}
-    end = res["endedAt"] - t0
+    # each step's start, read off the player's corner square in the recording (PictureDemoSync)
+    starts, end = sync_times(raw)
+    M = {}
+    for i, st in enumerate(script["steps"]):
+        if "mark" in st and i in starts:
+            M[st["mark"]] = starts[i]
+    # --end-at <mark>: the clip ends there (a take whose later part is not kept)
+    if "--end-at" in sys.argv:
+        stop = M[sys.argv[sys.argv.index("--end-at") + 1]]
+        end = stop
+        M = {k: v for k, v in M.items() if v <= stop + 0.01 and k not in ("answer", "answered", "tick")}
     page = page_rect(raw, M.get("written", M["write"] + 3))
 
     def screen_of(lx, ly):
@@ -97,11 +116,10 @@ def main():
     nprob = sum(1 for st in script["steps"][: next(i for i, st in enumerate(script["steps"]) if st.get("mark") == "written")] if "write" in st)
     for b in boxes[1:nprob]:
         problem = (min(problem[0], b[0]), min(problem[1], b[1]), max(problem[2], b[2]), max(problem[3], b[3]))
-    pic = res.get("pictureView")
+    # the tutor's picture: what changed on the page between Draw now and just after Accept
     picture = None
-    if pic:
-        # view points → the recording's pixels (2×)
-        picture = (pic[0] * 2, pic[1] * 2, (pic[0] + pic[2]) * 2, (pic[1] + pic[3]) * 2)
+    if "drawNow" in M and "accept" in M:
+        picture = changed_box(raw, M["written"] + 0.2, min(end, M["accept"] + 1.6), page)
 
     # MARK: the timeline: (source start, source end, speed)
     start = max(0.0, M["write"] - 0.8)
@@ -114,8 +132,8 @@ def main():
     add(start, M["written"], 1.8)
     add(M["written"], M["drawNow"], 1.0)
     add(M["drawNow"], M["ghost"], 1.3)
-    add(M["ghost"], M["accept"] + 1.2, 1.0)
-    add(M["accept"] + 1.2, M.get("answer", M["accept"] + 1.2), 1.4)
+    add(M["ghost"], min(end, M["accept"] + 1.2), 1.0)
+    add(M["accept"] + 1.2, M.get("answer", end), 1.0 if "answer" not in M else 1.4)
     if "answer" in M:
         add(M["answer"], M["answered"], 1.8)
         add(M["answered"], M.get("tick", end - 2.5), 1.5)
@@ -236,9 +254,50 @@ def main():
     os.makedirs(frames, exist_ok=True)
     for f in os.listdir(frames):
         os.unlink(os.path.join(frames, f))
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", final, "-vf", "fps=1,scale=960:-2", os.path.join(frames, "%03d.jpg")], check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", final, "-vf", "fps=1,scale=960:-2", os.path.join(frames, "%03d.png")], check=True)
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-sseof", "-0.2", "-i", final, "-frames:v", "1", os.path.join(frames, "last.png")], check=True)
     print(f"{final}: {dur:.1f} s; page {page}; picture {picture}; marks {', '.join(f'{k} {v:.1f}' for k, v in sorted(M.items(), key=lambda x: x[1]))}")
+
+
+def sync_times(raw):
+    """{step index: the first source second it shows}, and the last second the square is there."""
+    p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", raw, "-vf", f"fps={FPS},transpose=2,crop=6:6:2:2", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                         stdout=subprocess.PIPE)
+    starts, last, n, best = {}, 0.0, 0, -1
+    while True:
+        buf = p.stdout.read(6 * 6 * 3)
+        if len(buf) < 108:
+            break
+        r = sum(buf[0::3]) / 36
+        b = sum(buf[2::3]) / 36
+        t = n / FPS
+        n += 1
+        if abs(b - 89) > 30:
+            continue
+        idx = int(round(r / 6))
+        last = t
+        if idx > best:
+            for k in range(best + 1, idx + 1):
+                starts.setdefault(k, t)
+            best = idx
+    return starts, last
+
+
+def changed_box(raw, a, b, page):
+    """The box (screen px) of what changed on the page between source times a and b."""
+    from PIL import Image, ImageChops
+    ims = []
+    for t in (a, b):
+        png = f"{raw}.{t:.1f}.png"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", raw, "-frames:v", "1", "-vf", "transpose=2", png], check=True)
+        ims.append(Image.open(png).convert("L"))
+    x0, y0, w, h = page
+    box = (x0 + 8, y0 + 8, x0 + w - 8, y0 + h - 8)
+    diff = ImageChops.difference(ims[0].crop(box), ims[1].crop(box)).point(lambda v: 255 if v > 40 else 0)
+    bb = diff.getbbox()
+    if not bb:
+        return None
+    return (box[0] + bb[0], box[1] + bb[1], box[0] + bb[2], box[1] + bb[3])
 
 
 def activity(raw, start, end):

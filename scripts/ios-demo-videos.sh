@@ -99,6 +99,10 @@ for step in $STEPS; do
           TEST_RUNNER_PICTURE_DEMO="$OUT/scripts/$id.json" xcodebuild test-without-building -project "$ROOT/ios/Agathon.xcodeproj" -scheme Agathon \
             -destination "id=$SIM_UDID" -derivedDataPath "$DD" -parallel-testing-enabled NO \
             -only-testing:AgathonUITests/KidSessionUITests/testPictureDemo > "$OUT/logs/$name.log" 2>&1
+          # what the app said in its last minutes (a crash, the picture tutor), for the review
+          xcrun simctl spawn "$SIM_UDID" log show --last 4m --style compact \
+            --predicate "process == \"Agathon\" AND (category == \"picture-tutor\" OR category == \"pictureDemo\" OR messageType == fault)" \
+            > "$OUT/logs/$name.app.log" 2>&1
           kill -INT $rec 2>/dev/null; wait $rec 2>/dev/null
           printf "  %s: %s\n" "$name" "$(grep -E "Test (case|Case) .*(passed|failed|skipped)" "$OUT/logs/$name.log" | tail -1 | sed -E "s/.*(passed|failed|skipped).*/\1/")"
         done

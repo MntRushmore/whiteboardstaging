@@ -85,6 +85,38 @@ final class PictureDemoPlayer: ObservableObject {
     }
 }
 
+/// The recording's clock: the simulator's screen recording stamps frames by when they arrive, and its
+/// clock drifts while the app is busy, so the edit finds each step in the picture itself. A 6-point
+/// square in the window's top-left corner (the finished clip's rounded corner hides it) shows the
+/// step being played (red = step × 6) and changes every display refresh (green), so frames keep coming.
+@MainActor
+final class PictureDemoSync: NSObject {
+    var step = 0
+    private let square = UIView(frame: CGRect(x: 0, y: 0, width: 6, height: 6))
+    private var link: CADisplayLink?
+    private var odd = false
+
+    init(window: UIWindow?) {
+        super.init()
+        square.isUserInteractionEnabled = false
+        window?.addSubview(square)
+        link = CADisplayLink(target: self, selector: #selector(tick))
+        link?.add(to: .main, forMode: .common)
+    }
+
+    @objc private func tick() {
+        odd.toggle()
+        square.backgroundColor = UIColor(red: CGFloat(min(255, step * 6)) / 255, green: odd ? 0.47 : 0, blue: 0.35, alpha: 1)
+        square.superview?.bringSubviewToFront(square)
+    }
+
+    func stop() {
+        link?.invalidate()
+        link = nil
+        square.removeFromSuperview()
+    }
+}
+
 struct PictureDemoResult: Codable {
     struct Run: Codable {
         var mode: String
@@ -101,8 +133,12 @@ struct PictureDemoResult: Codable {
     var marks: [String: Double] = [:]
     var notes: [String] = []
     var runs: [Run] = []
-    /// the tutor's last picture: where it went, in view points (the screen recording's frame), and when
+    /// the tutor's last picture: where its ink is, in view points (the screen recording's frame), and when
     var pictureView: [Double]?
+    /// …and on the page (layout units, 1600 × 900): the kid's answer is written clear of it
+    var pictureLayout: [Double]?
+    /// how far the kid's answer was moved to keep clear of the picture (layout units)
+    var answerShift: [Double]?
     var ticks = 0
     var ink = 0
     var ok = true
@@ -127,6 +163,10 @@ private final class PictureDemoRun {
         self.player = player
     }
 
+    var steps: [[String: Any]] = []
+    var stepIndex = 0
+    var shift: Vec2?
+
     func go() async -> PictureDemoResult {
         player.set("starting: waiting for the board")
         for _ in 0..<100 where (canvas?.bounds.width ?? 0) == 0 { try? await Task.sleep(for: .milliseconds(100)) }
@@ -148,7 +188,12 @@ private final class PictureDemoRun {
                 try? await Task.sleep(for: .milliseconds(200))
             }
         }
+        self.steps = steps
+        let sync = PictureDemoSync(window: canvas?.window)
+        defer { sync.stop() }
         for (i, step) in steps.enumerated() {
+            stepIndex = i
+            sync.step = i
             player.set("running \(i + 1)/\(steps.count)")
             await perform(step)
         }
@@ -166,8 +211,12 @@ private final class PictureDemoRun {
 
     func perform(_ step: [String: Any]) async {
         if let strokes = step["write"] as? [[[Double]]] {
-            await write(strokes.map { $0.compactMap { $0.count >= 2 ? Vec2($0[0], $0[1]) : nil } },
-                        pauses: step["pauses"] as? [Double] ?? [], durs: step["durs"] as? [Double] ?? [])
+            var ink = strokes.map { $0.compactMap { $0.count >= 2 ? Vec2($0[0], $0[1]) : nil } }
+            if step["answer"] as? Bool == true {
+                if shift == nil { shift = clearOfPicture() }
+                if let d = shift { ink = ink.map { $0.map { Vec2($0.x + d.x, $0.y + d.y) } } }
+            }
+            await write(ink, pauses: step["pauses"] as? [Double] ?? [], durs: step["durs"] as? [Double] ?? [])
         } else if let s = step["pause"] as? Double {
             try? await Task.sleep(for: .seconds(s))
         } else if let id = step["tap"] as? String {
@@ -238,13 +287,77 @@ private final class PictureDemoRun {
         return controller.store.drawables(on: controller.currentScreenID).filter { $0.author == .tutor }.count
     }
 
-    /// Where the tutor's picture is on screen (view points), for the edit's zoom.
+    /// Where the tutor's picture's ink is, on the page and on screen (for the kid's answer and the edit's zoom).
+    var measured: String?
+
     func watch() {
-        guard let s = picture?.shown, let canvas else { return }
-        let a = canvas.camera.toView(Vec2(s.region.x, s.region.y))
-        let b = canvas.camera.toView(Vec2(s.region.maxX, s.region.maxY))
+        guard let s = picture?.shown, let canvas, let controller, measured != s.id || result.pictureView == nil else { return }
+        guard let ink = Self.inkBounds(s.overlay) else { return }
+        measured = s.id
+        // the overlay covers R (page units): its ink's share of it
+        let r = s.region
+        let page = Box(x: r.x + ink.minX * r.w, y: r.y + ink.minY * r.h, w: ink.width * r.w, h: ink.height * r.h)
+        let a = canvas.camera.toView(Vec2(page.x, page.y))
+        let b = canvas.camera.toView(Vec2(page.maxX, page.maxY))
         let window = canvas.convert(CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y), to: nil)
         result.pictureView = [window.minX, window.minY, window.width, window.height, Date().timeIntervalSince1970]
+        let layout = ProblemPageLayout.unplace(page, from: controller.currentScreen?.rect ?? .screen)
+        result.pictureLayout = [layout.x, layout.y, layout.w, layout.h]
+    }
+
+    /// The share of `image` (0…1 each way) its visible pixels take.
+    static func inkBounds(_ image: CGImage) -> CGRect? {
+        let w = image.width, h = image.height
+        guard w > 0, h > 0 else { return nil }
+        var data = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &data, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var x0 = w, y0 = h, x1 = -1, y1 = -1
+        for y in stride(from: 0, to: h, by: 2) {
+            for x in stride(from: 0, to: w, by: 2) where data[(y * w + x) * 4 + 3] > 40 {
+                x0 = min(x0, x); x1 = max(x1, x); y0 = min(y0, y); y1 = max(y1, y)
+            }
+        }
+        guard x1 >= x0, y1 >= y0 else { return nil }
+        // a bitmap context's memory starts with the picture's top row
+        return CGRect(x: Double(x0) / Double(w), y: Double(y0) / Double(h), width: Double(x1 - x0 + 2) / Double(w),
+                      height: Double(y1 - y0 + 2) / Double(h))
+    }
+
+    /// Where the kid's answer goes: as written when it is clear of the picture, else the nearest place
+    /// that is (lower in the left column, then right of the picture, then the page's right half).
+    func clearOfPicture() -> Vec2? {
+        guard let p = result.pictureLayout else { return nil }
+        let pic = Box(x: p[0] - 30, y: p[1] - 30, w: p[2] + 60, h: p[3] + 60)
+        var pts: [Vec2] = []
+        for step in steps[stepIndex...] where step["answer"] as? Bool == true {
+            for s in step["write"] as? [[[Double]]] ?? [] { for q in s where q.count >= 2 { pts.append(Vec2(q[0], q[1])) } }
+        }
+        guard let ans = Box.around(pts) else { return nil }
+        // the problem: everything written before the answer
+        var above: [Vec2] = []
+        for step in steps[..<stepIndex] {
+            for s in step["write"] as? [[[Double]]] ?? [] { for q in s where q.count >= 2 { above.append(Vec2(q[0], q[1])) } }
+        }
+        let top = (Box.around(above)?.maxY ?? 100) + 50
+        func clear(_ b: Box) -> Bool {
+            b.x >= 20 && b.maxX <= 1580 && b.y >= top && b.maxY <= 880 && (b.maxX < pic.x || b.x > pic.maxX || b.maxY < pic.y || b.y > pic.maxY)
+        }
+        func moved(_ dx: Double, _ dy: Double) -> Box { Box(x: ans.x + dx, y: ans.y + dy, w: ans.w, h: ans.h) }
+        var candidates: [Vec2] = [Vec2(0, 0)]
+        // the left column, from just under the problem down
+        for y in stride(from: top, through: 880 - ans.h, by: 20) { candidates.append(Vec2(0, y - ans.y)) }
+        // right of the picture, then the right half, from the top of the free space down
+        for x in [pic.maxX + 20, 860.0] {
+            for y in stride(from: top, through: 880 - ans.h, by: 20) { candidates.append(Vec2(x - ans.x, y - ans.y)) }
+        }
+        for c in candidates where clear(moved(c.x, c.y)) {
+            result.answerShift = [c.x, c.y]
+            return c == Vec2(0, 0) ? nil : c
+        }
+        result.notes.append("no room for the answer clear of the picture")
+        return nil
     }
 
     func save() {
