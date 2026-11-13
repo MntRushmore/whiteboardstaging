@@ -32,8 +32,14 @@ enum MacDrive {
     static func signInIfAsked(_ backend: AgathonBackend) async {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-macSignIn"), i + 1 < args.count,
-              let password = ProcessInfo.processInfo.environment["MACDRIVE_PASSWORD"], !password.isEmpty,
-              backend.auth.phase != .signedIn else { return }
+              let password = ProcessInfo.processInfo.environment["MACDRIVE_PASSWORD"], !password.isEmpty else { return }
+        // the stored session first; another account's is signed out (a shared Mac or simulator)
+        while backend.auth.phase == .restoring { try? await Task.sleep(for: .milliseconds(100)) }
+        if backend.auth.phase == .signedIn {
+            if backend.auth.email?.lowercased() == args[i + 1].lowercased() { return }
+            try? await backend.auth.signOut(scope: .local)
+            note("signed out the other account")
+        }
         do {
             try await backend.auth.signIn(email: args[i + 1], password: password)
             note("signed in")

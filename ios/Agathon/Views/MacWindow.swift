@@ -20,7 +20,17 @@ struct MacWindowMinimum: ViewModifier {
         override func didMoveToWindow() {
             super.didMoveToWindow()
             guard ProcessInfo.processInfo.isiOSAppOnMac, let scene = window?.windowScene else { return }
-            scene.sizeRestrictions?.minimumSize = MacWindowMinimum.minimum
+            var minimum = MacWindowMinimum.minimum
+            #if DEBUG
+            // `-macWindowMinimum 1400x900` (Debug): a bigger floor makes the window grow to it (the window
+            // can't be sized from outside without the Mac's own mouse), for checking big Mac windows
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-macWindowMinimum"), i + 1 < args.count {
+                let wh = args[i + 1].split(separator: "x").compactMap { Double($0) }
+                if wh.count == 2 { minimum = CGSize(width: wh[0], height: wh[1]) }
+            }
+            #endif
+            scene.sizeRestrictions?.minimumSize = minimum
         }
     }
 }
