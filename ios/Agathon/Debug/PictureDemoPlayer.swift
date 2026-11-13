@@ -92,6 +92,8 @@ final class PictureDemoPlayer: ObservableObject {
 @MainActor
 final class PictureDemoSync: NSObject {
     var step = 0
+    /// held still while the UI test presses a button (it waits for the app to be idle)
+    var paused = false
     private let square = UIView(frame: CGRect(x: 0, y: 0, width: 6, height: 6))
     private var link: CADisplayLink?
     private var odd = false
@@ -105,6 +107,7 @@ final class PictureDemoSync: NSObject {
     }
 
     @objc private func tick() {
+        if paused { return }
         odd.toggle()
         square.backgroundColor = UIColor(red: CGFloat(min(255, step * 6)) / 255, green: odd ? 0.47 : 0, blue: 0.35, alpha: 1)
         square.superview?.bringSubviewToFront(square)
@@ -165,6 +168,7 @@ private final class PictureDemoRun {
 
     var steps: [[String: Any]] = []
     var stepIndex = 0
+    var sync: PictureDemoSync?
     var shift: Vec2?
 
     func go() async -> PictureDemoResult {
@@ -190,6 +194,7 @@ private final class PictureDemoRun {
         }
         self.steps = steps
         let sync = PictureDemoSync(window: canvas?.window)
+        self.sync = sync
         defer { sync.stop() }
         for (i, step) in steps.enumerated() {
             stepIndex = i
@@ -236,6 +241,10 @@ private final class PictureDemoRun {
         guard let canvas, let controller, let tutor else { return }
         let rect = controller.currentScreen?.rect ?? .screen
         controller.tool = .pen
+        // a pen, not a marker (the owner: kids' ink in the films reads too thick): 0.65 of the regular width
+        let before = controller.penWidth
+        controller.penWidth = InkStyle.PenSize.regular.width * 0.65
+        defer { controller.penWidth = before }
         for (k, pts) in strokes.enumerated() where pts.count >= 2 {
             let pause = k < pauses.count ? pauses[k] : 120
             if pause > 0 { try? await Task.sleep(for: .milliseconds(Int(pause))) }
@@ -253,7 +262,9 @@ private final class PictureDemoRun {
     // MARK: - buttons and waits
 
     func tap(_ id: String) async {
+        sync?.paused = true
         let answered = await player.await(id)
+        sync?.paused = false
         if answered == true { return }
         result.notes.append("\(id): \(answered == nil ? "the UI test never answered" : "not on the board"); pressed by the player")
         switch id {
@@ -327,6 +338,9 @@ private final class PictureDemoRun {
 
     /// Where the kid's answer goes: as written when it is clear of the picture, else the nearest place
     /// that is (lower in the left column, then right of the picture, then the page's right half).
+    /// the kid's ink stays above the page's last fifth (there the board offers "Out of room? Start a new page")
+    static let floor = 900 * 0.8 - 12
+
     func clearOfPicture() -> Vec2? {
         guard let p = result.pictureLayout else { return nil }
         let pic = Box(x: p[0] - 30, y: p[1] - 30, w: p[2] + 60, h: p[3] + 60)
@@ -342,15 +356,15 @@ private final class PictureDemoRun {
         }
         let top = (Box.around(above)?.maxY ?? 100) + 50
         func clear(_ b: Box) -> Bool {
-            b.x >= 20 && b.maxX <= 1580 && b.y >= top && b.maxY <= 880 && (b.maxX < pic.x || b.x > pic.maxX || b.maxY < pic.y || b.y > pic.maxY)
+            b.x >= 20 && b.maxX <= 1580 && b.y >= top && b.maxY <= Self.floor && (b.maxX < pic.x || b.x > pic.maxX || b.maxY < pic.y || b.y > pic.maxY)
         }
         func moved(_ dx: Double, _ dy: Double) -> Box { Box(x: ans.x + dx, y: ans.y + dy, w: ans.w, h: ans.h) }
         var candidates: [Vec2] = [Vec2(0, 0)]
         // the left column, from just under the problem down
-        for y in stride(from: top, through: 880 - ans.h, by: 20) { candidates.append(Vec2(0, y - ans.y)) }
+        for y in stride(from: top, through: Self.floor - ans.h, by: 20) { candidates.append(Vec2(0, y - ans.y)) }
         // right of the picture, then the right half, from the top of the free space down
         for x in [pic.maxX + 20, 860.0] {
-            for y in stride(from: top, through: 880 - ans.h, by: 20) { candidates.append(Vec2(x - ans.x, y - ans.y)) }
+            for y in stride(from: top, through: Self.floor - ans.h, by: 20) { candidates.append(Vec2(x - ans.x, y - ans.y)) }
         }
         for c in candidates where clear(moved(c.x, c.y)) {
             result.answerShift = [c.x, c.y]

@@ -239,6 +239,16 @@ private struct BoardTopTrailing: View {
         }
     }
 
+    /// Debug's demo recordings (`-demoRecording`): the board as the clip needs it — no save chip, no
+    /// Mac screen, no Flag a bug. Always false in Release.
+    static var demoRecording: Bool {
+        #if DEBUG
+        return DemoRecording.on
+        #else
+        return false
+        #endif
+    }
+
     /// The save states a kid must see even in the narrowest window (the routine ones can wait).
     static func saveNeedsSaying(_ status: SyncState.Status) -> Bool {
         switch status {
@@ -252,7 +262,7 @@ private struct BoardTopTrailing: View {
             if let daily = model.daily {
                 DailyPracticePill(daily: daily) { model.say(DailyPracticePill.reachedWords) }
             }
-            BoardSaveStatus(session: session, showsWords: words)
+            if !Self.demoRecording { BoardSaveStatus(session: session, showsWords: words) }
             if let picture = model.picture {
                 PictureTutorTopItem(tutor: picture, showsWords: words)
             } else if let loop = model.liveLoop {
@@ -267,7 +277,7 @@ private struct BoardTopTrailing: View {
     /// The narrowest: the save dot, the tutor's status and Ask.
     private var compact: some View {
         HStack(spacing: DS.Space.xs) {
-            BoardSaveStatus(session: session, showsWords: false)
+            if !Self.demoRecording { BoardSaveStatus(session: session, showsWords: false) }
             if let picture = model.picture {
                 PictureTutorTopItem(tutor: picture, showsWords: false)
             } else if let loop = model.liveLoop {
@@ -313,7 +323,7 @@ private struct BoardTopTrailing: View {
 extension BoardTopTrailing {
     /// Opens the Mac screen panel (a window shared from a computer, live beside the board).
     @ViewBuilder func macButton(words: Bool) -> some View {
-        if !model.macOpen {
+        if !model.macOpen && !Self.demoRecording {
             Group {
                 if words {
                     PillButton(MacScreenCopy.open, icon: .laptop, kind: .secondary) { model.macOpen = true }

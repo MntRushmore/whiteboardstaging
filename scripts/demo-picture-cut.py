@@ -85,20 +85,28 @@ def main():
     if "--title" in sys.argv:
         title = sys.argv[sys.argv.index("--title") + 1]
     raw = os.path.join(out, "raw", f"{cid}-{take}.mp4")
-    res = json.load(open(os.path.join(out, "results", take, f"{cid}.json")))
+    # (the player's result, when copied out, has the tutor's runs; the edit needs only the recording and the script)
     script = json.load(open(os.path.join(out, "scripts", f"{cid}.json")))
     title = title or script.get("title") or cid
     # each step's start, read off the player's corner square in the recording (PictureDemoSync)
     starts, end = sync_times(raw)
     M = {}
-    for i, st in enumerate(script["steps"]):
+    steps = script["steps"]
+    for i, st in enumerate(steps):
         if "mark" in st and i in starts:
             M[st["mark"]] = starts[i]
+            # a mark just after a tap: the tap itself came about a second into its step (the UI test's
+            # press), however long the player then waited to hear it was done
+            if i > 0 and "tap" in steps[i - 1] and (i - 1) in starts:
+                M[st["mark"]] = min(starts[i], starts[i - 1] + 1.0)
     # --end-at <mark>: the clip ends there (a take whose later part is not kept)
     if "--end-at" in sys.argv:
-        stop = M[sys.argv[sys.argv.index("--end-at") + 1]]
-        end = stop
-        M = {k: v for k, v in M.items() if v <= stop + 0.01 and k not in ("answer", "answered", "tick")}
+        name = sys.argv[sys.argv.index("--end-at") + 1]
+        stop = M[name]
+        hold = float(sys.argv[sys.argv.index("--hold") + 1]) if "--hold" in sys.argv else 0.0
+        end = stop + hold
+        drop = {"answer": ("answer", "answered", "tick"), "answered": ("tick",), "tick": ()}.get(name, ("answer", "answered", "tick"))
+        M = {k: v for k, v in M.items() if v <= stop + 0.01 and k not in drop}
     page = page_rect(raw, M.get("written", M["write"] + 3))
 
     def screen_of(lx, ly):
@@ -129,15 +137,18 @@ def main():
         if b > a:
             spans.append((a, b, speed))
 
-    add(start, M["written"], 1.8)
+    add(start, M["written"], 2.2)
     add(M["written"], M["drawNow"], 1.0)
     add(M["drawNow"], M["ghost"], 1.3)
     add(M["ghost"], min(end, M["accept"] + 1.2), 1.0)
     add(M["accept"] + 1.2, M.get("answer", end), 1.0 if "answer" not in M else 1.4)
     if "answer" in M:
-        add(M["answer"], M["answered"], 1.8)
-        add(M["answered"], M.get("tick", end - 2.5), 1.5)
-        add(M.get("tick", end - 2.5), min(end, M.get("tick", end) + 2.6), 1.0)
+        add(M["answer"], M["answered"], 2.0)
+        if "tick" in M:
+            add(M["answered"], M["tick"], 1.5)
+            add(M["tick"], min(end, M["tick"] + 2.6), 1.0)
+        else:
+            add(M["answered"], end, 1.0)
     # still waits over 3 s inside a span are cut to ~1 s by the speed there (the activity map)
     act = activity(raw, start, end)
 
@@ -260,25 +271,42 @@ def main():
 
 
 def sync_times(raw):
-    """{step index: the first source second it shows}, and the last second the square is there."""
+    """{step index: the first source second it shows}, and the last second the square is there. A
+    frame counts when its corner is the player's square (blue 89, green off or 120, red a multiple of
+    6), and only from the first second of such frames on (a wallpaper can look like one)."""
     p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", raw, "-vf", f"fps={FPS},transpose=2,crop=6:6:2:2", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
                          stdout=subprocess.PIPE)
-    starts, last, n, best = {}, 0.0, 0, -1
+    seen = []
+    n = 0
     while True:
         buf = p.stdout.read(6 * 6 * 3)
         if len(buf) < 108:
             break
-        r = sum(buf[0::3]) / 36
-        b = sum(buf[2::3]) / 36
+        r, g, b = (sum(buf[c::3]) / 36 for c in range(3))
         t = n / FPS
         n += 1
-        if abs(b - 89) > 30:
+        ok = abs(b - 89) < 20 and (g < 30 or abs(g - 120) < 30) and abs(r - 6 * round(r / 6)) < 2.6
+        seen.append((t, int(round(r / 6)) if ok else None))
+    starts, last, best, run = {}, 0.0, -1, 0
+    live = False
+    for i, (t, idx) in enumerate(seen):
+        if idx is None:
+            run = 0
             continue
-        idx = int(round(r / 6))
+        run += 1
+        if not live:
+            # a second of the square in a row: the player is on
+            if run < FPS:
+                continue
+            live = True
+            t = seen[i - run + 1][0]
+            idx = seen[i - run + 1][1]
         last = t
-        if idx > best:
+        # a step shows in two frames running (one odd frame is compression noise)
+        prev = seen[i - 1][1] if i > 0 else None
+        if idx > best and idx - best <= 12 and prev == idx:
             for k in range(best + 1, idx + 1):
-                starts.setdefault(k, t)
+                starts.setdefault(k, seen[i - 1][0])
             best = idx
     return starts, last
 

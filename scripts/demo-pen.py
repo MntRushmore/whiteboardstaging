@@ -78,15 +78,18 @@ class Hand:
             return self.times(x, base, size, drift)
         adv, st = self.g.get(ch) or self.g.get("?")
         k = size / 1000.0 * self.u(0.96, 1.04)
-        dy = self.u(-0.012, 0.012) * size
-        rot = math.radians(self.u(-1.2, 1.2))
+        kx = self.u(0.96, 1.04)
+        dy = self.u(-0.02, 0.02) * size
+        rot = math.radians(self.u(-2.2, 2.2))
+        shear = self.u(-0.06, 0.06)
         c, s = math.cos(rot), math.sin(rot)
         cx = adv * k / 2
         out = []
         for stroke in st:
             pts = []
             for px, py in stroke:
-                X, Y = px * k - cx, -py * k
+                X, Y = px * k * kx - cx, -py * k
+                X += shear * -Y
                 X, Y = X * c - Y * s, X * s + Y * c
                 pts.append((x + cx + X, base + dy + drift(x) + Y))
             out.append(pts)
@@ -221,9 +224,9 @@ def clips(font):
             if i:
                 steps.append({"pause": 0.5})
             steps.append(h.line(text, x, y, size=size))
-        steps += [{"mark": "written"}, {"pause": 0.8}, {"tap": "picture.drawNow"}, {"mark": "drawNow"},
-                  {"waitFor": "ghost", "timeout": 60}, {"mark": "ghost"}, {"pause": 2.5}, {"tap": "picture.accept"},
-                  {"mark": "accept"}, {"pause": 2.0}]
+        steps += [{"mark": "written"}, {"pause": 0.8}, {"mark": "drawNow"}, {"tap": "picture.drawNow"},
+                  {"waitFor": "ghost", "timeout": 60}, {"mark": "ghost"}, {"pause": 2.5}, {"mark": "accept"}, {"tap": "picture.accept"},
+                  {"pause": 2.0}]
         if not answer:
             # Solve: the tutor's picture is the answer; it stays up a moment
             return {"title": title, "mode": mode, "steps": steps + [{"pause": 2.0}, {"mark": "end"}]}
@@ -241,32 +244,32 @@ def clips(font):
                                    [], mode="answer", title="Grade 3 · Fractions of a pizza")
     # 3. Grade 4: an area model for 34 × 6
     out["p3-area"] = ask_and_draw(H(23, 64), [("34 × 6 = ?", 120, 180, 72), ("Show me with an area model", 120, 300, 64)],
-                                  [("30 × 6 = 180", 120, 560, 64), ("4 × 6 = 24", 120, 660, 64), ("180 + 24 = 204", 120, 770, 64)],
-                                  title="Grade 4 · An area model for 34 × 6")
+                                  [], mode="answer", title="Grade 4 · An area model for 34 × 6")
     # 2. Grade 3: 6 × 4 as an array
     out["p2-array"] = ask_and_draw(H(31, 64), [("6 × 4 = ?", 120, 180, 76), ("Can you draw it as an array?", 120, 300, 60)],
                                    [], mode="answer", title="Grade 3 · 6 × 4 as an array")
     # 4. Grade 5: ½ + ⅓ with fraction bars
     out["p4-bars"] = ask_and_draw(H(43, 64), [("{1/2} + {1/3} = ?", 120, 190, 80), ("Show me with fraction bars", 120, 320, 60)],
-                                  [("{3/6} + {2/6} = {5/6}", 120, 720, 76)], title="Grade 5 · Adding fractions with bars")
+                                  [], mode="answer", title="Grade 5 · Adding fractions with bars")
     # 5. Grade 7: stuck on 3x + 5 = 20
     out["p5-equation"] = ask_and_draw(H(53, 64), [("3x + 5 = 20", 120, 180, 80), ("I'm stuck. What do I do first?", 120, 300, 60)],
-                                      [("3x = 15", 120, 620, 76), ("x = 5", 120, 760, 76)], title="Grade 7 · Stuck on 3x + 5 = 20")
+                                      [("3x = 15", 120, 540, 72), ("x = 5", 120, 650, 72)], title="Grade 7 · Stuck on 3x + 5 = 20")
     # 6. Grade 8: the ladder against the wall
     out["p6-ladder"] = ask_and_draw(H(61, 54), [("A 10 ft ladder leans on a wall.", 110, 150, 54),
                                                 ("Its foot is 6 ft from the wall.", 110, 235, 54),
                                                 ("How high up the wall does it reach?", 110, 320, 54),
                                                 ("Can you draw it?", 110, 405, 54)],
-                                    [("6² + h² = 10²", 110, 560, 58), ("h² = 100 - 36 = 64", 110, 660, 58), ("h = 8 ft", 110, 760, 58)],
+                                    [("6² + h² = 10²", 110, 500, 54), ("h² = 100 - 36 = 64", 110, 590, 54), ("h = 8 ft", 110, 680, 54)],
                                     title="Grade 8 · A ladder and Pythagoras")
     # 7. Grade 2: 47 + 38 with base-ten blocks
     out["p7-blocks"] = ask_and_draw(H(71, 66), [("47 + 38 = ?", 120, 180, 80), ("Show me with base-ten blocks", 120, 300, 60)],
-                                    [("47 + 38 = 85", 120, 720, 76)], title="Grade 2 · 47 + 38 with base-ten blocks")
+                                    [], mode="answer", title="Grade 2 · 47 + 38 with base-ten blocks")
     # 9. Grade 6: −3 + 5 on a number line
     out["p9-numberline"] = ask_and_draw(H(97, 64), [("-3 + 5 = ?", 120, 180, 80), ("Show it on a number line", 120, 300, 60)],
-                                        [("-3 + 5 = 2", 120, 720, 76)], title="Grade 6 · −3 + 5 on a number line")
+                                        [("-3 + 5 = 2", 120, 620, 72)], title="Grade 6 · −3 + 5 on a number line")
     # 8. a slip: 52 − 27 = 35 → an arrow and a short, kind note (Feedback) → fixed → a checkmark
     h = H(83, 72)
+    slip_w = h.width("52 - 27 = 35", 80)
     out["p8-slip"] = {
         "title": "Grade 3 · A slip, an arrow, fixed",
         "mode": "feedback",
@@ -281,7 +284,10 @@ def clips(font):
             {"pause": 4.0},
             {"mark": "accept"},
             {"mark": "answer"},
-            {**h.line("52 - 27 = 25", 140, 520, size=80), "answer": True},
+            # the slip crossed out (one stroke through it, a little uphill), the fix under it
+            h.shape([[(128, 200), (140 + slip_w + 14, 190)]]),
+            {"pause": 0.6},
+            {**h.line("52 - 27 = 25", 140, 480, size=80), "answer": True},
             {"mark": "answered"},
             {"waitFor": "tick", "timeout": 30},
             {"mark": "tick"},
