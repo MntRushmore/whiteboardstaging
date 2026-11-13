@@ -50,6 +50,9 @@ struct LocalStackLiveTests {
         let reads = loop.lines.values.sorted { $0.row < $1.row }.map(\.latex)
         #expect(reads.count == 3, "three lines read: \(reads)")
         #expect(board.mark(on: reads.count == 3 ? reads[1] : "") == .tick, "2x = 8 ticked (read as \(reads))")
+        // check as I go: a ring waits until the line looks finished (no new stroke for `doubtHoldMs`)
+        #expect(board.mark(on: reads.count == 3 ? reads[2] : "") == nil, "x = 5 not ringed while it may still be written")
+        await pass(PageTiming.doubtHoldMs)
         #expect(board.mark(on: reads.count == 3 ? reads[2] : "") == .ring, "x = 5 ringed")
         #expect(loop.metrics.recognize.allSatisfy { $0 < 6_000 })
 

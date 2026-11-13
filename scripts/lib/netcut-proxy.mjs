@@ -7,7 +7,7 @@ import fs from "node:fs";
 const FLAG = process.argv[2];
 const routes = [
   [3902, 3901],
-  [54329, 54321],
+  [54329, Number(process.env.SUPA_PORT || 54321)],
 ];
 const open = new Set();
 

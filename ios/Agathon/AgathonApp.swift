@@ -29,16 +29,21 @@ struct AgathonApp: App {
             .billingScreenOnLaunch() // `-billingScreen …` (Debug): ios/Agathon/Debug/BillingLabView.swift
             .debugWindow() // `-windowWidth 507` (Debug): a Split View-sized window, ios/Agathon/Debug/DebugWindow.swift
             #endif
+            .macWindowMinimum() // the iPad app on a Mac: a window never too small for the board and Ask
             .environment(backend)
             .environment(planStore)
             .task {
                 backend.auth.start()
                 planStore.start()
+                #if DEBUG
+                await MacDrive.signInIfAsked(backend) // `-macSignIn` (Debug/MacDrive.swift)
+                #endif
             }
             // A new account (sign-in, a family switch): its plan, and any transaction left unrecorded.
             .task(id: backend.auth.userId) {
                 planStore.resetForNewAccount()
                 guard backend.auth.userId != nil else { return }
+                await backend.auth.refreshUserMetadata() // an admin's switches (the picture tutor's default)
                 await planStore.refreshPlan()
                 await planStore.retryUnfinished()
             }

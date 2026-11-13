@@ -169,6 +169,11 @@ public struct AskPanel: View {
                     .focused($typing)
                     .submitLabel(.send)
                     .onSubmit { submit(draft) }
+                    // Return on a hardware keyboard (the Mac, an iPad's keyboard) sends, as Send does: a
+                    // vertical field would otherwise take it as a new line
+                    .onChange(of: draft) { old, new in
+                        if new.hasSuffix("\n"), new.count == old.count + 1, new.hasPrefix(old) { submit(new) }
+                    }
                     .padding(.horizontal, DS.Space.m + 4)
                     .padding(.vertical, 15)
                     .frame(minHeight: DS.Size.round)

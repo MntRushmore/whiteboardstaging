@@ -52,7 +52,7 @@ struct HelpTests {
         h.loop.moreHelp(try #require(h.loop.hints.first))
         await h.pass(100)
         #expect(h.loop.hints.first?.title == "One step left")
-        #expect(h.loop.hints.first?.message == "One step left: divide both sides by 2. You can do this one.")
+        #expect(h.loop.hints.first?.message == "Divide both sides by 2. You can do this one.", "the title is not said twice")
         #expect(h.board.tutorStrokes(withMeta: "suggestFor", "x = 5").isEmpty, "the answer is not written")
         #expect(h.services.solveRequests.isEmpty, "the engine knew the step: no model")
     }

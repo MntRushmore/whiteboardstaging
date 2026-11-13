@@ -308,11 +308,15 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         pan.delegate = self
         pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         pan.maximumNumberOfTouches = 2
+        // a trackpad's two-finger scroll or a mouse wheel moves the board (the Mac, an iPad with a trackpad)
+        pan.allowedScrollTypesMask = .all
         pan.addTarget(self, action: #selector(handlePan(_:)))
         addGestureRecognizer(pan)
 
         pinch.delegate = self
-        pinch.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        // a trackpad's pinch (an iPad with a trackpad, the Mac) zooms like two fingers
+        pinch.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue),
+                                   NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         pinch.addTarget(self, action: #selector(handlePinch(_:)))
         addGestureRecognizer(pinch)
 
@@ -325,12 +329,19 @@ public final class BoardCanvasView: UIView, BoardRendering, UIGestureRecognizerD
         applyInputRules()
     }
 
-    /// Who draws: the Pencil always; a finger only while fingers draw. One finger pans otherwise.
+    /// Who draws: the Pencil and a mouse or trackpad pointer (never a palm: the Mac's only pen) always;
+    /// a finger only while fingers draw. One finger pans otherwise.
     private func applyInputRules() {
-        var types = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        var types = [NSNumber(value: UITouch.TouchType.pencil.rawValue),
+                     NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         if controller.fingerDraws { types.append(NSNumber(value: UITouch.TouchType.direct.rawValue)) }
         ink.allowedTouchTypes = types
         pan.minimumNumberOfTouches = controller.fingerDraws ? 2 : 1
+    }
+
+    /// What draws, pans and zooms right now (the tests: a Mac's mouse is an `indirectPointer` touch).
+    var inputTypes: (ink: Set<Int>, pinch: Set<Int>, scroll: UIScrollTypeMask) {
+        (Set(ink.allowedTouchTypes.map(\.intValue)), Set(pinch.allowedTouchTypes.map(\.intValue)), pan.allowedScrollTypesMask)
     }
 
     // MARK: - Layout and camera

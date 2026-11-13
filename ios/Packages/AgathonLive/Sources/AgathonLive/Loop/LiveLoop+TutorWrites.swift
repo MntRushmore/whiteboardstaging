@@ -138,6 +138,19 @@ extension LiveLoop {
             entries.append(WorkEntry(latex: block.latex, rect: block.rect, equalsX: block.equalsX))
         }
         entries.sort { $0.rect.y + $0.rect.h / 2 < $1.rect.y + $1.rect.h / 2 }
+        // a step written beside a kid's line (beside its ring) comes after that line, never before it:
+        // they share a middle, and the next ask goes on from the step
+        var i = 0
+        while i + 1 < entries.count {
+            let a = entries[i], b = entries[i + 1]
+            if a.line == nil, b.line != nil, a.rect.x >= b.rect.maxX - 4,
+               a.rect.y < b.rect.maxY, b.rect.y < a.rect.maxY {
+                entries.swapAt(i, i + 1)
+                i = max(0, i - 1)
+            } else {
+                i += 1
+            }
+        }
         return (head, entries)
     }
 
@@ -234,6 +247,18 @@ extension LiveLoop {
         }
         let written = placed == nil && inline ? "= \(step)" : step
         if placed == nil { meta[TutorWrites.stepMeta] = .string(written) }
+        // beside a ringed line, the ring's own correction already written (Next step) or being written:
+        // that IS the step — its why on the card, never a second copy beside it
+        if placed == nil, slip >= 0, slip < entries.count, let wrong = entries[slip].line,
+           hasSuggestion(wrong) || (rt[wrong.id]?.stepFor == wrong.latex && rt[wrong.id]?.stepPen?.isWriting == true) {
+            let there = board.store.liveRecords(on: board.currentScreenID, lineId: wrong.id).compactMap { r -> BrainRect? in
+                guard case .stroke(let s) = r, r.meta.string(LiveMeta.suggestFor) == wrong.latex else { return nil }
+                return StrokeBounds.of(s)
+            }
+            openStepCard(wrong.id, anchor: BrainRect.around(there) ?? wrong.bounds, title: final ? LiveCopy.Writes.answerTitle : LiveCopy.Writes.stepTitle,
+                         message: why.isEmpty ? LiveCopy.Writes.stepPlain : why, action: final ? .none : .next)
+            return
+        }
         // beside a ringed line: the step that should have been there
         if placed == nil, slip >= 0, slip < entries.count, let wrong = entries[slip].line,
            let plan = await plan([written], lineHeight: lineH, inline: true, seedKey: seed) {
@@ -433,8 +458,18 @@ extension LiveLoop {
     /// The step's words on the tutor's card beside it, with what the kid may ask next.
     func openStepCard(_ lineId: String, anchor: BrainRect, title: String, message: String, action: HintAction) {
         guard !message.isEmpty else { return }
+        let message = Self.withoutTitle(message, title: title)
         hints = [HintCard(id: "\(lineId):write:\(message.hashValue)", lineId: lineId, anchor: anchor, title: title, message: message,
                           question: nil, level: 3, action: action)]
+    }
+
+    /// The card's words without its title said again ("ONE STEP LEFT" over "One step left: divide both
+    /// sides by 2." read twice): "Divide both sides by 2."
+    static func withoutTitle(_ message: String, title: String) -> String {
+        let prefix = "\(title): "
+        guard message.count > prefix.count, message.lowercased().hasPrefix(prefix.lowercased()) else { return message }
+        let rest = message.dropFirst(prefix.count)
+        return rest.prefix(1).uppercased() + rest.dropFirst()
     }
 
     // MARK: - the readback (the messy-handwriting guard)

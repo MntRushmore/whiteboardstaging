@@ -147,7 +147,10 @@ extension PictureImport {
 struct CameraPicker: UIViewControllerRepresentable {
     var onPhoto: (UIImage?) -> Void
 
-    static var isAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
+    /// Not on a Mac (the iPad app on Apple silicon): the picker's camera isn't there; Photos and Files are.
+    static var isAvailable: Bool {
+        !ProcessInfo.processInfo.isiOSAppOnMac && UIImagePickerController.isSourceTypeAvailable(.camera)
+    }
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let c = UIImagePickerController()

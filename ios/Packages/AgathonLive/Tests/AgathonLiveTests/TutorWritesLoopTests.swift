@@ -92,7 +92,7 @@ struct TutorWritesLoopTests {
         #expect(steps(h) == ["2x = 8"], "x = 4 is not written")
         let last = try #require(h.loop.hints.first)
         #expect(last.title == "One step left")
-        #expect(last.message == "One step left: divide both sides by 2. You can do this one.")
+        #expect(last.message == "Divide both sides by 2. You can do this one.", "the title is not said twice")
         #expect(last.action == .none, "no Show the answer: the grown-ups have not allowed answers")
     }
 
@@ -134,6 +134,29 @@ struct TutorWritesLoopTests {
         #expect(second.y > first.maxY, "one under the other")
     }
 
+    /// The kid rubs the tutor's step out (the eraser takes the tutor's ink like any): the next ask goes on
+    /// from what is left — the same step again, once — and a step of their own under it is never covered.
+    @Test func aStepRubbedOutIsWrittenAgainOnTheNextAsk() async throws {
+        let h = Harness(mode: .suggest)
+        await h.start()
+        await h.write("2x + 3 = 11", at: Vec2(200, 120))
+        await h.pass(700)
+        trustAll(h)
+        h.loop.helpMe()
+        await h.pass(100)
+        #expect(steps(h) == ["2x = 8"])
+        let first = try #require(box(strokes(h, step: "2x = 8")))
+        h.board.erase(strokes(h, step: "2x = 8").map(\.id))
+        await h.pass(700)
+        #expect(steps(h).isEmpty, "rubbed out")
+        h.loop.helpMe()
+        await h.pass(100)
+        #expect(steps(h) == ["2x = 8"], "written again, once: \(steps(h))")
+        let again = try #require(box(strokes(h, step: "2x = 8")))
+        #expect(abs(again.y - first.y) < first.h, "in the same place, under the work")
+        #expect(h.loop.hints.first?.message == "Subtract 3 from both sides.")
+    }
+
     @Test func showMeOnAHintCardWritesTheStep() async throws {
         let h = Harness(mode: .feedback)
         await h.start()
@@ -165,6 +188,39 @@ struct TutorWritesLoopTests {
         #expect(!fix.isEmpty, "the right step: \(steps(h))")
         #expect(fix.first?.meta["suggestFor"]?.stringValue == "2x = 9")
         #expect((box(fix)?.x ?? 0) > wrong.bounds.maxX, "beside the ring")
+        // one right step beside the ring, never two (Next step's own correction and Help me's step)
+        #expect(steps(h) == ["2x = 8"], "one step: \(steps(h))")
+        let besideRing = h.board.tutorStrokes.filter { $0.meta["suggestFor"]?.stringValue == "2x = 9" }
+        #expect(besideRing.allSatisfy { $0.meta["tutorStepId"] != nil }, "no second, untagged copy of the step")
+    }
+
+    /// The simulator QA (2026-11-03): on Next step, the ring's own correction was written beside it, then
+    /// Help me wrote the same step again beside that ("2x = 9 ◯ 2x = 8 2x = 8"). The correction already
+    /// there is the step: Help me says why on its card and writes nothing more, and the next ask goes
+    /// on from it.
+    @Test func helpMeAfterTheRingsOwnCorrectionWritesNoSecondCopy() async throws {
+        let h = Harness(mode: .suggest)
+        await h.start()
+        await h.write("2x + 3 = 11", at: Vec2(200, 120))
+        try await writeAny(h, "2x = 9", at: Vec2(200, 230))
+        await h.pass(3_500)
+        trustAll(h)
+        let wrong = try #require(h.loop.lines.values.first { $0.latex == "2x = 9" })
+        #expect(h.board.mark(on: "2x = 9") == .ring)
+        // Next step's correction beside the ring (as when the ring lands with the kid stopped)
+        #expect(h.loop.suggestNextStep(wrong.id, now: true))
+        await h.pass(100)
+        #expect(h.loop.hasSuggestion(wrong), "the ring's correction is written")
+        let before = h.board.tutorStrokes.count
+        h.loop.escalate(wrong.id)
+        await h.pass(100)
+        #expect(h.board.tutorStrokes.count == before, "nothing written a second time: \(steps(h))")
+        #expect(steps(h) == ["2x = 8"])
+        // the next ask goes on from the correction: the answer is all that is left (held back)
+        h.loop.helpMe()
+        await h.pass(100)
+        #expect(h.board.tutorStrokes.count == before, "x = 4 is not written")
+        #expect(h.loop.hints.first?.title == "One step left", "card: \(h.loop.hints.first.map { "\($0.title): \($0.message)" } ?? "-")")
     }
 
     @Test func nothingWrittenIsEverAStepTheEngineCannotCheck() async throws {
@@ -350,11 +406,13 @@ struct TutorWritesLoopTests {
         await h.write("2x = 8", at: Vec2(200, 220), reads: "2x = 6")
         await h.pass(3_500)
         let line = try #require(h.loop.lines.values.first { $0.latex == "2x = 6" })
+        // (Next step's own correction beside the ring, unasked, may be there already: the guard is Help me's)
+        let before = steps(h)
         h.loop.showNextStep(lineId: line.id)
         await h.pass(100)
         #expect(h.loop.hints.first?.action == .readback)
         #expect(h.loop.hints.first?.message == "I read: 2x = 6")
-        #expect(steps(h).isEmpty, "no correction beside a line that may be misread")
+        #expect(steps(h) == before, "Help me writes no correction beside a line that may be misread")
         // she says it IS 2x = 6: a slip, and the right step goes beside it
         h.loop.moreHelp(try #require(h.loop.hints.first))
         await h.pass(100)

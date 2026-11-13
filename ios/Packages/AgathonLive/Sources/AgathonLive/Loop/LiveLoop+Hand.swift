@@ -195,8 +195,10 @@ extension LiveLoop {
             let ring = LiveMarks.ringRect(ink)
             let candidate = BrainRect(x: ring.maxX + LivePlacement.sideGap * k / 2, y: ink.y + ink.h / 2 - plan.bounds.h / 2, w: plan.bounds.w, h: plan.bounds.h)
             let slot = LivePlacement.findFreeSlot(LivePlacement.keepInsideX(candidate, bounds: self.board.screenRect), avoid: self.avoidRects(except: id), line: ink, prefer: .right, scale: k)
+            // it is a tutor's step like Help me's (`TutorWrites`): the next ask goes on from it, never writes it again
             let pen = self.writeBlock(Self.moved(plan, to: AgathonBrain.Point(x: slot.x, y: slot.y)),
-                                      meta: [LiveMeta.lineId: .string(id), LiveMeta.suggestFor: .string(latex)])
+                                      meta: [LiveMeta.lineId: .string(id), LiveMeta.suggestFor: .string(latex),
+                                             TutorWrites.stepMeta: .string(step), TutorWrites.stepId: .string(UUID().uuidString)])
             if pen.isWriting { self.rt[id]?.stepPen = pen }
             self.tracker.helped(problem: self.problemKey(for: cur), solved: false)
             // the learning record: the tutor wrote the step — unasked beside a ring (Auto), or asked (Help)
