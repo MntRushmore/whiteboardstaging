@@ -56,17 +56,62 @@ final class KidSessionUITests: XCTestCase {
     func testS11() throws { try play("s11-negatives-erase", reopen: true) }
     func testS12() throws { try play("s12-word-edge") }
 
-    // MARK: - one session
+    /// The school demo's recordings (`DemoSessions`, scripts/ios-demo-videos.sh): TEST_RUNNER_KID_DEMO=<id>,
+    /// the board as a kid's account shows it (`-demoRecording`).
+    func testDemo() throws {
+        let id = env["KID_DEMO"] ?? ""
+        try XCTSkipIf(id.isEmpty, "TEST_RUNNER_KID_DEMO=<a DemoSessions id>")
+        try play(id, demo: true)
+    }
 
-    private func play(_ id: String, reopen: Bool = false) throws {
+    /// The school demo's picture-tutor recordings (scripts/ios-demo-videos.sh): TEST_RUNNER_PICTURE_DEMO=<the
+    /// script's path on this Mac>, the picture tutor on in Suggest (TEST_RUNNER_PICTURE_MODE), the board as a
+    /// kid's account shows it.
+    func testPictureDemo() throws {
+        let path = env["PICTURE_DEMO"] ?? ""
+        try XCTSkipIf(path.isEmpty, "TEST_RUNNER_PICTURE_DEMO=<script.json>")
         app = XCUIApplication()
-        let budget = Self.budgets[id] ?? 20
-        app.launchArguments += ["-noLabs", "-onboardingMute", "-kidSession", id, "-kidRun", env["KID_RUN"] ?? "run", "-liveTraining", "\(budget)"]
+        app.launchArguments += ["-noLabs", "-onboardingMute", "-demoRecording", "-pictureDemo", path, "-kidRun", env["KID_RUN"] ?? "run",
+                                "-pictureTutor.enabled", "YES", "-pictureTutor.mode", env["PICTURE_MODE"] ?? "suggest"]
         app.launch()
         tap("boards.new", wait: 60)
         XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 60), "the board never opened")
+        try drive(((path as NSString).lastPathComponent as NSString).deletingPathExtension)
+    }
+
+    // MARK: - one session
+
+    private func play(_ id: String, reopen: Bool = false, demo: Bool = false) throws {
+        app = XCUIApplication()
+        let budget = Self.budgets[id] ?? (demo ? 30 : 20)
+        app.launchArguments += ["-noLabs", "-onboardingMute", "-kidSession", id, "-kidRun", env["KID_RUN"] ?? "run", "-liveTraining", "\(budget)"]
+        if demo { app.launchArguments.append("-demoRecording") }
+        app.launch()
+        tap("boards.new", wait: 60)
+        XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 60), "the board never opened")
+        try drive(id)
+        guard reopen else { return }
+        let done = element("debug.session").label
+        guard let ink = done.components(separatedBy: "ink ").last.flatMap({ Int($0.trimmingCharacters(in: .whitespaces)) }) else { return }
+        sleep(4)
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += ["-noLabs", "-onboardingMute"]
+        app.launch()
+        tap("boards.row", wait: 60)
+        XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 60), "the board never opened again")
+        let live = element("debug.live")
+        XCTAssertTrue(live.waitForExistence(timeout: 30))
+        let same = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "| ink \(ink) |"), object: live)],
+                                    timeout: 60)
+        snap("\(id)-zz-reopened")
+        XCTAssertEqual(same, .completed, "opened again with different ink: \(live.label) (wanted ink \(ink))")
+    }
+
+    /// The player's taps (its `await` label) until it is done; then the board saved.
+    private func drive(_ id: String) throws {
         let probe = element("debug.session")
-        XCTAssertTrue(probe.waitForExistence(timeout: 60), "no session player (a Debug build with -kidSession)")
+        XCTAssertTrue(probe.waitForExistence(timeout: 60), "no session player (a Debug build with -kidSession or -pictureDemo)")
         var handled = 0
         let deadline = Date().addingTimeInterval(14 * 60)
         while Date() < deadline {
@@ -87,20 +132,6 @@ final class KidSessionUITests: XCTestCase {
         if status.waitForExistence(timeout: 10) {
             _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS 'saved'"), object: status)], timeout: 60)
         }
-        guard reopen, let ink = done.components(separatedBy: "ink ").last.flatMap({ Int($0.trimmingCharacters(in: .whitespaces)) }) else { return }
-        sleep(4)
-        app.terminate()
-        app = XCUIApplication()
-        app.launchArguments += ["-noLabs", "-onboardingMute"]
-        app.launch()
-        tap("boards.row", wait: 60)
-        XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 60), "the board never opened again")
-        let live = element("debug.live")
-        XCTAssertTrue(live.waitForExistence(timeout: 30))
-        let same = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "| ink \(ink) |"), object: live)],
-                                    timeout: 60)
-        snap("\(id)-zz-reopened")
-        XCTAssertEqual(same, .completed, "opened again with different ink: \(live.label) (wanted ink \(ink))")
     }
 
     /// The kid taps the board's button `buttonId`, then tells the player (`ack`), or says it was not there.
@@ -115,7 +146,7 @@ final class KidSessionUITests: XCTestCase {
         if found {
             usleep(700_000)
             button.tap()
-            snap("\(id)-tap\(seq)-\(buttonId)")
+            if env["KID_DEMO"] == nil { snap("\(id)-tap\(seq)-\(buttonId)") }
         }
         let reply = element(found ? "debug.session.ack" : "debug.session.missing")
         if reply.waitForExistence(timeout: 10) { reply.tap() }

@@ -67,6 +67,8 @@ public enum KidButton: String, Sendable {
     case check = "live.check"
     case helpMe = "live.helpMe"
     case gotIt = "live.hint.gotIt"
+    /// a hint card's Show me (the tutor writes the next step)
+    case showMe = "live.hint.more"
     case newPage = "live.newPage"
     case keepHere = "live.keepHere"
     case nowYouTry = "live.nowYouTry"
@@ -403,7 +405,7 @@ public enum KidSessions {
         ]),
     ]
 
-    public static func named(_ id: String) -> KidSession? { all.first { $0.id == id } }
+    public static func named(_ id: String) -> KidSession? { all.first { $0.id == id } ?? DemoSessions.named(id) }
 
     /// Every line a session writes (for the hand-can-write-it test).
     public static func lines(_ s: KidSession) -> [TrainingLineSpec] {

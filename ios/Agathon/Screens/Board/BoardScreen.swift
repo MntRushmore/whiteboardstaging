@@ -234,6 +234,7 @@ private struct BoardTopTrailing: View {
             // and went, and a UI test's tap could land on the board between them (a finger's dot of ink)
             BoardAutowriteButton(model: model)
             KidSessionControls(model: model)
+            PictureDemoControls(model: model)
             #endif
         }
     }
@@ -278,7 +279,16 @@ private struct BoardTopTrailing: View {
     }
 
     /// Flag a bug: a picture of the board and what it knew go with a note (the owner, 2026-10-27).
-    private var flagButton: some View {
+    @ViewBuilder private var flagButton: some View {
+        #if DEBUG
+        // the school demo's recordings show the board as a kid's account has it
+        if !DemoRecording.on { flag }
+        #else
+        flag
+        #endif
+    }
+
+    private var flag: some View {
         RoundButton(.bug, label: "Flag a bug") { model.flagBug(controller: session.controller) }
             .accessibilityIdentifier("board.flagBug")
     }

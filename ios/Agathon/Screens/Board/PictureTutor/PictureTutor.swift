@@ -196,6 +196,13 @@ final class PictureTutor: ObservableObject {
             phase = .idle
             return
         }
+        #if DEBUG
+        // the demo recordings hold the tutor's own look off while the problem is written (Draw now asks)
+        if PictureDemoPlayer.autoPaused {
+            phase = .idle
+            return
+        }
+        #endif
         phase = .waiting
         timer = deps.schedule(PictureTutorSettings.quietDelay) { [weak self] in
             guard let self else { return }

@@ -126,6 +126,9 @@ struct KidSessionResult: Codable {
     var reads: [String] = []
     var ink = 0
     var checking = ""
+    /// when the session began and ended (seconds since 1970): the demo recordings are cut to them
+    var startedAt: Double = 0
+    var endedAt: Double = 0
 
     var judged: Int { checks.filter { $0.pass != nil }.count }
     var passed: Int { checks.filter { $0.pass == true }.count }
@@ -186,6 +189,7 @@ private final class KidSessionRun {
 
     func go() async -> KidSessionResult {
         let t0 = Date()
+        result.startedAt = t0.timeIntervalSince1970
         player.set("starting: waiting for the board")
         for _ in 0..<100 where (canvas?.bounds.width ?? 0) == 0 { try? await Task.sleep(for: .milliseconds(100)) }
         _ = try? await Brain.shared.load()
@@ -201,6 +205,7 @@ private final class KidSessionRun {
             player.set("running \(i + 1)/\(session.steps.count) \(describe(step))")
             await perform(step)
         }
+        result.endedAt = Date().timeIntervalSince1970
         observe()
         watching?.cancel()
         finish()
@@ -501,6 +506,7 @@ private final class KidSessionRun {
         case .check: loop.checkPage()
         case .helpMe: loop.helpMe()
         case .gotIt: for h in loop.hints { loop.dismissHint(h.id) }
+        case .showMe: if let h = loop.hints.last { loop.moreHelp(h) }
         case .newPage: loop.takeNewPage()
         case .keepHere: loop.keepHere()
         case .nowYouTry: loop.takeOffer()
@@ -680,6 +686,8 @@ private final class KidSessionRun {
     }
 
     func shot(_ name: String) {
+        // a demo recording: no stall of the screen for a picture of it
+        guard !DemoRecording.on else { return }
         guard let window = canvas?.window else { return }
         shotSeq += 1
         let file = "\(session.id)-\(String(format: "%02d", shotSeq))-\(name).png"
@@ -718,6 +726,12 @@ private final class KidSessionRun {
         case .shot(let n): return "shot \(n)"
         }
     }
+}
+
+/// Debug only: `-demoRecording` — the board as a kid's account shows it, for the school demo's screen
+/// recordings (docs/DEMO-VIDEOS.md): no Flag a bug, no session pictures.
+enum DemoRecording {
+    static let on = ProcessInfo.processInfo.arguments.contains("-demoRecording")
 }
 
 private extension KidStep {

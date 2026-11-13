@@ -57,7 +57,8 @@ public enum WordProblem {
     /// One line as plain words: `\text{…}` unwrapped, `\frac{a}{b}` as a/b, symbols as themselves;
     /// nil when a command is left over (it would show as LaTeX).
     static func plain(_ latex: String) -> String? {
-        var s = latex.replacingOccurrences(of: "$", with: "")
+        // a dollar sign written for the page (`\$13.45`) stays; the maths delimiters go
+        var s = latex.replacingOccurrences(of: "\\$", with: "\u{E000}").replacingOccurrences(of: "$", with: "")
         // \text{…} and friends: their words
         s = s.replacingOccurrences(of: #"\\(?:text|textbf|textit|mathrm|mbox)\s*\{([^{}]*)\}"#, with: "$1", options: .regularExpression)
         s = s.replacingOccurrences(of: #"\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}"#, with: "$1/$2", options: .regularExpression)
@@ -69,6 +70,7 @@ public enum WordProblem {
         s = s.replacingOccurrences(of: #"\^\{?3\}?"#, with: "³", options: .regularExpression)
         s = s.replacingOccurrences(of: "{", with: "").replacingOccurrences(of: "}", with: "")
         if s.contains("\\") || s.contains("^") || s.contains("_") { return nil }
+        s = s.replacingOccurrences(of: "\u{E000}", with: "$")
         return s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
     }
 
