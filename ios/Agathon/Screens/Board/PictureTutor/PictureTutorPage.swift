@@ -6,7 +6,10 @@ import SwiftUI
 /// this iPad, the mode a board starts in, and the last runs' timings (the board itself shows none).
 @MainActor
 struct PictureTutorPage: View {
-    @AppStorage(PictureTutorSettings.enabledKey) private var enabled = false
+    @Environment(AgathonBackend.self) private var backend
+    /// this device's own choice (nil: never switched here, so the account's default shows)
+    @AppStorage(PictureTutorSettings.enabledKey) private var deviceChoice: Bool?
+    private var enabled: Bool { deviceChoice ?? backend.auth.metadataFlag(PictureTutorSettings.accountKey) }
     @AppStorage(PictureTutorSettings.modeKey) private var mode: PictureTutorMode = .suggest
     @AppStorage(BoardFlags.infiniteKey) private var infinite = false
     @ObservedObject var log: PictureTutorLog
@@ -19,7 +22,7 @@ struct PictureTutorPage: View {
         AreaPage("Picture tutor (test)",
                  subtitle: "Reed's picture tutor, sped up. When the pen lifts, the board goes to the tutor as a picture and its drawing comes back over the work. On your boards only, on this iPad.") {
             AreaCard("On this iPad") {
-                Toggle(isOn: $enabled) {
+                Toggle(isOn: Binding(get: { enabled }, set: { deviceChoice = $0 })) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Use the picture tutor on my boards").dsFont(.callout).foregroundStyle(DS.Color.ink)
                         Text(enabled ? "On: your boards run it instead of the ticks and rings. Kids' profiles never see it."

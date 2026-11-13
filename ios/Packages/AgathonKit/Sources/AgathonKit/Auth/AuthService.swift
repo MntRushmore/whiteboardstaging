@@ -61,6 +61,22 @@ public final class AuthService {
     /// An anonymous session (SAT mode with no account, `POST /api/sat/anon`, docs/SAT-MODE.md): it may
     /// use SAT practice and nothing else until it becomes a real account (`upgradeAnonymous`).
     public private(set) var isAnonymous = false
+    /// The signed-in user's `user_metadata` (as the session carries it from sign-in or the last refresh).
+    public private(set) var userMetadata: [String: AnyJSON] = [:]
+
+    /// Reads the user again from the server (`GET /auth/v1/user`), so `user_metadata` changed since the
+    /// session was made (an admin's switch) shows without signing in again. Quiet when it can't.
+    public func refreshUserMetadata() async {
+        guard phase == .signedIn, let user = try? await client.auth.user(),
+              user.id.uuidString.lowercased() == userId else { return }
+        userMetadata = user.userMetadata
+    }
+
+    /// A true/false flag in the user's `user_metadata` (false when absent or not a boolean).
+    public func metadataFlag(_ key: String) -> Bool {
+        if case .bool(let on) = userMetadata[key] { return on }
+        return false
+    }
 
     public let client: SupabaseClient
     /// Where an email link (reset, confirm) sends the browser: the web's pages on the API's host,
@@ -90,11 +106,13 @@ public final class AuthService {
             userId = session.user.id.uuidString.lowercased()
             email = session.user.email
             isAnonymous = session.user.isAnonymous
+            userMetadata = session.user.userMetadata
             phase = .signedIn
         } else {
             userId = nil
             email = nil
             isAnonymous = false
+            userMetadata = [:]
             phase = .signedOut
         }
     }

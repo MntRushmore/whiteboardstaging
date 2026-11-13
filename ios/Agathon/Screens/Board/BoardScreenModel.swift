@@ -191,7 +191,7 @@ final class BoardScreenModel: ObservableObject {
             return canvas?.gestureRecognizers?.contains { $0.state == .began || $0.state == .changed } ?? false
         }
         self.tutor = tutor
-        if PictureTutorSettings.enabled {
+        if PictureTutorSettings.isOn(accountDefault: backend.auth.metadataFlag(PictureTutorSettings.accountKey)) {
             // an admin's test: the picture tutor instead of Live's marks (asked once per user)
             Task { @MainActor [weak self, weak tutor] in
                 let admin = await PictureTutorAccess.isAdmin(backend)

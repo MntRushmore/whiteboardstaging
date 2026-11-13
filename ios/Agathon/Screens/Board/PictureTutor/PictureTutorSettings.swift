@@ -50,6 +50,18 @@ enum PictureTutorSettings {
         set { defaults.set(newValue, forKey: enabledKey) }
     }
 
+    /// The account's say (`user_metadata.picture_tutor`, set by an admin on the server): the switch's
+    /// default on a device that has never been switched.
+    static let accountKey = "picture_tutor"
+
+    /// This device's own choice, nil when the switch was never touched here.
+    static var deviceChoice: Bool? {
+        defaults.object(forKey: enabledKey) == nil ? nil : defaults.bool(forKey: enabledKey)
+    }
+
+    /// On or off for this device: its own choice wins; untouched, the account's default.
+    static func isOn(accountDefault: Bool) -> Bool { deviceChoice ?? accountDefault }
+
     static var defaultMode: PictureTutorMode {
         get { defaults.string(forKey: modeKey).flatMap(PictureTutorMode.init(rawValue:)) ?? .suggest }
         set { defaults.set(newValue.rawValue, forKey: modeKey) }
@@ -91,7 +103,7 @@ enum PictureTutorAccess {
 
     /// What a board opens with: the picture tutor when the switch is on and the user is an admin.
     static func boardUsesPictureTutor(_ backend: AgathonBackend) async -> Bool {
-        guard PictureTutorSettings.enabled else { return false }
+        guard PictureTutorSettings.isOn(accountDefault: backend.auth.metadataFlag(PictureTutorSettings.accountKey)) else { return false }
         return await isAdmin(backend)
     }
 }

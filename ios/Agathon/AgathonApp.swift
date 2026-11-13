@@ -43,6 +43,7 @@ struct AgathonApp: App {
             .task(id: backend.auth.userId) {
                 planStore.resetForNewAccount()
                 guard backend.auth.userId != nil else { return }
+                await backend.auth.refreshUserMetadata() // an admin's switches (the picture tutor's default)
                 await planStore.refreshPlan()
                 await planStore.retryUnfinished()
             }
