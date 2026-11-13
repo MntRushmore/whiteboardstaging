@@ -129,7 +129,10 @@ public struct LiveOverlay: View {
         let above = point(h.anchor.x, ring.y)
         let width = min(380, max(260, size.width - 32))
         let x = min(max(16, below.x - 12), size.width - width - 16)
-        let roomBelow = size.height - below.y > 260
+        // the board's dock (and Help me) float over the bottom of the board: a card under a low line
+        // would slide under them (its Got it covered), so it needs that much more room to go below
+        let dockClearance: CGFloat = 110
+        let roomBelow = size.height - below.y > 260 + dockClearance
         HintCardView(card: h, pointsUp: roomBelow, onGotIt: { loop.cardFirstButton(h) }, onMore: { loop.moreHelp(h) }, onSpeak: onSpeak)
             .frame(width: width)
             .alignmentGuide(.leading) { _ in -x }
