@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Beaker, Sparkles, FileText, Upload, Loader2, RefreshCw } from "lucide-react";
+import { Beaker, Sparkles, FileText, Upload, Keyboard, Loader2, RefreshCw } from "lucide-react";
 import {
   FEATURES,
   useFeatureLabs,
@@ -23,6 +23,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Sparkles,
   FileText,
   Upload,
+  Keyboard,
 };
 
 /**
