@@ -211,3 +211,9 @@ The board, chat and admin components need a signed-in user, so I reviewed them s
 - Things that are hard to check headlessly: tldraw canvas controls with a screen reader, and VoiceOver on iPad.
 
 Typecheck clean, lint clean on the changed files, `npm test` **10,332 passed / 105 skipped / 0 failed**, and the placeholder-env build passes.
+
+## 11. Final re-run (on 291bd915, the last code change)
+- `npm run typecheck`: **pass**, 0 errors.
+- `npm run lint`: **pass**, 0 errors, 0 warnings.
+- `npm test`: **pass**, 517 files passed / 14 skipped; **10,332 tests passed / 105 skipped / 0 failed**. The skips are env-gated: DB, live evals, smoke.
+- `npm run build` (placeholder env, as in item 5): **pass**. `bundle:check`: **all budgets ok**.
