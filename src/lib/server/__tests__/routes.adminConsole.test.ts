@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const gate = vi.hoisted(() => ({ requireAdmin: vi.fn() }));
 vi.mock("@/lib/server/admin", () => ({ requireAdmin: gate.requireAdmin }));
 
+import { GET as boardAskGet } from "@/app/api/admin/boards/[id]/ask/route";
 import { GET as boardGet } from "@/app/api/admin/boards/[id]/route";
 import { GET as boardsGet } from "@/app/api/admin/boards/route";
 import { POST as bugReply } from "@/app/api/admin/bugs/[id]/messages/route";
@@ -20,6 +21,7 @@ import { GET as issuesGet, PATCH as issuesPatch } from "@/app/api/admin/issues/r
 import { GET as userGet } from "@/app/api/admin/users/[id]/route";
 import { GET as usersGet } from "@/app/api/admin/users/route";
 import {
+  AdminAskChatSchema,
   AdminBoardDocSchema,
   AdminBoardListSchema,
   AdminBugListSchema,
@@ -57,6 +59,7 @@ const CALLS: Array<[string, () => Promise<Response>]> = [
   ["GET users/[id]", () => userGet(req(`/users/${MAYA}`), ctx(MAYA))],
   ["GET boards", () => boardsGet(req("/boards"))],
   ["GET boards/[id]", () => boardGet(req(`/boards/${B1}`), ctx(B1))],
+  ["GET boards/[id]/ask", () => boardAskGet(req(`/boards/${B1}/ask`), ctx(B1))],
   ["GET bugs", () => bugsGet(req("/bugs"))],
   ["PATCH bugs/[id]", () => bugPatch(patch(`/bugs/${BUG}`, { status: "seen" }), ctx(BUG))],
   ["POST bugs/[id]/messages", () => bugReply(req(`/bugs/${BUG}/messages`, { method: "POST", body: JSON.stringify({ body: "Thanks, looking." }), headers: { "Content-Type": "application/json" } }), ctx(BUG))],
@@ -78,7 +81,8 @@ beforeEach(() => {
   gate.requireAdmin.mockReset();
   gate.requireAdmin.mockResolvedValue({ user: ADMIN_USER });
   vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
-  db = consoleFake();
+  // the Ask tab's table, empty unless a test fills it (askChat.ts reads it after logging the look)
+  db = consoleFake({ ...consoleTables(), ask_messages: [] });
   vi.stubGlobal("fetch", db.fetch);
 });
 
@@ -207,6 +211,42 @@ describe("GET /api/admin/boards/<id>", () => {
     const text = await res.text();
     expect(JSON.parse(text)).toMatchObject({ error: "feature_unavailable" });
     expect(text).not.toContain("shape:a");
+  });
+});
+
+describe("GET /api/admin/boards/<id>/ask", () => {
+  it("the board's chat in the contract's shape, never cached, the look logged as board.ask", async () => {
+    const res = await boardAskGet(req(`/boards/${B1}/ask`), ctx(B1));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toContain("no-store");
+    expect(AdminAskChatSchema.safeParse(await res.json()).success).toBe(true);
+    expect(db.tables.admin_audit).toEqual([expect.objectContaining({ admin_id: ADMIN_USER.id, action: "board.ask", target_id: B1 })]);
+  });
+
+  it("400 for an id that is not a uuid (path tricks included), before any read; 404 for no such board", async () => {
+    for (const bad of ["not-a-uuid", "../users", `${B1}' or 1=1--`, "", "é".repeat(36)]) {
+      db.calls.length = 0;
+      const res = await boardAskGet(req(`/boards/x/ask`), ctx(bad));
+      expect(res.status, bad).toBe(400);
+      expect(db.calls, bad).toEqual([]);
+    }
+    expect((await boardAskGet(req(`/boards/${MISSING}/ask`), ctx(MISSING))).status).toBe(404);
+  });
+
+  it("503 when the look cannot be logged: no chat leaves", async () => {
+    db = consoleFake({ ...consoleTables(), ask_messages: [] }, { fail: { admin_audit: 503 } });
+    vi.stubGlobal("fetch", db.fetch);
+    const res = await boardAskGet(req(`/boards/${B1}/ask`), ctx(B1));
+    expect(res.status).toBe(503);
+    expect(db.calls.some((c) => c.table === "ask_messages")).toBe(false);
+  });
+
+  it("shares the console's bucket: past LIMITS.adminConsole, 429 before any read", async () => {
+    for (let i = 0; i < LIMITS.adminConsole.limit; i++) await boardAskGet(req(`/boards/${B1}/ask`), ctx(B1));
+    db.calls.length = 0;
+    const res = await boardAskGet(req(`/boards/${B1}/ask`), ctx(B1));
+    expect(res.status).toBe(429);
+    expect(db.calls).toEqual([]);
   });
 });
 

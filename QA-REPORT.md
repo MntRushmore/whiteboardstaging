@@ -89,3 +89,58 @@ The script flags one "likely duplicated" 58.7 KB chunk emitted 7 times under dif
   `micEngines.resetMicRoute`, `dailyMarker.clearDailyMarker`, `progress.clearDailyNote`, `blanks.hasBlank`/`withoutBlanks`, `classify.isIncomplete`,
   `constants.findConstant`, `learning/contracts.MISTAKE_DEFS`. They are tree-shaken, so deleting them saves no bundle bytes. Some look like deliberate
   seams (reset/clear), so removing them unattended wasn't worth the risk.
+
+## Item 8: coverage of the core flows (whiteboard, tutoring chat, auth, billing)
+**Method:** I mapped every API route and every `src/lib`/`src/hooks` module to the tests that import it. Coverage was already broad: 595 test files,
+and every route except one has a route-level test. So I aimed at the specific edges with no direct test, not at line counts.
+**No source bugs found in this item.** All new tests passed against the existing code, except where my own test assumed the wrong thing (notes below).
+
+**Added (69 tests, all passing):**
+- **Tutoring chat:** `src/lib/server/__tests__/chatGate.test.ts` (16). This is new and covers `chatGate` (466 lines, shared by `/api/live/chat` and `/api/live/ask`),
+  which until now was only reached through the two routes. The tests cover:
+  - nothing proposed (no refund)
+  - nothing readable (`null`, arrays, strings, unknown types): one refund, a generic line
+  - an unreadable board block counted as proposed, then refunded
+  - `refundWhen` declining the refund
+  - a refund the database doesn't make, which is not reported as made
+  - a 200-action reply: only `CHAT_LIMITS.actions` kept, the rest dropped as "too many", the charge kept
+  - unicode maths passing untouched
+  - `\text{…}` in any script dropping the whole action
+  - **a repair skipped when the deadline is near or already past**, with the `budget` route event
+  - a repair failing on the network, or returning junk, dropping the figure without crashing
+  - the repair using the route's models, title and deadline
+  - a `new_screen` kept when asked for alone but dropped when it was only for a failed figure
+  - `help_problem` for a missing number
+  - 5 concurrent gates keeping their own repair budget and refund
+- **Auth:** `src/lib/server/__tests__/auth.test.ts` (26). This is new; before it only the Auth-outage path had tests. It covers:
+  - the `Bearer` scheme in any case and with extra spaces
+  - 13 malformed headers refused with a 401 **before any network call**: none, empty, Basic, no scheme, 2 or 4 segments, an empty segment, two tokens, non-base64url, Latin-1, quotes and SQL
+  - a 150 KB token, a user-less success, and a user without an email
+  - 20 concurrent mixed good and bad tokens, each judged on its own
+  - a missing Supabase URL giving **500, not a 401 that blames the student**
+  - `identifyUser`: `null` when Auth throws, `null` at exactly 3 s when Auth hangs, and no timer left behind
+- **Admin auth:** `GET /api/admin/boards/[id]/ask` was the **only API route with no test.** I added it to the console's per-route table in
+  `routes.adminConsole.test.ts`, so it now gets the non-admin 404 with nothing read, the signed-out 401, the 503 without a key, and the 200 with a request id.
+  I also added its own tests: the contract shape, no-store, and the `board.ask` audit row; 400 for bad or path-trick ids before any read; 404 for a missing board;
+  503 with no chat leaving when the audit fails; and 429 past the shared console bucket (+8).
+- **Billing:** `billingWebhook.test.ts` (+3):
+  - The **1 MB body cap was untested**. A signed 1 MB+ body now gives 400 with nothing stored.
+  - The signature is checked over the raw UTF-8 bytes. A payer's name with ë/李/🎉 verifies and grants, and the same JSON re-encoded with `\u` escapes is refused.
+  - **5 simultaneous deliveries** of `completed` and `async_payment_succeeded` for one session all answer 200 and grant the pack once.
+- **Whiteboard sync:** `src/lib/sync/__tests__/tabLock.test.ts` (8) and `deepEqual.test.ts` (8). Both modules are new to the tests.
+  - `openTabIds` decides whose backups a board replays. The tests check that "can't tell" (no Web Locks, a query that throws or rejects, no `held`) is
+    **`null` and never an empty set**, because an empty set would replay a live tab's work. They also cover the prefix filtering, 50 holders across 25 ids
+    releasing independently, a double release, and a refused lock request that never becomes an unhandled rejection.
+  - `deepEqual` (which drives what the merge writes) is tested on: key order, a JSON round-trip, one moved point deep in a stroke, an array vs an object with the same keys,
+    inherited keys, unicode with no normalisation, and a 100k-point stroke.
+  - The save queue (`saveQueue.test.ts`, 30 cases) already covers rapid edits, offline, timeouts, conflicts and backoff, so I added nothing there.
+
+**Observations (not changed):**
+- `src/app/api/billing/webhook/route.ts:115-116`: the cap compares `rawBody.length` (UTF-16 code units) with `MAX_BODY_BYTES`, and only after
+  `req.text()` has buffered the whole body. A multibyte body can be up to about 3× the cap in bytes before it is refused. The risk is low because Stripe's payloads are small,
+  the route is rate limited per IP, and the platform caps request bodies, but the name says bytes. A `content-length` pre-check plus `new TextEncoder().encode(rawBody).length` would make it exact.
+- `src/lib/sync/deepEqual.ts`: `{ a: undefined }` vs `{}` counts as different, so a record whose local copy keeps an `undefined` key that the server's JSON dropped
+  is re-written. That costs a redundant write and loses no data.
+- A non-Latin-1 character in an `Authorization` header is refused by the runtime's `Headers` before any route code runs. This is expected and noted only so nobody writes a test for it.
+
+After item 8: typecheck is clean, the new files lint clean, and `npm test` gives 10,329 passed and 105 skipped, 0 failed (10,260 before, plus 69).

@@ -1044,6 +1044,42 @@ describe("POST /api/billing/webhook", () => {
     expect(limited.headers.get("retry-after")).toMatch(/^\d+$/);
     expect((await handler(await signedRequest(checkoutBody, { header: null, ip: "198.51.100.45" }))).status).toBe(400);
   });
+
+  it("a body over 1 MB is refused (400) before the signature is checked or anything is stored, even when signed", async () => {
+    const store = fakeStore();
+    const huge = JSON.stringify(event("checkout.session.completed", session({ metadata: { app: "agathon-classroom", pack_id: "medium", pad: "x".repeat(1_000_001) } }), "evt_huge"));
+    const res = await handlerWith(store)(await signedRequest(huge));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { message: string }).message).toBe("Payload too large.");
+    expect(store.log.recorded).toEqual([]);
+    expect(store.balance()).toBe(300);
+  });
+
+  it("the signature is over the raw UTF-8 bytes: a payer's name in any script verifies and grants; the same body re-encoded does not", async () => {
+    const store = fakeStore();
+    const body = JSON.stringify(event("checkout.session.completed", session({ customer_details: { name: "Zoë Ångström 李雷 🎉", email: "zoë@example.com" } }), "evt_unicode"));
+    const res = await handlerWith(store)(await signedRequest(body));
+    expect(res.status).toBe(200);
+    expect(store.balance()).toBe(5300);
+    // the same characters, escaped: the same JSON, but not the bytes Stripe signed
+    const escaped = body.replace(/[^\x00-\x7f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+    expect(escaped).not.toBe(body);
+    expect(JSON.parse(escaped)).toEqual(JSON.parse(body));
+    const header = await signStripePayload(body, SECRET, NOW);
+    const tampered = await handlerWith(fakeStore())(await signedRequest(escaped, { header }));
+    expect(tampered.status).toBe(400);
+  });
+
+  it("the same event delivered several times at once still grants once; every delivery answers 200", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    const asyncBody = JSON.stringify(event("checkout.session.async_payment_succeeded", session(), "evt_async"));
+    const bodies = [checkoutBody, checkoutBody, checkoutBody, asyncBody, asyncBody];
+    const responses = await Promise.all(bodies.map(async (b) => handler(await signedRequest(b))));
+    expect(responses.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
+    expect(store.balance()).toBe(5300);
+    expect(new Set(store.log.recorded)).toEqual(new Set(["evt_checkout", "evt_async"]));
+  });
 });
 
 describe("POST /api/billing/webhook: Agathon Unlimited", () => {
