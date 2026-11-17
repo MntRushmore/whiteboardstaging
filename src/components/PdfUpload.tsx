@@ -367,6 +367,8 @@ export function PdfDialog({
                       : "border-transparent hover:border-muted-foreground/50"
                   }`}
                 >
+                  {/* A canvas data: URL rendered in the browser; next/image has nothing to optimize. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={t.thumbnailUrl}
                     alt={`Page ${t.pageNumber}`}

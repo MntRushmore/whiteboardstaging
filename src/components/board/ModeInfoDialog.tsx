@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   Dialog,
   DialogContent,
@@ -27,8 +28,11 @@ export function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </DialogHeader>
         <div className="flex flex-wrap gap-6">
           <div className="flex-1 min-w-[200px] flex flex-col items-start">
-            <img
+            <Image
               src="/modes/feedback.png"
+              width={1222}
+              height={876}
+              sizes="(min-width: 640px) 268px, 100vw"
               alt="Feedback mode example"
               className="h-48 w-auto rounded-md border bg-muted object-contain mb-3"
             />
@@ -39,8 +43,11 @@ export function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           </div>
 
           <div className="flex-1 min-w-[200px] flex flex-col items-start">
-            <img
+            <Image
               src="/modes/suggest.png"
+              width={1222}
+              height={876}
+              sizes="(min-width: 640px) 268px, 100vw"
               alt="Suggest mode example"
               className="h-48 w-auto rounded-md border bg-muted object-contain mb-3"
             />
@@ -51,8 +58,11 @@ export function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           </div>
 
           <div className="flex-1 min-w-[200px] flex flex-col items-start">
-            <img
+            <Image
               src="/modes/solve.png"
+              width={1222}
+              height={876}
+              sizes="(min-width: 640px) 268px, 100vw"
               alt="Solve mode example"
               className="h-48 w-auto rounded-md border bg-muted object-contain mb-3"
             />
