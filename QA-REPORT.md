@@ -36,3 +36,14 @@ Before: 1 failure out of 10,363 tests (513 files run, 14 skipped). It failed eve
   I confirmed the route's timeout logic works: the test passes once the clock moves after the timer is armed.
 
 After: 513 test files passed, 14 skipped; 10,258 tests passed, 105 skipped, 0 failed. The skipped ones are env-gated (DB, live evals).
+
+## Item 5 — `npm run build`
+Command: `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder-anon-key NEXT_TELEMETRY_DISABLED=1 npm run build`
+(the URL is a local placeholder so nothing can reach a real backend). The build **passed** with no errors on Next 16.2.4 (Turbopack),
+covering 27 static pages and all API routes as dynamic. I made no changes.
+
+- One warning: `metadataBase property ... not set ... using "http://localhost:3000"`, printed while static pages were generated.
+  **Checked and harmless:** the built `.next/server/app/parents.html` has `og:image`, `twitter:image` and canonical all at
+  `https://agathon.app/...`, because `src/app/(platform)/parents/page.tsx:42` sets `metadataBase`. No built HTML contains `localhost:3000`.
+  To silence it, the same `metadataBase` could go in the root `src/app/layout.tsx`. I left that alone because it would also make
+  relative metadata URLs absolute on every other page. That's for the owner to decide, not a bug.
