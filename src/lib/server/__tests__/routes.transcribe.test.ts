@@ -371,6 +371,7 @@ describe("POST /api/live/transcribe", () => {
           }),
       );
       const pending = transcribe(request());
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
       await vi.advanceTimersByTimeAsync(SCRIBE_BATCH.timeoutMs + 10);
       const res = await pending;
       expect(res.status).toBe(502);
