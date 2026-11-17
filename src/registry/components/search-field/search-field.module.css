@@ -7,7 +7,7 @@
 /* The glass wakes up with the field: muted at rest, full contrast while searching. */
 .shell > svg { flex: 0 0 auto; color: var(--text-muted); transition: color var(--duration-fast) var(--ease-standard); }
 .shell:focus-within > svg, .shell[data-filled="true"] > svg { color: var(--foreground); }
-.input { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--foreground); font: inherit; font-size: var(--text-sm); outline: 0; }
+.input { align-self: stretch; width: 100%; min-width: 0; border: 0; background: transparent; color: var(--foreground); font: inherit; font-size: var(--text-sm); outline: 0; }
 .input:focus-visible { outline: 0; }
 .input::placeholder { color: var(--text-muted); }
 .input::-webkit-search-cancel-button { display: none; }
@@ -15,4 +15,6 @@
 .shell button { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text-muted); transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard); }
 @media (hover: hover) and (pointer: fine) { .shell button:hover { background: var(--surface-muted); color: var(--foreground); } }
 .shell button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+/* Agathon: below 16px, iOS Safari zooms the page in when the field takes focus. Touch screens get 16px; desktop keeps the design size. */
+@media (pointer: coarse) { .input { font-size: max(16px, var(--text-sm)); } }
 @media (prefers-reduced-motion: reduce) { .shell, .shell > svg, .shell button { transition: none; } }

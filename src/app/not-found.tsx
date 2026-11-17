@@ -6,7 +6,6 @@ import {
   CardDescription,
   CardFooter,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 
 export const metadata = {
@@ -15,11 +14,11 @@ export const metadata = {
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+    <main className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <p className="text-sm font-medium text-muted-foreground">404</p>
-          <CardTitle>Page not found</CardTitle>
+          <h1 className="font-semibold leading-none tracking-tight">Page not found</h1>
           <CardDescription>
             That board or page does not exist, or you do not have access to it.
           </CardDescription>
@@ -33,6 +32,6 @@ export default function NotFound() {
           </Button>
         </CardFooter>
       </Card>
-    </div>
+    </main>
   );
 }

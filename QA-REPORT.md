@@ -183,3 +183,31 @@ After the fixes: typecheck clean, lint clean, `npm test` 10,329 passed / 105 ski
 - **The pdf.js worker loads from `unpkg.com`** (`src/lib/pdf.ts:17`) with no integrity check. A compromised or hijacked CDN response would run in the worker. Bundling the worker, or serving it from `/public`, avoids the third party.
 - **`requireUser` echoes `getServerEnv()`'s error message** in its 500 (`src/lib/server/auth.ts:110-118`) when the server env is misconfigured. That can name missing env vars to the caller. It is only reachable on a broken deployment, so the impact is low.
 - **`renderLatex` (`src/shapes/math/katex.ts`) sets no `maxSize`/`maxExpand`**, unlike `askMath.ts`, which uses 10 and 200. A board formula like `\rule{500em}{500em}` can draw a huge box over the board UI. Boards are only shown to their owner and to admins, so this is cosmetic.
+
+## 10. Accessibility/UX pass
+
+**How:** Playwright with headless Chromium (installed in `/tmp`, not added to the repo) and `@axe-core/playwright`, against `next start` on the placeholder-env build. The axe rule sets were WCAG 2.0/2.1 A+AA plus best practice.
+Widths were 375×812, 820×1000 and 1440×1000. Pages: `/`, `/parents`, `/login`, `/privacy`, `/terms`, `/refunds`, `/reset-password`, a 404, and the signed-in routes (`/report`, `/welcome/plan`, `/family`, `/progress`, `/account`, `/board/[id]`, `/train`). Without a session every signed-in route redirects to `/login`, so I could not render those pages.
+Each run checked horizontal overflow, targets under 24px at 375, uncaught page errors, axe, and a keyboard Tab walk. The landing pages were also run after scrolling to the bottom so lazy and animated sections were mounted, in light and in dark color schemes.
+The board, chat and admin components need a signed-in user, so I reviewed them statically instead. I ran `eslint-plugin-jsx-a11y` recommended rules ad hoc over `src/**/*.tsx` and read every hit.
+
+**Result:** no horizontal overflow at any width, no page errors, and **0 axe violations** on every page except the 404, in light and dark.
+
+**Fixed:**
+- **The 404 and the error boundary had no `<main>` landmark and no `<h1>`** (`src/app/not-found.tsx`, `src/app/error.tsx`). axe reported `landmark-one-main`, `page-has-heading-one` and `region`. The wrapper is now `<main>` and the title is an `<h1>` with the same classes. axe now reports 0 on the 404.
+- **The password input was 20px tall inside its 44px shell** (`src/registry/components/password-field/password-field.module.css`). A tap on the top or bottom ~12px of the visible box hit the shell `<div>` and did not focus the field. On the login page at 375, a tap 4px inside the shell's top border focused nothing before the fix and focuses the password after it.
+  The input now uses `align-self: stretch`. `search-field` has the same shell layout and got the same fix.
+- **Every form field was 14px, so iOS Safari zoomed the page on focus** (`input`, `password-field`, `search-field` registry CSS). Under `@media (pointer: coarse)` the field text is now `max(16px, var(--text-sm))`. Desktop still computes 14px, which I checked at 1440. The viewport meta correctly does not block zoom, so the font size was the fix to make.
+- **The PDF import drop zone was mouse-only** (`src/components/PdfUpload.tsx:290`). It was a `<div onClick>`, and the file `<input>` inside it is `display:none`. A keyboard or screen-reader user could not import a worksheet at all.
+  It is now `role="button" tabIndex={0}`, opens the picker on Enter or Space, and has the same `focus-visible` ring as `Button`. **Not verified in a browser:** it needs a signed-in board, so it is only typechecked and linted.
+
+**Checked, no change:**
+- **Footer links (Terms/Privacy/Refunds) are 17px tall.** They pass WCAG 2.5.8 (AA) under the spacing exception, because their 24px circles do not overlap. Taller hit areas would be nicer on phones but are optional.
+- **The Tab walk** on `/`, `/parents` and `/login` reached every control in a sensible order, each with a visible ring. Two elements had no ring of their own, and both are drawn elsewhere on purpose: the ProblemStrip `<section tabIndex=0>` puts its ring on the parent `.band`, and the password field puts its ring on the shell through `:focus-within`.
+- **The other jsx-a11y hits are false positives:** `onKeyDown` on `role="dialog"`/`role="group"` containers (DailyBoard, NowYouTry, CoachMark, TourFinish, stepper), `tabIndex` on the chart figures (ErrorChart, ActivityChart) and ProblemStrip (deliberate keyboard stops), the consent checkbox nested in its label, and `CardTitle`'s spread children.
+
+**Remaining:**
+- **Re-run this pass with a seeded session** (local Supabase) to cover the board toolbar, chat panel, family and progress pages, and the admin pages at the three widths.
+- Things that are hard to check headlessly: tldraw canvas controls with a screen reader, and VoiceOver on iPad.
+
+Typecheck clean, lint clean on the changed files, `npm test` **10,332 passed / 105 skipped / 0 failed**, and the placeholder-env build passes.

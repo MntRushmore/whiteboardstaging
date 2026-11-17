@@ -12,7 +12,6 @@ import {
   CardDescription,
   CardFooter,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 
 export default function ErrorPage({
@@ -39,13 +38,13 @@ export default function ErrorPage({
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+    <main className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600">
             <AlertTriangle className="h-5 w-5" />
           </div>
-          <CardTitle>Something went wrong</CardTitle>
+          <h1 className="font-semibold leading-none tracking-tight">Something went wrong</h1>
           <CardDescription>
             The page hit an unexpected error. Your board is saved automatically,
             so nothing should be lost. You can try again or head back home.
@@ -71,6 +70,6 @@ export default function ErrorPage({
           </Button>
         </CardFooter>
       </Card>
-    </div>
+    </main>
   );
 }

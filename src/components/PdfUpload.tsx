@@ -295,7 +295,17 @@ export function PdfDialog({
               onDragLeave={() => setDragOver(false)}
               onDrop={onDrop}
               onClick={() => inputRef.current?.click()}
-              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+              // The file input is display:none, so the drop zone itself is the keyboard's way in.
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  inputRef.current?.click();
+                }
+              }}
+              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-foreground ${
                 dragOver
                   ? "border-foreground bg-accent/50"
                   : "border-muted-foreground/30 hover:border-foreground/50 hover:bg-accent/30"
