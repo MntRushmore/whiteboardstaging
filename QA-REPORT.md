@@ -2,6 +2,58 @@
 
 Started from `feat/landing-v4` @ a1e1f3ec.
 
+## Summary (item 12, 2026-11-17)
+
+All 12 items are done. On the final code, **typecheck, lint, `npm test` (10,332 passed / 105 skipped / 0 failed), the placeholder-env build and `bundle:check` all pass.**
+The run found and fixed 1 real logic bug, 3 security issues (2 critical-advisory dependency upgrades and 1 byte-cap bug), 1 flaky test, and 4 accessibility/UX bugs. It added 72 tests.
+Nothing needing real secrets was run: DB tests, live evals, `smoke:live`.
+
+> **⚠ The branch is NOT on GitHub.** Every `git push origin overnight-qa` this run failed with **HTTP 403** (*Permission to MntRushmore/whiteboardstaging.git denied*).
+> The token in `origin` can read but not write. All the QA commits below are local only, in `~/repo` on `overnight-qa`, 10 commits ahead of `feat/landing-v4`.
+> To publish: with a token that has `contents: write`, run `git push origin overnight-qa:overnight-qa` (explicit refspec, because the local branch tracks `origin/feat/landing-v4`).
+> Nothing was pushed to `main` or `feat/landing-v4`, and nothing was force-pushed.
+
+### Bugs found, and the fix for each
+| # | Where | Bug | Fixed in |
+|---|---|---|---|
+| 1 | `src/lib/live/stackedSums.ts` (`stackAt`) | An arrow drawn under an inequality (head crossing the shaft) was read as a stacked sum, so **the student's inequality was never checked**. Introduced by 571a86ce. Found by the drift in `eval:drawings`. | 11b61c28 (+ regression test; drawings back to 2847/2880) |
+| 2 | `package.json`: `next` 16.2.4 | Critical advisories: unauthenticated RCE (Image Optimization, `next/og`, `use cache`), plus a middleware bypass, SSRF and DoS | cf450226 (→ 16.4.6) |
+| 3 | `package.json`: `pdfjs-dist` 5.7.284, used by `src/lib/pdf.ts` | GHSA-hq66-cqwq-w95j: arbitrary JS when a malicious PDF is opened | cf450226 (→ 6.5.438) |
+| 4 | `src/app/api/billing/webhook/route.ts:115` | The "1 MB" cap counted UTF-16 units after buffering the whole body, so up to about 3× the cap was accepted | cf450226 (Content-Length pre-check + `Buffer.byteLength`; 3 tests, 2 of them fail on the old code) |
+| 5 | `src/lib/server/__tests__/routes.transcribe.test.ts:364` | The test advanced the fake clock before the route armed its timer, so it failed 100% of runs (the route itself was fine) | cd7b7cc2 |
+| 6 | `src/components/PdfUpload.tsx:290` | PDF drop zone was mouse-only (`div onClick`, hidden input), so **keyboard and screen-reader users could not import a worksheet** | 291bd915 |
+| 7 | `src/registry/components/password-field/password-field.module.css` (also `search-field`) | The input was 20px tall in a 44px shell, so taps near the edge did not focus it | 291bd915 |
+| 8 | `src/registry/components/{input,password-field,search-field}/*.module.css` | 14px fields made iOS Safari zoom the page on focus | 291bd915 (16px on `pointer: coarse` only) |
+| 9 | `src/app/not-found.tsx`, `src/app/error.tsx` | No `<main>` and no `<h1>` (axe: landmark-one-main, page-has-heading-one, region) | 291bd915 |
+
+Housekeeping, not bugs:
+- 79fd5ec2: lint warnings to 0 (`next/image` for the mode pictures).
+- f77d4627: `dead-code` exit 0 by allowlisting 2 files that ARCHITECTURE.md keeps on purpose.
+- a48e469a: +69 edge-case tests on chat gate, auth, admin Ask, webhook, tab locks and deepEqual.
+- 5e796fcc: build checked; the metadataBase warning is harmless.
+- `docs/eval/drawings.*` regenerated.
+
+### What remains (not changed, with reasons in the item sections)
+- **Push the branch** (see the box above). Also, the GitHub token sits in plain text in `.git/config`'s remote URL. Move it to a credential helper.
+- **`npm audit --omit=dev`:** `zod` <4.6.6 (memory exhaustion, direct; the fix is a major bump), `ai`/`@ai-sdk/*` (major), and non-major fixes for `markdown-it`/`linkify-it` (ReDoS), `prosemirror-view`, `@tiptap/core`, `tldraw`, `ws`, `sharp` and `postcss` via `npm audit fix`.
+- **`eslint-config-next` is still 16.2.4.** At 16.4.6 its stricter `react-hooks` rules report 11 errors (`set-state-in-effect`/`refs`) in 10 components.
+- **`parseJsonBody`** (`src/lib/server/request.ts:70`) has no body cap of its own and relies on the platform's 4.5 MB limit.
+- **The pdf.js worker loads from unpkg** (`src/lib/pdf.ts:17`) with no SRI check.
+- `requireUser` echoes the env-error message in its 500 (`src/lib/server/auth.ts:110-118`).
+- `renderLatex` (`src/shapes/math/katex.ts`) sets no `maxSize`/`maxExpand`.
+- `/board/[id]` is at 1.03 of 1.05 MB gzip (about 20 KB headroom). A 58.7 KB chunk is duplicated across 7 route graphs.
+- Dead exports with 0 uses (item 7 list) and billing modules imported only by tests (`src/lib/billing/{links,purchases,usage}.ts`).
+- `deepEqual` treats `{a: undefined}` and `{}` as different, which costs a redundant write and loses no data.
+- **Not verified in a browser:** the pdfjs 6 upgrade on older iPads (iPadOS 16.4–18) and the PDF drop zone's keyboard path. Both need a signed-in board.
+
+### Recommended next steps
+1. Push `overnight-qa` with a write token, open the PR into `feat/landing-v4`, and let CI run `test:db`/`db:verify` and the live evals, which need secrets.
+2. Before merging: on a real device, import a PDF on an older iPad (pdfjs 6) and sign in on an iPhone (no zoom on focus, password field taps).
+3. Separate PRs: `npm audit fix` (non-major) with the full checks; `zod` 4.6.6+; `eslint-config-next` 16.4.6 with the 11 effect rewrites.
+4. Small hardening: a shared byte cap in `parseJsonBody`, bundle the pdf.js worker, `maxSize`/`maxExpand` in `renderLatex`, and a generic 500 in `requireUser`.
+5. Re-run the a11y pass (item 10's Playwright + axe script approach) with a seeded local-Supabase session, to cover the board, chat, family, progress and admin screens.
+6. Find bundle headroom on `/board/[id]` before the next feature lands there.
+
 ## Items 1–2 (npm ci, typecheck)
 These were already marked done in ~/TASKS.md before this run, but there was no report and no commit.
 On 2026-11-17 I re-ran `npm run typecheck` and it passed with no errors. No install problems were recorded.
