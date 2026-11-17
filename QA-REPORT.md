@@ -144,3 +144,8 @@ and every route except one has a route-level test. So I aimed at the specific ed
 - A non-Latin-1 character in an `Authorization` header is refused by the runtime's `Headers` before any route code runs. This is expected and noted only so nobody writes a test for it.
 
 After item 8: typecheck is clean, the new files lint clean, and `npm test` gives 10,329 passed and 105 skipped, 0 failed (10,260 before, plus 69).
+
+**Push blocked (2026-11-17):** `git push origin overnight-qa` fails with **403 "Permission to MntRushmore/whiteboardstaging.git denied"**.
+The token in the `origin` URL can read (`ls-remote` works) but not write. `overnight-qa` has never reached the remote, so items 3–8 are 6 local commits on
+`~/repo` (branch `overnight-qa`). They need a token with `contents: write` on this repo, then a plain `git push origin overnight-qa`.
+Note also that the token is stored in plain text in the remote URL in `.git/config`. A credential helper would be safer.
