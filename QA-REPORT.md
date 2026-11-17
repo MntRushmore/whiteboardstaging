@@ -47,3 +47,25 @@ covering 27 static pages and all API routes as dynamic. I made no changes.
   `https://agathon.app/...`, because `src/app/(platform)/parents/page.tsx:42` sets `metadataBase`. No built HTML contains `localhost:3000`.
   To silence it, the same `metadataBase` could go in the root `src/app/layout.tsx`. I left that alone because it would also make
   relative metadata URLs absolute on every other page. That's for the owner to decide, not a bug.
+
+## Item 6 — offline evals (`eval:offline`, `eval:drawings`, `eval:proofs`)
+I ran them with `OPENROUTER_API_KEY` blank (they make no network calls). All three pass their own thresholds.
+
+- **eval:offline**: passes, and `docs/eval/offline.*` matches the committed result exactly.
+- **eval:proofs**: passes. The only diff is the `ms` timing column in `docs/eval/proofs.md`, which is run-to-run noise. I didn't commit it.
+- **eval:drawings**: passes, but it is **deterministic and had drifted** from `docs/eval/drawings.json` (last written 2026-09-28, ed5af771):
+  - "after" maths-intact fell from 2847 to **2846**. **I bisected it (between ed5af771 and HEAD, over the files the eval uses) to 571a86ce**,
+    "feat(live): a stacked sum is one block on the board, never a fraction". That commit message says the drawings scoreboard was "unchanged".
+    **Bug** (`src/lib/live/stackedSums.ts`, `stackAt`): the new scene failure is `arrow/below, close/x1/clean/2x + 3 > 11`. The arrowhead stroke crosses the shaft
+    with its centre 0.24 px *above* the shaft's centre, so it counted as a "row over the rule". With the inequality above it, that gave the two rows
+    a sum needs, and the inequality plus the arrow became a stacked-sum block. In the app, that line goes to column arithmetic, which "stays quiet on any read
+    that does not parse": **a student's inequality with an arrow drawn under it would never be checked.** The "nothing tall through the rule"
+    guard only caught strokes at least 1.5 digit-heights tall.
+    **Fix:** a stroke that crosses the rule by at least 0.3 digit-heights past *both* its edges also means it is no sum's rule. Digits rest on a rule
+    and don't go through it. **Tests:** `src/lib/live/__tests__/stackedSums.test.ts`, "a drawing under a line is no sum". It failed before the fix and passes after,
+    and a guard test checks a real sum still forms. All stacked-sum unit and loop tests still pass, and drawings is back to **2847 / 2880**.
+  - The "before" column (raw `clusterLines` with no drawing split: 1770 → 1750 maths-intact) and the corpus line count (3724 → 3768) moved because of
+    deliberate later changes to `strokeClusters.ts` (young-child handwriting, wobbly `=`) and 11 new corpus lines. That is expected, not a regression.
+    I committed the regenerated `docs/eval/drawings.{json,md}` so the scoreboard is current again.
+
+After: typecheck and lint are clean, and `npm test` gives 513 files passed and 14 skipped; 10,260 tests passed, 105 skipped, 0 failed.

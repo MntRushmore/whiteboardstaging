@@ -8,9 +8,9 @@
 
 |  | before | after |
 | --- | --- | --- |
-| maths line intact (one line, exactly its strokes) | 1770 / 2880 (61%) | 2847 / 2880 (99%) |
+| maths line intact (one line, exactly its strokes) | 1750 / 2880 (61%) | 2847 / 2880 (99%) |
 | drawing kept out of every line | 0 / 2880 (0%) | 2880 / 2880 (100%) |
-| stray lines (no maths in them: a wasted recognizer call each) | 1890 | 18 |
+| stray lines (no maths in them: a wasted recognizer call each) | 1870 | 18 |
 | labels attached to their drawing | — | 8951 / 9000 (99%) |
 | drawings taken for a division bar | — | 0 |
 
@@ -48,7 +48,7 @@ Every scene right.
 
 ## The writing stays writing
 
-Every line of the maths corpus (src/__eval__/corpus.ts) written in every hand (clean, slanted, steep, messy): 3724 lines — fraction bars, long `=`, radicals, integral signs, `\left( \right)`, matrices, cases — split on its own.
+Every line of the maths corpus (src/__eval__/corpus.ts) written in every hand (clean, slanted, steep, messy): 3768 lines — fraction bars, long `=`, radicals, integral signs, `\left( \right)`, matrices, cases — split on its own.
 
 | strokes taken for a drawing, mark or label | lines regrouped by the split |
 | --- | --- |
@@ -61,20 +61,20 @@ Every line of the maths corpus (src/__eval__/corpus.ts) written in every hand (c
 | --- | --- | --- | --- | --- | --- | --- |
 | triangle, three strokes, vertices and sides labelled | 360 | 216 → 360 | 0 → 360 | 336 → 0 | 1800 / 1800 | triangle |
 | triangle in one stroke, angles labelled | 360 | 216 → 360 | 0 → 360 | 216 → 0 | 1080 / 1080 | triangle |
-| right triangle, square corner mark, sides 3, 4, x | 360 | 219 → 343 | 0 → 360 | 219 → 0 | 1065 / 1080 | triangle |
+| right triangle, square corner mark, sides 3, 4, x | 360 | 218 → 343 | 0 → 360 | 218 → 0 | 1065 / 1080 | triangle |
 | circle with a radius, centre and radius labelled | 360 | 216 → 360 | 0 → 360 | 216 → 0 | 720 / 720 | circle |
-| number line: ticks, arrows, an open circle, numbers under it | 360 | 212 → 360 | 0 → 360 | 212 → 0 | 2520 / 2520 | numberLine, arrow |
-| axes with a line sketched on them | 360 | 261 → 357 | 0 → 360 | 261 → 17 | 1060 / 1080 | axes |
-| an arrow | 360 | 213 → 360 | 0 → 360 | 213 → 0 | 0 / 0 | arrow |
-| rectangle, four strokes, sides labelled | 360 | 217 → 347 | 0 → 360 | 217 → 1 | 706 / 720 | quadrilateral |
+| number line: ticks, arrows, an open circle, numbers under it | 360 | 208 → 360 | 0 → 360 | 208 → 0 | 2520 / 2520 | numberLine, arrow |
+| axes with a line sketched on them | 360 | 248 → 357 | 0 → 360 | 248 → 17 | 1060 / 1080 | axes |
+| an arrow | 360 | 212 → 360 | 0 → 360 | 212 → 0 | 0 / 0 | arrow |
+| rectangle, four strokes, sides labelled | 360 | 216 → 347 | 0 → 360 | 216 → 1 | 706 / 720 | quadrilateral |
 
 ## By placement
 
 | placement | scenes | maths intact before → after | drawing out before → after | stray lines before → after |
 | --- | --- | --- | --- | --- |
-| right, close | 576 | 23 → 559 | 0 → 576 | 47 → 0 |
-| left, close | 576 | 26 → 560 | 0 → 576 | 50 → 18 |
-| below, close | 576 | 569 → 576 | 0 → 576 | 593 → 0 |
+| right, close | 576 | 15 → 559 | 0 → 576 | 39 → 0 |
+| left, close | 576 | 19 → 560 | 0 → 576 | 43 → 18 |
+| below, close | 576 | 564 → 576 | 0 → 576 | 588 → 0 |
 | above, close | 576 | 576 → 576 | 0 → 576 | 600 → 0 |
 | far | 576 | 576 → 576 | 0 → 576 | 600 → 0 |
 

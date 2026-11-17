@@ -356,8 +356,12 @@ function stackAt(rule: InkStroke, free: readonly InkStroke[], all: readonly InkS
   // writing level with the rule beside it: a fraction inside a line (`x = \frac{a+b}{2}`, `2\frac{3}{4}`)
   const inRows = new Set(rows.flatMap((r) => r.strokes));
   if (all.some((s) => !pieces.includes(s) && !inRows.has(s) && Math.abs(cy(s.bounds) - ry) <= 0.45 * dH && overlap(s.bounds.x, right(s.bounds), rb.x, right(rb)) === 0 && xGap(s.bounds, rb) <= R.besideFactor * dH)) return null;
-  // nothing tall through the rule (a table's or a drawing's line)
-  if (around.some((s) => s.bounds.h >= 1.5 * dH && s.bounds.y < rb.y && bottom(s.bounds) > bottom(rb) && overlap(s.bounds.x, right(s.bounds), rb.x, right(rb)) > 0)) return null;
+  // nothing tall through the rule (a table's or a drawing's line), and nothing crossing it well past
+  // both its edges (an arrow's head on its shaft, a tick on a number line): a digit rests on a rule
+  const through = (s: InkStroke) =>
+    (s.bounds.h >= 1.5 * dH && s.bounds.y < rb.y && bottom(s.bounds) > bottom(rb)) ||
+    (s.bounds.y < rb.y - 0.3 * dH && bottom(s.bounds) > bottom(rb) + 0.3 * dH);
+  if (around.some((s) => through(s) && overlap(s.bounds.x, right(s.bounds), rb.x, right(rb)) > 0)) return null;
 
   // down from the rule: the answer row, then whatever is right under it, right-aligned with the block
   const below = around.filter((s) => cy(s.bounds) >= ry);

@@ -1,9 +1,9 @@
 {
  "scenes": 2880,
  "before": {
-  "mathIntact": 1770,
+  "mathIntact": 1750,
   "drawingOut": 0,
-  "strayLines": 1890,
+  "strayLines": 1870,
   "labelsAttached": 0,
   "labels": 9000,
   "bars": 0
@@ -70,9 +70,9 @@
    "name": "right triangle, square corner mark, sides 3, 4, x",
    "scenes": 360,
    "before": {
-    "mathIntact": 219,
+    "mathIntact": 218,
     "drawingOut": 0,
-    "strayLines": 219,
+    "strayLines": 218,
     "labelsAttached": 0,
     "labels": 1080,
     "bars": 0
@@ -118,9 +118,9 @@
    "name": "number line: ticks, arrows, an open circle, numbers under it",
    "scenes": 360,
    "before": {
-    "mathIntact": 212,
+    "mathIntact": 208,
     "drawingOut": 0,
-    "strayLines": 212,
+    "strayLines": 208,
     "labelsAttached": 0,
     "labels": 2520,
     "bars": 0
@@ -143,9 +143,9 @@
    "name": "axes with a line sketched on them",
    "scenes": 360,
    "before": {
-    "mathIntact": 261,
+    "mathIntact": 248,
     "drawingOut": 0,
-    "strayLines": 261,
+    "strayLines": 248,
     "labelsAttached": 0,
     "labels": 1080,
     "bars": 0
@@ -167,9 +167,9 @@
    "name": "an arrow",
    "scenes": 360,
    "before": {
-    "mathIntact": 213,
+    "mathIntact": 212,
     "drawingOut": 0,
-    "strayLines": 213,
+    "strayLines": 212,
     "labelsAttached": 0,
     "labels": 0,
     "bars": 0
@@ -191,9 +191,9 @@
    "name": "rectangle, four strokes, sides labelled",
    "scenes": 360,
    "before": {
-    "mathIntact": 217,
+    "mathIntact": 216,
     "drawingOut": 0,
-    "strayLines": 217,
+    "strayLines": 216,
     "labelsAttached": 0,
     "labels": 720,
     "bars": 0
@@ -216,9 +216,9 @@
    "placement": "right, close",
    "scenes": 576,
    "before": {
-    "mathIntact": 23,
+    "mathIntact": 15,
     "drawingOut": 0,
-    "strayLines": 47,
+    "strayLines": 39,
     "labelsAttached": 0,
     "labels": 1800,
     "bars": 0
@@ -236,9 +236,9 @@
    "placement": "left, close",
    "scenes": 576,
    "before": {
-    "mathIntact": 26,
+    "mathIntact": 19,
     "drawingOut": 0,
-    "strayLines": 50,
+    "strayLines": 43,
     "labelsAttached": 0,
     "labels": 1800,
     "bars": 0
@@ -256,9 +256,9 @@
    "placement": "below, close",
    "scenes": 576,
    "before": {
-    "mathIntact": 569,
+    "mathIntact": 564,
     "drawingOut": 0,
-    "strayLines": 593,
+    "strayLines": 588,
     "labelsAttached": 0,
     "labels": 1800,
     "bars": 0
@@ -314,7 +314,7 @@
   }
  ],
  "writing": {
-  "lines": 3724,
+  "lines": 3768,
   "misread": [],
   "regrouped": 0
  },

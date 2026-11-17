@@ -4,7 +4,7 @@ import type { InkStroke } from "../contracts";
 import { splitInk } from "../diagrams";
 import { findStackedSums, stackGrid, stackGroups } from "../stackedSums";
 import { clusterLines } from "../strokeClusters";
-import { fixtureFraction, handRow, handRule, inkAtZoom, toInkStrokes, writeStack } from "../__fixtures__/strokes";
+import { drawShapeFromPoints, fixtureFraction, handRow, handRule, inkAtZoom, toInkStrokes, writeStack } from "../__fixtures__/strokes";
 
 /**
  * Stacked sums in the ink (`stackedSums.ts`): found before lines are formed, the block one line, its
@@ -179,6 +179,29 @@ describe("fractions are still fractions", () => {
     const { split } = board(shapes);
     expect(split.stacks).toEqual([]);
     expect(split.bars).toHaveLength(1);
+  });
+});
+
+describe("a drawing under a line is no sum", () => {
+  // drawings eval (docs/eval/drawings.md), scene `arrow/below, close/x1/clean/2x + 3 > 11`: an arrow's
+  // head crosses its shaft with its middle a hair over the shaft's, so the head was a "row" over the
+  // "rule" and the line above a second one: a stacked sum, and the inequality never read as a line
+  it("an arrow drawn under 2x + 3 > 11: its head through the shaft is no row over a rule", () => {
+    const line = handRow("2x + 3 > 11", 400, 200);
+    const ink = toInkStrokes(line);
+    const left = Math.min(...ink.map((s) => s.bounds.x));
+    const y = Math.max(...ink.map((s) => s.bounds.y + s.bounds.h)) + 30;
+    // the head: a `>` whose middle sits 0.3 px over the shaft, crossing it a digit's height tall
+    const head = drawShapeFromPoints([{ x: 382, y: y - 13.7 }, { x: 400, y: y - 0.3 }, { x: 382, y: y + 13.1 }]);
+    const { stacks, lines } = board([...line, handRule(left, 402, y), head]);
+    expect(stacks).toEqual([]);
+    const lineIds = new Set(ink.map((s) => s.id as string));
+    expect(lines.some((l) => l.strokeIds.filter((id) => lineIds.has(id)).length === lineIds.size)).toBe(true);
+  });
+
+  it("digits resting on the rule still make a sum", () => {
+    const sum = writeStack(["286", "+680"], "966");
+    expect(board(sum.all).stacks).toHaveLength(1);
   });
 });
 
