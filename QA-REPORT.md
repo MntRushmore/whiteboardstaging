@@ -9,7 +9,7 @@ The run found and fixed 1 real logic bug, 3 security issues (2 critical-advisory
 Nothing needing real secrets was run: DB tests, live evals, `smoke:live`.
 
 > **⚠ The branch is NOT on GitHub.** Every `git push origin overnight-qa` this run failed with **HTTP 403** (*Permission to MntRushmore/whiteboardstaging.git denied*).
-> The token in `origin` can read but not write. All the QA commits below are local only, in `~/repo` on `overnight-qa`, 11 commits ahead of `feat/landing-v4`.
+> The token in `origin` can read but not write. All the QA commits below are local only, in `~/repo` on `overnight-qa`, every commit after a1e1f3ec (`git log origin/feat/landing-v4..overnight-qa`).
 > To publish: with a token that has `contents: write`, run `git push origin overnight-qa:overnight-qa` (explicit refspec, because the local branch tracks `origin/feat/landing-v4`).
 > Nothing was pushed to `main` or `feat/landing-v4`, and nothing was force-pushed.
 
