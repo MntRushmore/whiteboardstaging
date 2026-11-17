@@ -69,3 +69,23 @@ I ran them with `OPENROUTER_API_KEY` blank (they make no network calls). All thr
     I committed the regenerated `docs/eval/drawings.{json,md}` so the scoreboard is current again.
 
 After: typecheck and lint are clean, and `npm test` gives 513 files passed and 14 skipped; 10,260 tests passed, 105 skipped, 0 failed.
+
+## Item 7 — `bundle:check` and `dead-code`
+**bundle:check** (after a fresh placeholder-env build): **all budgets OK.** `/board/[id]` first-load JS is 3.37 MB raw / **1.03 MB gzip, against a 1.05 MB budget,
+so only about 20 KB gzip of headroom is left.** The next feature on the board page will probably break the budget. It is the only route with a budget.
+`/train` is 834 KB gzip and every other page is 360–390 KB gzip. The largest chunk is 1.51 MB raw / 462 KB gzip (board + train).
+The script flags one "likely duplicated" 58.7 KB chunk emitted 7 times under different route graphs. That's worth a look with `BUNDLE_SOURCEMAPS=1`.
+
+**dead-code**: before, it **failed (exit 1)** on 2 "unused files":
+- `src/lib/motion-tokens.ts` and `src/registry/components/card/card.tsx`. **Both are documented as kept on purpose** (`docs/ARCHITECTURE.md:106`):
+  the first is Arc's documented import path, re-exporting `src/registry/motion-tokens.ts` for components `scripts/arc-add.mjs` installs, and
+  "card (not used: ...)" is installed deliberately. I did not delete them. I added them to the script's existing `KEEP_FILES` allowlist
+  (`scripts/find-dead-code.mjs:70`) with those reasons. `dead-code` now exits 0, and `src/__tests__/deadCode.test.ts` (39 tests) passes.
+- Warnings, unchanged: 9 test-only files (notably `src/lib/billing/{links,purchases,usage}.ts` and `src/hooks/useApiErrorHandler.ts`.
+  **Billing modules that only tests import are worth checking against what checkout really uses**), 1,311 unused exports, and 1,128 test-only exports.
+- 60 exports are dead symbols (0 local uses). Most are API surface I'd keep: shadcn/Arc UI primitives (`DialogClose`, `DropdownMenu*`, `TabsContent`),
+  vendored `src/registry/**` default exports, and tldraw migration `graphShapeVersions`/`mathShapeVersions`. **Left for the owner, not deleted:** these
+  appear nowhere in src/scripts/docs/supabase except their own definition: `aiConfig.getSiteUrl`, `useIsAdmin.resetIsAdminCache`,
+  `micEngines.resetMicRoute`, `dailyMarker.clearDailyMarker`, `progress.clearDailyNote`, `blanks.hasBlank`/`withoutBlanks`, `classify.isIncomplete`,
+  `constants.findConstant`, `learning/contracts.MISTAKE_DEFS`. They are tree-shaken, so deleting them saves no bundle bytes. Some look like deliberate
+  seams (reset/clear), so removing them unattended wasn't worth the risk.

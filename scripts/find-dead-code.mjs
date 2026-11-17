@@ -69,6 +69,8 @@ import ts from "typescript";
  */
 export const KEEP_FILES = Object.freeze({
   "src/components/SetupRequiredBanner.tsx": "documented drop-in for missing AI keys (SETUP.md); not mounted by any page yet",
+  "src/lib/motion-tokens.ts": "Arc's documented import path, re-exporting src/registry/motion-tokens.ts for components scripts/arc-add.mjs installs (docs/ARCHITECTURE.md)",
+  "src/registry/components/card/card.tsx": "vendored Arc component, installed and deliberately unused (docs/ARCHITECTURE.md: \"card (not used: ...)\")",
 });
 
 const NEXT_ENTRY_BASENAMES = new Set([
