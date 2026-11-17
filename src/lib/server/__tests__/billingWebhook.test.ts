@@ -1055,6 +1055,51 @@ describe("POST /api/billing/webhook", () => {
     expect(store.balance()).toBe(300);
   });
 
+  it("the 1 MB cap counts UTF-8 bytes, not characters: 400k three-byte characters (1.2 MB) are refused, even when signed", async () => {
+    const store = fakeStore();
+    const pad = "李".repeat(400_000); // 400k UTF-16 units, 1.2 MB of UTF-8
+    const body = JSON.stringify(event("checkout.session.completed", session({ metadata: { app: "agathon-classroom", pack_id: "medium", pad } }), "evt_wide"));
+    expect(body.length).toBeLessThan(1_000_000);
+    expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(1_000_000);
+    const res = await handlerWith(store)(await signedRequest(body));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { message: string }).message).toBe("Payload too large.");
+    expect(store.log.recorded).toEqual([]);
+    expect(store.balance()).toBe(300);
+  });
+
+  it("a multibyte body under 1 MB of UTF-8 still verifies and grants", async () => {
+    const store = fakeStore();
+    const pad = "é".repeat(300_000); // 600 KB of UTF-8
+    const body = JSON.stringify(event("checkout.session.completed", session({ metadata: { app: "agathon-classroom", pack_id: "medium", pad } }), "evt_wide_ok"));
+    const res = await handlerWith(store)(await signedRequest(body));
+    expect(res.status).toBe(200);
+    expect(store.balance()).toBe(5_300);
+  });
+
+  it("a declared Content-Length over 1 MB is refused before the body is read", async () => {
+    const store = fakeStore();
+    let pulled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled = true;
+        controller.enqueue(new TextEncoder().encode(checkoutBody));
+        controller.close();
+      },
+    }, { highWaterMark: 0 }); // nothing is pulled until someone reads
+    const req = new Request("http://localhost/api/billing/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": "5000000", "x-forwarded-for": "203.0.113.9", "stripe-signature": await signStripePayload(checkoutBody, SECRET, NOW) },
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    const res = await handlerWith(store)(req);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { message: string }).message).toBe("Payload too large.");
+    expect(pulled).toBe(false);
+    expect(store.log.recorded).toEqual([]);
+  });
+
   it("the signature is over the raw UTF-8 bytes: a payer's name in any script verifies and grants; the same body re-encoded does not", async () => {
     const store = fakeStore();
     const body = JSON.stringify(event("checkout.session.completed", session({ customer_details: { name: "Zoë Ångström 李雷 🎉", email: "zoë@example.com" } }), "evt_unicode"));

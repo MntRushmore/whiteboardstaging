@@ -149,3 +149,37 @@ After item 8: typecheck is clean, the new files lint clean, and `npm test` gives
 The token in the `origin` URL can read (`ls-remote` works) but not write. `overnight-qa` has never reached the remote, so items 3–8 are 6 local commits on
 `~/repo` (branch `overnight-qa`). They need a token with `contents: write` on this repo, then a plain `git push origin overnight-qa`.
 Note also that the token is stored in plain text in the remote URL in `.git/config`. A credential helper would be safer.
+
+## 9. Security pass
+
+**Fixed:**
+- **Next.js 16.2.4 → 16.4.6** (`package.json`, lockfile). `npm audit` listed 16.2.4 under several **critical** advisories: unauthenticated RCE in the Image Optimization API (AVIF and SVG), RCE in `next/og` `ImageResponse` (the app has `src/app/(platform)/parents/opengraph-image.tsx`), and RCE in `use cache`. It also listed high advisories for middleware/proxy bypass, SSRF and DoS. 16.4.6 is a minor bump within 16.x.
+  `eslint-config-next` stays at 16.2.4 on purpose. 16.4.6 brings a stricter `react-hooks` plugin that reports 11 new `set-state-in-effect`/`refs` errors across 10 components. Rewriting those effects unattended is not a security fix. Bump it in its own PR.
+- **pdfjs-dist 5.7.284 → 6.5.438** (GHSA-hq66-cqwq-w95j, *arbitrary JavaScript execution upon opening a malicious PDF*, `>=5.6.83 <6.2.108`). `src/lib/pdf.ts` opens any PDF a student picks.
+  The legacy build path and its `pdf.worker.min.mjs` are present in 6.x. The code typechecks unchanged and the tests pass. **Not verified in a real browser:** check a PDF import on an older iPad (iPadOS 16.4–18), because `pdf.ts` says the legacy build was picked for that floor.
+  I did not add pdf.js "hardening" options. `isEvalSupported` no longer exists in pdf.js 5+, and `enableScripting` is not a `getDocument` option, so those would only have looked like protection.
+- **Webhook body cap is now in bytes** (`src/app/api/billing/webhook/route.ts:115-121`, observed in item 8). It used to compare `rawBody.length` (UTF-16 units) after buffering the whole body. Now a declared `Content-Length` over 1 MB is refused before the body is read, and the body is measured with `Buffer.byteLength(…, "utf8")`.
+  +3 tests in `billingWebhook.test.ts`: 400k `李` (1.2 MB) is refused; 600 KB of `é` still grants; a 5 MB `Content-Length` is refused without pulling a byte. The first and third **fail on the old code**.
+
+After the fixes: typecheck clean, lint clean, `npm test` 10,329 passed / 105 skipped / 0 failed (before the 3 new webhook tests; item 11 re-runs everything), and the placeholder-env build passes. `bundle:check` passes all budgets.
+
+**Checked, no problem found:**
+- **API auth.** Every route under `/api/live/*` goes through `livePreamble` → `requireUser`, which verifies the bearer JWT against Supabase Auth and then applies the rate limit. Every `/api/admin/*` route uses `requireAdmin` (a non-admin gets a 404).
+  `admin/gc`, `cron/trial-reminders` and `admin/health` use a constant-time `bearerMatches` against `CRON_SECRET`, and answer 503 when it is unset rather than running open. `report/unsubscribe` checks an HMAC with `timingSafeEqual`, and its GET changes nothing.
+  The billing webhook verifies the Stripe signature over the raw bytes. `health`, `config/status` and `client-errors` are public by design. `client-errors` caps its body by bytes while streaming and is rate limited per IP and per user.
+- **Family PIN.** It is stored as a scrypt hash, and tries are counted in the database: 5 per 15 minutes, and the day's last wrong PIN locks switching to the grown-up until a password sign-in. A kid session cannot set the PIN (403).
+- **RLS.** Every table created in the 38 migrations has RLS enabled. The only `using (true)` policies are read-only catalogues (`plans` and `ink_packs`, `to authenticated`), with `revoke all` from `anon`. All 62 `security definer` functions pin `search_path`.
+  Not run against a live database (no secrets): `npm run test:db` / `db:verify` still need running.
+- **Secrets in the client bundle.** I grepped `.next/static` for the service-role key, the OpenRouter/OpenAI/Stripe/Resend keys, `CRON_SECRET`, `REPORT_LINK_SECRET`, `whsec_`, `sk_live` and `sk-or-`. None appear. The only `NEXT_PUBLIC_*` values are the Supabase URL and anon key, billing/portal links, the site URL, the tldraw licence key, the log level and the release.
+- **XSS.** All three KaTeX entry points (`src/shapes/math/katex.ts`, `src/components/chat/askMath.ts`, `AskDemo.tsx`) use `trust: false`, so no `\href`, `\url` or `\html*` gets through, and KaTeX is 0.18.7.
+  The other `dangerouslySetInnerHTML` sites are static inline scripts and styles, and the sticker SVGs are built from constants (`src/lib/stickers.ts`). No `href` takes user text, and no redirect follows a user-supplied `next`/`returnTo`. The emails escape every interpolation (`src/lib/email/templates.ts`).
+
+**Risky, not changed:**
+- **`npm audit --omit=dev` still lists other advisories**, and every remaining fix is a major bump:
+  - `zod` (direct) <4.6.6: memory exhaustion validating oversized constrained collections. It is reachable from every route's `parseJsonBody`, bounded by the platform's body limit.
+  - `ai`/`@ai-sdk/*` (direct, major).
+  - Non-major fixes are available for `markdown-it`/`linkify-it` (ReDoS), `prosemirror-view`, `@tiptap/core`, `tldraw`, `ws`, `sharp`, `postcss` and `source-map-js` via `npm audit fix`. I didn't run it unattended; give it its own PR and run the full checks after it.
+- **`parseJsonBody` (`src/lib/server/request.ts:70`) has no body cap of its own.** It relies on the platform limit (4.5 MB on Vercel functions). Self-hosted, a signed-in user could send a much larger body to any route that uses it. A shared byte cap like `client-errors`' `readCapped` would close this.
+- **The pdf.js worker loads from `unpkg.com`** (`src/lib/pdf.ts:17`) with no integrity check. A compromised or hijacked CDN response would run in the worker. Bundling the worker, or serving it from `/public`, avoids the third party.
+- **`requireUser` echoes `getServerEnv()`'s error message** in its 500 (`src/lib/server/auth.ts:110-118`) when the server env is misconfigured. That can name missing env vars to the caller. It is only reachable on a broken deployment, so the impact is low.
+- **`renderLatex` (`src/shapes/math/katex.ts`) sets no `maxSize`/`maxExpand`**, unlike `askMath.ts`, which uses 10 and 200. A board formula like `\rule{500em}{500em}` can draw a huge box over the board UI. Boards are only shown to their owner and to admins, so this is cosmetic.

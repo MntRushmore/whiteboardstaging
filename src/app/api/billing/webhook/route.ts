@@ -112,8 +112,13 @@ export async function POST(req: Request): Promise<Response> {
     return json(503, "feature_unavailable", priceMap.error);
   }
 
+  // The cap is in bytes: a declared length over it is refused before the body is read, and the
+  // body is measured as UTF-8 (`rawBody.length` counts UTF-16 units, so a multibyte body got
+  // up to ~3x the cap through).
+  const declared = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return json(400, "invalid_request", "Payload too large.");
   const rawBody = await req.text();
-  if (rawBody.length > MAX_BODY_BYTES) return json(400, "invalid_request", "Payload too large.");
+  if (Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES) return json(400, "invalid_request", "Payload too large.");
 
   const verified = await verifyStripeSignature({
     header: req.headers.get(SIGNATURE_HEADER),
