@@ -516,3 +516,26 @@ describe("readVariants: what a messy read of a child's step may have been (only 
     expect(inkLeadsWithMinus(youngInk(youngLine("5", 200, 100)))).toBe(false);
   });
 });
+
+describe("readVariants: a number the page knows, misread (v1.0, the Training Center's messy hand)", () => {
+  it("one look-alike digit of a number on the line above or in the problem is put back", () => {
+    // `8 + 1 = 9` under `2^{3} = 8`, read `0+1=9`
+    expect(readVariants("0+1=9", false, ["2^{3}=8", "2^{3}+1"])).toContain("8+1=9");
+    // the problem's 2.75 read without its point
+    expect(readVariants("5.60-275=2.85", false, ["5.6 - 2.75"])).toContain("5.60-2.75=2.85");
+  });
+
+  it("only a number the page knows, only a look-alike, one digit, one number at a time", () => {
+    // no 8 anywhere on the page: nothing to put back
+    expect(readVariants("0+1=9", false, ["2^{3}+1"])).toEqual([]);
+    // 2 for 5 is no look-alike
+    expect(readVariants("2+1=9", false, ["8"])).toEqual([]);
+    // two digits off is no misread of it
+    expect(readVariants("40+1=41", false, ["88"])).toEqual([]);
+    // a known number as read stays
+    expect(readVariants("8+1=9", false, ["8"])).toEqual([]);
+    // never the step's result: `x = 6` for `5x - 4 = 21` is her slip, though 5 is on the page
+    expect(readVariants("x=6", false, ["5x-4=21"])).toEqual([]);
+    expect(readVariants("\\div 0", false, ["8"])).toEqual([]);
+  });
+});

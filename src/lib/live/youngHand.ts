@@ -441,6 +441,13 @@ export function readVariants(read: string, minus = false, keep: readonly string[
   };
   for (const step of steps) add(step(read));
   add(steps.reduce((s, step) => step(s), read));
+  // a number the page already knows (`keep`: the problem, the line above), misread by one look-alike
+  // digit or with its point dropped (`0+1=9` under `2^{3}=8`, `275` for the problem's `2.75`: the
+  // Training Center's messy hand, right steps ringed, v1.0): that number put back, one at a time
+  for (const v of knownNumberVariants(read, kept)) {
+    const t = tidy(v);
+    if (t !== tidy(read) && !out.includes(t)) out.push(t);
+  }
   // a decimal point the ink shows to be a raised multiplication dot (`inkTimesDots`): the numbers split
   // (`6.9` is `6` and `9`), so the rule above does not apply; a number the work is about is kept
   const dotted = timesDotVariant(read, timesDots);
@@ -449,6 +456,43 @@ export function readVariants(read: string, minus = false, keep: readonly string[
     if (t !== tidy(read) && !out.includes(t)) out.push(t);
   }
   return out;
+}
+
+/** Digits a hand's digit is read as (Mathpix on messy ink): either way round. */
+const LOOKALIKE_DIGIT_PAIRS = new Set(["06", "08", "17", "38", "49", "56", "79"].flatMap((p) => [p, p[1] + p[0]]));
+
+/** `n` is `k` misread: one digit a look-alike of `k`'s (the point where `k`'s is), or `k` without its point. */
+function misreadOfKnown(n: string, k: string): boolean {
+  if (n === k) return false;
+  if (k.includes(".") && !n.includes(".") && k.replace(".", "") === n) return true;
+  if (n.length !== k.length || n.indexOf(".") !== k.indexOf(".")) return false;
+  let diff = 0;
+  for (let i = 0; i < n.length; i++) {
+    if (n[i] === k[i]) continue;
+    if (!LOOKALIKE_DIGIT_PAIRS.has(n[i] + k[i])) return false;
+    diff += 1;
+  }
+  return diff === 1;
+}
+
+/** The read with ONE of its numbers that the page does not know put back as a known one it is a misread of (`misreadOfKnown`). */
+function knownNumberVariants(read: string, kept: ReadonlySet<string>): string[] {
+  // only what she copied: the numbers before the step's last `=` — never its result, which is her own
+  // work (`x = 6` for `5x - 4 = 21` stays a slip, though 5 is on the page), nor a line with no `=`
+  const end = read.lastIndexOf("=");
+  if (kept.size === 0 || end < 0) return [];
+  const out: string[] = [];
+  for (const m of read.matchAll(/\d+(?:\.\d+)?/g)) {
+    const n = m[0];
+    const at = m.index ?? 0;
+    if (at >= end) break;
+    if (kept.has(n)) continue;
+    for (const k of kept) {
+      if (misreadOfKnown(n, k)) out.push(read.slice(0, at) + k + read.slice(at + n.length));
+    }
+    if (out.length >= 6) break;
+  }
+  return out.slice(0, 6);
 }
 
 /** The numbers written in a read, unsigned, in order (`12`, `3.5`). */
