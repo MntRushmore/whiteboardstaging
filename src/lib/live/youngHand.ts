@@ -323,6 +323,9 @@ export function misreadVariants(read: string): string[] {
   }
   const tail = /^(-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}))\s*(?:\\q?quad|\\[,;:]|~)\s*[-,.'`^~|/]?\s*(?:\\(?:prime|vee|wedge))?\s*$/.exec(body);
   if (tail) out.add(lead + tail[1].trim());
+  // dots after it (`10 . \cdot`): a jaggy mouse's tap or two after her answer — the number alone
+  const dots = /^(-?\s*\d+(?:\.\d+)?)\s*(?:(?:\.|\\c?dots?|\\ldots)\s*){1,3}$/.exec(body);
+  if (dots) out.add(lead + dots[1].trim());
   return [...out].filter((v) => v !== read && ANSWER_NUMBER.test(v.slice(lead.length)));
 }
 
@@ -512,6 +515,11 @@ export function readYoungHand(latex: string, ctx: YoungReadContext): string {
   s = s.replace(SIGN_EXPONENT_RE, " + ").replace(LONE_TIMES_RE, "$1x");
   // an empty `\text { }` (a tap of the pen read as text) is nothing: `\text { } \approx 12` is `\approx 12`
   s = s.replace(/\\text\s*\{\s*\}/g, " ");
+  // a note at the side behind a left arrow (`2 x=11-3 \Longleftarrow 9`): never her line's maths, when
+  // what is left is still a relation (real-ink bench: such a line got a "?"; before, only the second
+  // look before a ring tried it, and a first line on her own page never had one)
+  const noted = s.replace(LEFT_ARROW_TAIL_RE, "");
+  if (noted !== s && /[=<>]|\\(?:le|ge|leq|geq)(?![a-zA-Z])/.test(noted)) s = noted;
   // two bars read stacked, and a curved bar wherever it is
   s = tidy(s.replace(STACKED_RE, " = ").replace(CURVED_RE, " = "));
   if (LONE_STRONG_RE.test(s) || (ctx.arithmetic && LONE_ANY_RE.test(s))) return "=";

@@ -539,3 +539,18 @@ describe("readVariants: a number the page knows, misread (v1.0, the Training Cen
     expect(readVariants("\\div 0", false, ["8"])).toEqual([]);
   });
 });
+
+describe("v1.0: junk after a line a child wrote", () => {
+  it("dots after an answer (a jaggy mouse's taps) are no part of it, when the number alone is right", () => {
+    expect(misreadVariants("36 . \\cdot")).toEqual(["36"]);
+    expect(misreadVariants("= 36 \\cdots")).toEqual(["= 36"]);
+    expect(misreadVariants("36")).toEqual([]);
+  });
+
+  it("a side note behind a left arrow is no part of the line, when the rest is still a relation", () => {
+    expect(readYoungHand("3 x=12-4 \\Longleftarrow 8", { arithmetic: false })).toBe("3 x=12-4");
+    expect(readYoungHand("3 x=12-4 \\leftarrow", { arithmetic: false })).toBe("3 x=12-4");
+    // nothing but the note's own relation-less side: left as read
+    expect(readYoungHand("12-4 \\Longleftarrow 8", { arithmetic: false })).toBe("12-4 \\Longleftarrow 8");
+  });
+});
