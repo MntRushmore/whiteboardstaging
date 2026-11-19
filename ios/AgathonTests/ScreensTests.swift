@@ -283,3 +283,19 @@ struct HomeNameTests {
         #expect(model.greetingName(email: "sam@example.com") == nil)
     }
 }
+
+/// The board's top bar for 1.0 (the owner, 2026-11-19): no Mac screen (it needs the web's
+/// agathon.app/share), and Flag a bug on a grown-up's board only.
+struct BoardTopBarItemsTests {
+    @Test func theMacScreenIsOffInOnePointZero() {
+        #expect(!BoardTopBarItems.macScreenEnabled)
+        #expect(!BoardTopBarItems.showsMacScreen(onMac: false), "not on an iPad")
+        #expect(!BoardTopBarItems.showsMacScreen(onMac: true), "not on a Mac")
+    }
+
+    @Test func flagABugIsForGrownUpsOnly() {
+        #expect(BoardTopBarItems.showsFlagBug(BoardAudience(isKid: false, grade: nil)))
+        #expect(!BoardTopBarItems.showsFlagBug(BoardAudience(isKid: true, grade: 3)), "never on a kid profile")
+        #expect(!BoardTopBarItems.showsFlagBug(nil), "not while who is here isn't known yet")
+    }
+}

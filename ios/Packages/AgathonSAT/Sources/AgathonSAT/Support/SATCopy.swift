@@ -165,6 +165,12 @@ public enum SATCopy {
     public static func clock(_ seconds: Int) -> String { "\(seconds / 60):" + String(format: "%02d", seconds % 60) }
     public static let deckEmpty = "Nothing for the deck."
     public static let homeTitle = "SAT math"
+    /// SAT's first screen, before any account (App Review 5.1.2(i)): where the handwriting goes.
+    public static let privacyLine = "To check your work, Agathon sends what you write on the board to our AI tutor."
+    public static let privacyLink = "Privacy Policy"
+    public static let privacyURL = URL(string: "https://www.agathon.app/privacy")!
+    /// The line with its link, as Markdown for `Text`.
+    public static var privacyMarkdown: String { "\(privacyLine) [\(privacyLink)](\(privacyURL.absoluteString))" }
     public static func toReview(_ n: Int) -> String { "\(n) to review" }
     public static let toReviewLine = "Questions you missed earlier this week. They start your next set."
     public static let noReviewsTitle = "Practice 10"
