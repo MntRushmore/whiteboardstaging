@@ -125,6 +125,8 @@ final class AppStoreScreenshotUITests: XCTestCase {
     func test2cShowMe() throws {
         openPractice(lines: "4x - 8 = 20", page: 3)
         write("4x - 8 = 20")
+        // check when done: a step with no answer yet is judged when the kid taps Check
+        tap("live.check", wait: 30)
         waitFor("debug.live", matching: #"4 ?x ?- ?8 ?= ?20=tick"#, timeout: 60)
         noDebugUI()
         tap("live.helpMe", wait: 20)

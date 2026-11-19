@@ -90,6 +90,11 @@ flatten() { # in out
   w=$(magick identify -format %w "$2"); h=$(magick identify -format %h "$2")
   c=$(magick "$2" -format "%[pixel:p{$((w - 6)),$((h - 100))}]" info:)
   magick "$2" -fill "$c" -draw "rectangle $((w - 80)),$((h - 80)) $((w - 1)),$((h - 1))" -alpha off "PNG24:$2"
+  # the sidebar's "Version 1.0 (N) · dev" (a Debug build's line under Sign out): the ground colour over it
+  case "$(basename "$2")" in progress*)
+    c=$(magick "$2" -format "%[pixel:p{40,$((h - 95))}]" info:)
+    magick "$2" -fill "$c" -draw "rectangle 60,$((h - 140)) 600,$((h - 50))" -alpha off "PNG24:$2" ;;
+  esac
 }
 for f in "$OUT"/raw/raw-*.png; do
   [ -f "$f" ] || continue
