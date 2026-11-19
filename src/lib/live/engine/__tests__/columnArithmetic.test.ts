@@ -61,11 +61,11 @@ describe("reading the array", () => {
 
   // the real-ink bench: a child's `×` lost in the read, her answer copied out again under itself
   it.each<[string, StackedRead]>([
-    ["\\begin{array}{r} 267 \\\\ 8 \\\\ \\hline 2136 \\end{array}", { op: "×", operands: ["267", "8"], answer: "2136" }],
+    ["\\begin{array}{r} 358 \\\\ 6 \\\\ \\hline 2148 \\end{array}", { op: "×", operands: ["358", "6"], answer: "2148" }],
     ["\\begin{array}{r} 286 \\\\ 680 \\\\ \\hline 966 \\end{array}", { op: "+", operands: ["286", "680"], answer: "966" }],
     ["\\begin{array}{r} 52 \\\\ 17 \\\\ \\hline 35 \\end{array}", { op: "-", operands: ["52", "17"], answer: "35" }],
-    ["\\begin{array}{r} 267 \\\\ \\times 8 \\\\ \\hline 2136 \\\\ 2136 \\end{array}", { op: "×", operands: ["267", "8"], answer: "2136" }],
-    ["\\begin{array}{r} 267 \\\\ 8 \\\\ \\hline 2136 \\\\ 2136 \\end{array}", { op: "×", operands: ["267", "8"], answer: "2136" }],
+    ["\\begin{array}{r} 358 \\\\ \\times 6 \\\\ \\hline 2148 \\\\ 2148 \\end{array}", { op: "×", operands: ["358", "6"], answer: "2148" }],
+    ["\\begin{array}{r} 358 \\\\ 6 \\\\ \\hline 2148 \\\\ 2148 \\end{array}", { op: "×", operands: ["358", "6"], answer: "2148" }],
   ])("the operator her answer makes, the answer once: %s", (latex, want) => {
     expect(parseStacked(latex)).toEqual(want);
   });

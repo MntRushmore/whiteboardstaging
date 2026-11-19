@@ -350,13 +350,13 @@ export function rightAnswerTo(engine: LiveEngine, problem: readonly string[]): (
 const SIGN_EXPONENT_RE = /(?<=[\da-zA-Z)}])\s*\^\s*\{\s*\+\s*\}(?=\s*[\da-zA-Z(\\])/g;
 /** A `\times` with nothing before it (`\times=2`, `(\times + 1)`): no product — her `x`. */
 const LONE_TIMES_RE = /(^|[=(+\-]\s*)\\times(?![a-zA-Z])(?=\s*(?:[=+\-)]|$))/g;
-/** A left arrow and what follows it (`2 x=11-3 \Longleftarrow 9`): a note at the side, pointing back. */
+/** A left arrow and what follows it (`3 x=14-2 \Longleftarrow 4`): a note at the side, pointing back. */
 const LEFT_ARROW_TAIL_RE = /\s*\\(?:Long|long)?(?:left|Left)arrow(?![a-zA-Z]).*$/;
 
 /**
  * Out of arithmetic, what a messy read of a child's step may have been (real-ink bench, 2026-10-22):
  * a plus written high, read as an exponent (`5 x^{+} 20`); her `x` read as a times sign with nothing
- * to multiply (`\times=2`); a note at the side behind a left arrow (`2 x=11-3 \Longleftarrow 9`); and,
+ * to multiply (`\times=2`); a note at the side behind a left arrow (`3 x=14-2 \Longleftarrow 4`); and,
  * when her ink starts with a minus right before its first glyph (`minus`: `inkLeadsWithMinus`), that
  * minus, which the read dropped (`-5x + 20 - 6x` read `5 x^{+} 20-6 x`: the right step was ringed).
  * Each alone, then all together; none drops a number that `keep` (the problem, the line above) has.
@@ -515,7 +515,7 @@ export function readYoungHand(latex: string, ctx: YoungReadContext): string {
   s = s.replace(SIGN_EXPONENT_RE, " + ").replace(LONE_TIMES_RE, "$1x");
   // an empty `\text { }` (a tap of the pen read as text) is nothing: `\text { } \approx 12` is `\approx 12`
   s = s.replace(/\\text\s*\{\s*\}/g, " ");
-  // a note at the side behind a left arrow (`2 x=11-3 \Longleftarrow 9`): never her line's maths, when
+  // a note at the side behind a left arrow (`3 x=14-2 \Longleftarrow 4`): never her line's maths, when
   // what is left is still a relation (real-ink bench: such a line got a "?"; before, only the second
   // look before a ring tried it, and a first line on her own page never had one)
   const noted = s.replace(LEFT_ARROW_TAIL_RE, "");

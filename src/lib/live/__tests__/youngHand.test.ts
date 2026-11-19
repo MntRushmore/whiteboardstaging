@@ -479,7 +479,7 @@ describe("readVariants: what a messy read of a child's step may have been (only 
   it("a plus written high, her x read as a times sign, a side note behind a left arrow", () => {
     expect(readVariants("-5 x^{+} 20-6 x")).toContain("-5 x + 20-6 x");
     expect(readVariants("\\times=2")).toContain("x=2");
-    expect(readVariants("2 x=11-3 \\Longleftarrow 9")).toContain("2 x=11-3");
+    expect(readVariants("3 x=14-2 \\Longleftarrow 4")).toContain("3 x=14-2");
   });
 
   it("her minus that the read dropped, only when her ink starts with one; all fixes together too", () => {
@@ -542,9 +542,9 @@ describe("readVariants: a number the page knows, misread (v1.0, the Training Cen
 
 describe("v1.0: junk after a line a child wrote", () => {
   it("dots after an answer (a jaggy mouse's taps) are no part of it, when the number alone is right", () => {
-    expect(misreadVariants("36 . \\cdot")).toEqual(["36"]);
-    expect(misreadVariants("= 36 \\cdots")).toEqual(["= 36"]);
-    expect(misreadVariants("36")).toEqual([]);
+    expect(misreadVariants("73 . \\cdot")).toEqual(["73"]);
+    expect(misreadVariants("= 73 \\cdots")).toEqual(["= 73"]);
+    expect(misreadVariants("73")).toEqual([]);
   });
 
   it("a side note behind a left arrow is no part of the line, when the rest is still a relation", () => {
