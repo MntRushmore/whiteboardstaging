@@ -6,7 +6,8 @@
 # battery, full Wi-Fi. Shots: 2752 × 2064 (13-inch, landscape), upright, no alpha.
 #
 # Needs: the local Supabase (`npm run db:start`; shared: never reset or stop it), a dev server on $PORT
-# (`npm run dev -- -p 3991` with .env.local on the local stack, APPLE_ENVIRONMENT=Xcode) and the
+# (`npm run dev -- -p 3991` with .env.local on the local stack, APPLE_ENVIRONMENT=Xcode; when the API is
+# not on 54321, start it with NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:$SUPA_PORT and pass SUPA_PORT here) and the
 # one-simulator-at-a-time helper ~/whiteboardstaging/sim-run.sh.
 #
 #   scripts/ios-appstore-shots.sh            build, then the whole run (fresh install → shots)
@@ -20,6 +21,7 @@ OUT=${OUT:-$(mktemp -d -t agathon-appstore-shots)}
 DD=${DD:-$OUT/dd}
 SIM=${SIM:-"iPad Pro 13-inch (M5)"}
 SKIP_FAMILY=${SKIP_FAMILY:-}
+SUPA_PORT=${SUPA_PORT:-54321}   # local Supabase API (another app may hold 54321: set api.port and this)
 mkdir -p "$OUT/raw" "$OUT/results"
 
 ANON=$(grep -E "^NEXT_PUBLIC_SUPABASE_ANON_KEY=" "$ROOT/.env.local" | cut -d= -f2-)
@@ -31,7 +33,7 @@ grep -qE "^NEXT_PUBLIC_SUPABASE_URL=http://(127\.0\.0\.1|localhost)" "$ROOT/.env
 
 export TEST_RUNNER_AGATHON_APPSTORE_SHOTS=1
 export TEST_RUNNER_AGATHON_API_URL=http://localhost:$PORT
-export TEST_RUNNER_SUPABASE_URL=http://127.0.0.1:54321
+export TEST_RUNNER_SUPABASE_URL=http://127.0.0.1:$SUPA_PORT
 export TEST_RUNNER_SUPABASE_ANON_KEY=$ANON
 export TEST_RUNNER_APPSTORE_STATE=$OUT/email.txt
 export TEST_RUNNER_APPSTORE_SHOTS=$OUT/raw
