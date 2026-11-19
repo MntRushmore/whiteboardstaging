@@ -177,9 +177,6 @@ public enum PageTiming {
     public static let chipsBackMs = 1_000.0
     /// the safety net checks this long after the long pause, if the work is still unchecked
     public static let safetyMarginMs = 3_000.0
-    /// a read that lands after the long pause has passed (the network back, a Retry, a slow read) is
-    /// checked this long after it lands, so the reads landing with it are in (`checkLateRead`)
-    public static let lateReadMs = 600.0
     /// Mathpix's strokes confidence under this: "Is this right?". 0.9, not the synthetic eval's 0.99: on
     /// real kids' ink (docs/eval/reader-realink.md) the reads at 0.9–0.99 were right 16 times in 19,
     /// and asking only held back a slip's ring; at 0.85 a stray was ringed.
