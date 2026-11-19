@@ -145,6 +145,20 @@ struct BoardDrawTests {
         }
     }
 
+    /// The server's keepalive (v1.0: `{"type":"ping"}` after 10 s with nothing written, while the painter,
+    /// its check and a repaint run): not an event, and its bytes keep a slow run from timing out.
+    @Test func pingsAreSkippedAndKeepASlowRunAlive() async throws {
+        #expect(BoardDrawDecoding.event(Data(#"{"type":"ping"}"#.utf8)) == nil)
+        var steps: [FakeTransport.Step] = [.chunk(#"{"type":"status","stage":"reading"}"# + "\n")]
+        for _ in 0..<6 { steps += [.wait(.milliseconds(50)), .chunk(#"{"type":"ping"}"# + "\n")] }
+        steps.append(.chunk(#"{"type":"none","reason":"slow but fine"}"# + "\n"))
+        let transport = FakeTransport(streams: [.init(steps: steps)])
+        // 300 ms of run against an 80 ms stall limit: only the pings keep it open
+        let client = BoardDrawClient(api: Fixtures.client(transport), stallTimeout: .milliseconds(80))
+        let events = try await collect(client.draw(request()))
+        #expect(events == [.status(.reading, runId: nil, instructions: nil), .none(reason: "slow but fine")])
+    }
+
     @Test func stallTimesOut() async {
         let transport = FakeTransport(streams: [.init(steps: [.hang])])
         let client = BoardDrawClient(api: Fixtures.client(transport), stallTimeout: .milliseconds(80))
