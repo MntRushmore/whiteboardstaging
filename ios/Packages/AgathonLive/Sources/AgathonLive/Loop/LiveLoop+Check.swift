@@ -249,6 +249,19 @@ extension LiveLoop {
         pages.pauseTimer = scheduler.after(due) { [weak self] in self?.pauseCheck() }
     }
 
+    /// Check when done, Auto on: a read that lands on a held line after the long pause has passed —
+    /// the network back after a cut (the offline queue replayed), the kid's Retry, a read slower than
+    /// the pause — is checked a moment later, as the pause would have. The pause's check and the safety
+    /// net had already run without it (nothing read to check), so the line stayed held, unmarked, until
+    /// the kid tapped Check (the QA flake "network lost and found": read, never ticked within 90 s).
+    func checkLateRead(_ id: String) {
+        guard started, checksWhenDone, settings.auto, settings.enabled, settings.mode != .off,
+              pages.pauseTimer == nil, pages.pendingCheck == nil,
+              pages.lastInkAt.isFinite, scheduler.now - pages.lastInkAt >= PageTiming.checkPauseMs,
+              let st = lines[id], isHeld(st) else { return }
+        pages.pauseTimer = scheduler.after(PageTiming.lateReadMs) { [weak self] in self?.pauseCheck() }
+    }
+
     // MARK: - the safety net
 
     /// Work a kid could be left waiting on (Check showing, nothing happening) is checked anyway: the

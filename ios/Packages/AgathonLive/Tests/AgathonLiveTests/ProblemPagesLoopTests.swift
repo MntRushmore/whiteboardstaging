@@ -589,6 +589,71 @@ struct ProblemPagesLoopTests {
         h.board.isPenDown = false
     }
 
+    /// v1.0 (the QA flake "network lost and found"): the network cut while a line is written; the long
+    /// pause and the safety net pass with nothing read to check; the network comes back and the line is
+    /// read. It is checked then, as the pause would have — not left held, unticked, until Check.
+    @Test func aLineReadWhenTheNetworkIsBackIsCheckedWithoutCheck() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        h.connectivity.isOnline = false
+        await h.write("2x = 8", at: Vec2(200, 280))
+        await h.pass(14_000)
+        #expect(h.board.marks.isEmpty, "offline: nothing read, nothing marked")
+        h.connectivity.isOnline = true
+        await h.pass(700)
+        #expect(line(h, "2x = 8") != nil, "read when the network is back")
+        await h.pass(1_000)
+        #expect(h.board.mark(on: "2x = 8") == .tick, "checked a moment after the late read: \(h.board.marks.map(\.kind)) \(h.loop.checkDiagnosis)")
+    }
+
+    /// The device still says online but the requests drop (a proxy that cuts connections): the line is
+    /// replayed on its own (2, 4, 8, 15 s) and ticked when a replay gets through, long after the pause.
+    @Test func aLineReadByALateReplayIsChecked() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        h.services.failNextReads(Array(repeating: APIError.network(.networkConnectionLost), count: 4))
+        await h.write("2x = 8", at: Vec2(200, 280))
+        await h.pass(28_000)
+        #expect(h.board.marks.isEmpty, "\(h.services.recognizeRequests.count) reads")
+        await h.pass(5_000)
+        #expect(line(h, "2x = 8") != nil, "a replay got through")
+        await h.pass(1_000)
+        #expect(h.board.mark(on: "2x = 8") == .tick, "\(h.loop.checkDiagnosis)")
+    }
+
+    /// A read that failed for good ("?" and Retry) and the kid's Retry long after: ticked, no Check needed.
+    @Test func aLineReadAfterRetryIsChecked() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        let blip = APIError.http(HTTPFailure(status: 502, code: "upstream_error", message: "bad gateway"))
+        h.services.failNextReads([blip, blip])
+        await h.write("2x = 8", at: Vec2(200, 280))
+        await h.pass(15_000)
+        #expect(h.board.mark(on: "2x = 8") != .tick)
+        h.loop.retry()
+        await h.pass(700)
+        #expect(line(h, "2x = 8") != nil)
+        await h.pass(1_000)
+        #expect(h.board.mark(on: "2x = 8") == .tick, "\(h.loop.checkDiagnosis)")
+    }
+
+    /// The late check is the pause's: with Auto off a late read waits for Check, as every line does.
+    @Test func aLateReadWithAutoOffWaitsForCheck() async throws {
+        let h = harness(auto: false, checking: .whenDone)
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        h.connectivity.isOnline = false
+        await h.write("2x = 8", at: Vec2(200, 280))
+        await h.pass(14_000)
+        h.connectivity.isOnline = true
+        await h.pass(2_000)
+        #expect(line(h, "2x = 8") != nil)
+        #expect(h.board.marks.isEmpty, "Auto off: no check of its own")
+    }
+
     @Test func nextGoesToTheNextPage() async throws {
         let h = Harness()
         await h.start()

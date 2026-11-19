@@ -505,6 +505,8 @@ extension LiveLoop {
         }
         // a check waiting for the reads goes now, if this was the last
         runPendingCheck()
+        // a read that landed after the long pause had passed is checked as the pause would have
+        checkLateRead(id)
         refreshPage()
     }
 
