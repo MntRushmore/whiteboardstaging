@@ -140,6 +140,14 @@ export async function openrouterChat(
 /* Streaming + structured helpers (Live Math routes)                          */
 /* ------------------------------------------------------------------------- */
 
+/**
+ * The fixed sampling seed every temperature-0 call carries (v1.0 reliability: the same ink, the same
+ * answer). OpenRouter passes `seed` to the providers that take it (OpenAI, DeepSeek, …) and drops it
+ * for the rest, so it never fails a call; with temperature 0 it takes out the run-to-run wobble those
+ * providers still have. Calls at a higher temperature (Ask's words) are left to vary.
+ */
+export const LIVE_SEED = 7;
+
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: unknown };
 
 export type StreamChatOptions = {
@@ -206,6 +214,7 @@ export async function* streamChatText(opts: StreamChatOptions): AsyncGenerator<s
     provider: { sort: "latency" },
   };
   if (opts.temperature !== undefined) body.temperature = opts.temperature;
+  if (opts.temperature === 0) body.seed = LIVE_SEED;
   if (opts.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
   if (opts.reasoningEffort) body.reasoning = { effort: opts.reasoningEffort };
 
@@ -721,6 +730,7 @@ export async function chatJson<S extends z.ZodTypeAny>(opts: ChatJsonOptions<S>)
     response_format: { type: "json_object" },
     temperature: opts.temperature ?? 0,
   };
+  if (body.temperature === 0) body.seed = LIVE_SEED;
   if (opts.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
   if (opts.reasoningEffort) body.reasoning = { effort: opts.reasoningEffort };
   if (opts.latencyFirst) body.provider = { sort: "latency" };

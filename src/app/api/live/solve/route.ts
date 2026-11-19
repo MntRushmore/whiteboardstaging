@@ -151,7 +151,7 @@ export async function POST(req: Request) {
           streamWithFallback(
             models.solve,
             models.solveFallback,
-            { messages, signal, temperature: 0.2, reasoningEffort: "low", maxTokens: 1500, requestId, title: "Agathon Live - solve" },
+            { messages, signal, temperature: 0, reasoningEffort: "low", maxTokens: 1500, requestId, title: "Agathon Live - solve" },
             SOLVE_WATCHDOG_MS,
             limits,
           ),
@@ -173,7 +173,7 @@ export async function POST(req: Request) {
             streamWithFallback(
               models.solve,
               "",
-              { messages: retryMessages, signal, temperature: 0.2, reasoningEffort: "low", maxTokens: 1500, requestId, title: "Agathon Live - solve" },
+              { messages: retryMessages, signal, temperature: 0, reasoningEffort: "low", maxTokens: 1500, requestId, title: "Agathon Live - solve" },
               // the primary with the time that is left (no fallback: the time is the point)
               Math.max(1000, deadline - Date.now()),
               { deadline },
