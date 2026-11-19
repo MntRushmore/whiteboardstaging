@@ -206,7 +206,8 @@ extension LiveLoop {
 
     /// `/api/live/check` on a column: each annotation becomes a ring (and, asked for or allowed,
     /// a hint card); praise changes nothing (a tick is only ever what the engine verified).
-    func startCheck(column: Int, focus: String, userAsked: Bool, forceHint: Bool = false) {
+    /// `attempt`: 1 for the one retry a failed check the kid asked for gets on its own (`checkFailed`).
+    func startCheck(column: Int, focus: String, userAsked: Bool, forceHint: Bool = false, attempt: Int = 0) {
         guard settings.enabled, settings.mode != .off, let built = buildCheckLines(column) else { return }
         guard connectivity.isOnline else {
             if userAsked { pendingChecks[focus] = true }
@@ -230,6 +231,7 @@ extension LiveLoop {
             var first = true
             var carded = false
             var failed = false
+            var failure: Error?
             do {
                 for try await event in self.services.check(request) {
                     guard gen == self.generation, !Task.isCancelled else { break }
@@ -241,22 +243,35 @@ extension LiveLoop {
                         }
                         if await self.applyAnnotation(a, focus: focus, userAsked: userAsked, forceHint: forceHint) { carded = true }
                     case .error(let e):
-                        failed = true
-                        self.fail(StreamFailure(e), kind: "check", lineId: focus, retry: .check(lineId: focus, userAsked: userAsked, forceHint: forceHint))
+                        if first {
+                            failed = true
+                            failure = StreamFailure(e)
+                        } else {
+                            // its notes are on the board already: they stand (no error over them)
+                            Self.log.notice("live: a check ended with \(e.code, privacy: .public) after its notes; kept")
+                        }
                     default:
                         break
                     }
                 }
             } catch {
                 if !Task.isCancelled && gen == self.generation {
-                    failed = true
-                    if LiveFailure.from(error) == .offline && userAsked { self.pendingChecks[focus] = true }
-                    self.fail(error, kind: "check", lineId: focus, retry: .check(lineId: focus, userAsked: userAsked, forceHint: forceHint))
+                    // cut off after its notes had come (the platform ending the route): what came stands
+                    if !first, case .incomplete? = error as? APIError {
+                        Self.log.notice("live: a check was cut off after its notes; kept")
+                    } else {
+                        failed = true
+                        failure = error
+                    }
                 }
             }
             guard gen == self.generation else { return }
             self.checking = max(0, self.checking - 1)
             if self.rt[focus]?.checkTask != nil { self.rt[focus]?.checkTask = nil }
+            if let failure, !Task.isCancelled {
+                self.checkFailed(failure, column: column, focus: focus, userAsked: userAsked, forceHint: forceHint,
+                                 attempt: attempt, elapsed: self.scheduler.now - started, noted: !first)
+            }
             if !failed && !Task.isCancelled {
                 self.noteSuccess()
                 if forceHint && !carded, let st = self.lines[focus] { self.localHint(st) }
@@ -266,6 +281,41 @@ extension LiveLoop {
         }
         rt[focus, default: LineRuntime()].checkTask = task
         track { await task.value }
+    }
+
+    /// A check that failed (the v1 speed lane). A blip on a check the kid asked for, early enough and
+    /// before any note came, is tried once more on its own (a check is a question, safe to ask twice;
+    /// the route refunds a check that said nothing). Help me that still has no answer gets the engine's
+    /// own words on its card (`localHint`) instead of an error: the kid asked for help and gets help.
+    /// Out of ink, signed out and a rate limit say so as before; anything else shows Try again.
+    func checkFailed(_ error: Error, column: Int, focus: String, userAsked: Bool, forceHint: Bool, attempt: Int, elapsed: Double, noted: Bool) {
+        let f = LiveFailure.from(error)
+        let retryable = f == .transient || f == .offline
+        if userAsked && retryable && attempt == 0 && !noted && elapsed < LiveTiming.helpRetryWithinMs && connectivity.isOnline {
+            Self.log.notice("live: check failed (\(String(describing: f), privacy: .public)); trying once more")
+            checking += 1
+            refreshActivity()
+            rt[focus, default: LineRuntime()].checkTask?.cancel()
+            let gen = generation
+            scheduler.after(LiveTiming.helpRetryMs) { [weak self] in
+                guard let self, gen == self.generation else { return }
+                self.checking = max(0, self.checking - 1)
+                self.startCheck(column: column, focus: focus, userAsked: userAsked, forceHint: forceHint, attempt: 1)
+            }
+            return
+        }
+        switch f {
+        case .outOfInk, .signedOut, .rateLimited:
+            break
+        default:
+            if forceHint, let st = lines[focus] {
+                Self.log.notice("live: Help me's check failed (\(String(describing: f), privacy: .public)); the engine's words instead")
+                localHint(st)
+                return
+            }
+        }
+        if f == .offline && userAsked { pendingChecks[focus] = true }
+        fail(error, kind: "check", lineId: focus, retry: .check(lineId: focus, userAsked: userAsked, forceHint: forceHint))
     }
 
     /// A hint for a step the engine found wrong, worded on the iPad (`HintWording`): the engine's
@@ -476,7 +526,9 @@ extension LiveLoop {
 
     /// `/api/live/solve`: the model's worked solution, each step checked by the engine before it is
     /// drawn, written as one block when the stream ends.
-    func solveWithModel(_ built: (lines: [CheckLine], region: BrainRect, states: [LiveLine]), fromLineId: String?, st: LiveLine, onlyFirstStep: Bool, askedAt: Double) async {
+    /// `attempt`: 1 for the one retry a solve the kid asked for gets on its own (`retrySolveLater`).
+    func solveWithModel(_ built: (lines: [CheckLine], region: BrainRect, states: [LiveLine]), fromLineId: String?, st: LiveLine, onlyFirstStep: Bool, askedAt: Double,
+                        attempt: Int = 0) async {
         let asks = built.states.last { LivePolicy.endsWithEquals($0.latex) }
         let goal = asks.map { "what line id \($0.id) equals (\($0.latex.prefix(80))): continue it after its =, using any values the other lines give" }
         let request = SolveRequest(boardId: boardId, region: built.region.region, lines: built.lines, fromLineId: fromLineId,
@@ -487,6 +539,13 @@ extension LiveLoop {
         var discarded = 0
         var failed = false
         let gen = generation
+        let asked = !autoLines.contains(st.id)
+        // one more try on its own for a blip the kid's ask hit early, before any step came (v1 speed lane)
+        let opened = scheduler.now
+        let again = { [weak self] in
+            self?.retrySolveLater(built, fromLineId: fromLineId, st: st, onlyFirstStep: onlyFirstStep, askedAt: askedAt)
+        }
+        var streamFailure: StreamFailure?
         count("solve")
         do {
             for try await event in services.solve(request) {
@@ -511,8 +570,7 @@ extension LiveLoop {
                     if accepted.isEmpty { firstExplanation = s.explanation }
                     accepted.append(latex)
                 case .error(let e):
-                    failed = true
-                    fail(StreamFailure(e), kind: "solve", lineId: st.id, retry: .solve(lineId: st.id, onlyFirstStep: onlyFirstStep))
+                    streamFailure = StreamFailure(e)
                 default:
                     break
                 }
@@ -520,9 +578,26 @@ extension LiveLoop {
             }
         } catch {
             guard gen == generation, !Task.isCancelled else { return }
-            if LiveFailure.from(error) == .offline && !autoLines.contains(st.id) { pendingSolve = st.id }
-            fail(error, kind: "solve", lineId: st.id, retry: .solve(lineId: st.id, onlyFirstStep: onlyFirstStep))
-            return
+            // cut off after steps had come (the platform ending the route): the steps that came stand
+            if accepted.isEmpty || (error as? APIError) != .incomplete {
+                if solveRetry(error, asked: asked, attempt: attempt, elapsed: scheduler.now - opened, noSteps: accepted.isEmpty && discarded == 0) {
+                    again()
+                    return
+                }
+                if LiveFailure.from(error) == .offline && asked { pendingSolve = st.id }
+                fail(error, kind: "solve", lineId: st.id, retry: .solve(lineId: st.id, onlyFirstStep: onlyFirstStep))
+                return
+            }
+        }
+        if let streamFailure, accepted.isEmpty {
+            if solveRetry(streamFailure, asked: asked, attempt: attempt, elapsed: scheduler.now - opened, noSteps: discarded == 0) {
+                again()
+                return
+            }
+            failed = true
+            fail(streamFailure, kind: "solve", lineId: st.id, retry: .solve(lineId: st.id, onlyFirstStep: onlyFirstStep))
+        } else if let streamFailure {
+            Self.log.notice("live: solve ended with \(streamFailure.code, privacy: .public) after its steps; kept")
         }
         guard gen == generation else { return }
         if !accepted.isEmpty {
@@ -540,6 +615,36 @@ extension LiveLoop {
         } else if !failed && discarded > 0 {
             fail(LiveFailure.other(LiveCopy.Help.solveFailed), kind: "solve", lineId: st.id, retry: .solve(lineId: st.id, onlyFirstStep: onlyFirstStep))
         }
+    }
+
+    /// The one retry of a failed solve, `helpRetryMs` on the loop's clock from now: "Solving…" stays
+    /// up meanwhile, and the kid's next ink or a new board (a new generation) calls it off.
+    func retrySolveLater(_ built: (lines: [CheckLine], region: BrainRect, states: [LiveLine]), fromLineId: String?, st: LiveLine, onlyFirstStep: Bool, askedAt: Double) {
+        let gen = generation
+        solving += 1
+        refreshActivity()
+        scheduler.after(LiveTiming.helpRetryMs) { [weak self] in
+            guard let self else { return }
+            guard gen == self.generation else { return }
+            self.track { [weak self] in
+                guard let self else { return }
+                defer {
+                    if gen == self.generation { self.solving = max(0, self.solving - 1) }
+                    self.refreshActivity()
+                }
+                await self.solveWithModel(built, fromLineId: fromLineId, st: st, onlyFirstStep: onlyFirstStep, askedAt: askedAt, attempt: 1)
+            }
+        }
+    }
+
+    /// Whether a failed solve the kid asked for is tried once more on its own: a blip (a timeout, a
+    /// 5xx, a cut-off stream, a dropped connection), the first time, early, before any step came.
+    func solveRetry(_ error: Error, asked: Bool, attempt: Int, elapsed: Double, noSteps: Bool) -> Bool {
+        let f = LiveFailure.from(error)
+        guard asked, attempt == 0, noSteps, f == .transient || f == .offline, elapsed < LiveTiming.helpRetryWithinMs,
+              connectivity.isOnline else { return false }
+        Self.log.notice("live: solve failed (\(String(describing: f), privacy: .public)); trying once more")
+        return true
     }
 
     /// A step written as the rest of a chain (`= 26x + 50`).
@@ -669,16 +774,21 @@ extension LiveLoop {
 struct StreamFailure: Error {
     let code: String
     let message: String
+    let providerUnavailable: Bool
     init(_ e: StreamError) {
         code = e.code
         message = e.message
+        providerUnavailable = e.isProviderUnavailable
     }
 }
 
 extension LiveFailure {
     static func from(stream e: StreamFailure) -> LiveFailure {
+        // the provider's credits (the route's `reason`, or `credits_exhausted` inside a stream: our own
+        // ink is refused with a 402 before any stream opens) are never the family's ink
+        if e.providerUnavailable { return .unavailable }
         switch e.code {
-        case "ink_empty", "credits_exhausted": return .outOfInk
+        case "ink_empty": return .outOfInk
         case "rate_limited": return .rateLimited(retryAfterMs: 30_000, fairUse: false)
         case "unauthorized": return .signedOut
         case "timeout", "upstream", "upstream_error": return .transient

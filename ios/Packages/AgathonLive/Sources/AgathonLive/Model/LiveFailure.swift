@@ -17,6 +17,9 @@ public enum LiveFailure: Error, Equatable, Sendable {
     case needsCrop(recognizerDown: Bool)
     /// a blip worth one more try on its own (a timeout, a 5xx, a cut-off stream)
     case transient
+    /// the tutor's model provider can't answer (its credits ran out, or it is down hard): nothing the
+    /// family did and no ink spent. The kid hears the tutor is resting, never "ask a grown-up"
+    case unavailable
     /// anything else: shown, with Retry
     case other(String)
 
@@ -32,6 +35,7 @@ public enum LiveFailure: Error, Equatable, Sendable {
         case .notSignedIn: return .signedOut
         case .invalidResponse(let m): return .other(m)
         case .http(let f):
+            if f.isProviderUnavailable { return .unavailable }
             if f.isOutOfInk { return .outOfInk }
             if f.isRateLimited { return .rateLimited(retryAfterMs: Double(f.retryAfterMs ?? 30_000), fairUse: f.isFairUse) }
             if f.isUnauthorized { return .signedOut }

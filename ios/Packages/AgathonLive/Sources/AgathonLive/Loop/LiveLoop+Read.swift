@@ -328,7 +328,9 @@ extension LiveLoop {
         guard settings.enabled, settings.mode != .off else { return }
         for (id, asked) in checks {
             guard let st = lines[id], !st.latex.isEmpty else { continue }
-            startCheck(column: st.column, focus: id, userAsked: asked)
+            // a check the kid asked for is Help me's (every asked check forces its hint): back online it
+            // still ends in a hint card, the engine's words if the model has none
+            startCheck(column: st.column, focus: id, userAsked: asked, forceHint: asked)
         }
         if let solve, settings.mode == .answer, lines[solve] != nil { requestSolve(lineId: solve) }
     }
@@ -505,6 +507,8 @@ extension LiveLoop {
         }
         // a check waiting for the reads goes now, if this was the last
         runPendingCheck()
+        // a read that lands after the long pause went by (offline, the queue's replays) is checked now
+        pauseCheckIfPast()
         refreshPage()
     }
 

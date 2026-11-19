@@ -556,6 +556,11 @@ public final class LiveLoop: ObservableObject {
         if offlineWaiting != offlineQueue.count { offlineWaiting = offlineQueue.count }
     }
 
+    /// The kid's words for `.trouble`: the tutor resting when its provider can't answer, else "Oops".
+    public var troubleWords: String {
+        lastFailure?.failure == .unavailable ? LiveCopy.Status.resting : LiveCopy.Status.trouble
+    }
+
     /// "Reading…" shows only once a read has taken longer than `readingLabelDelayMs`.
     var readingLabelShown = false {
         didSet { if oldValue != readingLabelShown { refreshActivity() } }

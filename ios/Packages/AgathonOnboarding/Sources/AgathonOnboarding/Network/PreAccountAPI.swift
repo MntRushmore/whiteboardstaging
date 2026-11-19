@@ -29,9 +29,15 @@ public final class PreAccountAPI: Sendable {
     static func send(_ api: APIClient, path: String, body: Data, headers: [String: String]) async throws -> (Int, Data) {
         var request = try await api.makeRequest(.post, path, body: body, auth: .none)
         for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
+        let transport = api.transport
+        let sending = request
         do {
-            let (data, response) = try await api.transport.data(for: request)
+            // the try board's routes answer within 20 s (Mathpix 4 s): a connection that goes quiet is
+            // the reader being away, said as one, never a line read forever (v1 speed lane)
+            let (data, response) = try await withDeadline(.seconds(15)) { try await transport.data(for: sending) }
             return (response.statusCode, data)
+        } catch APIError.timeout {
+            throw TryCheckError.unavailable
         } catch {
             throw TryCheckError.offline
         }

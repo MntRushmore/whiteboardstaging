@@ -135,7 +135,10 @@ struct SSETests {
         board.kidWrites(KidHands.strokes("x = 3", at: Vec2(300, 200)))
         await pass(loop, scheduler, 700)
         loop.solveIt()
+        // an upstream error before any step is tried once more on its own (v1 speed lane), then shown
         await pass(loop, scheduler, 100)
+        #expect(loop.activity == .solving)
+        await pass(loop, scheduler, LiveTiming.helpRetryMs + 300)
         #expect(loop.activity == .trouble(retry: true))
         #expect(board.tutorStrokes(withMeta: "solvedLatex").isEmpty)
     }

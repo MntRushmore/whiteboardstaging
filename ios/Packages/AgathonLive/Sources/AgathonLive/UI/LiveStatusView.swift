@@ -32,7 +32,7 @@ public struct LiveStatusView: View {
             case .signedOut:
                 KidTrouble(words: LiveCopy.Status.signIn, button: nil, enabled: false) {}
             case .trouble(let retry):
-                KidTrouble(words: LiveCopy.Status.trouble, button: retry ? LiveCopy.Status.retry : LiveCopy.Status.ok, enabled: true) {
+                KidTrouble(words: loop.troubleWords, button: retry ? LiveCopy.Status.retry : LiveCopy.Status.ok, enabled: true) {
                     if retry { loop.retry() } else { loop.dismissTrouble() }
                 }
             case .slowDown(let until, let fairUse):
