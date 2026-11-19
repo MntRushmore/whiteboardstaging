@@ -22,7 +22,7 @@ const SIZE = 44;
 const LINE_UNITS = 30;
 
 /** One line in the hand, scaled so a plain line is `lh` tall; its box from (0, 0). */
-function handLine(latex: string, hand: Exclude<Hand, "font">, lh: number, seed: number): Ink {
+export function handLine(latex: string, hand: Exclude<Hand, "font">, lh: number, seed: number): Ink {
   const v = HANDS[hand];
   const layout = layoutMath(latex, { size: SIZE, seed });
   if (layout.unsupported.length > 0) throw new Error(`hand can't write ${latex}: ${layout.unsupported.join(", ")}`);
