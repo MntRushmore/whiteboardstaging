@@ -216,7 +216,9 @@ export function youngReadOf(args: { latex: string; problem?: string[] | null; st
   const rightAnswer = arithmetic ? rightAnswerTo(engine(), problem) : undefined;
   // a raised dot her line ends with, which Mathpix dropped (`h = 94 ·` read `h = 94`): the line is not finished
   const ink = Array.isArray(args.strokes) && args.strokes.length > 0 ? args.strokes.map(toInkStroke) : [];
-  const read = withTrailingTimesDot(readYoungHand(args.latex, { arithmetic, signs, rightAnswer }), ink.length > 0 && inkTimesDots(ink).trailing);
+  // (not after a right answer: a jaggy mouse's tap after it is no `·` still to be followed — real-ink bench, v1.0)
+  const young = readYoungHand(args.latex, { arithmetic, signs, rightAnswer });
+  const read = withTrailingTimesDot(young, ink.length > 0 && !(rightAnswer?.(young) ?? false) && inkTimesDots(ink).trailing);
   // a division bar and the number under it (`bar`: one of the line's strokes is a `bars`' bar): Mathpix
   // drops the bar and reads `2` — the line is "divide both sides by 2" (`LiveLoop.applyRecognition`)
   return { latex: args.bar === true ? (barDivisionLatex(read) ?? read) : read };
