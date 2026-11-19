@@ -33,6 +33,7 @@ import { evaluate, falseEquations, numberText, recheckNote } from "./arithmetic"
 import { readbackNote as EXACT_NUMBERS_NOTE, strayNumbersOf } from "./readback";
 import { roomLine } from "./room";
 import { revealStrokes, type RevealResult } from "./strokes";
+import { correctionNote, serverChecks, verifyPicture, type VerifyResult } from "./verify";
 
 export type RunInput = {
   runId: string;
@@ -45,6 +46,24 @@ export type RunInput = {
   instructions?: string;
   signal: AbortSignal;
   emit: (event: BoardDrawEvent) => void;
+  /** the bench's switches (never set by the route): the checker's model; false skips the check */
+  verifyModel?: string;
+  verify?: boolean;
+};
+
+/** What the check before show did (no kid content: counts, outcomes and times). */
+export type VerifySummary = {
+  checks: number;
+  /** the first picture: passed, failed, or the check errored (then shown: it fails open) */
+  first: "pass" | "fail" | "error";
+  /** the repainted picture, when the first failed */
+  second?: "pass" | "fail" | "error" | "no_picture";
+  problems: number;
+  /** a picture that failed twice is never shown: Solve writes its answer instead, or nothing */
+  withheld?: "write" | "none";
+  ms: number;
+  costUsd: number;
+  error?: string;
 };
 
 /** How a run ended, for the app event. */
@@ -73,6 +92,8 @@ export type RunSummary = {
   paints?: number;
   /** the first picture didn't line up with the board (then it was painted again) */
   misaligned?: boolean;
+  /** the check before show (./verify.ts) */
+  verify?: VerifySummary;
   strokes?: number;
   strokesDropped?: string;
   alignScore?: number;
@@ -144,6 +165,22 @@ export const MIN_ALIGN = 0.7;
 /** What a second painting is told after a picture that moved the page. */
 const KEEP_STILL_NOTE =
   "Your last picture moved or redrew the page. Return the SAME image at the same size and framing, every existing mark exactly where it is, and only add new marks in empty space.";
+
+/** Added to the instructions of a picture with counts (one the check before show will hold it to). */
+export const PAINTER_PICTURE_NOTE =
+  "Draw exactly the counts asked for and count them as you draw; equal parts are equal in size; shade a part with close dark diagonal lines, never a pale fill.";
+
+/** Solve's final answer as the iPad writes it: "5/6" as a fraction, "85" as "= 85", "x = 5" as it is. */
+export function answerLatex(answer: string): string | null {
+  const a = answer.trim().replace(/^=\s*/, "");
+  if (!a || a.length > 40 || !/\d/.test(a)) return null;
+  // only maths: digits, letters for a variable or a unit, signs, a fraction slash, a decimal point
+  if (!/^[\w\s.,+\-−=/×÷^()°%]+$/.test(a)) return null;
+  // words don't go through the maths hand ("2/3 is bigger" would come out "isbigger"); a unit can
+  if (/[a-zA-Z]{3,}/.test(a)) return null;
+  const tex = a.replace(/(\d+)\s*\/\s*(\d+)/g, "\\frac{$1}{$2}").replace(/×/g, "\\times ").replace(/÷/g, "\\div ").replace(/−/g, "-");
+  return /=/.test(tex) ? tex : `= ${tex}`;
+}
 
 async function askTutor(model: string, input: RunInput, summary: RunSummary, stop: AbortSignal, note?: string): Promise<TutorAnswer> {
   const data = await openrouterChat(
@@ -240,6 +277,8 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
   let instructions = input.instructions?.trim().slice(0, MAX_INSTRUCTIONS) ?? "";
   let correct = false;
   let simple: { expression: string; latex: string } | null = null;
+  let checks: string[] = [];
+  let answer: string | undefined;
   if (input.instructions !== undefined && instructions) {
     summary.tutorSkipped = true;
   } else {
@@ -267,6 +306,8 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
       summary.needsHelp = decision.needsHelp;
       instructions = decision.instructions;
       correct = decision.correct === true;
+      checks = decision.checks ?? [];
+      answer = decision.answer;
       // Solve on plain arithmetic: worked out here, never by a model, and written by the iPad's hand
       if (input.mode === "answer" && decision.simple) {
         const value = evaluate(decision.simple);
@@ -282,8 +323,9 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
     timings.tutorMs = Math.round(now() - t);
     if (signal.aborted) return fail(null, "tutor");
     // a pen-lift may hear "no help"; so may a request (Draw now) with nothing to add: forced to paint
-    // with no instructions, the painter invented a whole new drawing over a solved page (2026-10-26)
-    if (summary.needsHelp === false && (input.source === "auto" || !instructions)) {
+    // with no instructions, the painter invented a whole new drawing over a solved page (2026-10-26).
+    // Finished right work is a checkmark however it was asked for, never another nudge (the 11-13 demo).
+    if (summary.needsHelp === false && (input.source === "auto" || !instructions || correct)) {
       summary.result = "none";
       if (correct) summary.correct = true;
       emit({ type: "none", reason: correct ? "The work is right." : "The tutor saw nothing that needs help.", ...(correct ? { correct: true } : {}) });
@@ -300,7 +342,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
   emit({ type: "status", stage: "drawing", instructions });
 
   // 2–4. paint, diff and trace; once more when the read-back finds a number the tutor never asked for
-  type Painted = { overlayPng: Buffer; picturePng: Buffer; reveal: RevealResult; align: number };
+  type Painted = { overlayPng: Buffer; overlayRgba: Uint8Array; picturePng: Buffer; reveal: RevealResult; align: number };
   const paintOnce = async (prompt: string, bail: (err: unknown, stage: "painter" | "after") => RunSummary | null): Promise<Painted | RunSummary | null> => {
     // 2. the painter: Reed's prompt (voice form: always an image) plus the instructions
     let pictureBytes: Buffer;
@@ -328,6 +370,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
 
     // 3. the picture at the board's size, and what the model added
     let overlayPng: Buffer;
+    let overlayRgba: Uint8Array;
     let picturePng: Buffer;
     let mask: Uint8Array;
     {
@@ -343,6 +386,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
         picturePng = await encodeRgbPng(atSize);
         const overlay = overlayOf(board, pic);
         overlayPng = await encodeRgbaPng(board.width, board.height, overlay.rgba);
+        overlayRgba = overlay.rgba;
         mask = overlay.mask;
         summary.overlayPx = overlay.addedPx;
         summary.alignScore = Math.round(overlay.alignment.score * 1000) / 1000;
@@ -360,9 +404,25 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
     summary.strokes = reveal.strokes.length;
     if (reveal.dropped) summary.strokesDropped = reveal.dropped;
     if (signal.aborted) return bail(null, "after");
-    return { overlayPng, picturePng, reveal, align: summary.alignScore ?? 1 };
+    return { overlayPng, overlayRgba, picturePng, reveal, align: summary.alignScore ?? 1 };
   };
-  const firstPrompt = reedPrompt(input.mode, "voice", instructions || null);
+  // A picture that failed its check twice: Solve writes its final answer in the tutor's hand (the
+  // `write` event, as plain arithmetic does); anything else shows nothing. Never a wrong picture.
+  const withhold = (): RunSummary => {
+    const v = summary.verify!;
+    const latex = input.mode === "answer" && answer ? answerLatex(answer) : null;
+    v.withheld = latex ? "write" : "none";
+    if (latex) {
+      summary.result = "write";
+      emit({ type: "write", latex, expression: answer! });
+    } else {
+      summary.result = "none";
+      emit({ type: "none", reason: "The picture didn't come out right, so the tutor kept it to itself." });
+    }
+    return finish(summary);
+  };
+  // a picture with counts gets the painter rule that its shading and counts are kept to
+  const firstPrompt = reedPrompt(input.mode, "voice", instructions ? (checks.length ? `${instructions}\n${PAINTER_PICTURE_NOTE}` : instructions) : null);
   const first = await paintOnce(firstPrompt, fail);
   if (!first || !("overlayPng" in first)) return first ?? fail(null, "after");
   let painted: Painted = first;
@@ -380,15 +440,42 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
     }
     painted = again;
   }
-  if (input.mode !== "feedback") {
-    const strays = await strayNumbersOf(painted.overlayPng, board.width, board.height, instructions, signal, input.requestId);
-    if (strays.length > 0 && !signal.aborted) {
-      summary.readbackStrays = strays.slice(0, 8);
-      summary.paints = 2;
-      // a second painting that fails keeps the first (only an abort still ends the run)
-      const again = await paintOnce(`${firstPrompt}\n\n${EXACT_NUMBERS_NOTE}`, (err, stage) => (signal.aborted ? fail(err, stage) : null));
-      if (again && !("overlayPng" in again)) return again;
+  // CHECK BEFORE SHOW (./verify.ts), with the read-back at the same time: a picture that fails is
+  // painted once more with the corrections; one that fails again is never shown
+  const verifyChecks = input.verify === false ? [] : [...checks, ...serverChecks(input.mode, answer)];
+  const check = (p: Painted) =>
+    verifyPicture({ board, overlayRgba: p.overlayRgba, instructions, checks: verifyChecks, mode: input.mode, signal, requestId: input.requestId, model: input.verifyModel });
+  const [v1, strays] = await Promise.all([
+    verifyChecks.length > 0 ? check(painted) : Promise.resolve(null),
+    input.mode !== "feedback" ? strayNumbersOf(painted.overlayPng, board.width, board.height, instructions, signal, input.requestId) : Promise.resolve([] as string[]),
+  ]);
+  if (signal.aborted) return fail(null, "after");
+  const verdict = (v: VerifyResult) => (v.error ? "error" : v.ok ? "pass" : "fail") as "pass" | "fail" | "error";
+  if (v1) summary.verify = { checks: verifyChecks.length, first: verdict(v1), problems: v1.problems.length, ms: v1.ms, costUsd: v1.costUsd, ...(v1.error ? { error: v1.error } : {}) };
+  if (v1) summary.costUsd += v1.costUsd;
+  const failedCheck = v1 !== null && !v1.ok;
+  if (strays.length > 0) summary.readbackStrays = strays.slice(0, 8);
+  if (failedCheck || strays.length > 0) {
+    summary.paints = (summary.paints ?? 1) + 1;
+    const notes = [failedCheck ? correctionNote(v1!.problems, verifyChecks) : "", strays.length > 0 ? EXACT_NUMBERS_NOTE : ""].filter(Boolean).join("\n\n");
+    // the second painting is held to the same check; a first that passed stays when the second doesn't
+    const again = await paintOnce(`${firstPrompt}\n\n${notes}`, (err, stage) => (signal.aborted ? fail(err, stage) : null));
+    if (again && !("overlayPng" in again)) return again;
+    if (verifyChecks.length === 0) {
       if (again) painted = again;
+    } else {
+      const v2 = again && again.align >= MIN_ALIGN ? await check(again) : null;
+      if (signal.aborted) return fail(null, "after");
+      const vs = summary.verify!;
+      vs.second = v2 ? verdict(v2) : "no_picture";
+      if (v2) {
+        summary.costUsd += v2.costUsd;
+        vs.ms += v2.ms;
+        vs.costUsd += v2.costUsd;
+        if (v2.error) vs.error = v2.error;
+      }
+      if (again && v2?.ok) painted = again;
+      else if (failedCheck) return withhold();
     }
   }
   const { overlayPng, picturePng, reveal } = painted;

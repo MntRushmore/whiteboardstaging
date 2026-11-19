@@ -6,7 +6,8 @@
  */
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { dilate, encodeRgbaPng, inkMask, NEAR_KID, overlayOf, pictureAt, type Rgb } from "../overlay";
+import { blueAlpha } from "../kidView";
+import { dilate, encodeRgbaPng, inkMask, NEAR_KID, overlayOf, pictureAt, SHADE_LUM_MAX, type Rgb } from "../overlay";
 
 const W = 480;
 const H = 320;
@@ -151,6 +152,23 @@ describe("overlayOf", () => {
     const mark = `<path d="M100 100 L300 100" stroke="#000" stroke-width="5"/>`;
     const out = overlayOf(await rgb(svg(W, H, "")), await rgb(svg(W, H, mark)));
     expect(out.addedPx).toBeGreaterThan(900);
+  });
+
+  it("darkens a pale shaded part so the iPad's blue shows it (the demo's faint pizza, empty bars)", async () => {
+    // a fraction bar: a dark outline, one part filled pale yellow, one part hatched dark
+    const bar = `<rect x="300" y="200" width="80" height="50" fill="#fff3b0"/><rect x="300" y="200" width="160" height="50" fill="none" stroke="#111" stroke-width="4"/><path d="M380 200 L380 250" stroke="#111" stroke-width="4"/>`;
+    const out = overlayOf(await rgb(svg(W, H, KID)), await rgb(svg(W, H, KID + bar)));
+    const at = (x: number, y: number) => out.rgba.slice((y * W + x) * 4, (y * W + x) * 4 + 4);
+    const fill = at(340, 225);
+    expect(fill[3]).toBe(255);
+    expect(0.299 * fill[0] + 0.587 * fill[1] + 0.114 * fill[2]).toBeLessThanOrEqual(SHADE_LUM_MAX + 0.5);
+    // shown at ~40% blue on the iPad, against ~7% before
+    expect(blueAlpha(fill[0], fill[1], fill[2], fill[3])).toBeGreaterThan(0.38);
+    expect(blueAlpha(255, 243, 176, 255)).toBeLessThan(0.08);
+    // the dark outline is untouched
+    const edge = at(300, 225);
+    expect(edge[3]).toBe(255);
+    expect(edge[0]).toBeLessThan(60);
   });
 
   it("encodes as a transparent PNG of the board's size", async () => {

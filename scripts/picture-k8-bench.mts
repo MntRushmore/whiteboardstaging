@@ -47,6 +47,9 @@ const BUDGET = Number(arg("budget", "25"));
 const ONLY = arg("only")?.split(",").filter(Boolean);
 const CONCURRENCY = Number(arg("concurrency", "4"));
 const RESCORE = process.argv.includes("--rescore");
+/** the check before show's switches (fixed branch only; the baseline ignores them) */
+const VERIFY_MODEL = arg("verify-model");
+const NO_VERIFY = process.argv.includes("--no-verify");
 /** no paid calls: a made-up painter result (a dark outline and a PALE YELLOW fill) to check the scorer and the sheets */
 const FAKE = process.argv.includes("--fake");
 const MIN_ACCOUNT_USD = 20;
@@ -169,6 +172,8 @@ async function runRep(c: K8Case, rep: number, board: { png: Buffer }, rgb: Rgb):
       mode: c.mode,
       source: c.source,
       signal: new AbortController().signal,
+      ...(VERIFY_MODEL ? { verifyModel: VERIFY_MODEL } : {}),
+      ...(NO_VERIFY ? { verify: false } : {}),
       emit: (e) => {
         if (e.type === "status" && e.stage === "drawing") r.instructions = e.instructions;
         else if (e.type === "done") overlayB64 = e.overlay.split(",")[1] ?? "";
@@ -177,7 +182,7 @@ async function runRep(c: K8Case, rep: number, board: { png: Buffer }, rgb: Rgb):
         else if (e.type === "error") r.error = e.message;
       },
     });
-    r.result = r.summary!.result;
+    r.result = r.summary?.result ?? "error";
   } catch (err) {
     r.error = err instanceof Error ? err.message : String(err);
   }

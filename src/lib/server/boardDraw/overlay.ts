@@ -496,6 +496,13 @@ export function warp(pic: Rgb, t: Affine, inW: number, inH: number): Rgb {
 
 /** The board's ink counts within this many px of the picture's (the alignment's slack). */
 export const NEAR_KID = 3;
+/**
+ * A pale coloured fill (a "shaded" slice in light yellow or pale blue) is darkened to at most this
+ * luminance. The iPad turns each pixel's DARKNESS into the tutor blue's opacity (tutorBlue), so a
+ * pale fill — luminance ~220–240 — came out 6–14% blue: the demo's "nothing shaded" fraction bars and
+ * faint pizza (2026-11-13). At 150 a fill shows as ~41% blue: plainly shaded, and the writing on it reads.
+ */
+export const SHADE_LUM_MAX = 150;
 /** An addition's core is grown by this many px into its own soft edge. */
 export const GROW = 2;
 
@@ -578,9 +585,22 @@ export function overlayOf(board: Rgb, pic: Rgb, opts: OverlayOptions = {}): Over
     if (!(core[i] || (grown[i] && soft[i]))) continue;
     mask[i] = 1;
     addedPx++;
-    rgba[i * 4] = aligned.data[i * 3];
-    rgba[i * 4 + 1] = aligned.data[i * 3 + 1];
-    rgba[i * 4 + 2] = aligned.data[i * 3 + 2];
+    let r = aligned.data[i * 3];
+    let g = aligned.data[i * 3 + 1];
+    let bl = aligned.data[i * 3 + 2];
+    // a pale fill, kept for its colour not its darkness: darkened so the iPad's blue shows it
+    if (core[i] && a.dark[i] < darkMin) {
+      const l = lum(r, g, bl);
+      if (l > SHADE_LUM_MAX) {
+        const k = SHADE_LUM_MAX / l;
+        r = Math.round(r * k);
+        g = Math.round(g * k);
+        bl = Math.round(bl * k);
+      }
+    }
+    rgba[i * 4] = r;
+    rgba[i * 4 + 1] = g;
+    rgba[i * 4 + 2] = bl;
     rgba[i * 4 + 3] = 255;
   }
   return { rgba, mask, addedPx, alignment };
