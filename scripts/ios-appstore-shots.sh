@@ -72,7 +72,7 @@ export -f run
     [ -s "$OUT/email.txt" ] || { echo "no demo family"; exit 1; }
     docker exec -i supabase_db_whiteboardstaging psql -U postgres -q -v email="$(cat "$OUT/email.txt")" < "$ROOT/scripts/lib/appstore-demo-seed.sql"
   fi
-  for t in test2aHintOnASlip test2bPageSolved test2cAllDone test3AskDraws test4HomeAndProgress; do
+  for t in test2aHintOnASlip test2bPageSolved test2cShowMe test2dAllDone test3AskDraws test4HomeAndProgress; do
     run "$t" -only-testing:AgathonUITests/AppStoreScreenshotUITests/$t || run "$t-again" -only-testing:AgathonUITests/AppStoreScreenshotUITests/$t
   done
   xcrun simctl status_bar "$SIM_UDID" clear

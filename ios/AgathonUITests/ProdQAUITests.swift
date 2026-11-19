@@ -20,6 +20,9 @@ class ProdQATestCase: XCTestCase {
     var app: XCUIApplication!
     let env = ProcessInfo.processInfo.environment
     static let pin = "2468"
+    static let appReviewEmail = "appreview@agathon.app"
+    /// The kid's first name (TEST_RUNNER_PROD_QA_KID; App Review's account has "Maya").
+    var kidName: String { env["PROD_QA_KID"] ?? "Sam" }
     nonisolated(unsafe) static var autoFillOff = false
 
     var email: String { env["PROD_QA_EMAIL"] ?? "" }
@@ -28,7 +31,9 @@ class ProdQATestCase: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         try XCTSkipUnless(env["AGATHON_PROD_QA"] == "1", "set TEST_RUNNER_AGATHON_PROD_QA=1 (production, a throwaway QA account)")
-        try XCTSkipUnless(email.range(of: #"^qa-ipad-[a-z0-9-]+@agathon\.app$"#, options: .regularExpression) != nil,
+        // the one other account it may make: App Review's demo account (docs/RELEASE-1.0.md §3), kept
+        let appReview = env["AGATHON_APP_REVIEW"] == "1" && email == Self.appReviewEmail && env["PROD_QA_KEEP"] == "1"
+        try XCTSkipUnless(appReview || email.range(of: #"^qa-ipad-[a-z0-9-]+@agathon\.app$"#, options: .regularExpression) != nil,
                           "TEST_RUNNER_PROD_QA_EMAIL must be qa-ipad-<…>@agathon.app, never a real person's")
         try XCTSkipUnless(password.count >= 10, "TEST_RUNNER_PROD_QA_PASSWORD: 10 or more characters")
         try XCTSkipIf(env["AGATHON_API_URL"] != nil || env["SUPABASE_URL"] != nil, "a production run names no local stack")
@@ -215,7 +220,7 @@ final class ProdOnboardingUITests: ProdQATestCase {
         XCTAssertTrue(name.waitForExistence(timeout: 15))
         sleep(1)
         name.tap()
-        name.typeText("Sam")
+        name.typeText(kidName)
         tap("onboarding.name.continue")
         tap("onboarding.grade.3", wait: 25)
         tap("onboarding.skill.times_tables", wait: 25)
@@ -286,7 +291,7 @@ final class ProdOnboardingUITests: ProdQATestCase {
         waitFor("board.status", value: "saved", timeout: 60)
         snap("09-first-board-saved")
         tap("board.back")
-        waitFor("home.greeting", label: "Sam", timeout: 40)
+        waitFor("home.greeting", label: kidName, timeout: 40)
         snap("10-home-sam")
 
         guard env["PROD_QA_KEEP"] != "1" else { return }
