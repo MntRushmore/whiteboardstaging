@@ -7,6 +7,8 @@ import Foundation
 ///   `APIError.http` with the server's error, as any API call does
 /// - nothing arriving for `stallTimeout` (before the response or between chunks; the server's
 ///   `: ping` every 15 s counts) throws `APIError.timeout`
+/// - with a `deadline`, a stream still open that long after it was asked for throws `APIError.timeout`
+///   too, pings or not (a model that thinks forever while the route keeps pinging)
 /// - stopping the iteration (or cancelling its task) cancels the request
 public final class SSEClient: Sendable {
     public let api: APIClient
@@ -45,6 +47,7 @@ public final class SSEClient: Sendable {
         path: String,
         body: Data,
         stallTimeout: Duration,
+        deadline: Duration? = nil,
         requireTerminal: Bool,
         decode: @escaping @Sendable (SSEFrame) -> Event?,
         isTerminal: @escaping @Sendable (Event) -> Bool
@@ -55,7 +58,7 @@ public final class SSEClient: Sendable {
             let task = Task {
                 do {
                     // Stopped early only by a terminal event or by the consumer going away.
-                    let stopped = try await Self.run(api: api, path: path, body: body, stallTimeout: stallTimeout) { frame in
+                    let stopped = try await Self.run(api: api, path: path, body: body, stallTimeout: stallTimeout, deadline: deadline) { frame in
                         guard let event = decode(frame) else { return true }
                         if case .terminated = continuation.yield(event) { return false }
                         return !isTerminal(event)
@@ -77,12 +80,14 @@ public final class SSEClient: Sendable {
     }
 
     /// Reads the stream, handing each frame to `onFrame` until it answers false (then returns true)
-    /// or the stream ends (false), with a watchdog that fails the read after `stallTimeout` of silence.
+    /// or the stream ends (false), with a watchdog that fails the read after `stallTimeout` of silence
+    /// (or once `deadline` has passed since the call began).
     static func run(
         api: APIClient,
         path: String,
         body: Data,
         stallTimeout: Duration,
+        deadline: Duration? = nil,
         onFrame: @escaping @Sendable (SSEFrame) -> Bool
     ) async throws -> Bool {
         let activity = ActivityClock()
@@ -121,10 +126,13 @@ public final class SSEClient: Sendable {
                 return false
             }
             group.addTask {
-                let tick = max(.milliseconds(10), min(.seconds(1), stallTimeout / 10))
+                let began = ContinuousClock.now
+                let shortest = deadline.map { min($0, stallTimeout) } ?? stallTimeout
+                let tick = max(.milliseconds(10), min(.seconds(1), shortest / 10))
                 while true {
                     try await Task.sleep(for: tick)
                     if activity.idle() >= stallTimeout { throw APIError.timeout }
+                    if let deadline, ContinuousClock.now - began >= deadline { throw APIError.timeout }
                 }
             }
             // Whichever ends first (the stream, or the watchdog's timeout) ends both.
