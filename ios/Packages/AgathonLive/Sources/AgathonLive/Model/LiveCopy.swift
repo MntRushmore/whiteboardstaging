@@ -31,6 +31,9 @@ public enum LiveCopy {
         public static func offlineWaiting(_ n: Int) -> String { n == 1 ? "Offline · 1 line waiting" : "Offline · \(n) lines waiting" }
         public static let paused = "Paused"
         public static let trouble = "Oops. Let's try that again."
+        /// the tutor's model provider can't answer (its credits ran out): no grown-up can fix it, no ink
+        /// was spent (Ask's words for it, `AskCopy.Errors.resting`)
+        public static let resting = "Your tutor is taking a break. Try again in a few minutes."
         public static let retry = "Try again"
         public static let pause = "Let's take a little break."
         public static func tryAgainIn(_ seconds: Int) -> String { "Try again in \(seconds)" }

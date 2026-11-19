@@ -67,12 +67,17 @@ struct SSEClientTests {
         }
     }
 
-    @Test func checkStreamMayEndWithoutDone() async throws {
+    /// A check cut off before `done` (the platform ending the route): what arrived is handed on, then
+    /// `APIError.incomplete` (before the v1 speed lane, such a stream ended as if it were done).
+    @Test func checkStreamCutOffBeforeDoneHandsOnWhatCameThenIsIncomplete() async throws {
         let transport = FakeTransport(streams: [.init(steps: [
             .chunk("event: meta\ndata: {\"requestId\":\"r1\",\"model\":\"m\"}\n\n"),
             .chunk("event: annotation\ndata: {\"lineId\":\"l1\",\"verdict\":\"warn\",\"kind\":\"sign\",\"message\":\"Check the sign on line 2.\"}\n\n"),
         ])])
-        let events = try await collect(try live(transport).check(["boardId": "b1"]))
+        var events: [LiveEvent] = []
+        await #expect(throws: APIError.incomplete) {
+            for try await event in try live(transport).check(["boardId": "b1"]) { events.append(event) }
+        }
         #expect(events.count == 2)
         guard case let .annotation(note) = events[1] else { Issue.record("not an annotation"); return }
         #expect(note.verdict == .warn)

@@ -32,6 +32,8 @@ public enum APIError: Error, Sendable, Equatable {
     }
 
     public var isOutOfInk: Bool { failure?.isOutOfInk == true }
+    /// The tutor's model provider can't answer (its credits ran out): not the family's ink.
+    public var isProviderUnavailable: Bool { failure?.isProviderUnavailable == true }
     public var isRateLimited: Bool { failure?.isRateLimited == true }
     public var isFairUse: Bool { failure?.isFairUse == true }
 
@@ -151,7 +153,16 @@ public struct HTTPFailure: Sendable, Equatable {
     public var isFairUse: Bool { isRateLimited && reason == "fair_use" }
     /// Out of ink: the API's 402 `ink_empty` (ink is the only thing it answers 402 for);
     /// `credits_exhausted` is the same answer from a server deployed before ink.
-    public var isOutOfInk: Bool { status == 402 || code == "ink_empty" || code == "credits_exhausted" }
+    public var isOutOfInk: Bool {
+        !isProviderUnavailable && (status == 402 || code == "ink_empty" || code == "credits_exhausted")
+    }
+    /// The tutor's model provider can't answer: its credits ran out (OpenRouter's own 402, which the
+    /// routes answer as a 503 `upstream_error` with `reason: "provider_unavailable"`), or a 503
+    /// `credits_exhausted` (Ask's word for it). Nothing the family did and no ink spent: the kid is
+    /// told the tutor is resting, never "ask a grown-up".
+    public var isProviderUnavailable: Bool {
+        status != 402 && (reason == "provider_unavailable" || code == "provider_unavailable" || code == "credits_exhausted")
+    }
     /// A 5xx no route of ours wrote (Cloudflare's page, a platform error): nothing it says is ours.
     public var isBareServerError: Bool { status >= 500 && code == nil }
 

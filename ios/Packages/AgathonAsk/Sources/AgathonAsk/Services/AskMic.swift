@@ -118,7 +118,11 @@ public struct LiveSpeechToText: SpeechToText {
             request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
             request.httpBody = AskMicLogic.multipart(audio: audio, lang: AskMicLogic.lang(), seconds: seconds, boundary: boundary)
             request.timeoutInterval = 25
-            let (data, response) = try await api.transport.data(for: request)
+            let transport = api.transport
+            let sending = request
+            // the route gives ElevenLabs 20 s: a reply not here by 30 s is the error the mic already
+            // handles (the iPad's own recognizer next), never a mic that spins (v1 speed lane)
+            let (data, response) = try await withDeadline(.seconds(30)) { try await transport.data(for: sending) }
             return AskMicLogic.outcome(status: response.statusCode, body: data)
         } catch {
             return .error

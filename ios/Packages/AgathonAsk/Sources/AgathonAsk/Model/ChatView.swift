@@ -319,6 +319,8 @@ public enum ChatView {
         if let api = error as? APIError {
             switch api {
             case .http(let f):
+                // the provider's credits, before the stream: never the family's ink
+                if f.isProviderUnavailable { return ChatError(kind: .other, message: AskCopy.Errors.resting, retry: true) }
                 if f.isOutOfInk { return ChatError(kind: .ink, message: AskCopy.Errors.ink, retry: false) }
                 if f.isRateLimited { return rateLimited(f.retryAfterMs) }
                 if f.isUnauthorized { return ChatError(kind: .unauthorized, message: AskCopy.Errors.unauthorized, retry: false) }
@@ -335,7 +337,7 @@ public enum ChatView {
         }
         // an `error` event once the answer was streaming: never ink (it was taken before and given back)
         if let e = error as? StreamError {
-            if e.code == "credits_exhausted" { return ChatError(kind: .other, message: AskCopy.Errors.resting, retry: true) }
+            if e.isProviderUnavailable { return ChatError(kind: .other, message: AskCopy.Errors.resting, retry: true) }
             if e.status == 429 || e.code == "rate_limited" { return rateLimited(nil) }
             if e.code == "timeout" { return ChatError(kind: .timeout, message: AskCopy.Errors.timeout, retry: true) }
             if e.status == 401 || e.code == "unauthorized" { return ChatError(kind: .unauthorized, message: AskCopy.Errors.unauthorized, retry: false) }
