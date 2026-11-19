@@ -106,6 +106,13 @@ export async function parseJsonBody<S extends z.ZodTypeAny>(
 
 /** What the student reads when the provider account behind the tutor has run dry. */
 export const PROVIDER_UNAVAILABLE_MESSAGE = "The tutor is unavailable right now. Try again in a few minutes.";
+/**
+ * The `reason` on that answer (JSON and SSE `error` alike): the provider, not the student's ink and
+ * not a blip. The iPad keys on it to say the tutor is resting instead of retrying or sending the kid
+ * to a grown-up (ios AgathonKit `HTTPFailure.isProviderUnavailable`). Additive: the code stays
+ * `upstream_error`, so every client that keys on the code reads it as before.
+ */
+export const PROVIDER_UNAVAILABLE_REASON = "provider_unavailable";
 
 /** What a route's child logger says about the request it serves (its pino bindings). */
 export type LogContext = { module?: string; route?: string; requestId?: string; userId?: string };
@@ -242,7 +249,8 @@ export function errorResponse(
     // The operator's provider account, not the student's ink: a 503 the student can only wait out
     // (a 402 would tell them to buy ink that could not help). Logged as an error so it gets seen.
     log.error({ ...context }, "OpenRouter credits exhausted: top up the provider account");
-    return json(503, "upstream_error", PROVIDER_UNAVAILABLE_MESSAGE);
+    // `reason` tells the iPad it is the provider (it waits it out, and never says "ask a grown-up")
+    return json(503, "upstream_error", PROVIDER_UNAVAILABLE_MESSAGE, { reason: PROVIDER_UNAVAILABLE_REASON });
   }
 
   if (err instanceof UpstreamError) {

@@ -15,6 +15,8 @@ export const maxDuration = 30;
 
 /** One attempt per model; the benchmark's p95 for the setup models was ≤ 2.2 s. */
 const SETUP_ATTEMPT_MS = 12_000;
+/** Both attempts end by this long after the request came in (the iPad waits 22 s; maxDuration 30). */
+const SETUP_BUDGET_MS = 20_000;
 
 /**
  * POST /api/live/setup — a word problem → the equations under it (LaTeX only, no arithmetic
@@ -55,6 +57,7 @@ export async function POST(req: Request) {
         reasoningFor: figure ? figureReasoning : () => "low",
         latencyFirst: true,
         attemptTimeoutMs: SETUP_ATTEMPT_MS,
+        deadline: startedAt + SETUP_BUDGET_MS,
         title: figure ? "Agathon Live - figure" : "Agathon Live - setup",
       });
       const setup = figure ? figureSetup(reply, data) : cleanSetupReply(reply as SetupReply);
