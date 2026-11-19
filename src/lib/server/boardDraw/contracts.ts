@@ -11,7 +11,10 @@
  *     boardId?: string, clientRunId: string }
  *
  * 200, Content-Type application/x-ndjson: one JSON object a line, flushed as it happens
- * (`BoardDrawEvent`): `status` reading → `status` drawing → `done` | `none` | `error`.
+ * (`BoardDrawEvent`): `status` reading → `status` drawing → `done` | `none` | `write` | `error`.
+ * Between them, after 10 s with nothing written, a keepalive `{"type":"ping"}` line (clients skip a
+ * type they don't know). Every run ends with one of those final lines within 45 s (RUN_BUDGET_MS,
+ * ./run.ts: past it, Solve's answer as `write`, otherwise `none`).
  * The client cancels by aborting the request; both upstream calls stop with it.
  *
  * POST /api/board/draw/outcome — admin only. { runId, outcome } → 204.

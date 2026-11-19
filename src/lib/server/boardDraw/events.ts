@@ -73,6 +73,7 @@ export function recordBoardDraw(ctx: {
       ...(s.readbackStrays?.length ? { readbackStrays: s.readbackStrays } : {}),
       // the check before show: counts, outcomes and time only (no kid content)
       ...(s.verify ? { verify: s.verify } : {}),
+      ...(s.outOfTime ? { outOfTime: true } : {}),
       ...(s.tutorWrongSums?.length ? { tutorWrongSums: s.tutorWrongSums, tutorRechecked: s.tutorRechecked ?? false } : {}),
       ...(s.errorCode ? { errorCode: s.errorCode, retryable: s.retryable ?? false } : {}),
       ...(s.upstreamStatus !== undefined ? { upstreamStatus: s.upstreamStatus } : {}),

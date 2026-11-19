@@ -12,8 +12,10 @@ import { parseJsonBody } from "@/lib/server/request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// tutor ≤ 15 s + painter ≤ 30 s + the overlay and its strokes
+// the run's own budget is 45 s (RUN_BUDGET_MS: it then ends with a fallback line), well inside this
 export const maxDuration = 60;
+/** A keepalive line after this long with nothing written (the iPad gives up after 30 s with no byte). */
+const PING_MS = 10_000;
 
 const log = logger.child({ module: "board", route: "draw" });
 
@@ -111,6 +113,6 @@ export async function POST(req: Request) {
     if (summary.result === "error") runLog.error(fields, "board draw failed");
     else runLog.info(fields, "board draw finished");
     recordBoardDraw({ runId, userId: user.id, boardId: body.boardId, clientRunId: body.clientRunId, mode: body.mode, source: body.source, imageWidth: board.width, imageHeight: board.height, summary });
-  });
+  }, {}, { pingMs: PING_MS });
   return withRequestId(response, requestId);
 }

@@ -49,7 +49,22 @@ export type RunInput = {
   /** the bench's switches (never set by the route): the checker's model; false skips the check */
   verifyModel?: string;
   verify?: boolean;
+  /** the whole run's budget, ms (RUN_BUDGET_MS; tests shorten it) */
+  budgetMs?: number;
 };
+
+/**
+ * The whole run's budget. The route may run 60 s (maxDuration) and the painter alone is allowed 30 s,
+ * so a slow painter plus the check and a repaint could reach the platform's limit with no final line.
+ * At 45 s the run ends cleanly instead: Solve writes its answer when the tutor gave one, otherwise
+ * `none` — never a hang, never a cut-off stream.
+ */
+export const RUN_BUDGET_MS = 45_000;
+/** What `none` says when the budget ends a run. */
+export const OUT_OF_TIME_REASON = "The tutor took too long to draw this one. Try again.";
+
+/** What a run has learned so far, for the budget's fallback. */
+type RunContext = { summary?: RunSummary; answer?: string; terminal?: boolean };
 
 /** What the check before show did (no kid content: counts, outcomes and times). */
 export type VerifySummary = {
@@ -94,6 +109,8 @@ export type RunSummary = {
   misaligned?: boolean;
   /** the check before show (./verify.ts) */
   verify?: VerifySummary;
+  /** the run hit RUN_BUDGET_MS and ended with a fallback (`write` or `none`) */
+  outOfTime?: boolean;
   strokes?: number;
   strokesDropped?: string;
   alignScore?: number;
@@ -247,11 +264,52 @@ export function simpleWritable(expression: string, value: number): boolean {
   return Math.abs(Math.round(value * 10_000) / 10_000 - value) < 1e-9;
 }
 
+/**
+ * One run, held to its budget (RUN_BUDGET_MS). Past it, the run's upstream calls are stopped, nothing
+ * more it emits goes out, and the run ends with Solve's answer written (`write`) when the tutor gave
+ * one, otherwise `none` with OUT_OF_TIME_REASON. A client that went away gets nothing.
+ */
 export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
+  const t0 = now();
+  const budget = new AbortController();
+  const ctx: RunContext = {};
+  let over = false;
+  const emit = (e: BoardDrawEvent) => {
+    if (over) return;
+    if (e.type !== "status") ctx.terminal = true;
+    input.emit(e);
+  };
+  const run = runWithin({ ...input, signal: AbortSignal.any([input.signal, budget.signal]), emit }, ctx);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<"late">((resolve) => (timer = setTimeout(() => resolve("late"), input.budgetMs ?? RUN_BUDGET_MS)));
+  const first = await Promise.race([run, late]);
+  clearTimeout(timer);
+  if (first !== "late" || ctx.terminal || input.signal.aborted) return first === "late" ? run : first;
+  over = true;
+  budget.abort();
+  run.catch(() => {});
+  const summary = ctx.summary!;
+  summary.outOfTime = true;
+  summary.timings.totalMs = Math.round(now() - t0);
+  summary.costUsd = Math.round(summary.costUsd * 1e6) / 1e6;
+  const latex = input.mode === "answer" && ctx.answer ? answerLatex(ctx.answer) : null;
+  if (latex) {
+    summary.result = "write";
+    input.emit({ type: "write", latex, expression: ctx.answer! });
+  } else {
+    summary.result = "none";
+    input.emit({ type: "none", reason: OUT_OF_TIME_REASON });
+  }
+  // a copy: the stopped run may still touch its own summary as its calls unwind
+  return { ...summary, timings: { ...summary.timings }, ...(summary.verify ? { verify: { ...summary.verify } } : {}) };
+}
+
+async function runWithin(input: RunInput, ctx: RunContext): Promise<RunSummary> {
   const t0 = now();
   const { signal, emit, board } = input;
   const timings: BoardDrawTimings = { tutorMs: 0, paintMs: 0, diffMs: 0, traceMs: 0, totalMs: 0 };
   const summary: RunSummary = { result: "error", needsHelp: null, tutorSkipped: false, timings, costUsd: 0, instructionsChars: 0 };
+  ctx.summary = summary;
   const finish = (s: RunSummary): RunSummary => {
     timings.totalMs = Math.round(now() - t0);
     summary.costUsd = Math.round(summary.costUsd * 1e6) / 1e6;
@@ -308,6 +366,7 @@ export async function runBoardDraw(input: RunInput): Promise<RunSummary> {
       correct = decision.correct === true;
       checks = decision.checks ?? [];
       answer = decision.answer;
+      ctx.answer = answer;
       // Solve on plain arithmetic: worked out here, never by a model, and written by the iPad's hand
       if (input.mode === "answer" && decision.simple) {
         const value = evaluate(decision.simple);

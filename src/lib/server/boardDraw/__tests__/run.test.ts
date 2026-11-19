@@ -13,20 +13,27 @@ const calls: { tutor: number; painter: number; check: number; painterPrompts: st
 let tutorReply = "";
 let checkReplies: Array<string | Error> = [];
 let picture = "";
+/** a painter or tutor that never answers until its call is stopped (the budget tests) */
+let painterHangs = false;
+let tutorHangs = false;
+const hang = (signal?: AbortSignal) =>
+  new Promise<never>((_, reject) => signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true }));
 
 vi.mock("@/lib/server/openrouter", async (orig) => {
   const real = await orig<typeof import("@/lib/server/openrouter")>();
   return {
     ...real,
-    openrouterChat: vi.fn(async (body: Body, opts: { title?: string }) => {
+    openrouterChat: vi.fn(async (body: Body, opts: { title?: string; signal?: AbortSignal }) => {
       if (opts.title?.endsWith("tutor")) {
         calls.tutor++;
+        if (tutorHangs) return hang(opts.signal);
         return { choices: [{ message: { content: tutorReply } }], usage: { cost: 0.001 } };
       }
       if (opts.title?.endsWith("painter")) {
         calls.painter++;
         const parts = body.messages[0].content as Array<{ type: string; text?: string }>;
         calls.painterPrompts.push(parts.find((p) => p.type === "text")?.text ?? "");
+        if (painterHangs) return hang(opts.signal);
         return { choices: [{ message: { content: "", images: [{ image_url: { url: picture } }] } }], usage: { cost: 0.034 } };
       }
       calls.check++;
@@ -48,16 +55,17 @@ const svg = (body: string) => `<svg xmlns="http://www.w3.org/2000/svg" width="${
 const boardPng = await sharp(Buffer.from(svg(""))).png().toBuffer();
 picture = `data:image/png;base64,${(await sharp(Buffer.from(svg(`<rect x="250" y="150" width="120" height="60" fill="none" stroke="#000" stroke-width="5"/>`))).png().toBuffer()).toString("base64")}`;
 
-async function run(mode: "feedback" | "suggest" | "answer", source: "auto" | "voice") {
+async function run(mode: "feedback" | "suggest" | "answer", source: "auto" | "voice", extra: { budgetMs?: number; signal?: AbortSignal } = {}) {
   const events: BoardDrawEvent[] = [];
   const summary = await runBoardDraw({
+    ...extra,
     runId: "r",
     requestId: "q",
     imageDataUrl: `data:image/png;base64,${boardPng.toString("base64")}`,
     board: await decodeRgb(boardPng),
     mode,
     source,
-    signal: new AbortController().signal,
+    signal: extra.signal ?? new AbortController().signal,
     emit: (e) => events.push(e),
   });
   return { summary, events, last: events[events.length - 1] };
@@ -70,6 +78,53 @@ const PASS = '{"items":[{"check":"1","seen":"3 rods","ok":true}],"ok":true}';
 beforeEach(() => {
   Object.assign(calls, { tutor: 0, painter: 0, check: 0, painterPrompts: [] });
   checkReplies = [];
+  painterHangs = false;
+  tutorHangs = false;
+});
+
+describe("runBoardDraw: the run's budget (never a hang, never a silent end)", () => {
+  it("a painter that never answers: Solve writes the tutor's answer, and the painter's call is stopped", async () => {
+    tutorReply = PICTURE;
+    painterHangs = true;
+    const t = Date.now();
+    const { events, last, summary } = await run("answer", "voice", { budgetMs: 150 });
+    expect(Date.now() - t).toBeLessThan(1000);
+    expect(last).toEqual({ type: "write", latex: "= 85", expression: "85" });
+    expect(events.filter((e) => e.type !== "status")).toHaveLength(1);
+    expect(summary).toMatchObject({ result: "write", outOfTime: true });
+    expect(summary.timings.totalMs).toBeGreaterThanOrEqual(140);
+  });
+
+  it("Suggest (no answer to write) ends with `none`, said plainly", async () => {
+    tutorReply = JSON.stringify({ needsHelp: true, instructions: "Draw 4 rows of 3 dots", checks: ["4 rows of 3"], answer: "12" });
+    painterHangs = true;
+    const { last, summary } = await run("suggest", "voice", { budgetMs: 150 });
+    const { OUT_OF_TIME_REASON } = await import("../run");
+    expect(last).toEqual({ type: "none", reason: OUT_OF_TIME_REASON });
+    expect(summary).toMatchObject({ result: "none", outOfTime: true });
+  });
+
+  it("a tutor that never answers ends with `none` too (nothing known to write)", async () => {
+    tutorHangs = true;
+    const { events, last } = await run("answer", "voice", { budgetMs: 150 });
+    expect(last.type).toBe("none");
+    expect(events.filter((e) => e.type !== "status")).toHaveLength(1);
+  });
+
+  it("a run inside its budget is untouched; a client that left gets no fallback", async () => {
+    tutorReply = PICTURE;
+    checkReplies = [PASS];
+    const fast = await run("answer", "voice", { budgetMs: 5000 });
+    expect(fast.last.type).toBe("done");
+    expect(fast.summary.outOfTime).toBeUndefined();
+
+    painterHangs = true;
+    const gone = new AbortController();
+    setTimeout(() => gone.abort(), 50);
+    const left = await run("answer", "voice", { budgetMs: 150, signal: gone.signal });
+    expect(left.events.filter((e) => e.type !== "status")).toEqual([]);
+    expect(left.summary.result).toBe("aborted");
+  });
 });
 
 describe("runBoardDraw: right work", () => {
