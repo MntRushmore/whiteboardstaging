@@ -49,7 +49,7 @@ for step in $STEPS; do
     # a fresh install: the first run makes the account and keeps it; then the rest, in order; the last
     # one deletes it through the app
     TEST_RUNNER_PROD_QA_KEEP=1 ~/whiteboardstaging/sim-run.sh "$SIM" -- bash -c '
-      xcrun simctl uninstall "$SIM_UDID" app.agathon.Agathon >/dev/null 2>&1
+      xcrun simctl uninstall "$SIM_UDID" app.agathon.ios >/dev/null 2>&1
       run onboarding -only-testing:AgathonUITests/ProdOnboardingUITests
       "'"$ACCOUNTS"'" ids "'"$EMAIL"'" > "$OUT/ids.txt"; echo "ids: $(tr "\n" " " < "$OUT/ids.txt")"
       run app ${APP_TESTS:--only-testing:AgathonUITests/ProdQAUITests}' ;;

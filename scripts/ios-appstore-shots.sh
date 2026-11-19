@@ -67,7 +67,7 @@ export -f run
   xcrun simctl status_bar "$SIM_UDID" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
     --cellularMode notSupported --batteryState charged --batteryLevel 100
   if [ -z "$SKIP_FAMILY" ]; then
-    xcrun simctl uninstall "$SIM_UDID" app.agathon.Agathon >/dev/null 2>&1
+    xcrun simctl uninstall "$SIM_UDID" app.agathon.ios >/dev/null 2>&1
     run family -only-testing:AgathonUITests/AppStoreScreenshotUITests/test1DemoFamily
     [ -s "$OUT/email.txt" ] || { echo "no demo family"; exit 1; }
     docker exec -i supabase_db_whiteboardstaging psql -U postgres -q -v email="$(cat "$OUT/email.txt")" < "$ROOT/scripts/lib/appstore-demo-seed.sql"
