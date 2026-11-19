@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerWrittenAgain, nextStep, parseStacked, placeName, placesLeft, stackedAnalysis, workStacked, type StackedRead } from "../columnArithmetic";
+import { againstProblem, answerWrittenAgain, nextStep, parseStacked, placeName, placesLeft, stackedAnalysis, workStacked, type StackedRead } from "../columnArithmetic";
 
 /**
  * Column (stacked) arithmetic (`engine/columnArithmetic.ts`): the array Mathpix reads a stacked sum
@@ -102,6 +102,34 @@ describe("working it", () => {
     expect(workStacked(read, { answerLast: 2 })).toMatchObject({ wrong: -1, right: false });
     // read as the ones, it would be wrong
     expect(workStacked(read)).toMatchObject({ wrong: 0 });
+  });
+
+  it("a whole right answer is right wherever it sits: a steep hand's 35 a column to the left is no slip (v1.0)", () => {
+    const read = parseStacked("\\begin{array}{r} 52 \\\\ -17 \\\\ \\hline 35 \\end{array}")!;
+    // the ink puts its 5 under the tens: still 35, still right
+    expect(workStacked(read, { answerLast: 1 })).toMatchObject({ wrong: -1, right: true });
+    expect(workStacked(read, { answerLast: 1, done: true })).toMatchObject({ wrong: -1, right: true });
+    // a wrong answer sitting there is still wrong, and a partial one is still placed by the ink
+    expect(workStacked(parseStacked("\\begin{array}{r} 52 \\\\ -17 \\\\ \\hline 45 \\end{array}")!, { answerLast: 1 })).toMatchObject({ right: false });
+    expect(workStacked(parseStacked("\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 9 \\end{array}")!, { answerLast: 2 })).toMatchObject({ wrong: -1, right: false });
+  });
+
+  it("rows read as numbers the page's problem does not have are a misread: its numbers on a right answer, no ring on a wrong one (v1.0)", () => {
+    const misread = parseStacked("\\begin{array}{r} 206 \\\\ +600 \\\\ \\hline 966 \\end{array}")!;
+    expect(workStacked(misread)).toMatchObject({ right: false });
+    const fixed = againstProblem(misread, ["286 + 680"]);
+    expect(fixed).toMatchObject({ trusted: true, read: { operands: ["286", "680"] } });
+    expect(workStacked(fixed.read)).toMatchObject({ right: true });
+    // a wrong answer under misread rows: not trusted (no ring on numbers she may never have written)
+    expect(againstProblem(parseStacked("\\begin{array}{r} 206 \\\\ +600 \\\\ \\hline 806 \\end{array}")!, ["286 + 680"]).trusted).toBe(false);
+    // her rows are the problem's (a carry in a row too): as read, a slip still a slip
+    const slip = parseStacked("\\begin{array}{r} 286 \\\\ +680 \\\\ \\hline 856 \\end{array}")!;
+    expect(againstProblem(slip, ["286 + 680"])).toEqual({ read: slip, trusted: true });
+    const carry = parseStacked("\\begin{array}{r} 1286 \\\\ +680 \\\\ \\hline 966 \\end{array}")!;
+    expect(againstProblem(carry, ["286 + 680"]).read).toBe(carry);
+    // no problem, or another operator: unchanged
+    expect(againstProblem(misread, [])).toEqual({ read: misread, trusted: true });
+    expect(againstProblem(misread, ["286 - 80"])).toEqual({ read: misread, trusted: true });
   });
 
   it("Help's next column: its digit and the carry over the column on its left", () => {

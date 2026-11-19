@@ -26,7 +26,7 @@ import { all, create, version as mathjsVersion } from "mathjs";
 import type { TLShapeId } from "tldraw";
 import { createEngine } from "@/lib/live/engine";
 import { arithmeticOf, bracketLine, isArithmetic, isStackRead, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "@/lib/live/engine/columnWork";
-import { answerWrittenAgain, parseStacked, rowPlaces, stackedAnalysis, workStacked } from "@/lib/live/engine/columnArithmetic";
+import { againstProblem, answerWrittenAgain, parseStacked, rowPlaces, stackedAnalysis, workStacked } from "@/lib/live/engine/columnArithmetic";
 import { answerAfterRestatedEnd, inkLeadsWithMinus, inkTimesDots, leadingSigns, readVariants, readYoungHand, rightAnswerTo, withTrailingTimesDot } from "@/lib/live/youngHand";
 import type { AnalyzeContext, GraphForOptions, HelpMode, InkLine, InkStroke, LineAnalysis, LiveEngine, Rect } from "@/lib/live/contracts";
 import { barGroups, fractionGroups, splitInk, type Diagram, type StrokeVerdict } from "@/lib/live/diagrams";
@@ -277,11 +277,14 @@ export function stackedLineOf(args: StackedLineArgs): StackedLineResult {
   need(typeof args.latex === "string", "latex is a string");
   const sum = args.stack ?? null;
   if (!sum && !isStackRead(args.latex) && !MISREAD_STACK.test(args.latex)) return { stacked: false, analysis: null, tick: null, ring: null };
-  const sure = (args.confidence ?? 1) >= STACK_RING_CONFIDENCE;
   const mode = (args.mode ?? "feedback") as HelpMode;
   const lines = Array.isArray(args.problem) ? args.problem.filter((l) => typeof l === "string" && l.trim().length > 0) : [];
   const problem = lines.length > 0 && lines.every(isArithmetic) ? lines : null;
-  const read = parseStacked(args.latex, problem);
+  const parsed = parseStacked(args.latex, problem);
+  // rows read as numbers that are not the page's problem's: its numbers when her answer is its result, else no ring
+  const checked = parsed ? againstProblem(parsed, problem) : null;
+  const read = checked?.read ?? null;
+  const sure = (args.confidence ?? 1) >= STACK_RING_CONFIDENCE && (checked?.trusted ?? true);
   if (!sum) {
     const analysis = read ? stackedAnalysis(workStacked(read), sure) : bracketLine(engine(), args.latex, problem, sure, mode);
     return { stacked: true, analysis, tick: null, ring: null };
