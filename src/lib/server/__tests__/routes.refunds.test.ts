@@ -53,8 +53,8 @@ vi.mock("@/lib/server/mathpix", () => ({ isMathpixConfigured: () => false, recog
 import { resetServerEnvCache } from "@/lib/env";
 import { resetBillingWarnings } from "@/lib/server/billing";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
-import { PROVIDER_UNAVAILABLE_MESSAGE } from "@/lib/server/request";
-import { CreditsExhaustedError, UpstreamError, chatJson, chatJsonWithFallback, openrouterChat, streamWithFallback, type FallbackStreamEvent } from "@/lib/server/openrouter";
+import { PROVIDER_UNAVAILABLE_MESSAGE, PROVIDER_UNAVAILABLE_REASON } from "@/lib/server/request";
+import { CreditsExhaustedError, UpstreamError, WatchdogTimeoutError, chatJson, chatJsonWithFallback, openrouterChat, streamWithFallback, type FallbackStreamEvent } from "@/lib/server/openrouter";
 import { POST as liveSetup } from "@/app/api/live/setup/route";
 import { POST as recognize } from "@/app/api/live/recognize/route";
 import { POST as liveCheck } from "@/app/api/live/check/route";
@@ -223,7 +223,7 @@ describe.each(FAMILIES)("$name: charge + refund", (family) => {
     vi.mocked(family.upstream).mockRejectedValue(new CreditsExhaustedError());
     const dry = await family.handler(request(family.path, family.body));
     expect(dry.status).toBe(503);
-    expect(await dry.json()).toMatchObject({ error: "upstream_error", message: PROVIDER_UNAVAILABLE_MESSAGE });
+    expect(await dry.json()).toMatchObject({ error: "upstream_error", message: PROVIDER_UNAVAILABLE_MESSAGE, reason: PROVIDER_UNAVAILABLE_REASON });
     expectChargedAndRefunded();
 
     fake.calls.length = 0;
@@ -541,5 +541,48 @@ describe("static: every route that charges ink refunds through runCharged / runC
       expect(/\bcheckRateLimit\(`ip:/.test(src), `${file} keys the in-memory limiter on the client IP`).toBe(true);
       expect(/\bcheckRateLimitDistributed\s*\(/.test(src), `${file} has no user to key a database row on`).toBe(false);
     }
+  });
+});
+
+/* ------------------------------------------------------------------------- */
+/* The v1 speed lane: every AI route ends in time, and says why                */
+/* ------------------------------------------------------------------------- */
+
+describe("deadlines and honest error codes (v1 speed lane)", () => {
+  const CHECK_BODY = { boardId: "board-1", mode: "suggest", region: REGION, lines: LINES, focusLineId: "l2", userAsked: true };
+
+  it("check gives its fallback a watchdog and ends by its budget, under maxDuration", async () => {
+    fakeStream([{ type: "model", model: "m1" }, { type: "text", text: ANNOTATION_LINE }]);
+    const before = Date.now();
+    await readSse(await liveCheck(request("/api/live/check", CHECK_BODY)));
+    const limits = vi.mocked(streamWithFallback).mock.calls[0][4];
+    expect(limits?.fallbackWatchdogMs).toBeGreaterThan(0);
+    expect(limits?.deadline).toBeGreaterThan(before);
+    expect((limits?.deadline ?? Infinity) - before).toBeLessThanOrEqual(26_000);
+  });
+
+  it("a check whose models run out of time ends with a `timeout` frame (retryable), refunded", async () => {
+    fakeStream([{ type: "model", model: "m1" }, new WatchdogTimeoutError("m1", 25_000, "deadline")]);
+    const events = await readSse(await liveCheck(request("/api/live/check", CHECK_BODY)));
+    expect(events.map((e) => e.event)).toEqual(["meta", "error"]);
+    expect(events[1].data).toMatchObject({ error: "timeout" });
+    expectChargedAndRefunded();
+  });
+
+  it("the provider's credits running out mid-stream say so (`reason`), never the student's ink", async () => {
+    fakeStream([{ type: "model", model: "m1" }, new CreditsExhaustedError()]);
+    const events = await readSse(await liveSolve(request("/api/live/solve", { boardId: "board-1", region: REGION, lines: LINES, goal: "solve for x" })));
+    expect(events.map((e) => e.event)).toEqual(["meta", "error"]);
+    expect(events[1].data).toMatchObject({ error: "upstream_error", reason: PROVIDER_UNAVAILABLE_REASON, message: PROVIDER_UNAVAILABLE_MESSAGE });
+    expectChargedAndRefunded();
+  });
+
+  it("setup's two attempts end by its budget", async () => {
+    vi.mocked(chatJsonWithFallback).mockResolvedValue(SETUP_REPLY as never);
+    const before = Date.now();
+    await liveSetup(request("/api/live/setup", SETUP_BODY));
+    const opts = vi.mocked(chatJsonWithFallback).mock.calls[0][2];
+    expect(opts.deadline).toBeGreaterThan(before);
+    expect((opts.deadline ?? Infinity) - before).toBeLessThanOrEqual(21_000);
   });
 });

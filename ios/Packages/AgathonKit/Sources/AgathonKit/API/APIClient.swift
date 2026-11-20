@@ -75,8 +75,11 @@ public final class APIClient: Sendable {
 
     /// The session's token for a call, its failure as an APIError.
     func currentToken() async throws -> String? {
+        let token = self.token
         do {
-            return try await token()
+            // a refresh that never answers (Supabase Auth down, a dead connection) is a timeout the
+            // caller can say something about, never a call that waits forever
+            return try await withDeadline(AIDeadline.token) { try await token() }
         } catch {
             let wrapped = APIError.wrap(error)
             if wrapped is APIError || wrapped is CancellationError { throw wrapped }
@@ -117,7 +120,8 @@ public final class APIClient: Sendable {
         case .none:
             break
         case .optional:
-            if let token = try? await token(), !token.isEmpty {
+            let token = self.token
+            if let token = try? await withDeadline(AIDeadline.token, { try await token() }), !token.isEmpty {
                 request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
         case .required:

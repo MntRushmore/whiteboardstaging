@@ -5,9 +5,9 @@ import { accountRequiredResponse, json, requireUser, type AuthedUser } from "@/l
 import { SatQuestionIdSchema } from "@/lib/sat/contracts";
 import { satFigureMarksOf } from "@/lib/sat/tutorContext";
 import { checkRateLimitDistributed, rateLimitedResponse, type RateLimitBucket } from "@/lib/server/rate-limit";
-import { PROVIDER_UNAVAILABLE_MESSAGE, parseJsonBody, recordRouteError } from "@/lib/server/request";
+import { PROVIDER_UNAVAILABLE_MESSAGE, PROVIDER_UNAVAILABLE_REASON, parseJsonBody, recordRouteError } from "@/lib/server/request";
 import { refundInk, type RefundInput, type RpcClient } from "@/lib/server/billing";
-import { CreditsExhaustedError, UpstreamError } from "@/lib/server/openrouter";
+import { CreditsExhaustedError, UpstreamError, WatchdogTimeoutError } from "@/lib/server/openrouter";
 import { trainingGate, wantsTraining } from "@/lib/server/training";
 
 /** Shared plumbing for the /api/live/* route handlers. */
@@ -174,9 +174,16 @@ export async function runChargedStream(
 }
 
 /** Map a thrown error to the SSE `error` frame payload (same codes as the JSON error contract). */
-export function sseErrorPayload(err: unknown): { error: string; message: string } {
+export function sseErrorPayload(err: unknown): { error: string; message: string; reason?: string } {
   // The provider account behind the tutor, not the student's ink (see errorResponse in request.ts).
-  if (err instanceof CreditsExhaustedError) return { error: "upstream_error", message: PROVIDER_UNAVAILABLE_MESSAGE };
+  if (err instanceof CreditsExhaustedError) {
+    return { error: "upstream_error", message: PROVIDER_UNAVAILABLE_MESSAGE, reason: PROVIDER_UNAVAILABLE_REASON };
+  }
+  // A watchdog or the route's own deadline (solve's budget, check's): a timeout the app may try again,
+  // never "something went wrong on our side" (`internal_error`, which the iPad does not retry)
+  if (err instanceof WatchdogTimeoutError || (err instanceof Error && err.name === "TimeoutError") || (err instanceof UpstreamError && err.status === 504)) {
+    return { error: "timeout", message: "The tutor took too long to answer. Please try again." };
+  }
   if (err instanceof UpstreamError) {
     return { error: "upstream_error", message: "The AI service returned an error. Please try again." };
   }

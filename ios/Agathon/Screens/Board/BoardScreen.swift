@@ -279,9 +279,12 @@ private struct BoardTopTrailing: View {
     }
 
     /// Flag a bug: a picture of the board and what it knew go with a note (the owner, 2026-10-27).
-    private var flagButton: some View {
-        RoundButton(.bug, label: "Flag a bug") { model.flagBug(controller: session.controller) }
-            .accessibilityIdentifier("board.flagBug")
+    /// Grown-ups only (1.0): a kid's board has no bug button (Account › Bug reports stays for everyone).
+    @ViewBuilder private var flagButton: some View {
+        if BoardTopBarItems.showsFlagBug(model.audience) {
+            RoundButton(.bug, label: "Flag a bug") { model.flagBug(controller: session.controller) }
+                .accessibilityIdentifier("board.flagBug")
+        }
     }
 
     @ViewBuilder private func askButton(words: Bool) -> some View {
@@ -304,8 +307,8 @@ private struct BoardTopTrailing: View {
 extension BoardTopTrailing {
     /// Opens the Mac screen panel (a window shared from a computer, live beside the board).
     @ViewBuilder func macButton(words: Bool) -> some View {
-        // running on a Mac (the iPad app on Apple silicon): the board is already on the computer
-        if !model.macOpen && !ProcessInfo.processInfo.isiOSAppOnMac {
+        // off in 1.0 (it needs the web's agathon.app/share); on a Mac the board is already on the computer
+        if !model.macOpen && BoardTopBarItems.showsMacScreen(onMac: ProcessInfo.processInfo.isiOSAppOnMac) {
             Group {
                 if words {
                     PillButton(MacScreenCopy.open, icon: .laptop, kind: .secondary) { model.macOpen = true }
@@ -316,6 +319,21 @@ extension BoardTopTrailing {
             }
             .accessibilityIdentifier("macScreen.open")
         }
+    }
+}
+
+/// Which of the board's top-bar buttons show (1.0, the owner 2026-11-19).
+enum BoardTopBarItems {
+    /// The Mac screen panel needs the web's agathon.app/share, which is going away: off for 1.0.
+    static let macScreenEnabled = false
+
+    static func showsMacScreen(onMac: Bool) -> Bool {
+        macScreenEnabled && !onMac
+    }
+
+    /// Flag a bug: a grown-up's board only, never a kid profile's (nor while who is here is not known yet).
+    static func showsFlagBug(_ audience: BoardAudience?) -> Bool {
+        audience?.isKid == false
     }
 }
 

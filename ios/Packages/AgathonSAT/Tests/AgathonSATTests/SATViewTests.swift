@@ -17,6 +17,16 @@ struct SATViewTests {
         #expect(SATNoteWords.looksLike("Only checked the goal line.") == "Looks like you only checked the goal line.")
     }
 
+    /// SAT's first screen says, before any account, that the handwriting goes to the AI tutor, with
+    /// the Privacy Policy one tap away (App Review 5.1.2(i), the owner 2026-11-19).
+    @Test func theFirstScreenSaysWhereTheWritingGoes() throws {
+        #expect(SATCopy.privacyLine == "To check your work, Agathon sends what you write on the board to our AI tutor.")
+        #expect(SATCopy.privacyURL.absoluteString == "https://www.agathon.app/privacy")
+        let text = try AttributedString(markdown: SATCopy.privacyMarkdown)
+        #expect(String(text.characters) == SATCopy.privacyLine + " Privacy Policy")
+        #expect(text.runs.contains { $0.link == SATCopy.privacyURL })
+    }
+
     @Test func theSessionsCappedLineSaysWhatAnAccountGives() {
         #expect(SATCopy.cappedLine(cap: 2, hasAccount: false) == "Tutor checks used up today: 2 of 2. Make a free account for 20 a day.")
         #expect(SATCopy.cappedLine(cap: 20, hasAccount: true) == "Tutor checks used up today: 20 of 20. Help me still works.")

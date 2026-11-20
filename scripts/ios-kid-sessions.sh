@@ -60,7 +60,7 @@ for step in $STEPS; do
           printf "  %s: %s\n" "$t" "$(grep -E "Test (case|Case) .*(passed|failed|skipped)" "$OUT/logs/s$n.log" | tail -1 | sed -E "s/.*(passed|failed|skipped).*/\1/")"
         done
         # the player wrote its results in the app'"'"'s Documents
-        data=$(xcrun simctl get_app_container "$SIM_UDID" app.agathon.Agathon data 2>/dev/null)
+        data=$(xcrun simctl get_app_container "$SIM_UDID" app.agathon.ios data 2>/dev/null)
         [ -n "$data" ] && cp -R "$data/Documents/kid-sessions/$RUN/." "$OUT/results/" 2>/dev/null
         true'
     done ;;

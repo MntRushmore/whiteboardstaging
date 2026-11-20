@@ -48,7 +48,7 @@ export TEST_RUNNER_PROD_QA_SHOTS=$OUT/shots
 unset TEST_RUNNER_PROD_QA_KEEP TEST_RUNNER_AGATHON_API_URL TEST_RUNNER_SUPABASE_URL TEST_RUNNER_SUPABASE_ANON_KEY
 
 if [ "${FRESH_INSTALL:-0}" = "1" ]; then
-  xcrun devicectl device uninstall app --device "$DEVICECTL" app.agathon.Agathon || true
+  xcrun devicectl device uninstall app --device "$DEVICECTL" app.agathon.ios || true
 fi
 
 # the account's ids while it exists (the test deletes it at the end): asked every 10 s

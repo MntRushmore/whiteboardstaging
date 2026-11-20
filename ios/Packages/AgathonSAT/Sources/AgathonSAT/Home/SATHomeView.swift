@@ -42,6 +42,7 @@ public struct SATHomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.l) {
                 topBar
+                privacyNote
                 if width >= 1100 {
                     HStack(alignment: .top, spacing: DS.Space.l) {
                         VStack(spacing: DS.Space.l) {
@@ -69,6 +70,17 @@ public struct SATHomeView: View {
     }
 
     // MARK: top
+
+    /// One plain line under the title: what is sent, and the policy (every SAT home, account or not).
+    private var privacyNote: some View {
+        Text(LocalizedStringKey(SATCopy.privacyMarkdown))
+            .dsFont(.callout, size: 16)
+            .foregroundStyle(DS.Color.inkSecondary)
+            .tint(DS.Color.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, -DS.Space.s)
+            .accessibilityIdentifier("sat.home.privacy")
+    }
 
     private var topBar: some View {
         HStack(spacing: DS.Space.s) {

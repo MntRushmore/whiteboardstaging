@@ -65,7 +65,8 @@ public final class LiveAPIServices: LiveServices {
     public static let setupPath = "/api/live/setup"
 
     public func capabilities() async throws -> LiveCapabilities {
-        try await api.get(Self.recognizePath, as: LiveCapabilities.self)
+        let api = self.api
+        return try await withDeadline(AIDeadline.capabilities) { try await api.get(Self.recognizePath, as: LiveCapabilities.self) }
     }
 
     public func recognize(_ request: RecognizeRequest) async throws -> RecognizeResponse {
@@ -79,13 +80,18 @@ public final class LiveAPIServices: LiveServices {
     }
 
     public func reread(_ request: RereadRequest) async throws -> RereadResponse {
-        var res = try await api.post(Self.rereadPath, body: tag.wrap(request), as: RereadResponse.self)
+        let api = self.api
+        let body = tag.wrap(request)
+        // the second reader holds its line "being read" (a check waits for it): never past its deadline
+        var res = try await withDeadline(AIDeadline.reread) { try await api.post(Self.rereadPath, body: body, as: RereadResponse.self) }
         if let wrong = misreading(res.latex) { res.latex = wrong }
         return res
     }
 
     public func setup(_ request: SetupRequest) async throws -> SetupResponse {
-        try await api.post(Self.setupPath, body: tag.wrap(request), as: SetupResponse.self)
+        let api = self.api
+        let body = tag.wrap(request)
+        return try await withDeadline(AIDeadline.setup) { try await api.post(Self.setupPath, body: body, as: SetupResponse.self) }
     }
 
     public func check(_ request: CheckRequest) -> LiveEventStream {
@@ -121,17 +127,8 @@ public final class LiveAPIServices: LiveServices {
         }
     }
 
-    /// `body`, or `APIError.timeout` after `limit`.
+    /// `body`, or `APIError.timeout` after `limit` (AgathonKit's `withDeadline`).
     static func withTimeout<T: Sendable>(_ limit: Duration, _ body: @escaping @Sendable () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask { try await body() }
-            group.addTask {
-                try await Task.sleep(for: limit)
-                throw APIError.timeout
-            }
-            defer { group.cancelAll() }
-            guard let first = try await group.next() else { throw APIError.timeout }
-            return first
-        }
+        try await withDeadline(limit, body)
     }
 }

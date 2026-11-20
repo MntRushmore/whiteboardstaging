@@ -13,6 +13,14 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 const MAX_ANNOTATIONS = 3;
+/** The fallback model's own first-content watchdog (the primary's is `LIVE_TIMING.checkWatchdogMs`). */
+const CHECK_FALLBACK_WATCHDOG_MS = 8_000;
+/**
+ * Every check ends by this long after the request came in, with a `timeout` error frame when the
+ * models had not finished: under maxDuration (30 s), so the platform never kills the function
+ * mid-stream (no `error` frame, no refund, no event: the iPad saw a check that said nothing).
+ */
+const CHECK_BUDGET_MS = 25_000;
 
 /** Adapts the fallback stream into text deltas, announcing the active model via `meta`. */
 async function* textDeltas(
@@ -70,6 +78,7 @@ export async function POST(req: Request) {
             title: "Agathon Live - check",
           },
           LIVE_TIMING.checkWatchdogMs,
+          { fallbackWatchdogMs: CHECK_FALLBACK_WATCHDOG_MS, deadline: startedAt + CHECK_BUDGET_MS },
         );
 
         let dropped = 0;

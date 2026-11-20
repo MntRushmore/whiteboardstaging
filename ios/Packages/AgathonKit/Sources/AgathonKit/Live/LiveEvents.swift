@@ -6,11 +6,21 @@ public struct StreamError: Sendable, Equatable, Error {
     public let code: String
     public let message: String
     public let status: Int?
+    /// Why, when the server says more than its code: `provider_unavailable` (the tutor's model
+    /// provider is out of credits or down: nothing the family did, and no ink was spent).
+    public let reason: String?
 
-    public init(code: String, message: String, status: Int? = nil) {
+    public init(code: String, message: String, status: Int? = nil, reason: String? = nil) {
         self.code = code
         self.message = message
         self.status = status
+        self.reason = reason
+    }
+
+    /// The tutor's model provider can't answer (its credits ran out): the kid waits it out; never
+    /// "out of ink" (Ask's `credits_exhausted` is the provider's, sent with status 503).
+    public var isProviderUnavailable: Bool {
+        reason == "provider_unavailable" || (code == "credits_exhausted" && status != 402)
     }
 }
 
@@ -56,7 +66,7 @@ public enum AskEvent: Sendable, Equatable {
             guard let code = json?["code"]?.stringValue, let message = json?["message"]?.stringValue else {
                 return .error(StreamError(code: "upstream", message: "The tutor ran into a problem"))
             }
-            return .error(StreamError(code: code, message: message, status: json?["status"]?.intValue))
+            return .error(StreamError(code: code, message: message, status: json?["status"]?.intValue, reason: json?["reason"]?.stringValue))
         default:
             return nil
         }
@@ -138,11 +148,14 @@ public enum LiveEvent: Sendable, Equatable {
         case "step":
             return (try? JSONDecoder().decode(SolveStep.self, from: data)).map(LiveEvent.step)
         case "done":
-            guard let count = json?["count"]?.intValue, let ms = json?["ms"]?.doubleValue else { return nil }
-            return .done(count: count, ms: ms)
+            // the stream's end, whatever else it carries (check and solve require it: a `done` that
+            // parsed as nothing would read as a cut-off answer)
+            return .done(count: json?["count"]?.intValue ?? 0, ms: json?["ms"]?.doubleValue ?? 0)
         case "error":
-            guard let code = json?["error"]?.stringValue, let message = json?["message"]?.stringValue else { return nil }
-            return .error(StreamError(code: code, message: message))
+            // an error frame always ends the stream, its words or not
+            return .error(StreamError(code: json?["error"]?.stringValue ?? json?["code"]?.stringValue ?? "upstream",
+                                      message: json?["message"]?.stringValue ?? "The tutor ran into a problem",
+                                      reason: json?["reason"]?.stringValue))
         default:
             return nil
         }
@@ -214,23 +227,29 @@ public final class LiveAPI: Sendable {
 
     /// One ask, streamed. Ends after `done` or `error`; a stream that closes before either throws
     /// `APIError.incomplete` (the answer was cut off).
-    public func ask(_ body: some Encodable, stallTimeout: Duration = LiveAPI.askStallTimeout) throws -> ServerEvents<AskEvent> {
+    public func ask(_ body: some Encodable, stallTimeout: Duration = LiveAPI.askStallTimeout,
+                    deadline: Duration = AIDeadline.ask) throws -> ServerEvents<AskEvent> {
         let data = try APIClient.encoder.encode(body)
-        return sse.events(path: Self.askPath, body: data, stallTimeout: stallTimeout, requireTerminal: true,
+        return sse.events(path: Self.askPath, body: data, stallTimeout: stallTimeout, deadline: deadline, requireTerminal: true,
                           decode: { AskEvent.decode($0) }, isTerminal: { $0.isTerminal })
     }
 
-    /// Check the student's lines: `meta`, `annotation`*, `done`.
-    public func check(_ body: some Encodable, stallTimeout: Duration = LiveAPI.liveStallTimeout) throws -> ServerEvents<LiveEvent> {
+    /// Check the student's lines: `meta`, `annotation`*, `done`. A stream that closes before `done`
+    /// (or `error`) throws `APIError.incomplete`: the platform ending the route at its maxDuration
+    /// closes the connection with no word, and that is no answer.
+    public func check(_ body: some Encodable, stallTimeout: Duration = LiveAPI.liveStallTimeout,
+                      deadline: Duration = AIDeadline.check) throws -> ServerEvents<LiveEvent> {
         let data = try APIClient.encoder.encode(body)
-        return sse.events(path: Self.checkPath, body: data, stallTimeout: stallTimeout, requireTerminal: false,
+        return sse.events(path: Self.checkPath, body: data, stallTimeout: stallTimeout, deadline: deadline, requireTerminal: true,
                           decode: { LiveEvent.decode($0) }, isTerminal: { $0.isTerminal })
     }
 
-    /// A worked solution: `meta`, `step`*, `done`.
-    public func solve(_ body: some Encodable, stallTimeout: Duration = LiveAPI.liveStallTimeout) throws -> ServerEvents<LiveEvent> {
+    /// A worked solution: `meta`, `step`*, `done` (or `error`; anything else ending it is
+    /// `APIError.incomplete`, as for check).
+    public func solve(_ body: some Encodable, stallTimeout: Duration = LiveAPI.liveStallTimeout,
+                      deadline: Duration = AIDeadline.solve) throws -> ServerEvents<LiveEvent> {
         let data = try APIClient.encoder.encode(body)
-        return sse.events(path: Self.solvePath, body: data, stallTimeout: stallTimeout, requireTerminal: false,
+        return sse.events(path: Self.solvePath, body: data, stallTimeout: stallTimeout, deadline: deadline, requireTerminal: true,
                           decode: { LiveEvent.decode($0) }, isTerminal: { $0.isTerminal })
     }
 }

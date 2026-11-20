@@ -17,8 +17,10 @@ final class AppStoreScreenshotUITests: XCTestCase {
     private let env = ProcessInfo.processInfo.environment
     private nonisolated(unsafe) static var autoFillOff = false
 
-    /// Today's practice for the shots: page 1 a slip with its hint, page 2 solved, page 3 solved.
-    private static let practice = "2x + 3 = 11|3x - 5 = 10|5x + 2 = 17"
+    /// Today's practice for the shots: page 1 a slip with its hint, page 2 solved, page 3 Show me (the
+    /// tutor writes the next step), page 4 solved and All done.
+    private static let practice = "2x + 3 = 11|3x - 5 = 10|x + x + 3 = 11|5x + 2 = 17"
+    private static let pages = 4
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -118,8 +120,33 @@ final class AppStoreScreenshotUITests: XCTestCase {
         tap("board.back")
     }
 
-    func test2cAllDone() throws {
-        openPractice(lines: "5x = 15|answer:x = 3", page: 3)
+    /// Show me: the kid's first step ticked, Help me's hint, then Show me — the tutor writes the next
+    /// step under theirs in its own blue hand.
+    func test2cShowMe() throws {
+        // (the kid's lines come from the hands fixture, kid-hands.json: only the lines it has)
+        openPractice(lines: "2x + 3 = 11", page: 3)
+        write("2x + 3 = 11")
+        // check when done: a step with no answer yet is judged when the kid taps Check
+        tap("live.check", wait: 30)
+        waitFor("debug.live", matching: #"2 ?x ?\+ ?3 ?= ?11=tick"#, timeout: 60)
+        noDebugUI()
+        tap("live.helpMe", wait: 20)
+        if element("live.helpChoice").waitForExistence(timeout: 3), app.buttons["Hint"].exists { app.buttons["Hint"].firstMatch.tap() }
+        XCTAssertTrue(element("live.hint.more").waitForExistence(timeout: 60), "no Show me on the hint card")
+        sleep(1)
+        tap("live.hint.more")
+        // a doubtful read is read back first ("I read: … Is that right?"): yes, then the tutor writes
+        sleep(3)
+        if text(containing: "I read:").exists, element("live.hint.more").exists { tap("live.hint.more") }
+        sleep(8)
+        snap("show-me")
+        if element("live.hint.gotIt").exists { element("live.hint.gotIt").tap() }
+        waitFor("board.status", value: "saved", timeout: 40)
+        tap("board.back")
+    }
+
+    func test2dAllDone() throws {
+        openPractice(lines: "5x = 15|answer:x = 3", page: 4)
         write("5x = 15")
         write("answer:x = 3")
         waitFor("debug.live", matching: #"x ?= ?3=tick.*action alldone"#, timeout: 60)
@@ -140,17 +167,17 @@ final class AppStoreScreenshotUITests: XCTestCase {
         launch(["-practiceProblems", Self.practice, "-boardAutowrite", lines])
         tap("home.startPractice", wait: 40)
         XCTAssertTrue(element("board.canvas").waitForExistence(timeout: 40))
-        waitFor("debug.live", matching: #"page [1-3]/3 .*screens 4"#, timeout: 90)
+        waitFor("debug.live", matching: #"page [1-\#(Self.pages)]/\#(Self.pages) .*screens \#(Self.pages + 1)"#, timeout: 90)
         for _ in 0..<6 {
             let label = element("debug.live").label
-            guard let r = label.range(of: #"page (\d)/3"#, options: .regularExpression),
+            guard let r = label.range(of: #"page (\d)/\#(Self.pages)"#, options: .regularExpression),
                   let now = Int(label[r].dropFirst(5).prefix(1)) else { break }
             if now == page { break }
             app.buttons[now < page ? "Next page" : "Page before"].firstMatch.tap()
             sleep(2)
         }
-        waitFor("debug.live", matching: "page \(page)/3", timeout: 20)
-        waitFor("board.title", matching: "Problem \(page) of 3", timeout: 10)
+        waitFor("debug.live", matching: "page \(page)/\(Self.pages)", timeout: 20)
+        waitFor("board.title", matching: "Problem \(page) of \(Self.pages)", timeout: 10)
         sleep(2)
     }
 
@@ -224,6 +251,10 @@ final class AppStoreScreenshotUITests: XCTestCase {
 
     private func element(_ id: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
+    }
+
+    private func text(containing words: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
     }
 
     private func tap(_ id: String, wait: TimeInterval = 15, file: StaticString = #filePath, line: UInt = #line) {

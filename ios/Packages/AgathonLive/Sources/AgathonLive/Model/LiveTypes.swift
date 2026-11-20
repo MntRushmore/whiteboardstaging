@@ -36,6 +36,10 @@ public enum LiveTiming {
     public static let readRetryMs = 1_500.0
     /// the offline queue's replays while the device says it is online: one wait per failed replay
     public static let offlineReplayMs: [Double] = [2_000, 4_000, 8_000, 15_000]
+    /// a check or a solve the kid asked for that failed like a blip this soon is tried once more on its
+    /// own, after `helpRetryMs` (later than this, a second wait as long would be too long: it says so)
+    public static let helpRetryWithinMs = 10_000.0
+    public static let helpRetryMs = 1_200.0
     /// Help tapped while its line is still being read: how long it waits for the read, at most
     public static let helpReadWaitMs = 7_000.0
     /// a mark's write holds up what waits for it (a step beside a ring) at most this long

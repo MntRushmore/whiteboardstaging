@@ -255,7 +255,7 @@ extension LiveLoop {
         if !d.echo {
             if !quiet {
                 let why = questionNow(st)
-                let unread = why == nil && (rt[id]?.unreadableShown ?? false) && settings.mode != .off && unreadableRead(st)
+                let unread = why == nil && (rt[id]?.unreadableShown ?? false) && settings.mode != .off && unreadableRead(st) && !unsureButFollows(st)
                 // check as I go: no "?" on a line still being written (`stillGrowing`)
                 if why != nil || unread, !userAsked, let wait = stillGrowing(st) {
                     syncMark(st, nil, learn: false)
@@ -267,7 +267,7 @@ extension LiveLoop {
                     syncMark(st, why != nil || unread ? .question : nil, why ?? (unread ? "unread" : nil))
                 }
             }
-            if unreadableRead(st), !(rt[id]?.unreadableShown ?? false), rt[id]?.unreadableTimer == nil, !quiet {
+            if unreadableRead(st), !unsureButFollows(st), !(rt[id]?.unreadableShown ?? false), rt[id]?.unreadableTimer == nil, !quiet {
                 scheduleUnreadableMark(id)
             }
             updateVerdict(st, "none")
@@ -333,6 +333,15 @@ extension LiveLoop {
         !st.latex.isEmpty && judgedConfidence(st) < LiveLimits.minConfidence
     }
 
+    /// A step Mathpix was unsure of that the engine still finds right (it follows from the line above, or
+    /// from the problem): no "?" — it stays unmarked, never ticked on an unsure read. The real-ink bench
+    /// (v1.0): a right step read at 0.4 got a "?" between two ticked lines. A lone answer has its own
+    /// second look (`lookAgainAtUnsureAnswer`); an unsure read that does not follow keeps its "?".
+    func unsureButFollows(_ st: LiveLine) -> Bool {
+        guard let a = st.analysis, a.verdict == "ok", a.solved != true, a.kind == "equation" else { return false }
+        return previousLine(st) != nil || !(head(for: st.column)?.lines ?? []).isEmpty
+    }
+
     /// The confidence a line is judged with: Mathpix's, or — a right answer it was unsure of that a
     /// second look read as the same value (`lookAgainAtUnsureAnswer`) — enough to be ticked.
     func judgedConfidence(_ st: LiveLine) -> Double {
@@ -351,7 +360,10 @@ extension LiveLoop {
         if rt[st.id]?.readRefused == true || rt[st.id]?.checkTask != nil { return nil }
         if reading.contains(st.id) || offlineQueue.contains(st.id) || pendingChecks[st.id] != nil { return nil }
         if liveShapeCount() >= LiveLimits.maxLiveShapesPerBoard { return nil }
-        return LivePolicy.unjudgedReason(latex: st.latex, confidence: judgedConfidence(st), provider: st.provider, analysis: st.analysis)
+        let why = LivePolicy.unjudgedReason(latex: st.latex, confidence: judgedConfidence(st), provider: st.provider, analysis: st.analysis)
+        // an unsure read of a step the engine finds right: no "?" (`unsureButFollows`)
+        if why == "unread" && !st.latex.isEmpty && unsureButFollows(st) { return nil }
+        return why
     }
 
     func questionNow(_ st: LiveLine) -> String? {

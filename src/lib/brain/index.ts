@@ -26,7 +26,7 @@ import { all, create, version as mathjsVersion } from "mathjs";
 import type { TLShapeId } from "tldraw";
 import { createEngine } from "@/lib/live/engine";
 import { arithmeticOf, bracketLine, isArithmetic, isStackRead, judgeLine, MISREAD_STACK, STACK_RING_CONFIDENCE } from "@/lib/live/engine/columnWork";
-import { answerWrittenAgain, parseStacked, rowPlaces, stackedAnalysis, workStacked } from "@/lib/live/engine/columnArithmetic";
+import { againstProblem, answerWrittenAgain, parseStacked, rowPlaces, stackedAnalysis, workStacked } from "@/lib/live/engine/columnArithmetic";
 import { answerAfterRestatedEnd, inkLeadsWithMinus, inkTimesDots, leadingSigns, readVariants, readYoungHand, rightAnswerTo, withTrailingTimesDot } from "@/lib/live/youngHand";
 import type { AnalyzeContext, GraphForOptions, HelpMode, InkLine, InkStroke, LineAnalysis, LiveEngine, Rect } from "@/lib/live/contracts";
 import { barGroups, fractionGroups, splitInk, type Diagram, type StrokeVerdict } from "@/lib/live/diagrams";
@@ -216,7 +216,9 @@ export function youngReadOf(args: { latex: string; problem?: string[] | null; st
   const rightAnswer = arithmetic ? rightAnswerTo(engine(), problem) : undefined;
   // a raised dot her line ends with, which Mathpix dropped (`h = 94 ·` read `h = 94`): the line is not finished
   const ink = Array.isArray(args.strokes) && args.strokes.length > 0 ? args.strokes.map(toInkStroke) : [];
-  const read = withTrailingTimesDot(readYoungHand(args.latex, { arithmetic, signs, rightAnswer }), ink.length > 0 && inkTimesDots(ink).trailing);
+  // (not after a right answer: a jaggy mouse's tap after it is no `·` still to be followed — real-ink bench, v1.0)
+  const young = readYoungHand(args.latex, { arithmetic, signs, rightAnswer });
+  const read = withTrailingTimesDot(young, ink.length > 0 && !(rightAnswer?.(young) ?? false) && inkTimesDots(ink).trailing);
   // a division bar and the number under it (`bar`: one of the line's strokes is a `bars`' bar): Mathpix
   // drops the bar and reads `2` — the line is "divide both sides by 2" (`LiveLoop.applyRecognition`)
   return { latex: args.bar === true ? (barDivisionLatex(read) ?? read) : read };
@@ -277,11 +279,14 @@ export function stackedLineOf(args: StackedLineArgs): StackedLineResult {
   need(typeof args.latex === "string", "latex is a string");
   const sum = args.stack ?? null;
   if (!sum && !isStackRead(args.latex) && !MISREAD_STACK.test(args.latex)) return { stacked: false, analysis: null, tick: null, ring: null };
-  const sure = (args.confidence ?? 1) >= STACK_RING_CONFIDENCE;
   const mode = (args.mode ?? "feedback") as HelpMode;
   const lines = Array.isArray(args.problem) ? args.problem.filter((l) => typeof l === "string" && l.trim().length > 0) : [];
   const problem = lines.length > 0 && lines.every(isArithmetic) ? lines : null;
-  const read = parseStacked(args.latex, problem);
+  const parsed = parseStacked(args.latex, problem);
+  // rows read as numbers that are not the page's problem's: its numbers when her answer is its result, else no ring
+  const checked = parsed ? againstProblem(parsed, problem) : null;
+  const read = checked?.read ?? null;
+  const sure = (args.confidence ?? 1) >= STACK_RING_CONFIDENCE && (checked?.trusted ?? true);
   if (!sum) {
     const analysis = read ? stackedAnalysis(workStacked(read), sure) : bracketLine(engine(), args.latex, problem, sure, mode);
     return { stacked: true, analysis, tick: null, ring: null };

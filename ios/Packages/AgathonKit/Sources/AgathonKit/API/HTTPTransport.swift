@@ -23,6 +23,9 @@ public final class URLSessionTransport: HTTPTransport {
     public static func makeSession(stallTimeout: TimeInterval = 30) -> URLSession {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = stallTimeout
+        // a backstop on the whole request (URLSession's default is 7 days): no route of ours runs
+        // longer than 90 s, so one still going after 2 minutes is a connection nobody will finish
+        configuration.timeoutIntervalForResource = 120
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
         configuration.waitsForConnectivity = false

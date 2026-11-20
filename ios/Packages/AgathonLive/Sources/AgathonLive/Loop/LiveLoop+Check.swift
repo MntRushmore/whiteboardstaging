@@ -249,6 +249,17 @@ extension LiveLoop {
         pages.pauseTimer = scheduler.after(due) { [weak self] in self?.pauseCheck() }
     }
 
+    /// A read that lands after the long pause went by (offline then back, the offline queue's own
+    /// replays, a slow network): the pause's check and the safety net both ran while the line was
+    /// still unread, found nothing held, and nothing would ever check it — read, never ticked, until
+    /// the kid wrote again or tapped Check (the v1 speed lane's network-back flake). The pause's
+    /// check runs now, as it would have.
+    func pauseCheckIfPast() {
+        guard checksWhenDone, settings.auto, settings.enabled, settings.mode != .off, pages.pauseTimer == nil,
+              pages.lastInkAt.isFinite, scheduler.now - pages.lastInkAt >= PageTiming.checkPauseMs else { return }
+        pages.pauseTimer = scheduler.after(0) { [weak self] in self?.pauseCheck() }
+    }
+
     // MARK: - the safety net
 
     /// Work a kid could be left waiting on (Check showing, nothing happening) is checked anyway: the

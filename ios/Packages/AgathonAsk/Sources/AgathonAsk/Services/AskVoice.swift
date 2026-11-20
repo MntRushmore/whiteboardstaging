@@ -28,7 +28,9 @@ public struct LiveSpeechAudio: SpeechAudioSource {
         struct Body: Encodable { var text: String }
         let body = try APIClient.encoder.encode(Body(text: String(words.prefix(AskLimits.speakChars))))
         do {
-            let (data, _) = try await api.perform(.post, AskPaths.speak, body: body)
+            let api = self.api
+            // a phrase whose audio has not come by then is said in the iPad's own voice instead (v1 speed lane)
+            let (data, _) = try await withDeadline(AIDeadline.speak) { try await api.perform(.post, AskPaths.speak, body: body) }
             guard data.count > 64 else { throw SpeechAudioError.failed }
             return data
         } catch let e as APIError {

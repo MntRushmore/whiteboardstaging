@@ -6,7 +6,8 @@
 # battery, full Wi-Fi. Shots: 2752 × 2064 (13-inch, landscape), upright, no alpha.
 #
 # Needs: the local Supabase (`npm run db:start`; shared: never reset or stop it), a dev server on $PORT
-# (`npm run dev -- -p 3991` with .env.local on the local stack, APPLE_ENVIRONMENT=Xcode) and the
+# (`npm run dev -- -p 3991` with .env.local on the local stack, APPLE_ENVIRONMENT=Xcode; when the API is
+# not on 54321, start it with NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:$SUPA_PORT and pass SUPA_PORT here) and the
 # one-simulator-at-a-time helper ~/whiteboardstaging/sim-run.sh.
 #
 #   scripts/ios-appstore-shots.sh            build, then the whole run (fresh install → shots)
@@ -20,6 +21,7 @@ OUT=${OUT:-$(mktemp -d -t agathon-appstore-shots)}
 DD=${DD:-$OUT/dd}
 SIM=${SIM:-"iPad Pro 13-inch (M5)"}
 SKIP_FAMILY=${SKIP_FAMILY:-}
+SUPA_PORT=${SUPA_PORT:-54321}   # local Supabase API (another app may hold 54321: set api.port and this)
 mkdir -p "$OUT/raw" "$OUT/results"
 
 ANON=$(grep -E "^NEXT_PUBLIC_SUPABASE_ANON_KEY=" "$ROOT/.env.local" | cut -d= -f2-)
@@ -31,7 +33,7 @@ grep -qE "^NEXT_PUBLIC_SUPABASE_URL=http://(127\.0\.0\.1|localhost)" "$ROOT/.env
 
 export TEST_RUNNER_AGATHON_APPSTORE_SHOTS=1
 export TEST_RUNNER_AGATHON_API_URL=http://localhost:$PORT
-export TEST_RUNNER_SUPABASE_URL=http://127.0.0.1:54321
+export TEST_RUNNER_SUPABASE_URL=http://127.0.0.1:$SUPA_PORT
 export TEST_RUNNER_SUPABASE_ANON_KEY=$ANON
 export TEST_RUNNER_APPSTORE_STATE=$OUT/email.txt
 export TEST_RUNNER_APPSTORE_SHOTS=$OUT/raw
@@ -67,12 +69,12 @@ export -f run
   xcrun simctl status_bar "$SIM_UDID" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
     --cellularMode notSupported --batteryState charged --batteryLevel 100
   if [ -z "$SKIP_FAMILY" ]; then
-    xcrun simctl uninstall "$SIM_UDID" app.agathon.Agathon >/dev/null 2>&1
+    xcrun simctl uninstall "$SIM_UDID" app.agathon.ios >/dev/null 2>&1
     run family -only-testing:AgathonUITests/AppStoreScreenshotUITests/test1DemoFamily
     [ -s "$OUT/email.txt" ] || { echo "no demo family"; exit 1; }
     docker exec -i supabase_db_whiteboardstaging psql -U postgres -q -v email="$(cat "$OUT/email.txt")" < "$ROOT/scripts/lib/appstore-demo-seed.sql"
   fi
-  for t in test2aHintOnASlip test2bPageSolved test2cAllDone test3AskDraws test4HomeAndProgress; do
+  for t in test2aHintOnASlip test2bPageSolved test2cShowMe test2dAllDone test3AskDraws test4HomeAndProgress; do
     run "$t" -only-testing:AgathonUITests/AppStoreScreenshotUITests/$t || run "$t-again" -only-testing:AgathonUITests/AppStoreScreenshotUITests/$t
   done
   xcrun simctl status_bar "$SIM_UDID" clear
@@ -88,6 +90,11 @@ flatten() { # in out
   w=$(magick identify -format %w "$2"); h=$(magick identify -format %h "$2")
   c=$(magick "$2" -format "%[pixel:p{$((w - 6)),$((h - 100))}]" info:)
   magick "$2" -fill "$c" -draw "rectangle $((w - 80)),$((h - 80)) $((w - 1)),$((h - 1))" -alpha off "PNG24:$2"
+  # the sidebar's "Version 1.0 (N) · dev" (a Debug build's line under Sign out): the ground colour over it
+  case "$(basename "$2")" in progress*)
+    c=$(magick "$2" -format "%[pixel:p{40,$((h - 95))}]" info:)
+    magick "$2" -fill "$c" -draw "rectangle 60,$((h - 140)) 600,$((h - 50))" -alpha off "PNG24:$2" ;;
+  esac
 }
 for f in "$OUT"/raw/raw-*.png; do
   [ -f "$f" ] || continue

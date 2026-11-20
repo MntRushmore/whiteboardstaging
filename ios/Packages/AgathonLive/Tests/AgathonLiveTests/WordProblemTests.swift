@@ -20,6 +20,18 @@ struct WordProblemTests {
         #expect(WordProblem.sentences(["Sam has 3 bags of 4 apples. How many apples?"]) == ["Sam has 3 bags of 4 apples. How many apples?"])
     }
 
+    /// A written dollar sign is money, not a maths delimiter: "\$13.45" was read as "\13.45", a
+    /// leftover command, and the whole problem was dropped.
+    @Test func aWrittenDollarSignStays() {
+        #expect(WordProblem.sentences(["\\text{Lunch costs \\$13.45. You pay with a \\$20 bill.}"])
+            == ["Lunch costs $13.45. You pay with a $20 bill."])
+        #expect(WordProblem.sentences(["\\text{A jacket costs \\$48. It is 25\\% off.}"]) == ["A jacket costs $48. It is 25% off."])
+        #expect(WordProblem.sentences(["\\text{A book costs } \\$7 \\text{. How much do 3 books cost?}"])
+            == ["A book costs $7 . How much do 3 books cost?"])
+        // the maths delimiters still go
+        #expect(WordProblem.sentences(["$\\text{Sam has 3 bags of 4 apples.}$"]) == ["Sam has 3 bags of 4 apples."])
+    }
+
     @Test func mathsIsNotAWordProblem() {
         #expect(WordProblem.sentences(["2x + 3 = 11"]) == nil)
         #expect(WordProblem.sentences(["\\frac{1}{2} + \\frac{1}{3}"]) == nil)
@@ -36,6 +48,7 @@ struct WordProblemTests {
     }
 
     @Test func theWordsFitAboveTheWork() async throws {
+        try await TestBrain.shared.load()
         let L = ProblemPageLayout.self
         let short = try #require(await WordProblem.plan(["Sam has 3 bags of 4 apples.", "How many apples?"], brain: TestBrain.shared, seedKey: "t"))
         #expect(short.size == WordProblem.handSize, "a short problem in the big hand")
@@ -56,6 +69,7 @@ struct WordProblemTests {
 
     /// The words head no column: the loop makes no problem of them (the kid's first line is theirs).
     @Test func theWordsAreNotAProblemTheEngineSolves() async throws {
+        try await TestBrain.shared.load()
         let board = TestBoard()
         let plan = try #require(await WordProblem.plan(["Sam has 3 bags of 4 apples.", "How many apples?"], brain: TestBrain.shared, seedKey: "t"))
         InstantPen(store: board.store, screen: board.currentScreenID)

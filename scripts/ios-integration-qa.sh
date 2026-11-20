@@ -60,7 +60,7 @@ for step in $STEPS; do
       -derivedDataPath "$DD" -parallel-testing-enabled NO -quiet || exit 1 ;;
   journey)
     warmup
-    ~/whiteboardstaging/sim-run.sh "$SIM" -- bash -c 'xcrun simctl uninstall "$SIM_UDID" app.agathon.Agathon >/dev/null 2>&1;
+    ~/whiteboardstaging/sim-run.sh "$SIM" -- bash -c 'xcrun simctl uninstall "$SIM_UDID" app.agathon.ios >/dev/null 2>&1;
       run journey -only-testing:AgathonUITests/KidJourneyUITests/test1Journey' ;;
   family)
     ~/whiteboardstaging/sim-run.sh "$SIM" -- bash -c 'run family -only-testing:AgathonUITests/KidJourneyUITests/test2FamilySwitch \
