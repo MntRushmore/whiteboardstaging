@@ -19,7 +19,7 @@ const marks = (column: { problem?: string[]; lines: string[] }) =>
 
 describe("judgeLine takes a read's variant only to find the step right", () => {
   it("a side note behind a left arrow, a plus written high, her x read as a times sign", () => {
-    expect(marks({ problem: ["2x + 3 = 11"], lines: ["2 x=11-3 \\Longleftarrow 9"] })).toEqual(["ok"]);
+    expect(marks({ problem: ["3x + 2 = 14"], lines: ["3 x=14-2 \\Longleftarrow 4"] })).toEqual(["ok"]);
     expect(marks({ problem: ["-5(x - 4) - 6x"], lines: ["-5 x^{+} 20-6 x"] })).toEqual(["ok"]);
     expect(marks({ lines: ["2 x=4", "\\times=2"] })[1]).toBe("ok+solved");
   });
@@ -29,10 +29,10 @@ describe("judgeLine takes a read's variant only to find the step right", () => {
     expect(marks({ lines: ["2 x=4", "\\times=3"] })[1]).not.toBe("ok");
   });
 
-  it("never drops a number the problem has: `\\Longleftarrow 11` under 2x + 3 = 11 stays as read", () => {
-    expect(marks({ problem: ["2x + 3 = 11"], lines: ["2 x=11-3 \\Longleftarrow 11"] })).not.toEqual(["ok"]);
-    expect(readVariants("2 x=11-3 \\Longleftarrow 11", false, ["2x + 3 = 11"])).toEqual([]);
-    expect(readVariants("2 x=11-3 \\Longleftarrow 9", false, ["2x + 3 = 11"])).toEqual(["2 x=11-3"]);
+  it("never drops a number the problem has: `\\Longleftarrow 14` under 3x + 2 = 14 stays as read", () => {
+    expect(marks({ problem: ["3x + 2 = 14"], lines: ["3 x=14-2 \\Longleftarrow 14"] })).not.toEqual(["ok"]);
+    expect(readVariants("3 x=14-2 \\Longleftarrow 14", false, ["3x + 2 = 14"])).toEqual([]);
+    expect(readVariants("3 x=14-2 \\Longleftarrow 4", false, ["3x + 2 = 14"])).toEqual(["3 x=14-2"]);
   });
 
   it("the minus a read dropped is offered only with her ink's minus: forgetting it is a real slip, still ringed", () => {

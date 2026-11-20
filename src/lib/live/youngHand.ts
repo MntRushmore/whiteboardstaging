@@ -323,6 +323,9 @@ export function misreadVariants(read: string): string[] {
   }
   const tail = /^(-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}))\s*(?:\\q?quad|\\[,;:]|~)\s*[-,.'`^~|/]?\s*(?:\\(?:prime|vee|wedge))?\s*$/.exec(body);
   if (tail) out.add(lead + tail[1].trim());
+  // dots after it (`10 . \cdot`): a jaggy mouse's tap or two after her answer — the number alone
+  const dots = /^(-?\s*\d+(?:\.\d+)?)\s*(?:(?:\.|\\c?dots?|\\ldots)\s*){1,3}$/.exec(body);
+  if (dots) out.add(lead + dots[1].trim());
   return [...out].filter((v) => v !== read && ANSWER_NUMBER.test(v.slice(lead.length)));
 }
 
@@ -347,13 +350,13 @@ export function rightAnswerTo(engine: LiveEngine, problem: readonly string[]): (
 const SIGN_EXPONENT_RE = /(?<=[\da-zA-Z)}])\s*\^\s*\{\s*\+\s*\}(?=\s*[\da-zA-Z(\\])/g;
 /** A `\times` with nothing before it (`\times=2`, `(\times + 1)`): no product — her `x`. */
 const LONE_TIMES_RE = /(^|[=(+\-]\s*)\\times(?![a-zA-Z])(?=\s*(?:[=+\-)]|$))/g;
-/** A left arrow and what follows it (`2 x=11-3 \Longleftarrow 9`): a note at the side, pointing back. */
+/** A left arrow and what follows it (`3 x=14-2 \Longleftarrow 4`): a note at the side, pointing back. */
 const LEFT_ARROW_TAIL_RE = /\s*\\(?:Long|long)?(?:left|Left)arrow(?![a-zA-Z]).*$/;
 
 /**
  * Out of arithmetic, what a messy read of a child's step may have been (real-ink bench, 2026-10-22):
  * a plus written high, read as an exponent (`5 x^{+} 20`); her `x` read as a times sign with nothing
- * to multiply (`\times=2`); a note at the side behind a left arrow (`2 x=11-3 \Longleftarrow 9`); and,
+ * to multiply (`\times=2`); a note at the side behind a left arrow (`3 x=14-2 \Longleftarrow 4`); and,
  * when her ink starts with a minus right before its first glyph (`minus`: `inkLeadsWithMinus`), that
  * minus, which the read dropped (`-5x + 20 - 6x` read `5 x^{+} 20-6 x`: the right step was ringed).
  * Each alone, then all together; none drops a number that `keep` (the problem, the line above) has.
@@ -441,6 +444,13 @@ export function readVariants(read: string, minus = false, keep: readonly string[
   };
   for (const step of steps) add(step(read));
   add(steps.reduce((s, step) => step(s), read));
+  // a number the page already knows (`keep`: the problem, the line above), misread by one look-alike
+  // digit or with its point dropped (`0+1=9` under `2^{3}=8`, `275` for the problem's `2.75`: the
+  // Training Center's messy hand, right steps ringed, v1.0): that number put back, one at a time
+  for (const v of knownNumberVariants(read, kept)) {
+    const t = tidy(v);
+    if (t !== tidy(read) && !out.includes(t)) out.push(t);
+  }
   // a decimal point the ink shows to be a raised multiplication dot (`inkTimesDots`): the numbers split
   // (`6.9` is `6` and `9`), so the rule above does not apply; a number the work is about is kept
   const dotted = timesDotVariant(read, timesDots);
@@ -449,6 +459,43 @@ export function readVariants(read: string, minus = false, keep: readonly string[
     if (t !== tidy(read) && !out.includes(t)) out.push(t);
   }
   return out;
+}
+
+/** Digits a hand's digit is read as (Mathpix on messy ink): either way round. */
+const LOOKALIKE_DIGIT_PAIRS = new Set(["06", "08", "17", "38", "49", "56", "79"].flatMap((p) => [p, p[1] + p[0]]));
+
+/** `n` is `k` misread: one digit a look-alike of `k`'s (the point where `k`'s is), or `k` without its point. */
+function misreadOfKnown(n: string, k: string): boolean {
+  if (n === k) return false;
+  if (k.includes(".") && !n.includes(".") && k.replace(".", "") === n) return true;
+  if (n.length !== k.length || n.indexOf(".") !== k.indexOf(".")) return false;
+  let diff = 0;
+  for (let i = 0; i < n.length; i++) {
+    if (n[i] === k[i]) continue;
+    if (!LOOKALIKE_DIGIT_PAIRS.has(n[i] + k[i])) return false;
+    diff += 1;
+  }
+  return diff === 1;
+}
+
+/** The read with ONE of its numbers that the page does not know put back as a known one it is a misread of (`misreadOfKnown`). */
+function knownNumberVariants(read: string, kept: ReadonlySet<string>): string[] {
+  // only what she copied: the numbers before the step's last `=` — never its result, which is her own
+  // work (`x = 6` for `5x - 4 = 21` stays a slip, though 5 is on the page), nor a line with no `=`
+  const end = read.lastIndexOf("=");
+  if (kept.size === 0 || end < 0) return [];
+  const out: string[] = [];
+  for (const m of read.matchAll(/\d+(?:\.\d+)?/g)) {
+    const n = m[0];
+    const at = m.index ?? 0;
+    if (at >= end) break;
+    if (kept.has(n)) continue;
+    for (const k of kept) {
+      if (misreadOfKnown(n, k)) out.push(read.slice(0, at) + k + read.slice(at + n.length));
+    }
+    if (out.length >= 6) break;
+  }
+  return out.slice(0, 6);
 }
 
 /** The numbers written in a read, unsigned, in order (`12`, `3.5`). */
@@ -468,6 +515,11 @@ export function readYoungHand(latex: string, ctx: YoungReadContext): string {
   s = s.replace(SIGN_EXPONENT_RE, " + ").replace(LONE_TIMES_RE, "$1x");
   // an empty `\text { }` (a tap of the pen read as text) is nothing: `\text { } \approx 12` is `\approx 12`
   s = s.replace(/\\text\s*\{\s*\}/g, " ");
+  // a note at the side behind a left arrow (`3 x=14-2 \Longleftarrow 4`): never her line's maths, when
+  // what is left is still a relation (real-ink bench: such a line got a "?"; before, only the second
+  // look before a ring tried it, and a first line on her own page never had one)
+  const noted = s.replace(LEFT_ARROW_TAIL_RE, "");
+  if (noted !== s && /[=<>]|\\(?:le|ge|leq|geq)(?![a-zA-Z])/.test(noted)) s = noted;
   // two bars read stacked, and a curved bar wherever it is
   s = tidy(s.replace(STACKED_RE, " = ").replace(CURVED_RE, " = "));
   if (LONE_STRONG_RE.test(s) || (ctx.arithmetic && LONE_ANY_RE.test(s))) return "=";

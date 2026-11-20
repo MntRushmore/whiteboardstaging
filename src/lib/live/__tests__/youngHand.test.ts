@@ -479,7 +479,7 @@ describe("readVariants: what a messy read of a child's step may have been (only 
   it("a plus written high, her x read as a times sign, a side note behind a left arrow", () => {
     expect(readVariants("-5 x^{+} 20-6 x")).toContain("-5 x + 20-6 x");
     expect(readVariants("\\times=2")).toContain("x=2");
-    expect(readVariants("2 x=11-3 \\Longleftarrow 9")).toContain("2 x=11-3");
+    expect(readVariants("3 x=14-2 \\Longleftarrow 4")).toContain("3 x=14-2");
   });
 
   it("her minus that the read dropped, only when her ink starts with one; all fixes together too", () => {
@@ -514,5 +514,43 @@ describe("readVariants: what a messy read of a child's step may have been (only 
     const far = ink.map((s, k) => (k === 0 ? { ...s, bounds: { ...s.bounds, x: s.bounds.x - 300 } } : s));
     expect(inkLeadsWithMinus(far)).toBe(false);
     expect(inkLeadsWithMinus(youngInk(youngLine("5", 200, 100)))).toBe(false);
+  });
+});
+
+describe("readVariants: a number the page knows, misread (v1.0, the Training Center's messy hand)", () => {
+  it("one look-alike digit of a number on the line above or in the problem is put back", () => {
+    // `8 + 1 = 9` under `2^{3} = 8`, read `0+1=9`
+    expect(readVariants("0+1=9", false, ["2^{3}=8", "2^{3}+1"])).toContain("8+1=9");
+    // the problem's 2.75 read without its point
+    expect(readVariants("5.60-275=2.85", false, ["5.6 - 2.75"])).toContain("5.60-2.75=2.85");
+  });
+
+  it("only a number the page knows, only a look-alike, one digit, one number at a time", () => {
+    // no 8 anywhere on the page: nothing to put back
+    expect(readVariants("0+1=9", false, ["2^{3}+1"])).toEqual([]);
+    // 2 for 5 is no look-alike
+    expect(readVariants("2+1=9", false, ["8"])).toEqual([]);
+    // two digits off is no misread of it
+    expect(readVariants("40+1=41", false, ["88"])).toEqual([]);
+    // a known number as read stays
+    expect(readVariants("8+1=9", false, ["8"])).toEqual([]);
+    // never the step's result: `x = 6` for `5x - 4 = 21` is her slip, though 5 is on the page
+    expect(readVariants("x=6", false, ["5x-4=21"])).toEqual([]);
+    expect(readVariants("\\div 0", false, ["8"])).toEqual([]);
+  });
+});
+
+describe("v1.0: junk after a line a child wrote", () => {
+  it("dots after an answer (a jaggy mouse's taps) are no part of it, when the number alone is right", () => {
+    expect(misreadVariants("73 . \\cdot")).toEqual(["73"]);
+    expect(misreadVariants("= 73 \\cdots")).toEqual(["= 73"]);
+    expect(misreadVariants("73")).toEqual([]);
+  });
+
+  it("a side note behind a left arrow is no part of the line, when the rest is still a relation", () => {
+    expect(readYoungHand("3 x=12-4 \\Longleftarrow 8", { arithmetic: false })).toBe("3 x=12-4");
+    expect(readYoungHand("3 x=12-4 \\leftarrow", { arithmetic: false })).toBe("3 x=12-4");
+    // nothing but the note's own relation-less side: left as read
+    expect(readYoungHand("12-4 \\Longleftarrow 8", { arithmetic: false })).toBe("12-4 \\Longleftarrow 8");
   });
 });

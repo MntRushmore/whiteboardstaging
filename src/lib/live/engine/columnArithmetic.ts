@@ -176,6 +176,31 @@ function problemOp(problem: readonly string[] | null | undefined, a: string, b: 
   return m[2] === "+" ? "+" : m[2] === "-" || m[2] === "−" ? "-" : "×";
 }
 
+/**
+ * A stacked sum's read against the page's problem (`A op B`, one line): she copies the problem's
+ * numbers, so rows read as other numbers are a misread, not her work — the Training Center's steep
+ * hand had `286 + 680 = 966` read `206 + 600 = 966` and ringed (v1.0). Rows that are the problem's (a
+ * carry written into a row, `1286` for `286`, still is) leave the read as it is. Otherwise, when her
+ * answer is the problem's right result, the read takes the problem's numbers (a tick); when it is not,
+ * the read is `trusted: false` — no ring on numbers she may never have written. Long multiplication's
+ * rows, another operator, or no such problem: unchanged.
+ */
+export function againstProblem(read: StackedRead, problem: readonly string[] | null | undefined): { read: StackedRead; trusted: boolean } {
+  const same = { read, trusted: true };
+  if (!problem || problem.length !== 1 || read.rows || read.operands.length !== 2) return same;
+  const m = /^\s*(\d+(?:\.\d+)?)\s*(\+|-|−|\\times|\\cdot|×)\s*(\d+(?:\.\d+)?)\s*$/.exec(problem[0]);
+  if (!m) return same;
+  const op: StackOp = m[2] === "+" ? "+" : m[2] === "-" || m[2] === "−" ? "-" : "×";
+  if (op !== read.op) return same;
+  const theirs = [m[1], m[3]];
+  const digits = (n: string) => n.replace(/\D/g, "");
+  const copied = (row: string, n: string) => digits(row) === digits(n) || (digits(row).endsWith(digits(n)) && digits(row).length === digits(n).length + 1);
+  if (read.operands.every((row, i) => copied(row, theirs[i]))) return same;
+  const asProblem: StackedRead = { ...read, operands: theirs };
+  if (read.answer !== "" && workStacked(asProblem)?.right) return { read: asProblem, trusted: true };
+  return { read, trusted: false };
+}
+
 /** The one operator that makes `answer` of `a` and `b` (whole numbers), or null when none or more than one does. */
 function opMaking(a: string, b: string, answer: string): StackOp | null {
   if (!/^\d+$/.test(a) || !/^\d+$/.test(b) || !/^\d+$/.test(answer)) return null;
@@ -315,6 +340,12 @@ function placesOf(n: string, last: number): Map<number, number> {
 
 const at = (m: Map<number, number>, p: number) => m.get(p) ?? 0;
 
+/** The student's digits are exactly the result's (a leading zero aside). */
+function wholeResult(mine: ReadonlyMap<number, number>, digits: readonly number[]): boolean {
+  for (const [p, d] of mine) if (p >= digits.length ? d !== 0 : digits[p] !== d) return false;
+  return digits.every((d, p) => mine.get(p) === d);
+}
+
 /** `[6, 6, 9]` (place 0 first) with the point before place `decimals` → `966`; leading zeros dropped down to the ones. */
 function written(digits: readonly number[], decimals: number): string {
   let top = digits.length - 1;
@@ -395,7 +426,14 @@ export function workStacked(read: StackedRead, opts: WorkOptions = {}): StackedW
   }
   while (digits.length > 1 && digits.length > decimals + 1 && digits[digits.length - 1] === 0) digits.pop();
 
-  const last = opts.answerLast ?? decimals - decimalsOf(answer);
+  const lined = decimals - decimalsOf(answer);
+  // an answer that is the whole result, lined up as the numbers are, is right wherever it sits on the
+  // page: a steep or drifting hand slants the answer row a column off, and `52 − 17 = 35` read right,
+  // its 35 sitting under the tens and hundreds, was ringed "Check the tens column" (v1.0, the Training
+  // Center's steep hand). Where it sits still places a partial answer (`answerLast`: a 9 written under
+  // the hundreds first is the hundreds).
+  const whole = answer !== "" && wholeResult(placesOf(answer, lined), digits);
+  const last = whole ? lined : (opts.answerLast ?? lined);
   const mine = answer ? placesOf(answer, last) : new Map<number, number>();
   // a leading zero the student wrote is no mistake
   for (const [p, d] of mine) if (p >= digits.length && d === 0) mine.delete(p);

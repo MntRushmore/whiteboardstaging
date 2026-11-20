@@ -133,8 +133,10 @@ describe("live/solve: steps the board can use", () => {
     expect(out.filter((f) => f.event === "step").map((f) => f.data.latex)).toEqual(["3x+6=21", "3x=15", "\\boxed{x=5}"]);
     expect(out.at(-1)).toMatchObject({ event: "done", data: { count: 3 } });
     expect(streamWithFallback).toHaveBeenCalledTimes(1);
-    const [primary, fallback, , watchdogMs, limits] = vi.mocked(streamWithFallback).mock.calls[0];
+    const [primary, fallback, firstOpts, watchdogMs, limits] = vi.mocked(streamWithFallback).mock.calls[0];
     expect([primary, fallback]).toEqual([LIVE_MODELS.solve, LIVE_MODELS.solveFallback]);
+    // v1.0 reliability: the same work, the same steps (temperature 0, the fixed seed in the stream)
+    expect(firstOpts.temperature).toBe(0);
     // reasoning is a sign of life now, and the first wait is longer than the old 8 s
     expect(watchdogMs).toBeGreaterThan(8_000);
     expect(limits).toMatchObject({ primaryThinkingMs: expect.any(Number), fallbackWatchdogMs: expect.any(Number), deadline: expect.any(Number) });
@@ -157,6 +159,7 @@ describe("live/solve: steps the board can use", () => {
     const [primary, fallback, opts] = vi.mocked(streamWithFallback).mock.calls[1];
     expect(primary).toBe(LIVE_MODELS.solve);
     expect(fallback).toBe("");
+    expect(opts.temperature).toBe(0);
     const last = (opts.messages as ChatMessage[]).at(-1)!;
     expect(last.role).toBe("user");
     expect(String(last.content)).toContain('"u"');
