@@ -32,7 +32,7 @@ owner says yes) · **OWNER** (only the account holder can, click path given).
 | Price | Free (DONE) |
 | Availability | **United States only** (DONE: 174 other territories off). **OWNER:** untick "make available in new countries or regions automatically" (the API refuses that switch: §5 step 3) |
 | Mac (Apple silicon) / Vision Pro, App Store | not in the API: **OWNER** §5 step 3 (Mac on, Vision Pro off) |
-| Screenshots | iPad 13-inch set: §4 |
+| Screenshots | iPad 13-inch set of 7 **uploaded** (DONE, §4) |
 | App Review information | **blocked on the contact phone** (ASC requires it): §3. Everything else is ready |
 | Unlimited subscription | **created** (§2); attach to 1.0 at submission (§5 step 5) |
 | App Store Server Notifications | Production + Sandbox `https://www.agathon.app/api/billing/apple/notifications`, Version 2 (DONE) |
@@ -58,7 +58,7 @@ owner says yes) · **OWNER** (only the account holder can, click path given).
 | Introductory offer | Free trial, 1 week, United States, new subscribers |
 | Review screenshot | `docs/app-store/iap-review-screenshot.png` (the plan screen: price, 7 days free, Start your free week, Restore purchases, Terms of Use, Privacy Policy, the auto-renewal words; the plan screen's code hasn't changed since it was made on 10-22) — uploaded, processed |
 | Review notes | "Reached from the grown-up's side: Home › Grown-ups › Account › Plan, behind a parental gate (type the digits of the number shown in words). The demo account and its PIN are in the app's review notes. Kids never see prices." |
-| State | `MISSING_METADATA` right after creation, with every field above filled and read back; ASC often takes a while to move it to **Ready to Submit**. If it still says Missing Metadata in the web page, open the subscription there: it names the missing field |
+| State | still `MISSING_METADATA` the next day (2026-11-20), with every field above filled and read back; ASC often takes a while to move it to **Ready to Submit**. If it still says Missing Metadata in the web page, open the subscription there: it names the missing field |
 
 A first subscription is submitted **with** the app: on the 1.0 page, "In-App Purchases and
 Subscriptions" › + › tick Agathon Unlimited (monthly) (§5 step 5). The API has no way to attach it
@@ -113,7 +113,29 @@ pastes it on the 1.0 page › App Review Information.
 
 ## 4. Screenshots
 
-SCREENSHOTS_PLACEHOLDER
+iPad 13-inch set, **uploaded to App Store Connect** (display type `APP_IPAD_PRO_3GEN_129`, all seven
+processed, in this order) and kept in `docs/app-store/screenshots/` (2752 × 2064 landscape, sRGB, no
+alpha). The 13-inch set covers every iPad and the Mac's "Designed for iPad" page; no Mac set is needed.
+
+| # | File | Shows |
+|---|---|---|
+| 1 | `01-hint-on-a-slip.png` | Problem 1 of 4: 2x + 3 = 11 in the tutor's blue, 2x = 8 ticked, the answer x = 5 gently ringed, the hint card ("Check your division on both sides of this step.") with Got it / Show me |
+| 2 | `02-show-me.png` | Problem 3 of 4: x + x + 3 = 11, the kid's 2x + 3 = 11 ticked, and the tutor's next step **2x = 8 written in its blue pen** under it, with the Next step card |
+| 3 | `03-problem-page-ticked.png` | Problem 2 of 4: 3x = 15 and x = 5 ticked, "I read" chips, Next problem |
+| 4 | `04-ask-draws.png` | Ask: "Why is 3/4 bigger than 5/8? Can you show me?", the answer, and the fraction bars it drew on the board |
+| 5 | `05-home.png` | Maya's Home: Today's practice, a 12-day streak, the 7th grade path, SAT practice, boards |
+| 6 | `06-progress.png` | Progress: this week (72 minutes, 26 problems, 8 on her own, 13 days), the last 4 weeks, skills |
+| 7 | `07-first-run-try.png` | The first run's try: "Your turn, Maya." 2x + 5 = 17, 2x = 12 and x = 6 ticked, "You got it.", her first star |
+
+How they were made: `SUPA_PORT=54331 scripts/ios-appstore-shots.sh` on "iPad Pro 13-inch (M5)" against
+the **local** stack (a made-up family `demo-family-…@example.com`, Maya, 7th grade, four weeks of
+seeded practice; synthetic handwriting from `kid-hands.json`; no real kids' data), status bar 9:41.
+The Debug build's version line on Progress and the simulator's window grabber are painted out by the
+script. Each was checked by eye. AI cost: under $0.01. The kid's handwriting is the autowriter's bold
+"clean hand" (as a marker would write), not a Pencil's thin line; re-shoot from a device if the owner
+wants a finer pen. Not used: All done (it shows three "Not yet"), Progress scrolled.
+
+The subscription's review screenshot is `docs/app-store/iap-review-screenshot.png` (§2).
 
 ---
 
@@ -124,6 +146,7 @@ SCREENSHOTS_PLACEHOLDER
 | 1 | appstoreconnect.apple.com › **Business** | Paid Apps Agreement **Active**, bank and tax forms complete. |
 | 2 | Apps › Agathon › **App Privacy** | Check each data type against APP-STORE-LAUNCH §6 (it matches `PrivacyInfo.xcprivacy`); **Publish**. |
 | 3 | Apps › Agathon › **Pricing and Availability** | Availability already reads United States only: **untick "Make available in new countries or regions automatically"**. Under **"iPhone and iPad Apps on Apple Silicon Macs"**: Make this app available (ticked). **Apple Vision Pro**: untick. Save. |
+| 3b | Apps › Agathon › Monetization › **Subscriptions** › Agathon Unlimited › Agathon Unlimited (monthly) | It reads **Missing Metadata** through the API although every field is filled (price, US availability, free week, localization, review screenshot and notes). The page names what is missing (often the Paid Apps agreement, or a newer field such as the group-purchase / multi-seat settings this account has on); fix it there so it reads **Ready to Submit**. |
 | 4 | Send the release lane the **contact phone** (or paste it: 1.0 page › App Review Information › Contact Information) | ASC won't save the review information without it. |
 | 5 | When the build is approved by you: 1.0 page › **Build** › pick it; **In-App Purchases and Subscriptions** › + › tick Agathon Unlimited (monthly); **Add for Review** › Submit | Only on the owner's OK. "Advertising Identifier?" No. Release stays Manual. |
 | 6 | (Recommended) Users and Access › **Sandbox** › Test Accounts › + | One sandbox Apple Account to buy the free week yourself on the TestFlight build first. |

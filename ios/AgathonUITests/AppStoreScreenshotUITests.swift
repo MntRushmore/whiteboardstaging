@@ -19,7 +19,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
 
     /// Today's practice for the shots: page 1 a slip with its hint, page 2 solved, page 3 Show me (the
     /// tutor writes the next step), page 4 solved and All done.
-    private static let practice = "2x + 3 = 11|3x - 5 = 10|4(x - 2) = 20|5x + 2 = 17"
+    private static let practice = "2x + 3 = 11|3x - 5 = 10|x + x + 3 = 11|5x + 2 = 17"
     private static let pages = 4
 
     override func setUpWithError() throws {
@@ -123,11 +123,12 @@ final class AppStoreScreenshotUITests: XCTestCase {
     /// Show me: the kid's first step ticked, Help me's hint, then Show me — the tutor writes the next
     /// step under theirs in its own blue hand.
     func test2cShowMe() throws {
-        openPractice(lines: "4x - 8 = 20", page: 3)
-        write("4x - 8 = 20")
+        // (the kid's lines come from the hands fixture, kid-hands.json: only the lines it has)
+        openPractice(lines: "2x + 3 = 11", page: 3)
+        write("2x + 3 = 11")
         // check when done: a step with no answer yet is judged when the kid taps Check
         tap("live.check", wait: 30)
-        waitFor("debug.live", matching: #"4 ?x ?- ?8 ?= ?20=tick"#, timeout: 60)
+        waitFor("debug.live", matching: #"2 ?x ?\+ ?3 ?= ?11=tick"#, timeout: 60)
         noDebugUI()
         tap("live.helpMe", wait: 20)
         if element("live.helpChoice").waitForExistence(timeout: 3), app.buttons["Hint"].exists { app.buttons["Hint"].firstMatch.tap() }
