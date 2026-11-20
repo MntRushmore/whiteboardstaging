@@ -589,6 +589,31 @@ struct ProblemPagesLoopTests {
         h.board.isPenDown = false
     }
 
+    /// v1.0 (real-ink bench class): a right step Mathpix was unsure of (confidence 0.4) between right
+    /// lines gets no "?" — it stays unmarked, never ticked on an unsure read; an unsure read that does
+    /// not follow still gets its "?".
+    @Test func anUnsureReadOfARightStepGetsNoQuestionMark() async throws {
+        let h = harness(checking: .whenDone)
+        await h.start()
+        problemPage(h, ["2x + 3 = 11"])
+        await h.write("2x = 8", at: Vec2(200, 280), confidence: 0.4)
+        await h.write("x = 4", at: Vec2(200, 420))
+        await h.pass(1_500)
+        h.loop.checkPage()
+        await h.pass(6_000)
+        #expect(h.board.mark(on: "2x = 8") == nil, "\(String(describing: h.board.mark(on: "2x = 8")))")
+        #expect(h.board.mark(on: "x = 4") == .tick)
+
+        let w = harness(checking: .whenDone)
+        await w.start()
+        problemPage(w, ["2x + 3 = 11"])
+        await w.write("2x = 24", at: Vec2(200, 280), confidence: 0.4)
+        await w.pass(1_500)
+        w.loop.checkPage()
+        await w.pass(6_000)
+        #expect(w.board.mark(on: "2x = 24") == .question, "an unsure read that does not follow keeps its \"?\"")
+    }
+
     @Test func nextGoesToTheNextPage() async throws {
         let h = Harness()
         await h.start()
